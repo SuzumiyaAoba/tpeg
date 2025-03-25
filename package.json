@@ -1,0 +1,25 @@
+{
+  "name": "tpeg",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.0"
+  },
+  "scripts": {
+    "prepare": "husky",
+    "dev": "bun run index.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "bun run typecheck && bun build ./index.ts --outdir ./out",
+    "lint": "bunx biome lint --write .",
+    "check": "bunx biome check --write .",
+    "fix": "bunx biome check --fix --unsafe ."
+  }
+}
