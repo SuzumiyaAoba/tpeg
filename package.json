@@ -15,11 +15,11 @@
   },
   "scripts": {
     "prepare": "husky",
-    "dev": "bun run index.ts",
+    "dev": "bun run ./src/index.ts",
     "typecheck": "tsc --noEmit",
-    "build": "bun run typecheck && bun build ./index.ts --outdir ./out",
-    "lint": "bunx biome lint --write .",
-    "check": "bunx biome check --write .",
-    "fix": "bunx biome check --fix --unsafe ."
+    "build": "bun run typecheck && bun build ./src/index.ts --outdir ./out",
+    "lint": "bunx biome lint --write ./src",
+    "check": "bunx biome check --write ./src",
+    "fix": "bunx biome check --fix --unsafe ./src"
   }
 }
