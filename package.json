@@ -1,7 +1,18 @@
 {
   "name": "tpeg",
+  "version": "0.0.1",
   "module": "index.ts",
   "type": "module",
+  "exports": {
+    ".": {
+      "types": {
+        "default": "./dist/index.d.ts"
+      },
+      "default": {
+        "default": "./dist/index.js"
+      }
+    }
+  },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@types/bun": "latest"
@@ -14,12 +25,16 @@
     "lint-staged": "^15.5.0"
   },
   "scripts": {
-    "prepare": "husky",
+    "prepare": "bunx husky",
     "dev": "bun run ./src/index.ts",
     "typecheck": "tsc --noEmit",
-    "build": "bun run typecheck && bun build ./src/index.ts --outdir ./out",
+    "build": "bun run typecheck && bun build ./src/index.ts --outdir ./dist",
+    "build:types": "tsc ./src/index.ts --declaration --outDir ./dist/ --emitDeclarationOnly --skipLibCheck",
     "lint": "bunx biome lint --write ./src",
     "check": "bunx biome check --write ./src",
     "fix": "bunx biome check --fix --unsafe ./src"
+  },
+  "publishConfig": {
+    "tag": "next"
   }
 }

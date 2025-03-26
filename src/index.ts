@@ -8,7 +8,7 @@ export const isEmptyArray = <T>(arr: readonly T[]): arr is [] => {
 };
 
 export const isNonEmptyArray = <T>(
-  arr: readonly T[]
+  arr: readonly T[],
 ): arr is NonEmptyArray<T> => {
   return arr.length > 0;
 };
@@ -153,7 +153,7 @@ export const charClass =
   };
 
 export const seq =
-  <P extends Parser<unknown>[]>(
+  <P extends Parser<never>[]>(
     ...parsers: P
   ): Parser<{ [K in keyof P]: P[K] extends Parser<infer T> ? T : never }> =>
   (input, pos) => {
@@ -295,5 +295,8 @@ export const map =
   <T, U>(parser: Parser<T>, f: (value: T) => U): Parser<U> =>
   (input, index) => {
     const result = parser(input, index);
-    return result.success ? { ...result, value: f(result.value) } : result;
+
+    return result.success
+      ? { ...result, value: f(result.value) }
+      : (result as ParseResult<U>);
   };
