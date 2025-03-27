@@ -1,6 +1,6 @@
 {
   "name": "tpeg",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "module": "index.ts",
   "type": "module",
   "exports": {
@@ -13,6 +13,12 @@
       }
     }
   },
+  "files": [
+    "src",
+    "dist",
+    "README.md",
+    "package.json"
+  ],
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@types/bun": "latest"
@@ -33,8 +39,5 @@
     "lint": "bunx biome lint --write ./src",
     "check": "bunx biome check --write ./src",
     "fix": "bunx biome check --fix --unsafe ./src"
-  },
-  "publishConfig": {
-    "tag": "next"
   }
 }
