@@ -8,7 +8,7 @@ export const isEmptyArray = <T>(arr: readonly T[]): arr is [] => {
 };
 
 export const isNonEmptyArray = <T>(
-  arr: readonly T[],
+  arr: readonly T[]
 ): arr is NonEmptyArray<T> => {
   return arr.length > 0;
 };
@@ -56,7 +56,7 @@ export const any: Parser<string> = (input, pos) => {
     success: true,
     value: char,
     next: {
-      offset: pos.offset,
+      offset: pos.offset + 1,
       column: isNewline ? 0 : pos.column + 1,
       line: pos.line + (isNewline ? 1 : 0),
     },
@@ -138,7 +138,7 @@ export const charClass =
             value: char,
             next: {
               offset: pos.offset + 1,
-              column: isNewline ? 0 : pos.column,
+              column: isNewline ? 0 : pos.column + 1,
               line: isNewline ? pos.line + 1 : pos.line,
             },
           };
@@ -170,7 +170,12 @@ export const seq =
       currentPos = result.next;
     }
 
-    return { success: true, value: values as never, next: currentPos };
+    return {
+      success: true,
+      // biome-ignore lint/suspicious/noExplicitAny:
+      value: values as any,
+      next: currentPos,
+    };
   };
 
 export const choise =

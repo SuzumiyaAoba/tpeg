@@ -1,3 +1,6 @@
-biome.json
-.husky/
-tsconfig.json
+.*
+
+!./src/
+!package.json
+!README.md
+!dist

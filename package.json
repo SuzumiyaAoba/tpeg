@@ -28,7 +28,7 @@
     "prepare": "bunx husky",
     "dev": "bun run ./src/index.ts",
     "typecheck": "tsc --noEmit",
-    "build": "bun run typecheck && bun build ./src/index.ts --outdir ./dist",
+    "build": "bun run build:types && bun build ./src/index.ts --outdir ./dist",
     "build:types": "tsc ./src/index.ts --declaration --outDir ./dist/ --emitDeclarationOnly --skipLibCheck",
     "lint": "bunx biome lint --write ./src",
     "check": "bunx biome check --write ./src",

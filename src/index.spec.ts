@@ -44,7 +44,7 @@ describe("any", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.value).toBe("a");
-      expect(result.next).toEqual({ offset: 0, column: 1, line: 1 });
+      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
     }
   });
 
@@ -55,7 +55,7 @@ describe("any", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.value).toBe("\n");
-      expect(result.next).toEqual({ offset: 0, column: 0, line: 2 });
+      expect(result.next).toEqual({ offset: 1, column: 0, line: 2 });
     }
   });
 
@@ -136,7 +136,7 @@ describe("charClass", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.value).toBe("b");
-      expect(result.next).toEqual({ offset: 1, column: 0, line: 1 });
+      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
     }
   });
 
