@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   any,
   charClass,
-  choise,
+  choice,
   isEmptyArray,
   isNonEmptyArray,
   map,
@@ -198,11 +198,11 @@ describe("seq", () => {
   });
 });
 
-describe("choise", () => {
+describe("choice", () => {
   it("should parse the first successful parser", () => {
     const input = "a";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = choise(lit("a"), lit("b"))(input, pos);
+    const result = choice(lit("a"), lit("b"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.value).toBe("a");
@@ -213,7 +213,7 @@ describe("choise", () => {
   it("should return error if all parsers fail", () => {
     const input = "c";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = choise(lit("a"), lit("b"))(input, pos);
+    const result = choice(lit("a"), lit("b"))(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toBe("Expected one of: choice 1, choice 2");

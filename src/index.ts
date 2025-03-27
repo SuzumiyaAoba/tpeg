@@ -178,7 +178,7 @@ export const seq =
     };
   };
 
-export const choise =
+export const choice =
   <T extends unknown[]>(
     ...parsers: { [K in keyof T]: Parser<T[K]> }
   ): Parser<T[number]> =>
