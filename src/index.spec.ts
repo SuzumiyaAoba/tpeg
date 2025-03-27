@@ -1,18 +1,18 @@
 import { describe, expect, it } from "bun:test";
 import {
+  and,
   any,
   charClass,
   choice,
   isEmptyArray,
   isNonEmptyArray,
+  lit,
   map,
   not,
   opt,
   plus,
-  and,
   seq,
   star,
-  lit,
 } from "./index";
 import type { Pos } from "./index";
 
@@ -40,7 +40,7 @@ describe("any", () => {
   it("should parse any single character", () => {
     const input = "a";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = any(input, pos);
+    const result = any()(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.value).toBe("a");
@@ -51,7 +51,7 @@ describe("any", () => {
   it("should parse newline character", () => {
     const input = "\n";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = any(input, pos);
+    const result = any()(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.value).toBe("\n");
@@ -62,7 +62,7 @@ describe("any", () => {
   it("should return error for empty input", () => {
     const input = "";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = any(input, pos);
+    const result = any()(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toBe("Unexpected end of input");
@@ -73,7 +73,7 @@ describe("any", () => {
   it("should return error for out of bound", () => {
     const input = "a";
     const pos: Pos = { offset: 1, column: 1, line: 1 };
-    const result = any(input, pos);
+    const result = any()(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toBe("Unexpected end of input");
@@ -346,7 +346,7 @@ describe("map", () => {
   it("should map the value", () => {
     const input = "a";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = map(lit("a"), (value) => value.toUpperCase())(input, pos);
+    const result = map(lit("a"))((value) => value.toUpperCase())(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.value).toBe("A");
@@ -357,7 +357,7 @@ describe("map", () => {
   it("should return error if parser fails", () => {
     const input = "b";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = map(lit("a"), (value) => value.toUpperCase())(input, pos);
+    const result = map(lit("a"))((value) => value.toUpperCase())(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toBe("Unexpected character");

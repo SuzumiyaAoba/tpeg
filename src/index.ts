@@ -8,7 +8,7 @@ export const isEmptyArray = <T>(arr: readonly T[]): arr is [] => {
 };
 
 export const isNonEmptyArray = <T>(
-  arr: readonly T[]
+  arr: readonly T[],
 ): arr is NonEmptyArray<T> => {
   return arr.length > 0;
 };
@@ -37,7 +37,7 @@ export interface ParseError {
 
 export type Parser<T> = (input: string, pos: Pos) => ParseResult<T>;
 
-export const any: Parser<string> = (input, pos) => {
+export const any = (): Parser<string> => (input, pos) => {
   const char = input?.[pos.offset];
 
   if (char === undefined) {
@@ -297,7 +297,8 @@ export const not =
   };
 
 export const map =
-  <T, U>(parser: Parser<T>, f: (value: T) => U): Parser<U> =>
+  <T>(parser: Parser<T>) =>
+  <U>(f: (value: T) => U): Parser<U> =>
   (input, index) => {
     const result = parser(input, index);
 
