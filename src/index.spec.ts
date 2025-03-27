@@ -6,10 +6,10 @@ import {
   isEmptyArray,
   isNonEmptyArray,
   map,
-  negative,
+  not,
   opt,
   plus,
-  positive,
+  and,
   seq,
   star,
   lit,
@@ -298,7 +298,7 @@ describe("positive", () => {
   it("should succeed if parser succeeds", () => {
     const input = "a";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = positive(lit("a"))(input, pos);
+    const result = and(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.value).toBeUndefined();
@@ -309,7 +309,7 @@ describe("positive", () => {
   it("should return error if parser fails", () => {
     const input = "b";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = positive(lit("a"))(input, pos);
+    const result = and(lit("a"))(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toBe("And-predicate did not match");
@@ -322,7 +322,7 @@ describe("negative", () => {
   it("should succeed if parser fails", () => {
     const input = "b";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = negative(lit("a"))(input, pos);
+    const result = not(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.value).toBeUndefined();
@@ -333,7 +333,7 @@ describe("negative", () => {
   it("should return error if parser succeeds", () => {
     const input = "a";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = negative(lit("a"))(input, pos);
+    const result = not(lit("a"))(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toBe("Not-predicate matched");

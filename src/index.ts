@@ -153,7 +153,7 @@ export const charClass =
   };
 
 export const seq =
-  <P extends Parser<never>[]>(
+  <P extends Parser<unknown>[]>(
     ...parsers: P
   ): Parser<{ [K in keyof P]: P[K] extends Parser<infer T> ? T : never }> =>
   (input, pos) => {
@@ -249,7 +249,7 @@ export const plus =
     };
   };
 
-export const positive =
+export const and =
   <T>(parser: Parser<T>): Parser<never> =>
   (input, pos) => {
     const result = parser(input, pos);
@@ -270,7 +270,7 @@ export const positive =
     };
   };
 
-export const negative =
+export const not =
   <T>(parser: Parser<T>): Parser<never> =>
   (input, pos) => {
     const result = parser(input, pos);
