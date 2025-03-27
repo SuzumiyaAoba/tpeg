@@ -297,8 +297,7 @@ export const not =
   };
 
 export const map =
-  <T>(parser: Parser<T>) =>
-  <U>(f: (value: T) => U): Parser<U> =>
+  <T, U>(parser: Parser<T>, f: (value: T) => U): Parser<U> =>
   (input, index) => {
     const result = parser(input, index);
 
