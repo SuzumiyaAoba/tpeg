@@ -1,0 +1,29 @@
+{
+  "name": "tpeg",
+  "version": "0.0.9",
+  "module": "index.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": {
+        "default": "./dist/index.d.ts"
+      },
+      "default": {
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "*.ts",
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "scripts": {
+    "prepare": "bunx husky",
+    "dev": "bun run ./index.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "bun run build:types && bun build ./index.ts --outdir ./dist",
+    "build:types": "tsc ./index.ts --declaration --outDir ./dist/ --emitDeclarationOnly --skipLibCheck"
+  }
+}

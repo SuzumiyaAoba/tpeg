@@ -8,7 +8,7 @@ export const isEmptyArray = <T>(arr: readonly T[]): arr is [] => {
 };
 
 export const isNonEmptyArray = <T>(
-  arr: readonly T[],
+  arr: readonly T[]
 ): arr is NonEmptyArray<T> => {
   return arr.length > 0;
 };
@@ -19,16 +19,18 @@ export type Pos = {
   readonly line: number;
 };
 
-export type ParseResult<T> =
-  | {
-      success: true;
-      value: T;
-      next: Pos;
-    }
-  | {
-      success: false;
-      error: ParseError;
-    };
+export type ParseSuccess<T> = {
+  success: true;
+  val: T;
+  next: Pos;
+};
+
+export type ParseFailure = {
+  success: false;
+  error: ParseError;
+};
+
+export type ParseResult<T> = ParseSuccess<T> | ParseFailure;
 
 export interface ParseError {
   message: string;
@@ -54,7 +56,7 @@ export const any = (): Parser<string> => (input, pos) => {
 
   return {
     success: true,
-    value: char,
+    val: char,
     next: {
       offset: pos.offset + 1,
       column: isNewline ? 0 : pos.column + 1,
@@ -66,10 +68,20 @@ export const any = (): Parser<string> => (input, pos) => {
 export const lit =
   <T extends string>(str: T): Parser<T> =>
   (input, pos) => {
+    if (str.length !== 0 && pos.offset >= input.length) {
+      return {
+        success: false,
+        error: {
+          message: "Unexpected EOF",
+          pos,
+        },
+      };
+    }
+
     let column = pos.column;
     let line = pos.line;
     for (let i = 0; i < str.length; i++) {
-      const char = input[pos.offset + i];
+      const char = input.charAt(pos.offset + i);
 
       if (char !== str[i]) {
         return {
@@ -95,7 +107,7 @@ export const lit =
 
     return {
       success: true,
-      value: str,
+      val: str,
       next: {
         offset: pos.offset + str.length,
         column,
@@ -107,8 +119,15 @@ export const lit =
 export const charClass =
   (charOrRanges: (string | [string, string])[]): Parser<string> =>
   (input, pos) => {
-    const char = input[pos.offset];
-    if (!char) {
+    if (charOrRanges.length !== 0 && pos.offset >= input.length) {
+      return {
+        success: false,
+        error: { message: "Unexpected EOF", pos },
+      };
+    }
+
+    const char = input?.charAt(pos.offset);
+    if (char === undefined) {
       return {
         success: false,
         error: { message: "Unexpected EOF", pos },
@@ -121,7 +140,7 @@ export const charClass =
           const isNewline = char === "\n";
           return {
             success: true,
-            value: char,
+            val: char,
             next: {
               offset: pos.offset + 1,
               column: isNewline ? 0 : pos.column + 1,
@@ -135,7 +154,7 @@ export const charClass =
           const isNewline = char === "\n";
           return {
             success: true,
-            value: char,
+            val: char,
             next: {
               offset: pos.offset + 1,
               column: isNewline ? 0 : pos.column + 1,
@@ -146,9 +165,20 @@ export const charClass =
       }
     }
 
+    const classToString = (charOrRange: string | [string, string]) => {
+      if (typeof charOrRange === "string") {
+        return charOrRange;
+      }
+
+      return `${charOrRange[0]}-${charOrRange[1]}`;
+    };
+
     return {
       success: false,
-      error: { message: `Expected "${charOrRanges}"`, pos },
+      error: {
+        message: `Expected [${charOrRanges.map(classToString).join("")}]`,
+        pos,
+      },
     };
   };
 
@@ -166,14 +196,14 @@ export const seq =
         return result;
       }
 
-      values.push(result.value);
+      values.push(result.val);
       currentPos = result.next;
     }
 
     return {
       success: true,
       // biome-ignore lint/suspicious/noExplicitAny:
-      value: values as any,
+      val: values as any,
       next: currentPos,
     };
   };
@@ -206,12 +236,12 @@ export const opt =
   (input, pos) => {
     const result = parser(input, pos);
     if (result.success) {
-      return { success: true, value: [result.value], next: result.next };
+      return { success: true, val: [result.val], next: result.next };
     }
 
     return {
       success: true,
-      value: [],
+      val: [],
       next: pos,
     };
   };
@@ -225,13 +255,13 @@ export const star =
     while (result.success && currentPos.offset < input.length) {
       currentPos = result.next;
 
-      results.push(result.value);
+      results.push(result.val);
       result = parser(input, currentPos);
     }
 
     return {
       success: true,
-      value: results,
+      val: results,
       next: currentPos,
     };
   };
@@ -242,9 +272,9 @@ export const plus =
     const results = star(parser)(input, pos);
 
     if (results.success) {
-      const value = results.value;
-      if (isNonEmptyArray(value)) {
-        return { ...results, value };
+      const val = results.val;
+      if (isNonEmptyArray(val)) {
+        return { ...results, val };
       }
     }
 
@@ -270,7 +300,7 @@ export const and =
 
     return {
       success: true,
-      value: undefined as never,
+      val: undefined as never,
       next: pos,
     };
   };
@@ -282,7 +312,7 @@ export const not =
     if (!result.success) {
       return {
         success: true,
-        value: undefined as never,
+        val: undefined as never,
         next: pos,
       };
     }
@@ -297,11 +327,11 @@ export const not =
   };
 
 export const map =
-  <T, U>(parser: Parser<T>, f: (value: T) => U): Parser<U> =>
+  <T, U>(parser: Parser<T>, f: (value: ParseSuccess<T>) => U): Parser<U> =>
   (input, index) => {
     const result = parser(input, index);
 
     return result.success
-      ? { ...result, value: f(result.value) }
+      ? { ...result, val: f(result) }
       : (result as ParseResult<U>);
   };

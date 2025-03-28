@@ -43,7 +43,7 @@ describe("any", () => {
     const result = any()(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.value).toBe("a");
+      expect(result.val).toBe("a");
       expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
     }
   });
@@ -54,7 +54,7 @@ describe("any", () => {
     const result = any()(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.value).toBe("\n");
+      expect(result.val).toBe("\n");
       expect(result.next).toEqual({ offset: 1, column: 0, line: 2 });
     }
   });
@@ -89,7 +89,7 @@ describe("string", () => {
     const result = lit("abc")(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.value).toBe("abc");
+      expect(result.val).toBe("abc");
       expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
     }
   });
@@ -111,7 +111,7 @@ describe("string", () => {
     const result = lit("a\nb")(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.value).toBe("a\nb");
+      expect(result.val).toBe("a\nb");
       expect(result.next).toEqual({ offset: 3, column: 1, line: 2 });
     }
   });
@@ -124,7 +124,7 @@ describe("charClass", () => {
     const result = charClass(["a"])(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.value).toBe("a");
+      expect(result.val).toBe("a");
       expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
     }
   });
@@ -135,7 +135,7 @@ describe("charClass", () => {
     const result = charClass([["a", "c"]])(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.value).toBe("b");
+      expect(result.val).toBe("b");
       expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
     }
   });
@@ -146,7 +146,7 @@ describe("charClass", () => {
     const result = charClass([["a", "c"]])(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.message).toBe(`Expected "a,c"`);
+      expect(result.error.message).toBe("Expected [a-c]");
       expect(result.error.pos).toEqual(pos);
     }
   });
@@ -157,7 +157,7 @@ describe("charClass", () => {
     const result = charClass(["\n"])(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.value).toBe("\n");
+      expect(result.val).toBe("\n");
       expect(result.next).toEqual({ offset: 1, column: 0, line: 2 });
     }
   });
@@ -181,7 +181,7 @@ describe("seq", () => {
     const result = seq(lit("a"), lit("b"), lit("c"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.value).toEqual(["a", "b", "c"]);
+      expect(result.val).toEqual(["a", "b", "c"]);
       expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
     }
   });
@@ -205,7 +205,7 @@ describe("choice", () => {
     const result = choice(lit("a"), lit("b"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.value).toBe("a");
+      expect(result.val).toBe("a");
       expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
     }
   });
@@ -229,7 +229,7 @@ describe("opt", () => {
     const result = opt(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.value).toEqual(["a"]);
+      expect(result.val).toEqual(["a"]);
       expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
     }
   });
@@ -240,7 +240,7 @@ describe("opt", () => {
     const result = opt(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.value).toEqual([]);
+      expect(result.val).toEqual([]);
       expect(result.next).toEqual(pos);
     }
   });
@@ -253,7 +253,7 @@ describe("star", () => {
     const result = star(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.value).toEqual(["a", "a", "a"]);
+      expect(result.val).toEqual(["a", "a", "a"]);
       expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
     }
   });
@@ -264,7 +264,7 @@ describe("star", () => {
     const result = star(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.value).toEqual([]);
+      expect(result.val).toEqual([]);
       expect(result.next).toEqual(pos);
     }
   });
@@ -277,7 +277,7 @@ describe("plus", () => {
     const result = plus(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.value).toEqual(["a", "a", "a"]);
+      expect(result.val).toEqual(["a", "a", "a"]);
       expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
     }
   });
@@ -301,7 +301,7 @@ describe("positive", () => {
     const result = and(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.value).toBeUndefined();
+      expect(result.val).toBeUndefined();
       expect(result.next).toEqual(pos);
     }
   });
@@ -325,7 +325,7 @@ describe("negative", () => {
     const result = not(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.value).toBeUndefined();
+      expect(result.val).toBeUndefined();
       expect(result.next).toEqual(pos);
     }
   });
@@ -346,10 +346,10 @@ describe("map", () => {
   it("should map the value", () => {
     const input = "a";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = map(lit("a"), (value) => value.toUpperCase())(input, pos);
+    const result = map(lit("a"), ($) => $.val.toUpperCase())(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.value).toBe("A");
+      expect(result.val).toBe("A");
       expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
     }
   });
@@ -357,7 +357,7 @@ describe("map", () => {
   it("should return error if parser fails", () => {
     const input = "b";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = map(lit("a"), (value) => value.toUpperCase())(input, pos);
+    const result = map(lit("a"), ($) => $.val.toUpperCase())(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toBe("Unexpected character");
