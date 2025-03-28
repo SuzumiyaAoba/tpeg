@@ -64,7 +64,7 @@ export const any = (): Parser<string> => (input, pos) => {
 };
 
 export const lit =
-  (str: string): Parser<string> =>
+  <T extends string>(str: T): Parser<T> =>
   (input, pos) => {
     let column = pos.column;
     let line = pos.line;
