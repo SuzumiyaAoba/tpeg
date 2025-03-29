@@ -346,7 +346,7 @@ describe("map", () => {
   it("should map the value", () => {
     const input = "a";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = map(lit("a"), ($) => $.val.toUpperCase())(input, pos);
+    const result = map(lit("a"), ($) => $.toUpperCase())(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toBe("A");
@@ -357,7 +357,7 @@ describe("map", () => {
   it("should return error if parser fails", () => {
     const input = "b";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = map(lit("a"), ($) => $.val.toUpperCase())(input, pos);
+    const result = map(lit("a"), ($) => $.toUpperCase())(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toBe("Unexpected character");

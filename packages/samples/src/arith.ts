@@ -42,7 +42,7 @@ export const Digit = charClass([["0", "9"]]);
  */
 // biome-ignore lint/suspicious/noShadowRestrictedNames:
 export const Number = map(plus(Digit), ($) =>
-  global.Number.parseInt($.val.join("")),
+  global.Number.parseInt($.join("")),
 );
 
 /**
@@ -53,10 +53,10 @@ export const Number = map(plus(Digit), ($) =>
 export function Factor(input: string, pos: Pos): ParseResult<number> {
   return map(
     choice(
-      map(seq(_, lit("("), _, Expr, _, lit(")"), _), ($) => $.val[3]),
-      map(seq(_, Number, _), ($) => $.val[1]),
+      map(seq(_, lit("("), _, Expr, _, lit(")"), _), ($) => $[3]),
+      map(seq(_, Number, _), ($) => $[1]),
     ),
-    ($) => $.val,
+    ($) => $,
   )(input, pos);
 }
 
@@ -78,9 +78,9 @@ export function Term(input: string, pos: Pos): ParseResult<number> {
       ),
     ),
     ($) => {
-      const left = $.val[0];
+      const left = $[0];
 
-      return $.val[1].reduce((acc, [op, factor]) => {
+      return $[1].reduce((acc, [op, factor]) => {
         switch (op) {
           case "*":
             return acc * factor;
@@ -107,9 +107,9 @@ export function Expr(input: string, pos: Pos): ParseResult<number> {
   return map(
     seq(Term, star(choice(seq(lit("+"), Term), seq(lit("-"), Term)))),
     ($) => {
-      const left = $.val[0];
+      const left = $[0];
 
-      return $.val[1].reduce((acc, [op, term]) => {
+      return $[1].reduce((acc, [op, term]) => {
         switch (op) {
           case "+":
             return acc + term;
@@ -125,4 +125,4 @@ export function Expr(input: string, pos: Pos): ParseResult<number> {
   )(input, pos);
 }
 
-export const Grammar = map(seq(Expr, EOF), ($) => $.val[0]);
+export const Grammar = map(seq(Expr, EOF), ($) => $[0]);

@@ -17,7 +17,7 @@
     },
     "packages/core": {
       "name": "tpeg",
-      "version": "0.0.12",
+      "version": "0.0.13",
     },
     "packages/samples": {
       "name": "tpeg-samples",
