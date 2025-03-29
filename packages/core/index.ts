@@ -356,6 +356,10 @@ export const notPredicate =
     };
   };
 
+export const not = notPredicate;
+
+export const negative = notPredicate;
+
 export const map =
   <T, U>(parser: Parser<T>, f: (value: ParseSuccess<T>) => U): Parser<U> =>
   (input, index) => {
@@ -366,9 +370,10 @@ export const map =
       : (result as ParseResult<U>);
   };
 
-export const not = notPredicate;
+export const value = <T>(parser: Parser<T>): Parser<T> =>
+  map(parser, ($) => $.val);
 
-export const negative = notPredicate;
+export const val = value;
 
 //
 // Utilities

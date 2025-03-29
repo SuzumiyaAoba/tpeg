@@ -1,21 +1,19 @@
 {
   "name": "tpeg",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "type": "module",
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@types/bun": "latest"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.8.2"
   },
   "dependencies": {
     "husky": "^9.1.7",
     "lint-staged": "^15.5.0"
   },
-  "workspaces": [
-    "packages/*"
-  ],
+  "workspaces": ["packages/*"],
   "scripts": {
     "lint": "bunx biome lint --write ./packages",
     "check": "bunx biome check --write ./packages",
