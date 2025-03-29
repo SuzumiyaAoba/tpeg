@@ -44,7 +44,7 @@ export interface ParseError {
 export type Parser<T> = (input: string, pos: Pos) => ParseResult<T>;
 
 //
-// Combinators
+// Primitive combinators
 //
 
 export const anyChar = (): Parser<string> => (input, pos) => {
@@ -284,6 +284,8 @@ export const zeroOrMore =
 
 export const star = zeroOrMore;
 
+export const many = zeroOrMore;
+
 export const oneOrMore =
   <T>(parser: Parser<T>): Parser<NonEmptyArray<T>> =>
   (input, pos) => {
@@ -303,6 +305,8 @@ export const oneOrMore =
   };
 
 export const plus = oneOrMore;
+
+export const many1 = oneOrMore;
 
 export const andPredicate =
   <T>(parser: Parser<T>): Parser<never> =>
@@ -328,6 +332,8 @@ export const andPredicate =
 export const and = andPredicate;
 
 export const positive = andPredicate;
+
+export const assert = andPredicate;
 
 export const notPredicate =
   <T>(parser: Parser<T>): Parser<never> =>
