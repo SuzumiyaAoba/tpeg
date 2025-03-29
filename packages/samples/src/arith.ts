@@ -42,7 +42,7 @@ export const Digit = charClass([["0", "9"]]);
  */
 // biome-ignore lint/suspicious/noShadowRestrictedNames:
 export const Number = map(plus(Digit), ($) =>
-  global.Number.parseInt($.val.join(""))
+  global.Number.parseInt($.val.join("")),
 );
 
 /**
@@ -54,9 +54,9 @@ export function Factor(input: string, pos: Pos): ParseResult<number> {
   return map(
     choice(
       map(seq(_, lit("("), _, Expr, _, lit(")"), _), ($) => $.val[3]),
-      map(seq(_, Number, _), ($) => $.val[1])
+      map(seq(_, Number, _), ($) => $.val[1]),
     ),
-    ($) => $.val
+    ($) => $.val,
   )(input, pos);
 }
 
@@ -73,9 +73,9 @@ export function Term(input: string, pos: Pos): ParseResult<number> {
         choice(
           seq(lit("*"), Factor),
           seq(lit("/"), Factor),
-          seq(lit("%"), Factor)
-        )
-      )
+          seq(lit("%"), Factor),
+        ),
+      ),
     ),
     ($) => {
       const left = $.val[0];
@@ -94,7 +94,7 @@ export function Term(input: string, pos: Pos): ParseResult<number> {
           }
         }
       }, left);
-    }
+    },
   )(input, pos);
 }
 
@@ -121,7 +121,7 @@ export function Expr(input: string, pos: Pos): ParseResult<number> {
           }
         }
       }, left);
-    }
+    },
   )(input, pos);
 }
 

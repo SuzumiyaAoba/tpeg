@@ -49,6 +49,14 @@ describe("Grammar", () => {
     });
   });
 
+  it("should calculate float numbers", () => {
+    expect(Grammar("1/2", createPos(0))).toEqual({
+      success: true,
+      val: 0.5,
+      next: createPos(3),
+    });
+  });
+
   it("should parse modulo", () => {
     expect(Grammar("7%3", createPos(0))).toEqual({
       success: true,

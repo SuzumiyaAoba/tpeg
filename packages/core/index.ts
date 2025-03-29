@@ -1,3 +1,7 @@
+//
+// Types
+//
+
 /**
  * @see https://zenn.dev/chot/articles/321f58dfa01339
  */
@@ -8,7 +12,7 @@ export const isEmptyArray = <T>(arr: readonly T[]): arr is [] => {
 };
 
 export const isNonEmptyArray = <T>(
-  arr: readonly T[]
+  arr: readonly T[],
 ): arr is NonEmptyArray<T> => {
   return arr.length > 0;
 };
@@ -39,7 +43,11 @@ export interface ParseError {
 
 export type Parser<T> = (input: string, pos: Pos) => ParseResult<T>;
 
-export const any = (): Parser<string> => (input, pos) => {
+//
+// Combinators
+//
+
+export const anyChar = (): Parser<string> => (input, pos) => {
   const char = input?.[pos.offset];
 
   if (char === undefined) {
@@ -65,7 +73,9 @@ export const any = (): Parser<string> => (input, pos) => {
   };
 };
 
-export const lit =
+export const any = anyChar;
+
+export const literal =
   <T extends string>(str: T): Parser<T> =>
   (input, pos) => {
     if (str.length !== 0 && pos.offset >= input.length) {
@@ -115,6 +125,8 @@ export const lit =
       },
     };
   };
+
+export const lit = literal;
 
 export const charClass =
   (charOrRanges: (string | [string, string])[]): Parser<string> =>
@@ -182,7 +194,7 @@ export const charClass =
     };
   };
 
-export const seq =
+export const sequence =
   <P extends Parser<unknown>[]>(
     ...parsers: P
   ): Parser<{ [K in keyof P]: P[K] extends Parser<infer T> ? T : never }> =>
@@ -231,7 +243,9 @@ export const choice =
     };
   };
 
-export const opt =
+export const seq = sequence;
+
+export const optional =
   <T>(parser: Parser<T>): Parser<[T] | []> =>
   (input, pos) => {
     const result = parser(input, pos);
@@ -246,7 +260,9 @@ export const opt =
     };
   };
 
-export const star =
+export const opt = optional;
+
+export const zeroOrMore =
   <T>(parser: Parser<T>): Parser<T[]> =>
   (input, pos) => {
     const results: T[] = [];
@@ -266,7 +282,9 @@ export const star =
     };
   };
 
-export const plus =
+export const star = zeroOrMore;
+
+export const oneOrMore =
   <T>(parser: Parser<T>): Parser<NonEmptyArray<T>> =>
   (input, pos) => {
     const results = star(parser)(input, pos);
@@ -284,7 +302,9 @@ export const plus =
     };
   };
 
-export const and =
+export const plus = oneOrMore;
+
+export const andPredicate =
   <T>(parser: Parser<T>): Parser<never> =>
   (input, pos) => {
     const result = parser(input, pos);
@@ -305,7 +325,11 @@ export const and =
     };
   };
 
-export const not =
+export const and = andPredicate;
+
+export const positive = andPredicate;
+
+export const notPredicate =
   <T>(parser: Parser<T>): Parser<never> =>
   (input, pos) => {
     const result = parser(input, pos);
@@ -335,3 +359,13 @@ export const map =
       ? { ...result, val: f(result) }
       : (result as ParseResult<U>);
   };
+
+export const not = notPredicate;
+
+export const negative = notPredicate;
+
+//
+// Utilities
+//
+
+export const EOF = not(any());
