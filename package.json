@@ -1,6 +1,5 @@
 {
   "name": "tpeg",
-  "version": "0.0.11",
   "type": "module",
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

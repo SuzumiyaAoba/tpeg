@@ -12,12 +12,12 @@
         "@types/bun": "latest",
       },
       "peerDependencies": {
-        "typescript": "^5",
+        "typescript": "^5.8.2",
       },
     },
     "packages/core": {
       "name": "tpeg",
-      "version": "0.0.11",
+      "version": "0.0.12",
     },
     "packages/samples": {
       "name": "tpeg-samples",
