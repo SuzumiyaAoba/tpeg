@@ -1,15 +1,15 @@
 import {
-  type Pos,
   type ParseResult,
-  seq,
+  type Pos,
+  any,
+  charClass,
   choice,
   lit,
-  charClass,
-  plus,
-  not,
-  star,
   map,
-  any,
+  not,
+  plus,
+  seq,
+  star,
 } from "tpeg";
 
 export const EOF = not(any());

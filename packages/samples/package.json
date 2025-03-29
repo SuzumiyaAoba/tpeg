@@ -5,6 +5,5 @@
   "dependencies": {
     "tpeg": "workspace:*"
   },
-  "scripts": {
-  }
+  "scripts": {}
 }

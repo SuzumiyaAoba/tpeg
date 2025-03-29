@@ -1,6 +1,6 @@
 {
   "name": "tpeg",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "module": "index.ts",
   "type": "module",
   "exports": {
@@ -13,12 +13,7 @@
       }
     }
   },
-  "files": [
-    "*.ts",
-    "dist",
-    "README.md",
-    "package.json"
-  ],
+  "files": ["*.ts", "dist", "README.md", "package.json"],
   "scripts": {
     "prepare": "bunx husky",
     "dev": "bun run ./index.ts",
