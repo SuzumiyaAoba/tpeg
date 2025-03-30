@@ -16,28 +16,28 @@ export const EOF = not(any());
 
 /**
  * ```txt
- * Space <- [ \t];
+ * Space <- [ \t]
  * ```
  */
-export const Space = charClass([" ", "\t"]);
+export const Space = charClass(" ", "\t");
 
 /**
  * ```txt
- * _ <- Space*;
+ * _ <- Space*
  * ```
  */
 export const _ = star(Space);
 
 /**
  * ```txt
- * Digit <- [0-9];
+ * Digit <- [0-9]
  * ```
  */
-export const Digit = charClass([["0", "9"]]);
+export const Digit = charClass(["0", "9"]);
 
 /**
  * ```txt
- * Number <- Digit+;
+ * Number <- Digit+
  * ```
  */
 // biome-ignore lint/suspicious/noShadowRestrictedNames:
@@ -47,7 +47,7 @@ export const Number = map(plus(Digit), ($) =>
 
 /**
  * ```txt
- * Factor <- _ "(" _ Expr _ ")" _ / _ Number _;
+ * Factor <- _ "(" _ Expr _ ")" _ / _ Number _
  * ```
  */
 export function Factor(input: string, pos: Pos): ParseResult<number> {
@@ -62,7 +62,7 @@ export function Factor(input: string, pos: Pos): ParseResult<number> {
 
 /**
  * ```txt
- * Term <- Factor ("*" Factor / "/" Factor / "%" Factor)*;
+ * Term <- Factor ("*" Factor / "/" Factor / "%" Factor)*
  * ```
  */
 export function Term(input: string, pos: Pos): ParseResult<number> {
@@ -100,7 +100,7 @@ export function Term(input: string, pos: Pos): ParseResult<number> {
 
 /**
  * ```txt
- * Expr <- Term ("+" Term / "-" Term)*;
+ * Expr <- Term ("+" Term / "-" Term)*
  * ```
  */
 export function Expr(input: string, pos: Pos): ParseResult<number> {

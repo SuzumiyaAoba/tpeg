@@ -121,7 +121,7 @@ describe("charClass", () => {
   it("should parse a single character", () => {
     const input = "a";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = charClass(["a"])(input, pos);
+    const result = charClass("a")(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toBe("a");
@@ -132,7 +132,7 @@ describe("charClass", () => {
   it("should parse a character within a range", () => {
     const input = "b";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = charClass([["a", "c"]])(input, pos);
+    const result = charClass(["a", "c"])(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toBe("b");
@@ -143,7 +143,7 @@ describe("charClass", () => {
   it("should return error if character does not match", () => {
     const input = "d";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = charClass([["a", "c"]])(input, pos);
+    const result = charClass(["a", "c"])(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toBe("Expected [a-c]");
@@ -154,7 +154,7 @@ describe("charClass", () => {
   it("should handle newline", () => {
     const input = "\n";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = charClass(["\n"])(input, pos);
+    const result = charClass("\n")(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toBe("\n");
@@ -165,7 +165,7 @@ describe("charClass", () => {
   it("should return error for EOF", () => {
     const input = "";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = charClass(["a"])(input, pos);
+    const result = charClass("a")(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toBe("Unexpected EOF");

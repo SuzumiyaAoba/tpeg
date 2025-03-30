@@ -8,11 +8,18 @@ const createPos = (offset: number, line = 1, column?: number) => ({
   column: column ?? offset,
 });
 
+const START = {
+  offset: 0,
+  column: 0,
+  line: 1,
+} as const;
+
 describe("Grammar", () => {
   it("should parse simple numbers", () => {
     expect(Grammar("123", createPos(0))).toEqual({
       success: true,
       val: 123,
+      current: START,
       next: createPos(3),
     });
   });
@@ -21,6 +28,7 @@ describe("Grammar", () => {
     expect(Grammar("1+2", createPos(0))).toEqual({
       success: true,
       val: 3,
+      current: START,
       next: createPos(3),
     });
   });
@@ -29,6 +37,7 @@ describe("Grammar", () => {
     expect(Grammar("3-1", createPos(0))).toEqual({
       success: true,
       val: 2,
+      current: START,
       next: createPos(3),
     });
   });
@@ -37,6 +46,7 @@ describe("Grammar", () => {
     expect(Grammar("2*3", createPos(0))).toEqual({
       success: true,
       val: 6,
+      current: START,
       next: createPos(3),
     });
   });
@@ -45,6 +55,7 @@ describe("Grammar", () => {
     expect(Grammar("6/2", createPos(0))).toEqual({
       success: true,
       val: 3,
+      current: START,
       next: createPos(3),
     });
   });
@@ -53,6 +64,7 @@ describe("Grammar", () => {
     expect(Grammar("1/2", createPos(0))).toEqual({
       success: true,
       val: 0.5,
+      current: START,
       next: createPos(3),
     });
   });
@@ -61,6 +73,7 @@ describe("Grammar", () => {
     expect(Grammar("7%3", createPos(0))).toEqual({
       success: true,
       val: 1,
+      current: START,
       next: createPos(3),
     });
   });
@@ -69,6 +82,7 @@ describe("Grammar", () => {
     expect(Grammar("1+2*3", createPos(0))).toEqual({
       success: true,
       val: 7,
+      current: START,
       next: createPos(5),
     });
   });
@@ -77,6 +91,7 @@ describe("Grammar", () => {
     expect(Grammar("(1+2)*3", createPos(0))).toEqual({
       success: true,
       val: 9,
+      current: START,
       next: createPos(7),
     });
   });
@@ -85,6 +100,7 @@ describe("Grammar", () => {
     expect(Grammar("(1+2)*3-4/2", createPos(0))).toEqual({
       success: true,
       val: 7,
+      current: START,
       next: createPos(11),
     });
   });
@@ -108,6 +124,7 @@ describe("Grammar", () => {
     expect(Grammar(" 1 + 2 ", createPos(0))).toEqual({
       success: true,
       val: 3,
+      current: START,
       next: createPos(7),
     });
   });
@@ -116,6 +133,7 @@ describe("Grammar", () => {
     expect(Grammar("  1  +  2  ", createPos(0))).toEqual({
       success: true,
       val: 3,
+      current: START,
       next: createPos(11),
     });
   });
@@ -124,6 +142,7 @@ describe("Grammar", () => {
     expect(Grammar("1\t+\t2", createPos(0))).toEqual({
       success: true,
       val: 3,
+      current: START,
       next: createPos(5),
     });
   });

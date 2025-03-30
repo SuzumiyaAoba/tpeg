@@ -26,6 +26,7 @@ export type Pos = {
 export type ParseSuccess<T> = {
   success: true;
   val: T;
+  current: Pos;
   next: Pos;
 };
 
@@ -65,6 +66,7 @@ export const anyChar = (): Parser<string> => (input, pos) => {
   return {
     success: true,
     val: char,
+    current: pos,
     next: {
       offset: pos.offset + 1,
       column: isNewline ? 0 : pos.column + 1,
@@ -118,6 +120,7 @@ export const literal =
     return {
       success: true,
       val: str,
+      current: pos,
       next: {
         offset: pos.offset + str.length,
         column,
@@ -129,7 +132,7 @@ export const literal =
 export const lit = literal;
 
 export const charClass =
-  (charOrRanges: (string | [string, string])[]): Parser<string> =>
+  (...charOrRanges: (string | [string, string])[]): Parser<string> =>
   (input, pos) => {
     if (charOrRanges.length !== 0 && pos.offset >= input.length) {
       return {
@@ -153,6 +156,7 @@ export const charClass =
           return {
             success: true,
             val: char,
+            current: pos,
             next: {
               offset: pos.offset + 1,
               column: isNewline ? 0 : pos.column + 1,
@@ -167,6 +171,7 @@ export const charClass =
           return {
             success: true,
             val: char,
+            current: pos,
             next: {
               offset: pos.offset + 1,
               column: isNewline ? 0 : pos.column + 1,
@@ -216,6 +221,7 @@ export const sequence =
       success: true,
       // biome-ignore lint/suspicious/noExplicitAny:
       val: values as any,
+      current: pos,
       next: currentPos,
     };
   };
@@ -250,12 +256,18 @@ export const optional =
   (input, pos) => {
     const result = parser(input, pos);
     if (result.success) {
-      return { success: true, val: [result.val], next: result.next };
+      return {
+        success: true,
+        val: [result.val],
+        current: pos,
+        next: result.next,
+      };
     }
 
     return {
       success: true,
       val: [],
+      current: pos,
       next: pos,
     };
   };
@@ -278,6 +290,7 @@ export const zeroOrMore =
     return {
       success: true,
       val: results,
+      current: pos,
       next: currentPos,
     };
   };
@@ -325,6 +338,7 @@ export const andPredicate =
     return {
       success: true,
       val: undefined as never,
+      current: pos,
       next: pos,
     };
   };
@@ -343,6 +357,7 @@ export const notPredicate =
       return {
         success: true,
         val: undefined as never,
+        current: pos,
         next: pos,
       };
     }
