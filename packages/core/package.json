@@ -1,6 +1,7 @@
 {
   "name": "tpeg",
   "version": "0.0.13",
+  "license": "MIT",
   "module": "index.ts",
   "type": "module",
   "exports": {
