@@ -1,15 +1,16 @@
 # tpeg
 
+[![npm version](https://badge.fury.io/js/tpeg.svg)](https://badge.fury.io/js/tpeg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 `tpeg` is a lightweight and flexible library for parsing text using Parsing Expression Grammars (PEGs) in TypeScript. It provides a set of combinators that allow you to define grammars in a declarative way, making it easy to parse complex text formats.
 
-## Features
+## ✨ Key Features
 
--   **Lightweight:** Minimal dependencies and a small footprint.
--   **Declarative:** Define grammars using combinators, making them easy to read and understand.
--   **Flexible:** Supports a wide range of parsing operations, including sequence, choice, repetition, and predicates.
--   **TypeScript:** Built with TypeScript, providing type safety and excellent developer experience.
--   **Error Reporting:** Provides detailed error messages with position information to help you debug your grammars.
-- **PEG Parser:** Includes a parser for parsing PEG grammars themselves.
+- **🚀 Lightweight:** Minimal dependencies and a small footprint.
+- **🧩 Declarative Grammars:** Define grammars using composable combinators, resulting in clean, readable, and maintainable code.
+- **🛠️ Flexible & Powerful:** Supports a wide array of parsing operations, including sequence, choice, repetition, and lookahead predicates.
+- **🛡️ TypeScript-First:** Built from the ground up with TypeScript, providing robust type safety and an exceptional developer experience.
 
 ## Usage
 
@@ -30,11 +31,20 @@ tpeg provides a set of core combinators for building parsers:
 - `map(parser, f)`: Transforms the result of a parser using a mapping function.
 - `mapResult(parser, f)`: Transforms the result of a parser using a mapping function that receives the whole ParseSuccess object.
 
-### Examples
+## 📚 Examples
 
-- [simple arithmetic expression parser](./packages/samples/src/arith/)
-- [PEG Grammar Parser](./packages/samples/src/peg/)
+Explore these examples to see tpeg in action:
 
-## Contributing
+- [Simple Arithmetic Expression Parser](./packages/samples/src/arith/): Parse and evaluate basic arithmetic expressions.
+- [PEG Grammar Parser](./packages/samples/src/peg/): Parse PEG grammars themselves, demonstrating the power of tpeg.
 
-Contributions are welcome! Please feel free to open issues or submit pull requests.
+## 🤝 Contributing
+
+We welcome contributions from the community! If you're interested in helping improve tpeg, please:
+
+- Open an issue to report bugs or suggest new features.
+- Submit a pull request with your proposed changes.
+
+## 📄 License
+
+This project is licensed under the MIT License.
