@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { Grammar } from "./arith";
+import { Grammar } from "./index";
 
 // Helper function to create a Pos object
 const createPos = (offset: number, line = 1, column?: number) => ({

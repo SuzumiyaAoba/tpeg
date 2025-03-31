@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import path from "node:path";
-import { Grammar } from "./peg";
+import { Grammar } from "./index";
 
 describe("Grammar", () => {
   it("", async () => {
