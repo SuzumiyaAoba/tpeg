@@ -1,4 +1,4 @@
-import type { Pos } from "tpeg";
+import type { Pos } from "tpeg-combinator";
 
 export type ExprType = Expr["type"];
 

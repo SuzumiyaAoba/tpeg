@@ -1,9 +1,9 @@
-# tpeg
+# tpeg-combinator
 
 [![npm version](https://badge.fury.io/js/tpeg.svg)](https://badge.fury.io/js/tpeg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-`tpeg` is a lightweight and flexible library for parsing text using Parsing Expression Grammars (PEGs) in TypeScript. It provides a set of combinators that allow you to define grammars in a declarative way, making it easy to parse complex text formats.
+`tpeg-combinator` is a lightweight and flexible library for parsing text using Parsing Expression Grammars (PEGs) in TypeScript. It provides a set of combinators that allow you to define grammars in a declarative way, making it easy to parse complex text formats.
 
 ## ✨ Key Features
 

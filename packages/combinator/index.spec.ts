@@ -65,7 +65,7 @@ describe("any", () => {
     const result = any()(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.message).toBe("Unexpected end of input");
+      expect(result.error.message).toBe("Unexpected EOI");
       expect(result.error.pos).toEqual(pos);
     }
   });
@@ -76,7 +76,7 @@ describe("any", () => {
     const result = any()(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.message).toBe("Unexpected end of input");
+      expect(result.error.message).toBe("Unexpected EOI");
       expect(result.error.pos).toEqual(pos);
     }
   });

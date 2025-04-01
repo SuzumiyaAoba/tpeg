@@ -15,15 +15,14 @@
         "typescript": "^5.8.2",
       },
     },
-    "packages/core": {
-      "name": "tpeg",
-      "version": "0.0.13",
+    "packages/combinator": {
+      "name": "tpeg-combinator",
+      "version": "0.0.1",
     },
     "packages/samples": {
       "name": "tpeg-samples",
-      "version": "0.0.1",
       "dependencies": {
-        "tpeg": "workspace:*",
+        "tpeg-combinator": "workspace:*",
       },
     },
   },
@@ -152,7 +151,7 @@
 
     "to-regex-range": ["to-regex-range@5.0.1", "", { "dependencies": { "is-number": "^7.0.0" } }, "sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ=="],
 
-    "tpeg": ["tpeg@workspace:packages/core"],
+    "tpeg-combinator": ["tpeg-combinator@workspace:packages/combinator"],
 
     "tpeg-samples": ["tpeg-samples@workspace:packages/samples"],
 

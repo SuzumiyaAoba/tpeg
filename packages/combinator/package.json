@@ -1,6 +1,6 @@
 {
-  "name": "tpeg",
-  "version": "0.0.14",
+  "name": "tpeg-combinator",
+  "version": "0.0.1",
   "license": "MIT",
   "module": "index.ts",
   "type": "module",
@@ -14,14 +14,8 @@
       }
     }
   },
-  "files": [
-    "*.ts",
-    "dist",
-    "README.md",
-    "package.json"
-  ],
+  "files": ["*.ts", "dist", "README.md", "package.json"],
   "scripts": {
-    "prepare": "bunx husky",
     "dev": "bun run ./index.ts",
     "typecheck": "tsc --noEmit",
     "build": "bun run build:types && bun build ./index.ts --outdir ./dist",

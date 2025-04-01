@@ -17,6 +17,8 @@ export const isNonEmptyArray = <T>(
   return arr.length > 0;
 };
 
+type NonEmptyString<T extends string = string> = T extends "" ? never : T;
+
 export type Pos = {
   readonly offset: number;
   readonly column: number;
@@ -44,6 +46,16 @@ export interface ParseError {
 
 export type Parser<T> = (input: string, pos: Pos) => ParseResult<T>;
 
+const nextPos = (char: string, { offset, column, line }: Pos): Pos => {
+  const isNewline = char === "\n";
+
+  return {
+    offset: offset + 1,
+    column: isNewline ? 0 : column + 1,
+    line: isNewline ? line + 1 : line,
+  };
+};
+
 //
 // Primitive combinators
 //
@@ -55,36 +67,30 @@ export const anyChar = (): Parser<string> => (input, pos) => {
     return {
       success: false,
       error: {
-        message: "Unexpected end of input",
+        message: "Unexpected EOI",
         pos,
       },
     };
   }
 
-  const isNewline = char === "\n";
-
   return {
     success: true,
     val: char,
     current: pos,
-    next: {
-      offset: pos.offset + 1,
-      column: isNewline ? 0 : pos.column + 1,
-      line: pos.line + (isNewline ? 1 : 0),
-    },
+    next: nextPos(char, pos),
   };
 };
 
 export const any = anyChar;
 
 export const literal =
-  <T extends string>(str: T): Parser<T> =>
+  <T extends string>(str: NonEmptyString<T>): Parser<T> =>
   (input, pos) => {
-    if (str.length !== 0 && pos.offset >= input.length) {
+    if (pos.offset >= input.length) {
       return {
         success: false,
         error: {
-          message: "Unexpected EOF",
+          message: "Unexpected EOI",
           pos,
         },
       };
@@ -95,7 +101,7 @@ export const literal =
     for (let i = 0; i < str.length; i++) {
       const char = input.charAt(pos.offset + i);
 
-      if (char !== str[i]) {
+      if (char !== str.charAt(i)) {
         return {
           success: false,
           error: {
@@ -132,16 +138,20 @@ export const literal =
 export const lit = literal;
 
 export const charClass =
-  (...charOrRanges: (string | [string, string])[]): Parser<string> =>
+  (
+    ...charOrRanges: NonEmptyArray<
+      NonEmptyString | [NonEmptyString, NonEmptyString]
+    >
+  ): Parser<string> =>
   (input, pos) => {
-    if (charOrRanges.length !== 0 && pos.offset >= input.length) {
+    if (pos.offset >= input.length) {
       return {
         success: false,
         error: { message: "Unexpected EOF", pos },
       };
     }
 
-    const char = input?.charAt(pos.offset);
+    const char = input.charAt(pos.offset);
     if (char === undefined) {
       return {
         success: false,
@@ -152,31 +162,21 @@ export const charClass =
     for (const charOrRange of charOrRanges) {
       if (typeof charOrRange === "string") {
         if (char === charOrRange) {
-          const isNewline = char === "\n";
           return {
             success: true,
             val: char,
             current: pos,
-            next: {
-              offset: pos.offset + 1,
-              column: isNewline ? 0 : pos.column + 1,
-              line: isNewline ? pos.line + 1 : pos.line,
-            },
+            next: nextPos(char, pos),
           };
         }
       } else {
         const [start, stop] = charOrRange;
         if (start <= char && char <= stop) {
-          const isNewline = char === "\n";
           return {
             success: true,
             val: char,
             current: pos,
-            next: {
-              offset: pos.offset + 1,
-              column: isNewline ? 0 : pos.column + 1,
-              line: isNewline ? pos.line + 1 : pos.line,
-            },
+            next: nextPos(char, pos),
           };
         }
       }

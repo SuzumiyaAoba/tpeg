@@ -3,8 +3,9 @@
   "type": "module",
   "private": true,
   "dependencies": {
-    "tpeg": "workspace:*"
+    "tpeg-combinator": "workspace:*"
   },
   "scripts": {
+    "typecheck": "tsc --noEmit"
   }
 }
