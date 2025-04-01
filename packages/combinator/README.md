@@ -45,7 +45,7 @@ const parser = anyChar();
 // Success case
 const successResult = parse(parser)("a");
 if (successResult.success) {
-  console.log(successResult.value); // Output: "a"
+  console.log(successResult.val); // Output: "a"
   console.log(successResult.next.offset); // Output: 1
 }
 
@@ -72,7 +72,7 @@ const parser = literal("hello");
 // Success case
 const successResult = parse(parser)("hello world");
 if (successResult.success) {
-  console.log(successResult.value); // Output: "hello"
+  console.log(successResult.val); // Output: "hello"
   console.log(successResult.next.offset); // Output: 5
 }
 
@@ -107,7 +107,7 @@ const lowerCaseParser = charClass(["a", "z"]);
 // Success case
 const successResult1 = parse(lowerCaseParser)("b");
 if (successResult1.success) {
-  console.log(successResult1.value); // Output: "b"
+  console.log(successResult1.val); // Output: "b"
   console.log(successResult1.next.offset); // Output: 1
 }
 
@@ -123,17 +123,17 @@ const digitParser = charClass(["0", "9"]);
 // Success case
 const successResult2 = parse(digitParser)("5");
 if (successResult2.success) {
-  console.log(successResult2.value); // Output: "5"
+  console.log(successResult2.val); // Output: "5"
   console.log(successResult2.next.offset); // Output: 1
 }
 
 // Parse 'a', 'b', or 'c'
-const abcParser = charClass("abc");
+const abcParser = charClass("a", "b", "c");
 
 // Success case
 const successResult3 = parse(abcParser)("a");
 if (successResult3.success) {
-  console.log(successResult3.value); // Output: "a"
+  console.log(successResult3.val); // Output: "a"
   console.log(successResult3.next.offset); // Output: 1
 }
 
@@ -149,7 +149,7 @@ const alphanumericParser = charClass(["a", "z"], ["A", "Z"], ["0", "9"]);
 // Success case
 const successResult4 = parse(alphanumericParser)("Z");
 if (successResult4.success) {
-  console.log(successResult4.value); // Output: "Z"
+  console.log(successResult4.val); // Output: "Z"
   console.log(successResult4.next.offset); // Output: 1
 }
 ```
@@ -169,7 +169,7 @@ const parser = sequence(literal("hello"), charClass(["0", "9"]));
 // Success case
 const successResult = parse(parser)("hello5");
 if (successResult.success) {
-  console.log(successResult.value); // Output: ["hello", "5"]
+  console.log(successResult.val); // Output: ["hello", "5"]
   console.log(successResult.next.offset); // Output: 6
 }
 
@@ -189,7 +189,7 @@ if (!failureResult2.success) {
 const abcParser = sequence(literal("a"), literal("b"), literal("c"));
 const successResult2 = parse(abcParser)("abc");
 if (successResult2.success) {
-  console.log(successResult2.value); // Output: ["a", "b", "c"]
+  console.log(successResult2.val); // Output: ["a", "b", "c"]
   console.log(successResult2.next.offset); // Output: 3
 }
 ```
@@ -213,14 +213,14 @@ const parser = choice(literal("hello"), literal("world"));
 // Success case 1
 const successResult1 = parse(parser)("hello");
 if (successResult1.success) {
-  console.log(successResult1.value); // Output: "hello"
+  console.log(successResult1.val); // Output: "hello"
   console.log(successResult1.next.offset); // Output: 5
 }
 
 // Success case 2
 const successResult2 = parse(parser)("world");
 if (successResult2.success) {
-  console.log(successResult2.value); // Output: "world"
+  console.log(successResult2.val); // Output: "world"
   console.log(successResult2.next.offset); // Output: 5
 }
 
@@ -246,14 +246,14 @@ const parser = optional(literal("hello"));
 // Success case (with "hello")
 const successResult1 = parse(parser)("hello");
 if (successResult1.success) {
-  console.log(successResult1.value); // Output: "hello"
+  console.log(successResult1.val); // Output: ["hello"]
   console.log(successResult1.next.offset); // Output: 5
 }
 
 // Success case (without "hello")
 const successResult2 = parse(parser)("world");
 if (successResult2.success) {
-  console.log(successResult2.value); // Output: null
+  console.log(successResult2.val); // Output: []
   console.log(successResult2.next.offset); // Output: 0
 }
 ```
@@ -277,14 +277,14 @@ const parser = zeroOrMore(literal("a"));
 // Success case (multiple "a"s)
 const successResult1 = parse(parser)("aaa");
 if (successResult1.success) {
-  console.log(successResult1.value); // Output: ["a", "a", "a"]
+  console.log(successResult1.val); // Output: ["a", "a", "a"]
   console.log(successResult1.next.offset); // Output: 3
 }
 
 // Success case (no "a"s)
 const successResult2 = parse(parser)("bbb");
 if (successResult2.success) {
-  console.log(successResult2.value); // Output: []
+  console.log(successResult2.val); // Output: []
   console.log(successResult2.next.offset); // Output: 0
 }
 ```
@@ -309,14 +309,14 @@ const parser = oneOrMore(literal("a"));
 // Success case (multiple "a"s)
 const successResult1 = parse(parser)("aaa");
 if (successResult1.success) {
-  console.log(successResult1.value); // Output: ["a", "a", "a"]
+  console.log(successResult1.val); // Output: ["a", "a", "a"]
   console.log(successResult1.next.offset); // Output: 3
 }
 
 // Success case (one "a")
 const successResult2 = parse(parser)("a");
 if (successResult2.success) {
-  console.log(successResult2.value); // Output: ["a"]
+  console.log(successResult2.val); // Output: ["a"]
   console.log(successResult2.next.offset); // Output: 1
 }
 
@@ -347,12 +347,12 @@ const parser = andPredicate(literal("a"));
 // Success case ("a" is next)
 const successResult1 = parse(parser)("abc");
 if (successResult1.success) {
-  console.log(successResult1.value); // Output: null
+  console.log(successResult1.val); // Output: undefined
   console.log(successResult1.next.offset); // Output: 0 (no input consumed)
 }
 const successResult2 = parse(sequence(parser, anyChar()))("abc");
 if (successResult2.success) {
-  console.log(successResult2.value); // Output: [null, "a"]
+  console.log(successResult2.val); // Output: [undfined, "a"]
   console.log(successResult2.next.offset); // Output: 1
 }
 
@@ -384,12 +384,12 @@ const parser = notPredicate(literal("a"));
 // Success case ("b" is next)
 const successResult1 = parse(parser)("bbc");
 if (successResult1.success) {
-  console.log(successResult1.value); // Output: null
+  console.log(successResult1.val); // Output: undefined
   console.log(successResult1.next.offset); // Output: 0 (no input consumed)
 }
 const successResult2 = parse(sequence(parser, anyChar()))("bbc");
 if (successResult2.success) {
-  console.log(successResult2.value); // Output: [null, "b"]
+  console.log(successResult2.val); // Output: [undefined, "b"]
   console.log(successResult2.next.offset); // Output: 1
 }
 
@@ -420,7 +420,7 @@ const parser = map(literal("hello"), (s) => s.toUpperCase());
 // Success case
 const successResult = parse(parser)("hello");
 if (successResult.success) {
-  console.log(successResult.value); // Output: "HELLO"
+  console.log(successResult.val); // Output: "HELLO"
   console.log(successResult.next.offset); // Output: 5
 }
 
@@ -442,13 +442,13 @@ import { mapResult, literal, parse, ParseSuccess } from "tpeg-combinator";
 
 // Parse "hello" and transform it to uppercase and add offset
 const parser = mapResult(literal("hello"), (result: ParseSuccess<string>) => {
-  return { value: result.value.toUpperCase(), offset: result.next.offset };
+  return { val: result.val.toUpperCase(), offset: result.next.offset };
 });
 
 // Success case
 const successResult = parse(parser)("hello");
 if (successResult.success) {
-  console.log(successResult.value); // Output: { value: "HELLO", offset: 5 }
+  console.log(successResult.val); // Output: { val: "HELLO", offset: 5 }
   console.log(successResult.next.offset); // Output: 5
 }
 
