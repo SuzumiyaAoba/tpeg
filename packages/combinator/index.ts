@@ -400,3 +400,8 @@ export const mapResult =
 //
 
 export const EOF = not(any());
+
+export const parse =
+  <T>(parser: Parser<T>) =>
+  (input: string) =>
+    parser(input, { offset: 0, column: 0, line: 1 });
