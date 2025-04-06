@@ -1,6 +1,6 @@
 {
-  "name": "tpeg-combinator",
-  "version": "0.0.2",
+  "name": "tpeg-eval",
+  "version": "0.0.1",
   "license": "MIT",
   "module": "index.ts",
   "type": "module",
@@ -22,6 +22,7 @@
     "build:types": "tsc ./index.ts --declaration --outDir ./dist/ --emitDeclarationOnly --skipLibCheck"
   },
   "dependencies": {
-    "tpeg-ast": "workspace:*"
+    "tpeg-ast": "workspace:*",
+    "tpeg-combinator": "workspace:*"
   }
 }
