@@ -7,19 +7,23 @@ import type {
   Data as UnistData,
 } from "unist";
 
-export interface PegNode extends UnistNode {
-  type: (AnyChar | PegLiteral | PegParent)["type"];
+type ExprType<T> = T extends Expr<infer U> ? U : never;
+
+export interface PegNode<T> extends UnistNode {
+  type: (AnyChar | PegLiteral<string> | PegParent<T>)["type"];
 }
 
-export const isPegNode = (node: PegNode): node is PegNode => {
+export const isPegNode = (node: PegNode<unknown>): node is PegNode<unknown> => {
   return node.type === "anyChar" || isPegLiteral(node) || isPegParent(node);
 };
 
-export interface PegLiteral extends UnistLiteral, PegNode {
-  type: (Identifier<string> | Literal<string> | Char | Range)["type"];
+export interface PegLiteral<T extends string> extends UnistLiteral, PegNode<T> {
+  type: (Identifier<T> | Literal<T> | Char<T> | Range<T, T>)["type"];
 }
 
-export const isPegLiteral = (node: PegNode): node is PegLiteral => {
+export const isPegLiteral = <T extends string>(
+  node: PegNode<T>,
+): node is PegLiteral<T> => {
   return (
     node.type === "identifier" ||
     node.type === "literal" ||
@@ -28,23 +32,23 @@ export const isPegLiteral = (node: PegNode): node is PegLiteral => {
   );
 };
 
-export interface PegParent extends UnistParent, PegNode {
+export interface PegParent<T> extends UnistParent, PegNode<T> {
   type: (
-    | Sequence
-    | Choice
-    | Optional
-    | CharClass
-    | ZeroOrMore
-    | OneOrMore
-    | AndPredicate
-    | NotPredicate
-    | Definition
-    | Grammar
-    | Mapping<unknown, unknown>
+    | Sequence<Expr<unknown>[]>
+    | Choice<Expr<unknown>[]>
+    | Optional<Expr<T>>
+    | CharClass<[]>
+    | ZeroOrMore<Expr<T>>
+    | OneOrMore<unknown>
+    | AndPredicate<unknown>
+    | NotPredicate<unknown>
+    | Definition<string, unknown>
+    | Grammar<unknown>
+    | Mapping<Expr<unknown>, Expr<unknown>>
   )["type"];
 }
 
-export const isPegParent = (node: PegNode): node is PegParent => {
+export const isPegParent = <T>(node: PegNode<T>): node is PegParent<T> => {
   return (
     node.type === "sequence" ||
     node.type === "choice" ||
@@ -59,24 +63,24 @@ export const isPegParent = (node: PegNode): node is PegParent => {
   );
 };
 
-export interface Expr extends PegNode {
+export interface Expr<T> extends PegNode<T> {
   type: (
-    | Identifier<string>
-    | Literal<string>
-    | Sequence
-    | Choice
-    | Optional
+    | Identifier<T extends string ? T : string>
+    | Literal<T extends string ? T : string>
+    | Sequence<Expr<unknown>[]>
+    | Choice<Expr<unknown>[]>
+    | Optional<unknown>
     | AnyChar
-    | CharClass
-    | ZeroOrMore
-    | OneOrMore
-    | AndPredicate
-    | NotPredicate
-    | Mapping<unknown, unknown>
+    | CharClass<[]>
+    | ZeroOrMore<Expr<unknown>>
+    | OneOrMore<unknown>
+    | AndPredicate<unknown>
+    | NotPredicate<unknown>
+    | Mapping<Expr<unknown>, Expr<T>>
   )["type"];
 }
 
-export const isExpr = (node: PegNode): node is Expr => {
+export const isExpr = <T>(node: PegNode<T>): node is Expr<T> => {
   return (
     node.type === "identifier" ||
     node.type === "literal" ||
@@ -93,171 +97,212 @@ export const isExpr = (node: PegNode): node is Expr => {
   );
 };
 
-export interface Literal<T extends string> extends PegLiteral, Expr {
+export interface Literal<T extends string> extends PegLiteral<T>, Expr<T> {
   type: "literal";
   value: T;
 }
 
 export function isLiteral<T extends string>(
-  node: PegNode,
-  type: T
+  node: PegNode<T>,
+  type: T,
 ): node is Literal<T>;
 
-export function isLiteral(
-  node: PegNode
-): node is Literal<string>;
+export function isLiteral<T>(node: PegNode<T>): node is Literal<string>;
 
 export function isLiteral<T extends string>(
-  node: PegNode,
-  type?: T
+  node: PegNode<T>,
+  type?: T,
 ): node is Literal<T> {
-  return node.type === "literal" &&
-    (type ? (node as Literal<string>).value === type : true);
+  return (
+    node.type === "literal" &&
+    (type ? (node as Literal<string>).value === type : true)
+  );
 }
 
-export interface Identifier<T extends string> extends PegLiteral, Expr {
+export interface Identifier<T extends string> extends PegLiteral<T>, Expr<T> {
   type: "identifier";
   value: T;
 }
 
-export const isIdentifier = (node: PegNode): node is Identifier<string> => {
+export const isIdentifier = <T extends string>(
+  node: PegNode<T>,
+): node is Identifier<T> => {
   return node.type === "identifier";
 };
 
-export interface Sequence extends PegParent, Expr {
+export interface Sequence<E extends Expr<unknown>[]>
+  extends PegParent<{ [K in keyof E]: E[K] extends Expr<infer T> ? T : never }>,
+    Expr<{ [K in keyof E]: E[K] extends Expr<infer T> ? T : never }> {
   type: "sequence";
-  children: Expr[];
+  children: E;
 }
 
-export const isSequence = (node: PegNode): node is Sequence => {
+export const isSequence = <T>(node: PegNode<T>): node is Sequence<[]> => {
   return node.type === "sequence";
 };
 
-export interface Choice extends PegParent, Expr {
+export interface Choice<E extends Expr<unknown>[]>
+  extends PegParent<
+      { [K in keyof E]: E[K] extends Expr<infer T> ? T : never }[number]
+    >,
+    Expr<{ [K in keyof E]: E[K] extends Expr<infer T> ? T : never }[number]> {
   type: "choice";
-  children: Expr[];
+  children: E;
 }
 
-export const isChoice = (node: PegNode): node is Choice => {
+export const isChoice = <T>(node: PegNode<T>): node is Choice<[]> => {
   return node.type === "choice";
 };
 
-export interface Optional extends PegParent, Expr {
+export interface Optional<E> extends PegParent<E>, Expr<E> {
   type: "optional";
-  children: [Expr];
+  children: [Expr<E>];
 }
 
-export const isOptional = (node: PegNode): node is Optional => {
+export const isOptional = <T>(node: PegNode<T>): node is Optional<unknown> => {
   return node.type === "optional";
 };
 
-export interface CharClassElement extends PegLiteral {
+export interface CharClassElement extends PegLiteral<string> {
   type: "char" | "range";
   value: string | [string, string];
 }
 
-export const isCharClassElement = (node: PegNode): node is CharClassElement => {
+export const isCharClassElement = <T>(
+  node: PegNode<T>,
+): node is CharClassElement => {
   return node.type === "char" || node.type === "range";
 };
 
-export interface Char extends CharClassElement {
+export interface Char<T extends string> extends CharClassElement {
   type: "char";
-  value: string;
+  value: T;
 }
 
-export const isChar = (node: PegNode): node is Char => {
+export const isChar = <T extends string>(node: PegNode<T>): node is Char<T> => {
   return node.type === "char";
 };
 
-export interface Range extends CharClassElement {
+export interface Range<START extends string, STOP extends string>
+  extends CharClassElement {
   type: "range";
-  value: [string, string];
+  value: [START, STOP];
 }
 
-export const isRange = (node: PegNode): node is Range => {
+export const isRange = <T extends string>(
+  node: PegNode<T>,
+): node is Range<T, T> => {
   return node.type === "range";
 };
 
-export interface CharClass extends PegParent, Expr {
+export interface CharClass<T extends (string | [string, string])[]>
+  extends PegParent<T>,
+    Expr<T> {
   type: "charClass";
-  children: (Char | Range)[];
+  children: {
+    [K in keyof T]: T[K] extends string
+      ? Char<T[K]>
+      : T[K] extends [infer A extends string, infer B extends string]
+        ? Range<A, B>
+        : never;
+  };
 }
 
-export const isCharClass = (node: PegNode): node is CharClass => {
+export const isCharClass = (
+  node: PegNode<unknown>,
+): node is CharClass<(string | [string, string])[]> => {
   return node.type === "charClass";
 };
 
-export interface AnyChar extends PegNode {
+export interface AnyChar extends PegNode<string> {
   type: "anyChar";
 }
 
-export const isAnyChar = (node: PegNode): node is AnyChar => {
+export const isAnyChar = (node: PegNode<unknown>): node is AnyChar => {
   return node.type === "anyChar";
 };
 
-export interface ZeroOrMore extends PegParent {
+export interface ZeroOrMore<E extends Expr<unknown>> extends PegParent<E> {
   type: "zeroOrMore";
-  children: [Expr];
+  children: [E];
 }
 
-export const isZeroOrMore = (node: PegNode): node is ZeroOrMore => {
+export const isZeroOrMore = <T>(
+  node: PegNode<T>,
+): node is ZeroOrMore<Expr<T>> => {
   return node.type === "zeroOrMore";
-}
+};
 
-export interface OneOrMore extends PegParent {
+export interface OneOrMore<E> extends PegParent<E> {
   type: "oneOrMore";
-  children: [Expr];
+  children: [Expr<E>];
 }
 
-export interface AndPredicate extends PegParent {
+export const isOneOrMore = <T>(
+  node: PegNode<T>,
+): node is OneOrMore<unknown> => {
+  return node.type === "oneOrMore";
+};
+
+export interface AndPredicate<E> extends PegParent<unknown> {
   type: "andPredicate";
-  children: [Expr];
+  children: [Expr<E>];
 }
 
-export const isAndPredicate = (node: PegNode): node is AndPredicate => {
+export const isAndPredicate = <T>(
+  node: PegNode<T>,
+): node is AndPredicate<unknown> => {
   return node.type === "andPredicate";
 };
 
-export interface NotPredicate extends PegParent {
+export interface NotPredicate<E> extends PegParent<unknown> {
   type: "notPredicate";
-  children: [Expr];
+  children: [Expr<E>];
 }
 
-export const isNotPredicate = (node: PegNode): node is NotPredicate => {
+export const isNotPredicate = <T>(
+  node: PegNode<T>,
+): node is NotPredicate<unknown> => {
   return node.type === "notPredicate";
 };
 
-export interface Definition extends PegParent {
+export interface Definition<NAME extends string, T> extends PegParent<T> {
   type: "definition";
-  children: [Identifier<string>, Expr];
+  children: [Identifier<NAME>, Expr<T>];
 }
 
-export const isDefinition = (node: PegNode): node is Definition => {
+export const isDefinition = <NAME extends string>(
+  node: PegNode<unknown>,
+): node is Definition<NAME, unknown> => {
   return node.type === "definition";
 };
 
-export interface Grammar extends PegParent {
+export interface Grammar<T> extends PegParent<T> {
   type: "grammar";
-  children: Definition[];
+  children: Definition<string, unknown>[];
 }
 
-export const isGrammar = (node: PegNode): node is Grammar => {
+export const isGrammar = <T>(node: PegNode<T>): node is Grammar<unknown> => {
   return node.type === "grammar";
 };
 
-export interface MappingData<T, U> extends UnistData {
+export interface MappingData<T extends Expr<unknown>, U> extends UnistData {
   (value: T): U;
 }
 
-export interface Mapping<T, U> extends PegParent, Expr {
+export interface Mapping<T extends Expr<unknown>, U>
+  extends PegParent<U>,
+    Expr<U> {
   type: "mapping";
-  children: [Expr];
+  children: [T];
   data: MappingData<T, U>;
 }
 
-export const isMapping = (node: PegNode): node is Mapping<unknown, unknown> => {
-  return node.type === "mapping";
-}
+export const isMapping = (
+  expr: Expr<unknown>,
+): expr is Mapping<Expr<unknown>, Expr<unknown>> => {
+  return expr.type === "mapping";
+};
 
 export const literal = <T extends string>(value: T): Literal<T> => {
   return u("literal", { value });
@@ -271,31 +316,33 @@ export const identifier = <T extends string>(value: T): Identifier<T> => {
 
 export const id = identifier;
 
-export const sequence = (...exprs: Expr[]): Sequence => {
+export const sequence = <E extends Expr<unknown>[]>(
+  ...exprs: E
+): Sequence<E> => {
   return u("sequence", { children: exprs });
 };
 
 export const seq = sequence;
 
-export const choice = (...exprs: Expr[]): Choice => {
+export const choice = <E extends Expr<unknown>[]>(...exprs: E): Choice<E> => {
   return u("choice", { children: exprs });
 };
 
-export const optional = (expr: Expr): Optional => {
-  return u("optional", { children: [expr] satisfies [Expr] });
+export const optional = (expr: Expr<unknown>): Optional<unknown> => {
+  return u("optional", { children: [expr] satisfies [Expr<unknown>] });
 };
 
 export const opt = optional;
 
-export const charClass = (
-  elements: (string | [string, string])[],
-): CharClass => {
+export const charClass = <const T extends (string | [string, string])[]>(
+  ...elements: T
+): CharClass<T> => {
   return u("charClass", {
     children: elements.map((child) =>
       typeof child === "string"
         ? u("char", { value: child })
         : u("range", { value: child }),
-    ),
+    ) as CharClass<T>["children"],
   });
 };
 
@@ -305,44 +352,56 @@ export const anyChar = (): AnyChar => {
 
 export const any = anyChar;
 
-export const zeroOrMore = (expr: Expr): ZeroOrMore => {
-  return u("zeroOrMore", { children: [expr] satisfies [Expr] });
-}
+export const zeroOrMore = <E extends Expr<unknown>>(expr: E): ZeroOrMore<E> => {
+  return u("zeroOrMore", { children: [expr] satisfies [E] });
+};
 
 export const star = zeroOrMore;
 
 export const many = zeroOrMore;
 
-export const oneOrMore = (expr: Expr): OneOrMore => {
-  return u("oneOrMore", { children: [expr] satisfies [Expr] });
-}
+export const oneOrMore = <E extends Expr<unknown>>(expr: E): OneOrMore<E> => {
+  return u("oneOrMore", { children: [expr] satisfies [E] });
+};
 
 export const plus = oneOrMore;
 
 export const many1 = oneOrMore;
 
-export const andPredicate = (expr: Expr): AndPredicate => {
-  return u("andPredicate", { children: [expr] satisfies [Expr] });
+export const andPredicate = (expr: Expr<unknown>): AndPredicate<unknown> => {
+  return u("andPredicate", { children: [expr] satisfies [Expr<unknown>] });
 };
 
 export const and = andPredicate;
 
-export const notPredicate = (expr: Expr): NotPredicate => {
-  return u("notPredicate", { children: [expr] satisfies [Expr] });
+export const notPredicate = (expr: Expr<unknown>): NotPredicate<unknown> => {
+  return u("notPredicate", { children: [expr] satisfies [Expr<unknown>] });
 };
 
 export const not = notPredicate;
 
-export const definition = (id: string, expr: Expr): Definition => {
+export const definition = <NAME extends string, EXPR extends Expr<unknown>>(
+  id: NAME,
+  expr: EXPR,
+): Definition<NAME, EXPR> => {
   return u("definition", {
-    children: [identifier(id), expr] satisfies [Identifier<string>, Expr],
+    children: [identifier(id), expr] satisfies [Identifier<NAME>, EXPR],
   });
 };
 
 export const def = definition;
 
-export const grammar = (definitions: Definition[]): Grammar => {
+export const grammar = <T>(
+  definitions: Definition<string, T>[],
+): Grammar<T> => {
   return u("grammar", {
     children: definitions,
   });
+};
+
+export const map = <T extends Expr<unknown>, U>(
+  expr: T,
+  data: MappingData<T, U>,
+): Mapping<T, U> => {
+  return u("mapping", { children: [expr] satisfies [T], data });
 };
