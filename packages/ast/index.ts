@@ -1,22 +1,18 @@
 import { u } from "unist-builder";
 
 import type {
-  Node as UnistNode,
   Literal as UnistLiteral,
+  Node as UnistNode,
   Parent as UnistParent,
 } from "unist";
 
-export interface PegNode extends UnistNode {
-}
+export interface PegNode extends UnistNode {}
 
-export interface PegLiteral extends UnistLiteral, PegNode {
-}
+export interface PegLiteral extends UnistLiteral, PegNode {}
 
-export interface PegParent extends UnistParent, PegNode {
-}
+export interface PegParent extends UnistParent, PegNode {}
 
-export interface Expr extends PegNode {
-}
+export interface Expr extends PegNode {}
 
 export interface Literal extends PegLiteral, Expr {
   type: "literal";
@@ -88,55 +84,57 @@ export interface Grammar extends PegParent {
 }
 
 export const literal = (value: string): Literal => {
-  return u('literal', { value });
-}
+  return u("literal", { value });
+};
 
 export const identifier = (value: string): Identifier => {
-  return u('identifier', { value });
-}
+  return u("identifier", { value });
+};
 
 export const sequence = (exprs: Expr[]): Sequence => {
-  return u('sequence', { children: exprs });
-}
+  return u("sequence", { children: exprs });
+};
 
 export const choice = (exprs: Expr[]): Choice => {
-  return u('choice', { children: exprs });
-}
+  return u("choice", { children: exprs });
+};
 
 export const optional = (expr: Expr): Optional => {
-  return u('optional', { children: [expr] satisfies [Expr] });
-}
+  return u("optional", { children: [expr] satisfies [Expr] });
+};
 
-export const charClass = (elements: (string | [string, string])[]): CharClass => {
-  return u('charClass', {
-    children: elements.map(child =>
+export const charClass = (
+  elements: (string | [string, string])[],
+): CharClass => {
+  return u("charClass", {
+    children: elements.map((child) =>
       typeof child === "string"
-        ? u('char', { value: child })
-        : u('range', { value: child })
+        ? u("char", { value: child })
+        : u("range", { value: child }),
     ),
   });
-}
+};
 
 export const anyChar = (): AnyChar => {
-  return u('anyChar');
-}
+  return u("anyChar");
+};
 
 export const andPredicate = (expr: Expr): AndPredicate => {
-  return u('andPredicate', { children: [expr] satisfies [Expr] });
-}
+  return u("andPredicate", { children: [expr] satisfies [Expr] });
+};
 
 export const notPredicate = (expr: Expr): NotPredicate => {
-  return u('notPredicate', { children: [expr] satisfies [Expr] });
-}
+  return u("notPredicate", { children: [expr] satisfies [Expr] });
+};
 
 export const definition = (id: string, expr: Expr): Definition => {
-  return u('definition', {
+  return u("definition", {
     children: [identifier(id), expr] satisfies [Identifier, Expr],
   });
-}
+};
 
 export const grammar = (definitions: Definition[]): Grammar => {
-  return u('grammar', {
-    children: definitions
+  return u("grammar", {
+    children: definitions,
   });
-}
+};
