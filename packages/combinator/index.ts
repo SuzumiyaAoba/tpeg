@@ -3,28 +3,71 @@
 //
 
 /**
+ * Type representing a non-empty array.
+ *
+ * This type ensures that the array contains at least one element.
+ *
  * @see https://zenn.dev/chot/articles/321f58dfa01339
+ * @template T Type of array elements
  */
 export type NonEmptyArray<T> = [T, ...T[]] | [...T[], T];
 
+/**
+ * Checks if the given array is empty.
+ *
+ * @template T Type of array elements
+ * @param arr The array to check
+ * @returns Returns true if the array is empty, otherwise false.
+ */
 export const isEmptyArray = <T>(arr: readonly T[]): arr is [] => {
   return arr.length === 0;
 };
 
+/**
+ * Checks if the given array is non-empty.
+ *
+ * @template T Type of array elements
+ * @param arr The array to check
+ * @returns Returns true if the array is non-empty, otherwise false.
+ */
 export const isNonEmptyArray = <T>(
-  arr: readonly T[],
+  arr: readonly T[]
 ): arr is NonEmptyArray<T> => {
   return arr.length > 0;
 };
 
+/**
+ * Type representing a non-empty string.
+ *
+ * @template T String type (defaults to string)
+ * @example
+ *   const s: NonEmptyString<"abc"> = "abc"; // OK
+ *   const s2: NonEmptyString<""> = never; // Error
+ */
 type NonEmptyString<T extends string = string> = T extends "" ? never : T;
 
+/**
+ * Input position information in the source string.
+ *
+ * @property offset The absolute offset from the start of the input (0-based)
+ * @property column The column number (0-based)
+ * @property line The line number (1-based)
+ */
 export type Pos = {
   readonly offset: number;
   readonly column: number;
   readonly line: number;
 };
 
+/**
+ * Result of successful parsing.
+ *
+ * @template T Type of the parse result value
+ * @property success Always true
+ * @property val The parsed value
+ * @property current The position before parsing
+ * @property next The position after parsing
+ */
 export type ParseSuccess<T> = {
   success: true;
   val: T;
@@ -32,18 +75,45 @@ export type ParseSuccess<T> = {
   next: Pos;
 };
 
+/**
+ * Result of failed parsing.
+ *
+ * @property success Always false
+ * @property error The error information
+ */
 export type ParseFailure = {
   success: false;
   error: ParseError;
 };
 
+/**
+ * Parse result (success or failure).
+ *
+ * @template T Type of the parse result value
+ * @see ParseSuccess
+ * @see ParseFailure
+ */
 export type ParseResult<T> = ParseSuccess<T> | ParseFailure;
 
+/**
+ * Parse error information.
+ *
+ * @property message Error message
+ * @property pos Position where the error occurred
+ */
 export interface ParseError {
   message: string;
   pos: Pos;
 }
 
+/**
+ * Parser function type.
+ *
+ * @template T Type of the parse result value
+ * @param input The input string to parse
+ * @param pos The current position in the input
+ * @returns ParseResult<T> The result of parsing (success or failure)
+ */
 export type Parser<T> = (input: string, pos: Pos) => ParseResult<T>;
 
 const nextPos = (char: string, { offset, column, line }: Pos): Pos => {
@@ -60,6 +130,11 @@ const nextPos = (char: string, { offset, column, line }: Pos): Pos => {
 // Primitive combinators
 //
 
+/**
+ * Parser that parses any single character from the input.
+ *
+ * @returns Parser<string> A parser that succeeds if any character is present at the current position, or fails at end of input.
+ */
 export const anyChar = (): Parser<string> => (input, pos) => {
   const char = input?.[pos.offset];
 
@@ -81,8 +156,20 @@ export const anyChar = (): Parser<string> => (input, pos) => {
   };
 };
 
+/**
+ * Alias for {@link anyChar}.
+ *
+ * @returns Parser<string>
+ */
 export const any = anyChar;
 
+/**
+ * Parser that parses the specified literal string from the input.
+ *
+ * @template T Type of the literal string
+ * @param str The literal string to parse (must be non-empty)
+ * @returns Parser<T> A parser that succeeds if the input at the current position matches the given string exactly.
+ */
 export const literal =
   <T extends string>(str: NonEmptyString<T>): Parser<T> =>
   (input, pos) => {
@@ -135,8 +222,21 @@ export const literal =
     };
   };
 
+/**
+ * Alias for {@link literal}.
+ *
+ * @see literal
+ */
 export const lit = literal;
 
+/**
+ * Parser that parses a single character from the specified set of characters or character ranges.
+ *
+ * @param charOrRanges List of characters or [start, end] tuples representing character ranges. Each element must be a non-empty string or a tuple of two non-empty strings.
+ * @returns Parser<string> A parser that succeeds if the input character matches any of the specified characters or ranges.
+ * @example
+ *   charClass("a", ["0", "9"]) // matches 'a' or any digit
+ */
 export const charClass =
   (
     ...charOrRanges: NonEmptyArray<
@@ -199,6 +299,13 @@ export const charClass =
     };
   };
 
+/**
+ * Parser that applies multiple parsers in sequence.
+ *
+ * @template P Array of parser types
+ * @param parsers List of parsers to apply in order
+ * @returns Parser returning a tuple of results from each parser if all succeed, or fails on the first failure.
+ */
 export const sequence =
   <P extends Parser<unknown>[]>(
     ...parsers: P
@@ -226,6 +333,13 @@ export const sequence =
     };
   };
 
+/**
+ * Parser that applies one of multiple parsers (ordered choice).
+ *
+ * @template T Array of result types
+ * @param parsers List of parsers to try in order
+ * @returns Parser that returns the result of the first successful parser, or fails if all fail.
+ */
 export const choice =
   <T extends unknown[]>(
     ...parsers: { [K in keyof T]: Parser<T[K]> }
@@ -249,8 +363,20 @@ export const choice =
     };
   };
 
+/**
+ * Alias for {@link sequence}.
+ *
+ * @see sequence
+ */
 export const seq = sequence;
 
+/**
+ * Parser that makes the given parser optional.
+ *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @returns Parser<[T] | []> A parser that returns a single-element array if successful, or an empty array if not.
+ */
 export const optional =
   <T>(parser: Parser<T>): Parser<[T] | []> =>
   (input, pos) => {
@@ -272,8 +398,20 @@ export const optional =
     };
   };
 
+/**
+ * Alias for {@link optional}.
+ *
+ * @see optional
+ */
 export const opt = optional;
 
+/**
+ * Parser that parses zero or more repetitions of the given parser.
+ *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @returns Parser<T[]> A parser that returns an array of results (possibly empty).
+ */
 export const zeroOrMore =
   <T>(parser: Parser<T>): Parser<T[]> =>
   (input, pos) => {
@@ -295,10 +433,27 @@ export const zeroOrMore =
     };
   };
 
+/**
+ * Alias for {@link zeroOrMore}.
+ *
+ * @see zeroOrMore
+ */
 export const star = zeroOrMore;
 
+/**
+ * Alias for {@link zeroOrMore}.
+ *
+ * @see zeroOrMore
+ */
 export const many = zeroOrMore;
 
+/**
+ * Parser that parses one or more repetitions of the given parser.
+ *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @returns Parser<NonEmptyArray<T>> A parser that returns a non-empty array of results, or fails if no match is found.
+ */
 export const oneOrMore =
   <T>(parser: Parser<T>): Parser<NonEmptyArray<T>> =>
   (input, pos) => {
@@ -317,10 +472,29 @@ export const oneOrMore =
     };
   };
 
+/**
+ * Alias for {@link oneOrMore}.
+ *
+ * @see oneOrMore
+ */
 export const plus = oneOrMore;
 
+/**
+ * Alias for {@link oneOrMore}.
+ *
+ * @see oneOrMore
+ */
 export const many1 = oneOrMore;
 
+/**
+ * Parser for positive lookahead (does not consume input).
+ *
+ * Succeeds if the given parser succeeds at the current position, but does not consume any input.
+ *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @returns Parser<never> A parser that only checks for success/failure without consuming input.
+ */
 export const andPredicate =
   <T>(parser: Parser<T>): Parser<never> =>
   (input, pos) => {
@@ -343,12 +517,36 @@ export const andPredicate =
     };
   };
 
+/**
+ * Alias for {@link andPredicate}.
+ *
+ * @see andPredicate
+ */
 export const and = andPredicate;
 
+/**
+ * Alias for {@link andPredicate}.
+ *
+ * @see andPredicate
+ */
 export const positive = andPredicate;
 
+/**
+ * Alias for {@link andPredicate}.
+ *
+ * @see andPredicate
+ */
 export const assert = andPredicate;
 
+/**
+ * Parser for negative lookahead (does not consume input).
+ *
+ * Succeeds if the given parser fails at the current position, but does not consume any input.
+ *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @returns Parser<never> A parser that only checks for failure without consuming input.
+ */
 export const notPredicate =
   <T>(parser: Parser<T>): Parser<never> =>
   (input, pos) => {
@@ -371,10 +569,29 @@ export const notPredicate =
     };
   };
 
+/**
+ * Alias for {@link notPredicate}.
+ *
+ * @see notPredicate
+ */
 export const not = notPredicate;
 
+/**
+ * Alias for {@link notPredicate}.
+ *
+ * @see notPredicate
+ */
 export const negative = notPredicate;
 
+/**
+ * Parser that applies a transformation function to the parse result value.
+ *
+ * @template T Type of the input parse result value
+ * @template U Type of the output value
+ * @param parser Target parser
+ * @param f Transformation function applied to the parse result value
+ * @returns Parser<U> A parser that returns the transformed value if parsing succeeds, or fails otherwise.
+ */
 export const map =
   <T, U>(parser: Parser<T>, f: (value: T) => U): Parser<U> =>
   (input, index) => {
@@ -385,6 +602,15 @@ export const map =
       : (result as ParseResult<U>);
   };
 
+/**
+ * Parser that transforms the entire ParseSuccess object on success.
+ *
+ * @template T Type of the input parse result value
+ * @template U Type of the output value
+ * @param parser Target parser
+ * @param f Function to transform the ParseSuccess object
+ * @returns Parser<U> A parser that returns the transformed value if parsing succeeds, or fails otherwise.
+ */
 export const mapResult =
   <T, U>(parser: Parser<T>, f: (value: ParseSuccess<T>) => U): Parser<U> =>
   (input, index) => {
@@ -399,8 +625,22 @@ export const mapResult =
 // Utilities
 //
 
+/**
+ * Parser that checks for end of input (EOF).
+ *
+ * Succeeds only if the input is at the end.
+ *
+ * @returns Parser<never> A parser that succeeds at end of input, or fails otherwise.
+ */
 export const EOF = not(any());
 
+/**
+ * Utility function to run parsing from the beginning of the input.
+ *
+ * @template T Type of the parse result value
+ * @param parser The parser to run
+ * @returns Function that takes an input string and returns the parse result from the beginning of the input.
+ */
 export const parse =
   <T>(parser: Parser<T>) =>
   (input: string) =>
