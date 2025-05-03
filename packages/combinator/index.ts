@@ -247,7 +247,7 @@ export const charClass =
     if (pos.offset >= input.length) {
       return {
         success: false,
-        error: { message: "Unexpected EOF", pos },
+        error: { message: "Unexpected EOI", pos },
       };
     }
 
@@ -255,7 +255,7 @@ export const charClass =
     if (char === undefined) {
       return {
         success: false,
-        error: { message: "Unexpected EOF", pos },
+        error: { message: "Unexpected EOI", pos },
       };
     }
 
@@ -599,7 +599,7 @@ export const map =
 
     return result.success
       ? { ...result, val: f(result.val) }
-      : (result as ParseResult<U>);
+      : (result satisfies ParseResult<U>);
   };
 
 /**
@@ -618,7 +618,7 @@ export const mapResult =
 
     return result.success
       ? { ...result, val: f(result) }
-      : (result as ParseResult<U>);
+      : (result satisfies ParseResult<U>);
   };
 
 //

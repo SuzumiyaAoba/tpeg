@@ -168,7 +168,7 @@ describe("charClass", () => {
     const result = charClass("a")(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.message).toBe("Unexpected EOF");
+      expect(result.error.message).toBe("Unexpected EOI");
       expect(result.error.pos).toEqual(pos);
     }
   });
