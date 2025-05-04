@@ -13,7 +13,9 @@
     "husky": "^9.1.7",
     "lint-staged": "^15.5.0"
   },
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "prepare": "bunx husky",
     "lint": "bunx biome lint --write ./packages",

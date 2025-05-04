@@ -30,7 +30,7 @@ export const isEmptyArray = <T>(arr: readonly T[]): arr is [] => {
  * @returns Returns true if the array is non-empty, otherwise false.
  */
 export const isNonEmptyArray = <T>(
-  arr: readonly T[]
+  arr: readonly T[],
 ): arr is NonEmptyArray<T> => {
   return arr.length > 0;
 };
