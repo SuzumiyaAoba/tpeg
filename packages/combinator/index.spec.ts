@@ -365,3 +365,60 @@ describe("map", () => {
     }
   });
 });
+
+describe("Unicode support", () => {
+  it("should parse a single Unicode emoji with any", () => {
+    const input = "😊";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = any()(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("😊");
+      expect(result.next).toEqual({ offset: 2, column: 1, line: 1 });
+    }
+  });
+
+  it("should parse a single Unicode emoji with charClass", () => {
+    const input = "😊";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = charClass("😊")(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("😊");
+      expect(result.next).toEqual({ offset: 2, column: 1, line: 1 });
+    }
+  });
+
+  it("should parse a Unicode character in a range with charClass", () => {
+    const input = "𝄞"; // U+1D11E MUSICAL SYMBOL G CLEF
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = charClass(["𝄀", "𝄿"])(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("𝄞");
+      expect(result.next).toEqual({ offset: 2, column: 1, line: 1 });
+    }
+  });
+
+  it("should parse a Unicode string with lit", () => {
+    const input = "a😊b";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = lit("a😊b")(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("a😊b");
+      expect(result.next).toEqual({ offset: 4, column: 4, line: 1 });
+    }
+  });
+
+  it("should return error for non-matching Unicode with charClass", () => {
+    const input = "a";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = charClass("😊")(input, pos);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.message).toContain("Expected");
+      expect(result.error.pos).toEqual(pos);
+    }
+  });
+});

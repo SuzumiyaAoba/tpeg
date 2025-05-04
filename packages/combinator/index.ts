@@ -117,11 +117,25 @@ export interface ParseError {
  */
 export type Parser<T> = (input: string, pos: Pos) => ParseResult<T>;
 
+/**
+ * Utility function to get a single character from the input string at the given offset,
+ * taking surrogate pairs (Unicode code points) into account. Returns the character and its length in code units.
+ *
+ * @param input The input string
+ * @param offset The position in the original string to start reading
+ * @returns [The character at the given offset, its length in code units (1 or 2)]. Returns ["", 0] if out of range.
+ */
+const getCharAndLength = (input: string, offset: number): [string, number] => {
+  const code = input.codePointAt(offset);
+  if (code === undefined) return ["", 0];
+  const char = String.fromCodePoint(code);
+  return [char, char.length];
+};
+
 const nextPos = (char: string, { offset, column, line }: Pos): Pos => {
   const isNewline = char === "\n";
-
   return {
-    offset: offset + 1,
+    offset: offset + char.length,
     column: isNewline ? 0 : column + 1,
     line: isNewline ? line + 1 : line,
   };
@@ -137,9 +151,9 @@ const nextPos = (char: string, { offset, column, line }: Pos): Pos => {
  * @returns Parser<string> A parser that succeeds if any character is present at the current position, or fails at end of input.
  */
 export const anyChar = (): Parser<string> => (input, pos) => {
-  const char = input?.[pos.offset];
+  const [char, charLen] = getCharAndLength(input, pos.offset);
 
-  if (char === undefined) {
+  if (!char) {
     return {
       success: false,
       error: {
@@ -245,15 +259,8 @@ export const charClass =
     >
   ): Parser<string> =>
   (input, pos) => {
-    if (pos.offset >= input.length) {
-      return {
-        success: false,
-        error: { message: "Unexpected EOI", pos },
-      };
-    }
-
-    const char = input.charAt(pos.offset);
-    if (char === undefined) {
+    const [char, charLen] = getCharAndLength(input, pos.offset);
+    if (!char) {
       return {
         success: false,
         error: { message: "Unexpected EOI", pos },
@@ -272,7 +279,16 @@ export const charClass =
         }
       } else {
         const [start, stop] = charOrRange;
-        if (start <= char && char <= stop) {
+        const charCode = char.codePointAt(0);
+        const startCode = start.codePointAt(0);
+        const stopCode = stop.codePointAt(0);
+        if (
+          charCode !== undefined &&
+          startCode !== undefined &&
+          stopCode !== undefined &&
+          startCode <= charCode &&
+          charCode <= stopCode
+        ) {
           return {
             success: true,
             val: char,
@@ -287,7 +303,6 @@ export const charClass =
       if (typeof charOrRange === "string") {
         return charOrRange;
       }
-
       return `${charOrRange[0]}-${charOrRange[1]}`;
     };
 
