@@ -5,12 +5,11 @@
 /**
  * Type representing a non-empty array.
  *
- * This type ensures that the array contains at least one element.
+ * This type ensures that tthe array contains at least one element.
  *
- * @see https://zenn.dev/chot/articles/321f58dfa01339
  * @template T Type of array elements
  */
-export type NonEmptyArray<T> = [T, ...T[]] | [...T[], T];
+export type NonEmptyArray<T> = [T, ...T[]];
 
 /**
  * Checks if the given array is empty.
@@ -44,7 +43,9 @@ export const isNonEmptyArray = <T>(
  *   const s: NonEmptyString<"abc"> = "abc"; // OK
  *   const s2: NonEmptyString<""> = never; // Error
  */
-type NonEmptyString<T extends string = string> = T extends "" ? never : T;
+export type NonEmptyString<T extends string = string> = T extends ""
+  ? never
+  : T;
 
 /**
  * Input position information in the source string.
