@@ -132,6 +132,13 @@ const getCharAndLength = (input: string, offset: number): [string, number] => {
   return [char, char.length];
 };
 
+/**
+ * Utility function to calculate the next position after consuming a character.
+ *
+ * @param char The character being consumed
+ * @param pos The current position
+ * @returns The new position after consuming the character
+ */
 const nextPos = (char: string, { offset, column, line }: Pos): Pos => {
   const isNewline = char === "\n";
   return {
@@ -151,7 +158,7 @@ const nextPos = (char: string, { offset, column, line }: Pos): Pos => {
  * @returns Parser<string> A parser that succeeds if any character is present at the current position, or fails at end of input.
  */
 export const anyChar = (): Parser<string> => (input, pos) => {
-  const [char, charLen] = getCharAndLength(input, pos.offset);
+  const [char, _] = getCharAndLength(input, pos.offset);
 
   if (!char) {
     return {
@@ -259,7 +266,7 @@ export const charClass =
     >
   ): Parser<string> =>
   (input, pos) => {
-    const [char, charLen] = getCharAndLength(input, pos.offset);
+    const [char, _] = getCharAndLength(input, pos.offset);
     if (!char) {
       return {
         success: false,
@@ -434,10 +441,19 @@ export const zeroOrMore =
     const results: T[] = [];
     let currentPos = pos;
     let result = parser(input, currentPos);
-    while (result.success && currentPos.offset < input.length) {
-      currentPos = result.next;
+
+    while (result.success) {
+      // Check to prevent infinite loop: ensure position is advancing
+      if (result.next.offset <= currentPos.offset) {
+        break;
+      }
 
       results.push(result.val);
+      currentPos = result.next;
+      // Exit if we've reached the end of input
+      if (currentPos.offset >= input.length) {
+        break;
+      }
       result = parser(input, currentPos);
     }
 
@@ -473,18 +489,28 @@ export const many = zeroOrMore;
 export const oneOrMore =
   <T>(parser: Parser<T>): Parser<NonEmptyArray<T>> =>
   (input, pos) => {
-    const results = star(parser)(input, pos);
-
-    if (results.success) {
-      const val = results.val;
-      if (isNonEmptyArray(val)) {
-        return { ...results, val };
-      }
+    // Try the first match
+    const firstResult = parser(input, pos);
+    if (!firstResult.success) {
+      return {
+        success: false,
+        error: { message: "Expected at least one", pos },
+      };
     }
 
+    // Remaining matches (zero or more)
+    const restResults = zeroOrMore(parser)(input, firstResult.next);
+    if (!restResults.success) {
+      // This shouldn't happen, but for type safety
+      return restResults as ParseResult<NonEmptyArray<T>>;
+    }
+
+    // Combine first match and rest
     return {
-      success: false,
-      error: { message: "Expected at least one", pos },
+      success: true,
+      val: [firstResult.val, ...restResults.val] as NonEmptyArray<T>,
+      current: pos,
+      next: restResults.next,
     };
   };
 
@@ -615,7 +641,7 @@ export const map =
 
     return result.success
       ? { ...result, val: f(result.val) }
-      : (result satisfies ParseResult<U>);
+      : (result as ParseResult<U>);
   };
 
 /**
@@ -634,7 +660,7 @@ export const mapResult =
 
     return result.success
       ? { ...result, val: f(result) }
-      : (result satisfies ParseResult<U>);
+      : (result as ParseResult<U>);
   };
 
 //
