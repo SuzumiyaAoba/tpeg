@@ -13,6 +13,7 @@
     "build:types": "tsc --emitDeclarationOnly --skipLibCheck --declaration --outDir ./dist"
   },
   "dependencies": {
-    "tpeg-combinator": "workspace:*"
+    "tpeg-combinator": "workspace:*",
+    "tpeg-core": "workspace:*"
   }
 }

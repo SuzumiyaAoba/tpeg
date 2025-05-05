@@ -1,0 +1,16 @@
+{
+  "name": "tpeg-core",
+  "version": "0.1.0",
+  "description": "Core types and utilities for tpeg PEG parser",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --declaration --outDir ./dist && bun build index.ts --target=node --outdir=dist"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "license": "MIT"
+}

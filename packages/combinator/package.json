@@ -21,5 +21,8 @@
     "build": "bun run build:types && bun build ./index.ts --outdir ./dist",
     "build:types": "tsc ./index.ts --declaration --outDir ./dist/ --emitDeclarationOnly --skipLibCheck",
     "benchmark": "bun test benchmark.spec.ts"
+  },
+  "dependencies": {
+    "tpeg-core": "workspace:*"
   }
 }
