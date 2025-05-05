@@ -30,6 +30,19 @@ tpeg provides a set of core combinators for building parsers:
 - `notPredicate(parser)`: Negative lookahead (checks if a parser fails without consuming input).
 - `map(parser, f)`: Transforms the result of a parser using a mapping function.
 - `mapResult(parser, f)`: Transforms the result of a parser using a mapping function that receives the whole ParseSuccess object.
+- `takeUntil(condition)`: Consumes characters until a condition parser succeeds.
+- `between(open, close)`: Parses content between opening and closing parsers.
+- `sepBy(value, separator)`: Parses zero or more occurrences of a value parser, separated by a separator parser.
+- `sepBy1(value, separator)`: Parses one or more occurrences of a value parser, separated by a separator parser.
+- `whitespace()`: Parses whitespace characters (spaces, tabs, newlines).
+- `token(parser)`: Wraps a parser to consume trailing whitespace.
+- `quotedString()`: Parses a quoted string with escape sequences.
+- `memoize(parser)`: Creates a memoized version of a parser for better performance.
+- `recursive()`: Creates a recursive parser that can reference itself.
+- `labeled(parser, errorMessage)`: Attaches a custom error message to a parser.
+- `number()`: Parses a JavaScript/JSON-style number.
+- `int()`: Parses an integer number.
+- `withPosition(parser)`: Adds position information to parser results.
 
 #### `anyChar()`
 

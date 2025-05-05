@@ -1,11 +1,18 @@
 {
   "name": "tpeg-samples",
+  "version": "0.0.1",
+  "license": "MIT",
+  "module": "index.ts",
   "type": "module",
-  "private": true,
+  "scripts": {
+    "dev": "bun run ./src/index.ts",
+    "csv": "bun run ./src/peg/csv.ts",
+    "json": "bun run ./src/peg/json.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "bun build ./src --outdir ./dist",
+    "build:types": "tsc --emitDeclarationOnly --skipLibCheck --declaration --outDir ./dist"
+  },
   "dependencies": {
     "tpeg-combinator": "workspace:*"
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit"
   }
 }
