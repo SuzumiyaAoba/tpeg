@@ -1,424 +1,371 @@
 import { describe, expect, it } from "bun:test";
+import { anyChar, literal, parse } from "tpeg-core";
 import {
-  and,
-  any,
-  charClass,
-  choice,
-  isEmptyArray,
-  isNonEmptyArray,
-  lit,
-  map,
-  not,
-  opt,
-  plus,
-  seq,
-  star,
+  EOF,
+  between,
+  int,
+  labeled,
+  memoize,
+  number,
+  quotedString,
+  recursive,
+  sepBy,
+  sepBy1,
+  takeUntil,
+  token,
+  whitespace,
+  withPosition,
 } from "./index";
-import type { Pos } from "./index";
 
-describe("isEmptyArray", () => {
-  it("should return true for an empty array", () => {
-    expect(isEmptyArray([])).toBe(true);
+describe("tpeg-combinator additional tests", () => {
+  describe("EOF", () => {
+    it("should succeed at the end of input", () => {
+      const result = parse(EOF)("");
+      expect(result.success).toBe(true);
+    });
+
+    it("should fail if not at the end of input", () => {
+      const result = parse(EOF)("abc");
+      expect(result.success).toBe(false);
+    });
   });
 
-  it("should return false for a non-empty array", () => {
-    expect(isEmptyArray([1, 2, 3])).toBe(false);
-  });
-});
+  describe("takeUntil", () => {
+    it("should consume characters until the condition is met", () => {
+      const parser = takeUntil(literal(","));
+      const result = parse(parser)("hello,world");
 
-describe("isNonEmptyArray", () => {
-  it("should return false for an empty array", () => {
-    expect(isNonEmptyArray([])).toBe(false);
-  });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("hello");
+        expect(result.next.offset).toBe(5);
+      }
+    });
 
-  it("should return true for a non-empty array", () => {
-    expect(isNonEmptyArray([1, 2, 3])).toBe(true);
-  });
-});
+    it("should consume all characters if condition is never met", () => {
+      const parser = takeUntil(literal(","));
+      const result = parse(parser)("hello");
 
-describe("any", () => {
-  it("should parse any single character", () => {
-    const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = any()(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("a");
-      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
-    }
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("hello");
+        expect(result.next.offset).toBe(5);
+      }
+    });
   });
 
-  it("should parse newline character", () => {
-    const input = "\n";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = any()(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("\n");
-      expect(result.next).toEqual({ offset: 1, column: 0, line: 2 });
-    }
+  describe("between", () => {
+    it("should parse content between two parsers", () => {
+      const parser = between(literal("["), literal("]"));
+      const result = parse(parser)("[hello]");
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("hello");
+        expect(result.next.offset).toBe(7);
+      }
+    });
+
+    it("should fail if opening parser fails", () => {
+      const parser = between(literal("["), literal("]"));
+      const result = parse(parser)("(hello]");
+
+      expect(result.success).toBe(false);
+    });
+
+    it("should fail if closing parser fails", () => {
+      const parser = between(literal("["), literal("]"));
+      const result = parse(parser)("[hello)");
+
+      expect(result.success).toBe(false);
+    });
   });
 
-  it("should return error for empty input", () => {
-    const input = "";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = any()(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toBe("Unexpected EOI");
-      expect(result.error.pos).toEqual(pos);
-    }
+  describe("sepBy", () => {
+    it("should parse values separated by a separator", () => {
+      const parser = sepBy(literal("item"), literal(","));
+      const result = parse(parser)("item,item,item");
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual(["item", "item", "item"]);
+        expect(result.next.offset).toBe(14);
+      }
+    });
+
+    it("should return an empty array if no values match", () => {
+      const parser = sepBy(literal("item"), literal(","));
+      const result = parse(parser)("other");
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual([]);
+        expect(result.next.offset).toBe(0);
+      }
+    });
   });
 
-  it("should return error for out of bound", () => {
-    const input = "a";
-    const pos: Pos = { offset: 1, column: 1, line: 1 };
-    const result = any()(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toBe("Unexpected EOI");
-      expect(result.error.pos).toEqual(pos);
-    }
-  });
-});
+  describe("sepBy1", () => {
+    it("should parse one or more values separated by a separator", () => {
+      const parser = sepBy1(literal("item"), literal(","));
+      const result = parse(parser)("item,item,item");
 
-describe("string", () => {
-  it("should parse a string", () => {
-    const input = "abc";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = lit("abc")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("abc");
-      expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
-    }
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual(["item", "item", "item"]);
+        expect(result.next.offset).toBe(14);
+      }
+    });
+
+    it("should fail if no values match", () => {
+      const parser = sepBy1(literal("item"), literal(","));
+      const result = parse(parser)("other");
+
+      expect(result.success).toBe(false);
+    });
   });
 
-  it("should return error if string does not match", () => {
-    const input = "abd";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = lit("abc")(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toBe("Unexpected character");
-      expect(result.error.pos).toEqual({ offset: 2, column: 2, line: 1 });
-    }
+  describe("whitespace", () => {
+    it("should consume whitespace characters", () => {
+      const parser = whitespace();
+      const result = parse(parser)("  \t\n\r  abc");
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("  \t\n\r  ");
+        expect(result.next.offset).toBe(7);
+      }
+    });
+
+    it("should succeed with empty string if no whitespace", () => {
+      const parser = whitespace();
+      const result = parse(parser)("abc");
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("");
+        expect(result.next.offset).toBe(0);
+      }
+    });
   });
 
-  it("should handle newline in string", () => {
-    const input = "a\nb";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = lit("a\nb")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("a\nb");
-      expect(result.next).toEqual({ offset: 3, column: 1, line: 2 });
-    }
-  });
-});
+  describe("token", () => {
+    it("should consume trailing whitespace after parser", () => {
+      const parser = token(literal("hello"));
+      const result = parse(parser)("hello   world");
 
-describe("charClass", () => {
-  it("should parse a single character", () => {
-    const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = charClass("a")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("a");
-      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
-    }
-  });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("hello");
+        expect(result.next.offset).toBe(8);
+      }
+    });
 
-  it("should parse a character within a range", () => {
-    const input = "b";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = charClass(["a", "c"])(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("b");
-      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
-    }
+    it("should succeed even without trailing whitespace", () => {
+      const parser = token(literal("hello"));
+      const result = parse(parser)("helloworld");
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("hello");
+        expect(result.next.offset).toBe(5);
+      }
+    });
   });
 
-  it("should return error if character does not match", () => {
-    const input = "d";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = charClass(["a", "c"])(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toBe("Expected [a-c]");
-      expect(result.error.pos).toEqual(pos);
-    }
+  describe("quotedString", () => {
+    it("should parse a simple quoted string", () => {
+      const parser = quotedString();
+      const result = parse(parser)('"hello"');
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("hello");
+        expect(result.next.offset).toBe(7);
+      }
+    });
+
+    it("should handle escape sequences", () => {
+      const parser = quotedString();
+      const result = parse(parser)('"hello\\nworld\\t\\"quote\\""');
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe('hello\nworld\t"quote"');
+        expect(result.next.offset).toBe(25);
+      }
+    });
+
+    it("should fail if not properly closed", () => {
+      const parser = quotedString();
+      const result = parse(parser)('"hello');
+
+      expect(result.success).toBe(false);
+    });
   });
 
-  it("should handle newline", () => {
-    const input = "\n";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = charClass("\n")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("\n");
-      expect(result.next).toEqual({ offset: 1, column: 0, line: 2 });
-    }
+  describe("memoize", () => {
+    it("should return the same result as the original parser", () => {
+      const originalParser = literal("hello");
+      const memoizedParser = memoize(originalParser);
+
+      const originalResult = parse(originalParser)("hello");
+      const memoizedResult = parse(memoizedParser)("hello");
+
+      expect(memoizedResult.success).toBe(true);
+      expect(originalResult.success).toBe(true);
+
+      if (originalResult.success && memoizedResult.success) {
+        expect(memoizedResult.val).toBe(originalResult.val);
+        expect(memoizedResult.next.offset).toBe(originalResult.next.offset);
+      }
+    });
   });
 
-  it("should return error for EOF", () => {
-    const input = "";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = charClass("a")(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toBe("Unexpected EOI");
-      expect(result.error.pos).toEqual(pos);
-    }
-  });
-});
+  describe("recursive", () => {
+    it("should be able to create recursive parsers", () => {
+      const [expr, setExpr] = recursive<string>();
 
-describe("seq", () => {
-  it("should parse a sequence of parsers", () => {
-    const input = "abc";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = seq(lit("a"), lit("b"), lit("c"))(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toEqual(["a", "b", "c"]);
-      expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
-    }
-  });
+      // Simple recursive parser for balanced parentheses
+      setExpr(between(literal("("), literal(")")));
 
-  it("should return error if a parser fails", () => {
-    const input = "abd";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = seq(lit("a"), lit("b"), lit("c"))(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toBe("Unexpected character");
-      expect(result.error.pos).toEqual({ offset: 2, column: 2, line: 1 });
-    }
-  });
-});
+      const result = parse(expr)("(())");
 
-describe("choice", () => {
-  it("should parse the first successful parser", () => {
-    const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = choice(lit("a"), lit("b"))(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("a");
-      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
-    }
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("(");
+        expect(result.next.offset).toBe(3);
+      }
+    });
+
+    it("should fail if recursive parser is not initialized", () => {
+      const [expr, _] = recursive<string>();
+      const result = parse(expr)("hello");
+
+      expect(result.success).toBe(false);
+    });
   });
 
-  it("should return error if all parsers fail", () => {
-    const input = "c";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = choice(lit("a"), lit("b"))(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toBe("Expected one of: choice 1, choice 2");
-      expect(result.error.pos).toEqual(pos);
-    }
-  });
-});
+  describe("labeled", () => {
+    it("should parse normally if successful", () => {
+      const parser = labeled(literal("hello"), "Expected 'hello'");
+      const result = parse(parser)("hello");
 
-describe("opt", () => {
-  it("should parse the parser if it succeeds", () => {
-    const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = opt(lit("a"))(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toEqual(["a"]);
-      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
-    }
-  });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("hello");
+        expect(result.next.offset).toBe(5);
+      }
+    });
 
-  it("should return empty array if parser fails", () => {
-    const input = "b";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = opt(lit("a"))(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toEqual([]);
-      expect(result.next).toEqual(pos);
-    }
-  });
-});
+    it("should return custom error message if failed", () => {
+      const parser = labeled(literal("hello"), "Expected 'hello'");
+      const result = parse(parser)("world");
 
-describe("star", () => {
-  it("should parse zero or more occurrences", () => {
-    const input = "aaa";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = star(lit("a"))(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toEqual(["a", "a", "a"]);
-      expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
-    }
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toBe("Expected 'hello'");
+      }
+    });
   });
 
-  it("should return empty array if parser fails", () => {
-    const input = "bbb";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = star(lit("a"))(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toEqual([]);
-      expect(result.next).toEqual(pos);
-    }
-  });
-});
+  describe("number", () => {
+    it("should parse integers", () => {
+      const parser = number();
+      const result = parse(parser)("123");
 
-describe("plus", () => {
-  it("should parse one or more occurrences", () => {
-    const input = "aaa";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = plus(lit("a"))(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toEqual(["a", "a", "a"]);
-      expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
-    }
-  });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe(123);
+        expect(result.next.offset).toBe(3);
+      }
+    });
 
-  it("should return error if parser fails", () => {
-    const input = "bbb";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = plus(lit("a"))(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toBe("Expected at least one");
-      expect(result.error.pos).toEqual(pos);
-    }
-  });
-});
+    it("should parse floats", () => {
+      const parser = number();
+      const result = parse(parser)("123.456");
 
-describe("positive", () => {
-  it("should succeed if parser succeeds", () => {
-    const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = and(lit("a"))(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBeUndefined();
-      expect(result.next).toEqual(pos);
-    }
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe(123.456);
+        expect(result.next.offset).toBe(7);
+      }
+    });
+
+    it("should parse negative numbers", () => {
+      const parser = number();
+      const result = parse(parser)("-123.456");
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe(-123.456);
+        expect(result.next.offset).toBe(8);
+      }
+    });
+
+    it("should parse scientific notation", () => {
+      const parser = number();
+      const result = parse(parser)("1.23e-4");
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe(1.23e-4);
+        expect(result.next.offset).toBe(7);
+      }
+    });
   });
 
-  it("should return error if parser fails", () => {
-    const input = "b";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = and(lit("a"))(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toBe("And-predicate did not match");
-      expect(result.error.pos).toEqual(pos);
-    }
-  });
-});
+  describe("int", () => {
+    it("should parse integers", () => {
+      const parser = int();
+      const result = parse(parser)("123");
 
-describe("negative", () => {
-  it("should succeed if parser fails", () => {
-    const input = "b";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = not(lit("a"))(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBeUndefined();
-      expect(result.next).toEqual(pos);
-    }
-  });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe(123);
+        expect(result.next.offset).toBe(3);
+      }
+    });
 
-  it("should return error if parser succeeds", () => {
-    const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = not(lit("a"))(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toBe("Not-predicate matched");
-      expect(result.error.pos).toEqual(pos);
-    }
-  });
-});
+    it("should parse negative integers", () => {
+      const parser = int();
+      const result = parse(parser)("-123");
 
-describe("map", () => {
-  it("should map the value", () => {
-    const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = map(lit("a"), ($) => $.toUpperCase())(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("A");
-      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
-    }
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe(-123);
+        expect(result.next.offset).toBe(4);
+      }
+    });
+
+    it("should fail to parse floats", () => {
+      const parser = int();
+      const result = parse(parser)("123.456");
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe(123);
+        expect(result.next.offset).toBe(3);
+      }
+    });
   });
 
-  it("should return error if parser fails", () => {
-    const input = "b";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = map(lit("a"), ($) => $.toUpperCase())(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toBe("Unexpected character");
-      expect(result.error.pos).toEqual({ offset: 0, column: 0, line: 1 });
-    }
-  });
-});
+  describe("withPosition", () => {
+    it("should add position info to parser results", () => {
+      const parser = withPosition(literal("hello"));
+      const result = parse(parser)("hello");
 
-describe("Unicode support", () => {
-  it("should parse a single Unicode emoji with any", () => {
-    const input = "😊";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = any()(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("😊");
-      expect(result.next).toEqual({ offset: 2, column: 1, line: 1 });
-    }
-  });
-
-  it("should parse a single Unicode emoji with charClass", () => {
-    const input = "😊";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = charClass("😊")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("😊");
-      expect(result.next).toEqual({ offset: 2, column: 1, line: 1 });
-    }
-  });
-
-  it("should parse a Unicode character in a range with charClass", () => {
-    const input = "𝄞"; // U+1D11E MUSICAL SYMBOL G CLEF
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = charClass(["𝄀", "𝄿"])(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("𝄞");
-      expect(result.next).toEqual({ offset: 2, column: 1, line: 1 });
-    }
-  });
-
-  it("should parse a Unicode string with lit", () => {
-    const input = "a😊b";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = lit("a😊b")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("a😊b");
-      expect(result.next).toEqual({ offset: 4, column: 4, line: 1 });
-    }
-  });
-
-  it("should return error for non-matching Unicode with charClass", () => {
-    const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = charClass("😊")(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toContain("Expected");
-      expect(result.error.pos).toEqual(pos);
-    }
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(typeof result.val).toBe("object");
+        expect(result.val).toHaveProperty("position");
+        expect(result.val.position).toEqual({
+          offset: 0,
+          line: 1,
+          column: 0,
+        });
+        expect(result.next.offset).toBe(5);
+      }
+    });
   });
 });

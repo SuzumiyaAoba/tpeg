@@ -15,7 +15,7 @@ import {
   parse,
   sequence,
   zeroOrMore,
-} from "./index";
+} from "tpeg-core";
 
 describe("tpeg-combinator", () => {
   describe("Core Combinators", () => {
@@ -87,7 +87,7 @@ describe("tpeg-combinator", () => {
         const alphanumericParser = charClass(
           ["a", "z"],
           ["A", "Z"],
-          ["0", "9"],
+          ["0", "9"]
         );
         const successResult4 = parse(alphanumericParser)("Z");
         expect(successResult4.success).toBe(true);
@@ -270,7 +270,7 @@ describe("tpeg-combinator", () => {
               val: result.val.toUpperCase(),
               offset: result.next.offset,
             };
-          },
+          }
         );
         const successResult = parse(parser)("hello");
         expect(successResult.success).toBe(true);

@@ -405,6 +405,9 @@ export const choice =
 /**
  * Alias for {@link sequence}.
  *
+ * @template P Array of parser types
+ * @param parsers List of parsers to apply in order
+ * @returns Parser returning a tuple of results from each parser if all succeed, or fails on the first failure.
  * @see sequence
  */
 export const seq = sequence;
@@ -415,6 +418,9 @@ export const seq = sequence;
  * @template T Type of the parse result value
  * @param parser Target parser
  * @returns Parser<[T] | []> A parser that returns a single-element array if successful, or an empty array if not.
+ * @example
+ *   const optionalDigit = optional(charClass(["0", "9"]));
+ *   // Matches a digit or nothing
  */
 export const optional =
   <T>(parser: Parser<T>): Parser<[T] | []> =>
@@ -440,6 +446,9 @@ export const optional =
 /**
  * Alias for {@link optional}.
  *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @returns Parser<[T] | []> A parser that returns a single-element array if successful, or an empty array if not.
  * @see optional
  */
 export const opt = optional;
@@ -450,6 +459,9 @@ export const opt = optional;
  * @template T Type of the parse result value
  * @param parser Target parser
  * @returns Parser<T[]> A parser that returns an array of results (possibly empty).
+ * @example
+ *   const digits = zeroOrMore(charClass(["0", "9"]));
+ *   // Matches zero or more digits
  */
 export const zeroOrMore =
   <T>(parser: Parser<T>): Parser<T[]> =>
@@ -484,6 +496,9 @@ export const zeroOrMore =
 /**
  * Alias for {@link zeroOrMore}.
  *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @returns Parser<T[]> A parser that returns an array of results (possibly empty).
  * @see zeroOrMore
  */
 export const star = zeroOrMore;
@@ -491,6 +506,9 @@ export const star = zeroOrMore;
 /**
  * Alias for {@link zeroOrMore}.
  *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @returns Parser<T[]> A parser that returns an array of results (possibly empty).
  * @see zeroOrMore
  */
 export const many = zeroOrMore;
@@ -533,6 +551,9 @@ export const oneOrMore =
 /**
  * Alias for {@link oneOrMore}.
  *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @returns Parser<NonEmptyArray<T>> A parser that returns a non-empty array of results, or fails if no match is found.
  * @see oneOrMore
  */
 export const plus = oneOrMore;
@@ -540,6 +561,9 @@ export const plus = oneOrMore;
 /**
  * Alias for {@link oneOrMore}.
  *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @returns Parser<NonEmptyArray<T>> A parser that returns a non-empty array of results, or fails if no match is found.
  * @see oneOrMore
  */
 export const many1 = oneOrMore;
@@ -578,6 +602,9 @@ export const andPredicate =
 /**
  * Alias for {@link andPredicate}.
  *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @returns Parser<never> A parser that only checks for success/failure without consuming input.
  * @see andPredicate
  */
 export const and = andPredicate;
@@ -585,6 +612,9 @@ export const and = andPredicate;
 /**
  * Alias for {@link andPredicate}.
  *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @returns Parser<never> A parser that only checks for success/failure without consuming input.
  * @see andPredicate
  */
 export const positive = andPredicate;
@@ -592,6 +622,9 @@ export const positive = andPredicate;
 /**
  * Alias for {@link andPredicate}.
  *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @returns Parser<never> A parser that only checks for success/failure without consuming input.
  * @see andPredicate
  */
 export const assert = andPredicate;
@@ -630,6 +663,9 @@ export const notPredicate =
 /**
  * Alias for {@link notPredicate}.
  *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @returns Parser<never> A parser that only checks for failure without consuming input.
  * @see notPredicate
  */
 export const not = notPredicate;
@@ -637,6 +673,9 @@ export const not = notPredicate;
 /**
  * Alias for {@link notPredicate}.
  *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @returns Parser<never> A parser that only checks for failure without consuming input.
  * @see notPredicate
  */
 export const negative = notPredicate;
@@ -649,6 +688,12 @@ export const negative = notPredicate;
  * @param parser Target parser
  * @param f Transformation function applied to the parse result value
  * @returns Parser<U> A parser that returns the transformed value if parsing succeeds, or fails otherwise.
+ * @example
+ *   const digit = map(
+ *     charClass(["0", "9"]),
+ *     char => parseInt(char, 10)
+ *   );
+ *   // Parses a digit char and converts it to a number
  */
 export const map =
   <T, U>(parser: Parser<T>, f: (value: T) => U): Parser<U> =>
@@ -668,6 +713,12 @@ export const map =
  * @param parser Target parser
  * @param f Function to transform the ParseSuccess object
  * @returns Parser<U> A parser that returns the transformed value if parsing succeeds, or fails otherwise.
+ * @example
+ *   const withPosition = mapResult(
+ *     charClass(["0", "9"]),
+ *     result => ({ value: result.val, position: result.current })
+ *   );
+ *   // Returns both the parsed digit and its position in the input
  */
 export const mapResult =
   <T, U>(parser: Parser<T>, f: (value: ParseSuccess<T>) => U): Parser<U> =>
