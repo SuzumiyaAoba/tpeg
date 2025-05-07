@@ -5,7 +5,7 @@
 /**
  * Type representing a non-empty array.
  *
- * This type ensures that tthe array contains at least one element.
+ * This type ensures that the array contains at least one element.
  *
  * @template T Type of array elements
  */
@@ -173,7 +173,7 @@ export const parse =
  * @returns Parser<string> A parser that succeeds if any character is present at the current position, or fails at end of input.
  */
 export const anyChar = (): Parser<string> => (input: string, pos: Pos) => {
-  const [char, _] = getCharAndLength(input, pos.offset);
+  const [char, charLength] = getCharAndLength(input, pos.offset);
 
   if (!char) {
     return {
@@ -288,7 +288,7 @@ export const charClass =
     >
   ): Parser<string> =>
   (input: string, pos: Pos) => {
-    const [char, _] = getCharAndLength(input, pos.offset);
+    const [char, charLength] = getCharAndLength(input, pos.offset);
     if (!char) {
       return {
         success: false,
