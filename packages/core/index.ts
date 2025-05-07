@@ -101,10 +101,18 @@ export type ParseResult<T> = ParseSuccess<T> | ParseFailure;
  *
  * @property message Error message
  * @property pos Position where the error occurred
+ * @property expected What was expected at this position
+ * @property found What was actually found at this position
+ * @property parserName Name of the parser that caused the error
+ * @property context Information about parser context (e.g. the rule name or path)
  */
 export interface ParseError {
   message: string;
   pos: Pos;
+  expected?: string | string[];
+  found?: string;
+  parserName?: string;
+  context?: string | string[];
 }
 
 /**
@@ -172,33 +180,33 @@ export const parse =
  *
  * @returns Parser<string> A parser that succeeds if any character is present at the current position, or fails at end of input.
  */
-export const anyChar = (): Parser<string> => (input: string, pos: Pos) => {
-  const [char, charLength] = getCharAndLength(input, pos.offset);
+export const anyChar =
+  (parserName = "anyChar"): Parser<string> =>
+  (input: string, pos: Pos) => {
+    const [char, charLength] = getCharAndLength(input, pos.offset);
 
-  if (!char) {
+    if (!char) {
+      return createFailure("Unexpected EOI", pos, {
+        expected: "any character",
+        found: "end of input",
+        parserName,
+      });
+    }
+
     return {
-      success: false,
-      error: {
-        message: "Unexpected EOI",
-        pos,
-      },
+      success: true,
+      val: char,
+      current: pos,
+      next: nextPos(char, pos),
     };
-  }
-
-  return {
-    success: true,
-    val: char,
-    current: pos,
-    next: nextPos(char, pos),
   };
-};
 
 /**
  * Alias for {@link anyChar}.
  *
  * @returns Parser<string>
  */
-export const any = anyChar;
+export const any = () => anyChar("any");
 
 /**
  * Parser that parses the specified literal string from the input.
@@ -208,21 +216,28 @@ export const any = anyChar;
  * @returns Parser<T> A parser that succeeds if the input at the current position matches the given string exactly.
  */
 export const literal =
-  <T extends string>(str: NonEmptyString<T>): Parser<T> =>
+  <T extends string>(
+    str: NonEmptyString<T>,
+    parserName = "literal"
+  ): Parser<T> =>
   (input: string, pos: Pos) => {
     // Check for end of input
     if (pos.offset >= input.length) {
-      return createFailure("Unexpected EOI", pos);
+      return createFailure("Unexpected EOI", pos, {
+        expected: `"${str}"`,
+        found: "end of input",
+        parserName,
+      });
     }
 
     // Optimize for short, simple strings
     if (canUseOptimizedPath(str)) {
-      const result = parseSimpleString(str, input, pos);
+      const result = parseSimpleString(str, input, pos, parserName);
       if (result) return result;
     }
 
     // Full Unicode-aware parsing for complex strings
-    return parseComplexString(str, input, pos);
+    return parseComplexString(str, input, pos, parserName);
   };
 
 /**
@@ -242,14 +257,20 @@ const canUseOptimizedPath = (str: string): boolean => {
  *
  * @param message Error message
  * @param pos Position where the error occurred
+ * @param options Additional error information
  * @returns A ParseFailure object
  */
-const createFailure = (message: string, pos: Pos): ParseFailure => {
+const createFailure = (
+  message: string,
+  pos: Pos,
+  options?: Omit<ParseError, "message" | "pos">
+): ParseFailure => {
   return {
     success: false,
     error: {
       message,
       pos,
+      ...options,
     },
   };
 };
@@ -260,16 +281,22 @@ const createFailure = (message: string, pos: Pos): ParseFailure => {
  * @param str The target string to parse
  * @param input The input string
  * @param pos The current position
+ * @param parserName Name of the parser
  * @returns A ParseResult if successful, null if optimization can't be applied
  */
 const parseSimpleString = <T extends string>(
   str: NonEmptyString<T>,
   input: string,
-  pos: Pos
+  pos: Pos,
+  parserName = "literal"
 ): ParseResult<T> | null => {
   // Fail early if input is too short
   if (pos.offset + str.length > input.length) {
-    return createFailure("Unexpected EOI", pos);
+    return createFailure("Unexpected EOI", pos, {
+      expected: `"${str}"`,
+      found: "end of input",
+      parserName,
+    });
   }
 
   // Fast substring comparison
@@ -297,11 +324,25 @@ const parseSimpleString = <T extends string>(
       i++;
     }
 
-    return createFailure("Unexpected character", {
+    const mismatchPos = {
       offset: pos.offset + i,
       column: pos.column + i,
       line: pos.line,
-    });
+    };
+
+    // Extract the found character that didn't match
+    const foundChar = i < inputSubstring.length ? inputSubstring.charAt(i) : "";
+    const expectedChar = i < str.length ? str.charAt(i) : "";
+
+    return createFailure(
+      `Unexpected character: expected "${expectedChar}" but found "${foundChar}"`,
+      mismatchPos,
+      {
+        expected: `"${str}"`,
+        found: inputSubstring,
+        parserName,
+      }
+    );
   }
 };
 
@@ -311,12 +352,14 @@ const parseSimpleString = <T extends string>(
  * @param str The target string to parse
  * @param input The input string
  * @param pos The current position
+ * @param parserName Name of the parser
  * @returns A ParseResult
  */
 const parseComplexString = <T extends string>(
   str: NonEmptyString<T>,
   input: string,
-  pos: Pos
+  pos: Pos,
+  parserName = "literal"
 ): ParseResult<T> => {
   let column = pos.column;
   let line = pos.line;
@@ -328,11 +371,21 @@ const parseComplexString = <T extends string>(
     const [targetChar, targetCharLength] = getCharAndLength(str, strOffset);
 
     if (!char || char !== targetChar) {
-      return createFailure("Unexpected character", {
+      const errorPos = {
         offset: currentOffset,
         column,
         line,
-      });
+      };
+
+      return createFailure(
+        `Unexpected ${char ? `character "${char}"` : "EOI"}`,
+        errorPos,
+        {
+          expected: `"${targetChar}"`,
+          found: char || "end of input",
+          parserName,
+        }
+      );
     }
 
     if (char === "\n") {
@@ -382,10 +435,20 @@ export const charClass =
   (input: string, pos: Pos) => {
     const [char, charLength] = getCharAndLength(input, pos.offset);
     if (!char) {
-      return {
-        success: false,
-        error: { message: "Unexpected EOI", pos },
+      const classToString = (charOrRange: string | [string, string]) => {
+        if (typeof charOrRange === "string") {
+          return charOrRange;
+        }
+        return `${charOrRange[0]}-${charOrRange[1]}`;
       };
+
+      const expectedChars = charOrRanges.map(classToString).join("");
+
+      return createFailure("Unexpected EOI", pos, {
+        expected: `[${expectedChars}]`,
+        found: "end of input",
+        parserName: "charClass",
+      });
     }
 
     for (const charOrRange of charOrRanges) {
@@ -427,13 +490,13 @@ export const charClass =
       return `${charOrRange[0]}-${charOrRange[1]}`;
     };
 
-    return {
-      success: false,
-      error: {
-        message: `Expected [${charOrRanges.map(classToString).join("")}]`,
-        pos,
-      },
-    };
+    const expectedChars = charOrRanges.map(classToString).join("");
+
+    return createFailure(`Expected [${expectedChars}]`, pos, {
+      expected: `[${expectedChars}]`,
+      found: char,
+      parserName: "charClass",
+    });
   };
 
 /**
@@ -450,11 +513,24 @@ export const sequence =
   (input: string, pos: Pos) => {
     const values: unknown[] = [];
     let currentPos = pos;
-    for (const parser of parsers) {
+
+    for (let i = 0; i < parsers.length; i++) {
+      const parser = parsers[i];
       const result = parser(input, currentPos);
 
       if (!result.success) {
-        return result;
+        // Add sequence context to error
+        return {
+          success: false,
+          error: {
+            ...result.error,
+            message: `Sequence failed at item ${i + 1}: ${
+              result.error.message
+            }`,
+            context: [`sequence item ${i + 1} of ${parsers.length}`],
+            parserName: result.error.parserName || "sequence",
+          },
+        };
       }
 
       values.push(result.val);
@@ -483,22 +559,45 @@ export const choice =
     ...parsers: { [K in keyof T]: Parser<T[K]> }
   ): Parser<T[number]> =>
   (input: string, pos: Pos) => {
-    for (const parser of parsers) {
+    const errors: ParseError[] = [];
+
+    for (let i = 0; i < parsers.length; i++) {
+      const parser = parsers[i];
       const result = parser(input, pos);
+
       if (result.success) {
         return result;
       }
+
+      // Collect error information from each failed alternative
+      errors.push({
+        ...result.error,
+        context: [
+          ...(result.error.context || []),
+          `choice alternative ${i + 1} of ${parsers.length}`,
+        ],
+      });
     }
 
-    return {
-      success: false,
-      error: {
-        message: `Expected one of: ${parsers
-          .map((_, i) => `choice ${i + 1}`)
-          .join(", ")}`,
-        pos,
-      },
-    };
+    // Combine error information from all alternatives
+    const combinedExpected = errors
+      .map((err) => err.expected)
+      .filter((exp): exp is string | string[] => exp !== undefined)
+      .flat();
+
+    // Use the error from the last parser as the base
+    const lastError = errors[errors.length - 1];
+
+    return createFailure(
+      `None of the ${parsers.length} alternatives matched`,
+      pos,
+      {
+        expected: combinedExpected.length > 0 ? combinedExpected : undefined,
+        found: lastError.found,
+        parserName: "choice",
+        context: [`choice with ${parsers.length} alternatives`],
+      }
+    );
   };
 
 /**
@@ -534,6 +633,7 @@ export const optional =
       };
     }
 
+    // For optional, failure is not an error, just return empty array
     return {
       success: true,
       val: [],
@@ -627,7 +727,15 @@ export const oneOrMore =
     if (!firstResult.success) {
       return {
         success: false,
-        error: { message: "Expected at least one", pos },
+        error: {
+          ...firstResult.error,
+          message: `Expected at least one match: ${firstResult.error.message}`,
+          parserName: "oneOrMore",
+          context: [
+            ...(firstResult.error.context || []),
+            "first item in oneOrMore",
+          ],
+        },
       };
     }
 
@@ -684,8 +792,10 @@ export const andPredicate =
       return {
         success: false,
         error: {
-          message: "And-predicate did not match",
-          pos,
+          ...result.error,
+          message: `And-predicate did not match: ${result.error.message}`,
+          parserName: "andPredicate",
+          context: [...(result.error.context || []), "in positive lookahead"],
         },
       };
     }
@@ -750,13 +860,12 @@ export const notPredicate =
       };
     }
 
-    return {
-      success: false,
-      error: {
-        message: "Not-predicate matched",
-        pos,
-      },
-    };
+    return createFailure("Not-predicate matched when it should not have", pos, {
+      parserName: "notPredicate",
+      context: ["in negative lookahead"],
+      expected: "pattern not to match",
+      found: result.success ? "matching pattern" : undefined,
+    });
   };
 
 /**
@@ -828,3 +937,146 @@ export const mapResult =
       ? { ...result, val: f(result) }
       : (result as ParseResult<U>);
   };
+
+/**
+ * Formats a parse error into a human-readable string with source context.
+ *
+ * @param error The parse error to format
+ * @param input The original input string that was being parsed
+ * @param options Formatting options
+ * @returns A formatted error message with context
+ */
+export const formatParseError = (
+  error: ParseError,
+  input: string,
+  options: {
+    contextLines?: number;
+    highlightErrors?: boolean;
+    showPosition?: boolean;
+    colorize?: boolean;
+  } = {}
+): string => {
+  const {
+    contextLines = 2,
+    highlightErrors = true,
+    showPosition = true,
+    colorize = true,
+  } = options;
+
+  const { pos, message, expected, found, parserName, context } = error;
+  const { line, column, offset } = pos;
+
+  // Helper for color formatting if enabled
+  const color = {
+    red: (text: string) => (colorize ? `\x1b[31m${text}\x1b[0m` : text),
+    green: (text: string) => (colorize ? `\x1b[32m${text}\x1b[0m` : text),
+    yellow: (text: string) => (colorize ? `\x1b[33m${text}\x1b[0m` : text),
+    blue: (text: string) => (colorize ? `\x1b[34m${text}\x1b[0m` : text),
+    bold: (text: string) => (colorize ? `\x1b[1m${text}\x1b[0m` : text),
+  };
+
+  // Build the basic error message
+  let result = color.bold(
+    color.red(`Parse error at line ${line}, column ${column}:\n`)
+  );
+
+  // Add parser context if available
+  if (context?.length) {
+    result += color.blue(
+      `Context: ${Array.isArray(context) ? context.join(" > ") : context}\n`
+    );
+  }
+
+  // Add parser name if available
+  if (parserName) {
+    result += color.blue(`Parser: ${parserName}\n`);
+  }
+
+  // Add expected/found info
+  if (expected) {
+    const expectedStr = Array.isArray(expected)
+      ? expected.join(", ")
+      : expected;
+    result += color.green(`Expected: ${expectedStr}\n`);
+  }
+  if (found !== undefined) {
+    result += color.red(`Found: ${found === "" ? "empty string" : found}\n`);
+  }
+
+  // Add the error message itself
+  result += color.bold(`${message}\n`);
+
+  // Add source context if input is provided
+  if (input) {
+    const lines = input.split("\n");
+
+    // Determine which lines to show
+    const startLine = Math.max(1, line - contextLines);
+    const endLine = Math.min(lines.length, line + contextLines);
+
+    // Add source context
+    result += "\n" + color.bold("Source context:") + "\n";
+
+    // Calculate width needed for line numbers
+    const lineNumWidth = String(endLine).length;
+
+    // Show context lines
+    for (let i = startLine; i <= endLine; i++) {
+      const lineContent = lines[i - 1];
+      const isErrorLine = i === line;
+      const lineNum = String(i).padStart(lineNumWidth, " ");
+
+      // Mark the error line
+      const prefix = isErrorLine ? color.bold(color.red("> ")) : "  ";
+      result += `${prefix}${lineNum} | ${lineContent}\n`;
+
+      // Add pointer to error position
+      if (isErrorLine && highlightErrors) {
+        const pointer =
+          " ".repeat(lineNumWidth + 3 + column) + color.bold(color.red("^"));
+        result += pointer + "\n";
+      }
+    }
+  }
+
+  // Add position information
+  if (showPosition) {
+    result += `\n${color.bold(
+      "Position:"
+    )} Line ${line}, Column ${column}, Offset ${offset}\n`;
+  }
+
+  return result;
+};
+
+/**
+ * Formats a parse result into a human-readable error message if it's a failure.
+ * For successful parse results, returns null.
+ *
+ * @param result The parse result to format
+ * @param input The original input string
+ * @param options Formatting options (see formatParseError)
+ * @returns A formatted error message or null if parsing was successful
+ */
+export const formatParseResult = <T>(
+  result: ParseResult<T>,
+  input: string,
+  options?: Parameters<typeof formatParseError>[2]
+): string | null => {
+  if (result.success) {
+    return null;
+  }
+
+  return formatParseError(result.error, input, options);
+};
+
+// Helper function for simple error reporting
+export const reportParseError = <T>(
+  result: ParseResult<T>,
+  input: string,
+  options?: Parameters<typeof formatParseError>[2]
+): void => {
+  if (!result.success) {
+    console.error(formatParseError(result.error, input, options));
+  }
+};
