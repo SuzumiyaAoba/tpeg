@@ -1,6 +1,6 @@
-import { describe, it, expect } from "bun:test";
-import { expression, term, runDemo } from "./error-demo";
+import { describe, expect, it } from "bun:test";
 import { parse } from "tpeg-core";
+import { expression, runDemo, term } from "./error-demo";
 
 describe("Error Demo", () => {
   it("term parser should parse digits with spaces", () => {

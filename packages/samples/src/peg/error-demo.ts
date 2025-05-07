@@ -10,23 +10,43 @@ import {
   zeroOrMore,
 } from "tpeg-core";
 
+// 独自のParseErrorインターフェースを定義
+interface DemoParseError {
+  message: string;
+  pos: {
+    line: number;
+    column: number;
+  };
+  expected?: string | string[];
+  found?: string;
+  parserName?: string;
+  context?: string | string[];
+}
+
 // formatParseError functions from core package
 // Normally these would be available directly from the core package
 // but this is just for demo purposes - assume they're imported
-const formatParseError = (error: any, input: string): string => {
+const formatParseError = (error: DemoParseError, input: string): string => {
+  const expected = error.expected || "unknown";
+  const found = error.found || "unknown";
+  const parserName = error.parserName || "unknown";
+  let contextStr = "unknown";
+
+  if (error.context) {
+    if (Array.isArray(error.context)) {
+      contextStr = error.context.join(" > ");
+    } else {
+      contextStr = error.context;
+    }
+  }
+
   return `
 Error at line ${error.pos.line}, column ${error.pos.column}:
 Message: ${error.message}
-Expected: ${error.expected || "unknown"}
-Found: ${error.found || "unknown"}
-Parser: ${error.parserName || "unknown"}
-Context: ${
-    error.context
-      ? Array.isArray(error.context)
-        ? error.context.join(" > ")
-        : error.context
-      : "unknown"
-  }
+Expected: ${expected}
+Found: ${found}
+Parser: ${parserName}
+Context: ${contextStr}
 
 Source:
 ${input.split("\n")[error.pos.line - 1] || ""}
@@ -90,7 +110,9 @@ function displayParseResult<T>(result: ParseResult<T>, input: string): void {
     console.log("Remaining input:", input.substring(result.next.offset));
   } else {
     console.log("Parsing failed...");
-    console.log(formatParseError(result.error, input));
+    console.log(
+      formatParseError(result.error as unknown as DemoParseError, input)
+    );
   }
 }
 
@@ -114,11 +136,11 @@ function runDemo(): void {
     { name: "Empty input", input: "" },
   ];
 
-  errorCases.forEach(({ name, input }) => {
+  for (const { name, input } of errorCases) {
     console.log(`\n${name}:`, input);
     const result = parse(expression())(input);
     displayParseResult(result, input);
-  });
+  }
 }
 
 // Run the demo

@@ -27,7 +27,7 @@ import {
   star,
   zeroOrMore,
 } from "./index";
-import type { ParseSuccess, Pos, ParseError, ParseResult } from "./index";
+import type { ParseError, ParseResult, ParseSuccess, Pos } from "./index";
 
 describe("isEmptyArray", () => {
   it("should return true for an empty array", () => {
@@ -279,7 +279,7 @@ describe("choice", () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toContain(
-        "None of the 2 alternatives matched"
+        "None of the 2 alternatives matched",
       );
       expect(result.error.pos).toEqual(pos);
     }
@@ -531,7 +531,7 @@ describe("tpeg-combinator", () => {
               val: result.val.toUpperCase(),
               offset: result.next.offset,
             };
-          }
+          },
         );
         const successResult = parse(parser)("hello");
         expect(successResult.success).toBe(true);
@@ -655,7 +655,7 @@ describe("Enhanced Error Handling", () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message).toContain(
-          "None of the 3 alternatives matched"
+          "None of the 3 alternatives matched",
         );
         expect(result.error.expected).toBeDefined();
         expect(result.error.parserName).toBe("choice");
@@ -700,7 +700,7 @@ describe("Enhanced Error Handling", () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message).toContain(
-          "Not-predicate matched when it should not have"
+          "Not-predicate matched when it should not have",
         );
         expect(result.error.parserName).toBe("notPredicate");
         expect(result.error.context).toContain("in negative lookahead");
@@ -753,7 +753,7 @@ describe("Error Formatting", () => {
           contextLines: 0,
           showPosition: false,
           highlightErrors: false,
-        }
+        },
       );
 
       expect(minimalFormatted).toContain("Parse error at line 3, column 5");

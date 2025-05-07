@@ -30,7 +30,7 @@ export const isEmptyArray = <T>(arr: readonly T[]): arr is [] => {
  * @returns Returns true if the array is non-empty, otherwise false.
  */
 export const isNonEmptyArray = <T>(
-  arr: readonly T[]
+  arr: readonly T[],
 ): arr is NonEmptyArray<T> => {
   return arr.length > 0;
 };
@@ -135,7 +135,7 @@ export type Parser<T> = (input: string, pos: Pos) => ParseResult<T>;
  */
 export const getCharAndLength = (
   input: string,
-  offset: number
+  offset: number,
 ): [string, number] => {
   const code = input.codePointAt(offset);
   if (code === undefined) return ["", 0];
@@ -218,7 +218,7 @@ export const any = () => anyChar("any");
 export const literal =
   <T extends string>(
     str: NonEmptyString<T>,
-    parserName = "literal"
+    parserName = "literal",
   ): Parser<T> =>
   (input: string, pos: Pos) => {
     // Check for end of input
@@ -263,7 +263,7 @@ const canUseOptimizedPath = (str: string): boolean => {
 const createFailure = (
   message: string,
   pos: Pos,
-  options?: Omit<ParseError, "message" | "pos">
+  options?: Omit<ParseError, "message" | "pos">,
 ): ParseFailure => {
   return {
     success: false,
@@ -288,7 +288,7 @@ const parseSimpleString = <T extends string>(
   str: NonEmptyString<T>,
   input: string,
   pos: Pos,
-  parserName = "literal"
+  parserName = "literal",
 ): ParseResult<T> | null => {
   // Fail early if input is too short
   if (pos.offset + str.length > input.length) {
@@ -313,37 +313,36 @@ const parseSimpleString = <T extends string>(
         line: pos.line,
       },
     };
-  } else {
-    // Find position of mismatch
-    let i = 0;
-    while (
-      i < str.length &&
-      i < inputSubstring.length &&
-      str.charAt(i) === inputSubstring.charAt(i)
-    ) {
-      i++;
-    }
-
-    const mismatchPos = {
-      offset: pos.offset + i,
-      column: pos.column + i,
-      line: pos.line,
-    };
-
-    // Extract the found character that didn't match
-    const foundChar = i < inputSubstring.length ? inputSubstring.charAt(i) : "";
-    const expectedChar = i < str.length ? str.charAt(i) : "";
-
-    return createFailure(
-      `Unexpected character: expected "${expectedChar}" but found "${foundChar}"`,
-      mismatchPos,
-      {
-        expected: `"${str}"`,
-        found: inputSubstring,
-        parserName,
-      }
-    );
   }
+  // Find position of mismatch
+  let i = 0;
+  while (
+    i < str.length &&
+    i < inputSubstring.length &&
+    str.charAt(i) === inputSubstring.charAt(i)
+  ) {
+    i++;
+  }
+
+  const mismatchPos = {
+    offset: pos.offset + i,
+    column: pos.column + i,
+    line: pos.line,
+  };
+
+  // Extract the found character that didn't match
+  const foundChar = i < inputSubstring.length ? inputSubstring.charAt(i) : "";
+  const expectedChar = i < str.length ? str.charAt(i) : "";
+
+  return createFailure(
+    `Unexpected character: expected "${expectedChar}" but found "${foundChar}"`,
+    mismatchPos,
+    {
+      expected: `"${str}"`,
+      found: inputSubstring,
+      parserName,
+    },
+  );
 };
 
 /**
@@ -359,7 +358,7 @@ const parseComplexString = <T extends string>(
   str: NonEmptyString<T>,
   input: string,
   pos: Pos,
-  parserName = "literal"
+  parserName = "literal",
 ): ParseResult<T> => {
   let column = pos.column;
   let line = pos.line;
@@ -384,7 +383,7 @@ const parseComplexString = <T extends string>(
           expected: `"${targetChar}"`,
           found: char || "end of input",
           parserName,
-        }
+        },
       );
     }
 
@@ -596,7 +595,7 @@ export const choice =
         found: lastError.found,
         parserName: "choice",
         context: [`choice with ${parsers.length} alternatives`],
-      }
+      },
     );
   };
 
@@ -954,7 +953,7 @@ export const formatParseError = (
     highlightErrors?: boolean;
     showPosition?: boolean;
     colorize?: boolean;
-  } = {}
+  } = {},
 ): string => {
   const {
     contextLines = 2,
@@ -977,13 +976,13 @@ export const formatParseError = (
 
   // Build the basic error message
   let result = color.bold(
-    color.red(`Parse error at line ${line}, column ${column}:\n`)
+    color.red(`Parse error at line ${line}, column ${column}:\n`),
   );
 
   // Add parser context if available
   if (context?.length) {
     result += color.blue(
-      `Context: ${Array.isArray(context) ? context.join(" > ") : context}\n`
+      `Context: ${Array.isArray(context) ? context.join(" > ") : context}\n`,
     );
   }
 
@@ -1015,7 +1014,7 @@ export const formatParseError = (
     const endLine = Math.min(lines.length, line + contextLines);
 
     // Add source context
-    result += "\n" + color.bold("Source context:") + "\n";
+    result += `\n${color.bold("Source context:")}\n`;
 
     // Calculate width needed for line numbers
     const lineNumWidth = String(endLine).length;
@@ -1034,7 +1033,7 @@ export const formatParseError = (
       if (isErrorLine && highlightErrors) {
         const pointer =
           " ".repeat(lineNumWidth + 3 + column) + color.bold(color.red("^"));
-        result += pointer + "\n";
+        result += `${pointer}\n`;
       }
     }
   }
@@ -1042,7 +1041,7 @@ export const formatParseError = (
   // Add position information
   if (showPosition) {
     result += `\n${color.bold(
-      "Position:"
+      "Position:",
     )} Line ${line}, Column ${column}, Offset ${offset}\n`;
   }
 
@@ -1061,7 +1060,7 @@ export const formatParseError = (
 export const formatParseResult = <T>(
   result: ParseResult<T>,
   input: string,
-  options?: Parameters<typeof formatParseError>[2]
+  options?: Parameters<typeof formatParseError>[2],
 ): string | null => {
   if (result.success) {
     return null;
@@ -1074,7 +1073,7 @@ export const formatParseResult = <T>(
 export const reportParseError = <T>(
   result: ParseResult<T>,
   input: string,
-  options?: Parameters<typeof formatParseError>[2]
+  options?: Parameters<typeof formatParseError>[2],
 ): void => {
   if (!result.success) {
     console.error(formatParseError(result.error, input, options));
