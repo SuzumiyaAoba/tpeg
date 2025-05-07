@@ -14,7 +14,7 @@ const N = 10000;
 function benchParser(
   name: string,
   parser: ReturnType<typeof any | typeof charClass | typeof lit>,
-  input: string
+  input: string,
 ) {
   it(`benchmark: ${name} x${N}`, () => {
     const pos = { offset: 0, column: 0, line: 1 };

@@ -30,7 +30,7 @@ export const isEmptyArray = <T>(arr: readonly T[]): arr is [] => {
  * @returns Returns true if the array is non-empty, otherwise false.
  */
 export const isNonEmptyArray = <T>(
-  arr: readonly T[],
+  arr: readonly T[]
 ): arr is NonEmptyArray<T> => {
   return arr.length > 0;
 };
@@ -127,7 +127,7 @@ export type Parser<T> = (input: string, pos: Pos) => ParseResult<T>;
  */
 export const getCharAndLength = (
   input: string,
-  offset: number,
+  offset: number
 ): [string, number] => {
   const code = input.codePointAt(offset);
   if (code === undefined) return ["", 0];
@@ -222,17 +222,21 @@ export const literal =
 
     let column = pos.column;
     let line = pos.line;
-    for (let i = 0; i < str.length; i++) {
-      const char = input.charAt(pos.offset + i);
+    let currentOffset = pos.offset;
+    let strOffset = 0;
 
-      if (char !== str.charAt(i)) {
+    while (strOffset < str.length) {
+      const [char, charLength] = getCharAndLength(input, currentOffset);
+      const [targetChar, targetCharLength] = getCharAndLength(str, strOffset);
+
+      if (!char || char !== targetChar) {
         return {
           success: false,
           error: {
             message: "Unexpected character",
             pos: {
-              offset: pos.offset + i,
-              column: column,
+              offset: currentOffset,
+              column,
               line,
             },
           },
@@ -245,6 +249,9 @@ export const literal =
       } else {
         column++;
       }
+
+      currentOffset += charLength;
+      strOffset += targetCharLength;
     }
 
     return {
@@ -252,7 +259,7 @@ export const literal =
       val: str,
       current: pos,
       next: {
-        offset: pos.offset + str.length,
+        offset: currentOffset,
         column,
         line,
       },

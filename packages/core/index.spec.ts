@@ -125,6 +125,55 @@ describe("string", () => {
       expect(result.next).toEqual({ offset: 3, column: 1, line: 2 });
     }
   });
+
+  it("should handle surrogate pairs correctly", () => {
+    // 𝄞 (musical G clef) is a surrogate pair (U+1D11E) represented as \uD834\uDD1E
+    const input = "𝄞abc";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = lit("𝄞abc")(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("𝄞abc");
+      // 𝄞 is a surrogate pair (2 code units) + 3 characters
+      expect(result.next).toEqual({ offset: 5, column: 4, line: 1 });
+    }
+  });
+
+  it("should correctly parse emoji characters", () => {
+    // 🙂 is a surrogate pair (U+1F642)
+    const input = "🙂🙂";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = lit("🙂🙂")(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("🙂🙂");
+      // Each emoji is 2 code units, so 4 in total
+      expect(result.next).toEqual({ offset: 4, column: 2, line: 1 });
+    }
+  });
+
+  it("should handle mixed normal and surrogate pair characters", () => {
+    const input = "a🙂b";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = lit("a🙂b")(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("a🙂b");
+      // 1 (a) + 2 (🙂) + 1 (b) = 4 code units
+      expect(result.next).toEqual({ offset: 4, column: 3, line: 1 });
+    }
+  });
+
+  it("should fail correctly on partial emoji mismatch", () => {
+    const input = "a🙃b"; // Different emoji (upside-down smile)
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = lit("a🙂b")(input, pos);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.message).toBe("Unexpected character");
+      expect(result.error.pos).toEqual({ offset: 1, column: 1, line: 1 });
+    }
+  });
 });
 
 describe("charClass", () => {
@@ -417,7 +466,7 @@ describe("Unicode support", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toBe("a😊b");
-      expect(result.next).toEqual({ offset: 4, column: 4, line: 1 });
+      expect(result.next).toEqual({ offset: 4, column: 3, line: 1 });
     }
   });
 
@@ -477,7 +526,7 @@ describe("tpeg-combinator", () => {
               val: result.val.toUpperCase(),
               offset: result.next.offset,
             };
-          },
+          }
         );
         const successResult = parse(parser)("hello");
         expect(successResult.success).toBe(true);
