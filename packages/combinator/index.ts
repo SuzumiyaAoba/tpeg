@@ -119,11 +119,18 @@ export const sepBy = <T, S>(
 export const sepBy1 = <T, S>(
   value: Parser<T>,
   separator: Parser<S>,
-): Parser<NonEmptyArray<T>> =>
-  map(
+): Parser<NonEmptyArray<T>> => {
+  // 単一の値を処理するパーサー
+  const single = map(value, (v) => [v] as NonEmptyArray<T>);
+
+  // 複数の値を処理するパーサー
+  const multiple = map(
     seq(value, oneOrMore(map(seq(separator, value), ([_, v]) => v))),
     ([first, rest]) => [first, ...rest] as NonEmptyArray<T>,
   );
+
+  return choice(multiple, single);
+};
 
 /**
  * Parser that consumes whitespace characters.

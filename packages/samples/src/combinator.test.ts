@@ -1,25 +1,21 @@
 import { describe, expect, it } from "bun:test";
-import type { ParseSuccess, Parser } from "tpeg-combinator";
 import {
   between,
-  choice,
   int,
   labeled,
-  literal,
-  map,
   memoize,
   number,
-  parse,
   quotedString,
   recursive,
   sepBy,
   sepBy1,
-  seq,
   takeUntil,
   token,
   whitespace,
   withPosition,
 } from "tpeg-combinator";
+import type { ParseSuccess, Parser } from "tpeg-core";
+import { choice, literal, map, parse, seq } from "tpeg-core";
 
 describe("Tests for added combinators", () => {
   describe("takeUntil", () => {

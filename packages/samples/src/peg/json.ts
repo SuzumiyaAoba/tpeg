@@ -1,20 +1,15 @@
-import type { ParseFailure, Parser } from "tpeg-combinator";
 import {
   between,
-  choice,
-  literal,
-  map,
   memoize,
   number,
-  parse,
   quotedString,
   recursive,
   sepBy,
-  seq,
   takeUntil,
   token,
-  zeroOrMore,
 } from "tpeg-combinator";
+import type { ParseResult, Parser } from "tpeg-core";
+import { choice, literal, map, parse, seq, zeroOrMore } from "tpeg-core";
 
 // JSON value type
 export type JSONValue =
@@ -55,7 +50,7 @@ export const jsonParser = (): Parser<JSONValue> => {
   // Array
   const arrayParser: Parser<JSONArray> = map(
     between(tok(literal("[")), tok(literal("]"))),
-    (content) => {
+    (content: string) => {
       if (content.trim() === "") return [];
       const result = parse(sepBy(valueParser, tok(literal(","))))(content);
       return result.success ? result.val : [];
@@ -65,12 +60,12 @@ export const jsonParser = (): Parser<JSONValue> => {
   // Object
   const keyValueParser: Parser<[string, JSONValue]> = map(
     seq(tok(quotedString()), tok(literal(":")), valueParser),
-    ([key, _, value]) => [key, value],
+    ([key, _, value]: [string, unknown, JSONValue]) => [key, value],
   );
 
   const objectParser: Parser<JSONObject> = map(
     between(tok(literal("{")), tok(literal("}"))),
-    (content) => {
+    (content: string) => {
       if (content.trim() === "") return {};
       const result = parse(sepBy(keyValueParser, tok(literal(","))))(content);
       if (result.success) {
@@ -82,7 +77,7 @@ export const jsonParser = (): Parser<JSONValue> => {
 
   // Set the definition for the value parser
   setValueParser(
-    choice(
+    choice<JSONValue>(
       stringParser,
       numberParser,
       objectParser,
@@ -106,7 +101,7 @@ export const parseJSON = (input: string): JSONValue | null => {
     return result.val;
   }
 
-  console.error("Parse error:", (result as ParseFailure).error);
+  console.error("Parse error:", result.error);
   return null;
 };
 

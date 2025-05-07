@@ -10,7 +10,7 @@ import {
   plus,
   seq,
   star,
-} from "tpeg-combinator";
+} from "tpeg-core";
 
 export const EOF = not(any());
 

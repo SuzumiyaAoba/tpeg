@@ -12,7 +12,7 @@ import {
   not,
   opt,
   seq,
-} from "tpeg-combinator";
+} from "tpeg-core";
 import type { Expr } from "./ast";
 import { octalDigitsToChar } from "./utils";
 

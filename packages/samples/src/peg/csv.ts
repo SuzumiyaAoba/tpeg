@@ -1,4 +1,5 @@
-import type { ParseFailure, Parser } from "tpeg-combinator";
+import { sepBy, sepBy1, takeUntil } from "tpeg-combinator";
+import type { ParseResult, Parser } from "tpeg-core";
 import {
   charClass,
   choice,
@@ -7,11 +8,8 @@ import {
   not,
   oneOrMore,
   parse,
-  sepBy,
-  sepBy1,
   seq,
-  takeUntil,
-} from "tpeg-combinator";
+} from "tpeg-core";
 
 /**
  * CSV Parser Sample
@@ -78,7 +76,7 @@ export const parseCSV = (input: string): string[][] => {
     return result.val;
   }
 
-  console.error("CSV parse error:", (result as ParseFailure).error);
+  console.error("CSV parse error:", result.error);
   return [];
 };
 
