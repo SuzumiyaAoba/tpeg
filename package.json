@@ -20,6 +20,13 @@
     "prepare": "bunx husky",
     "lint": "bunx biome lint --write ./packages",
     "check": "bunx biome check --write ./packages",
-    "fix": "bunx biome check --fix --unsafe ./packages"
+    "fix": "bunx biome check --fix --unsafe ./packages",
+    "test": "bun test packages/**/*.spec.ts",
+    "build": "bun run build:all",
+    "build:all": "bun run build:core && bun run build:ast && bun run build:combinator && bun run build:samples",
+    "build:core": "cd packages/core && bun run build",
+    "build:ast": "cd packages/ast && bun run build",
+    "build:combinator": "cd packages/combinator && bun run build",
+    "build:samples": "cd packages/samples && bun run build"
   }
 }
