@@ -210,61 +210,153 @@ export const any = anyChar;
 export const literal =
   <T extends string>(str: NonEmptyString<T>): Parser<T> =>
   (input: string, pos: Pos) => {
+    // Check for end of input
     if (pos.offset >= input.length) {
-      return {
-        success: false,
-        error: {
-          message: "Unexpected EOI",
-          pos,
-        },
-      };
+      return createFailure("Unexpected EOI", pos);
     }
 
-    let column = pos.column;
-    let line = pos.line;
-    let currentOffset = pos.offset;
-    let strOffset = 0;
-
-    while (strOffset < str.length) {
-      const [char, charLength] = getCharAndLength(input, currentOffset);
-      const [targetChar, targetCharLength] = getCharAndLength(str, strOffset);
-
-      if (!char || char !== targetChar) {
-        return {
-          success: false,
-          error: {
-            message: "Unexpected character",
-            pos: {
-              offset: currentOffset,
-              column,
-              line,
-            },
-          },
-        };
-      }
-
-      if (char === "\n") {
-        line++;
-        column = 0;
-      } else {
-        column++;
-      }
-
-      currentOffset += charLength;
-      strOffset += targetCharLength;
+    // Optimize for short, simple strings
+    if (canUseOptimizedPath(str)) {
+      const result = parseSimpleString(str, input, pos);
+      if (result) return result;
     }
 
+    // Full Unicode-aware parsing for complex strings
+    return parseComplexString(str, input, pos);
+  };
+
+/**
+ * Helper function to determine if a string can use the optimized parsing path.
+ *
+ * @param str The string to check
+ * @returns True if the string is short and contains only simple characters
+ */
+const canUseOptimizedPath = (str: string): boolean => {
+  return (
+    str.length <= 10 && !str.includes("\n") && !/[\uD800-\uDFFF]/.test(str)
+  );
+};
+
+/**
+ * Helper function to create a failure result with the given message and position.
+ *
+ * @param message Error message
+ * @param pos Position where the error occurred
+ * @returns A ParseFailure object
+ */
+const createFailure = (message: string, pos: Pos): ParseFailure => {
+  return {
+    success: false,
+    error: {
+      message,
+      pos,
+    },
+  };
+};
+
+/**
+ * Parse a simple string using optimized substring comparison.
+ *
+ * @param str The target string to parse
+ * @param input The input string
+ * @param pos The current position
+ * @returns A ParseResult if successful, null if optimization can't be applied
+ */
+const parseSimpleString = <T extends string>(
+  str: NonEmptyString<T>,
+  input: string,
+  pos: Pos
+): ParseResult<T> | null => {
+  // Fail early if input is too short
+  if (pos.offset + str.length > input.length) {
+    return createFailure("Unexpected EOI", pos);
+  }
+
+  // Fast substring comparison
+  const inputSubstring = input.substring(pos.offset, pos.offset + str.length);
+  if (inputSubstring === str) {
+    // Success case
     return {
       success: true,
       val: str,
       current: pos,
       next: {
+        offset: pos.offset + str.length,
+        column: pos.column + str.length,
+        line: pos.line,
+      },
+    };
+  } else {
+    // Find position of mismatch
+    let i = 0;
+    while (
+      i < str.length &&
+      i < inputSubstring.length &&
+      str.charAt(i) === inputSubstring.charAt(i)
+    ) {
+      i++;
+    }
+
+    return createFailure("Unexpected character", {
+      offset: pos.offset + i,
+      column: pos.column + i,
+      line: pos.line,
+    });
+  }
+};
+
+/**
+ * Parse a complex string using character-by-character comparison with Unicode support.
+ *
+ * @param str The target string to parse
+ * @param input The input string
+ * @param pos The current position
+ * @returns A ParseResult
+ */
+const parseComplexString = <T extends string>(
+  str: NonEmptyString<T>,
+  input: string,
+  pos: Pos
+): ParseResult<T> => {
+  let column = pos.column;
+  let line = pos.line;
+  let currentOffset = pos.offset;
+  let strOffset = 0;
+
+  while (strOffset < str.length) {
+    const [char, charLength] = getCharAndLength(input, currentOffset);
+    const [targetChar, targetCharLength] = getCharAndLength(str, strOffset);
+
+    if (!char || char !== targetChar) {
+      return createFailure("Unexpected character", {
         offset: currentOffset,
         column,
         line,
-      },
-    };
+      });
+    }
+
+    if (char === "\n") {
+      line++;
+      column = 0;
+    } else {
+      column++;
+    }
+
+    currentOffset += charLength;
+    strOffset += targetCharLength;
+  }
+
+  return {
+    success: true,
+    val: str,
+    current: pos,
+    next: {
+      offset: currentOffset,
+      column,
+      line,
+    },
   };
+};
 
 /**
  * Alias for {@link literal}.

@@ -526,7 +526,7 @@ describe("tpeg-combinator", () => {
               val: result.val.toUpperCase(),
               offset: result.next.offset,
             };
-          }
+          },
         );
         const successResult = parse(parser)("hello");
         expect(successResult.success).toBe(true);
