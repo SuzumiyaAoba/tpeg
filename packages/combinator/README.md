@@ -104,7 +104,24 @@ bun run build
 
 # Run tests
 bun run test
+
+# Run tests with coverage report
+bun run test:coverage
+
+# Watch tests during development
+bun run test:watch
 ```
+
+### Testing
+
+TPEG has a comprehensive test suite including:
+
+- Unit tests for individual parsers and utilities
+- Integration tests for parser combinations
+- Sample parser implementations tests
+- Performance benchmarks
+
+We aim to maintain high test coverage (>80%) to ensure stability and reliability.
 
 ## License
 

@@ -1,0 +1,7 @@
+[test]
+coverageReporter = ["text", "lcov"]
+coverage = true
+coverageThreshold = 0.8
+
+# Test execution flags
+testOptions = "packages/**/*.spec.ts"

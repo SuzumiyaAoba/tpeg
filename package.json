@@ -22,6 +22,8 @@
     "check": "bunx biome check --write ./packages",
     "fix": "bunx biome check --fix --unsafe ./packages",
     "test": "bun test packages/**/*.spec.ts",
+    "test:coverage": "bun test --coverage packages/**/*.spec.ts",
+    "test:watch": "bun test --watch packages/**/*.spec.ts",
     "build": "bun run build:all",
     "build:all": "bun run build:core && bun run build:ast && bun run build:combinator && bun run build:samples",
     "build:core": "cd packages/core && bun run test && bun run build",

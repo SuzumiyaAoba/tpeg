@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import { lit } from "./basic";
 import { formatParseError, formatParseResult, reportParseError } from "./error";
 import type { ParseError, ParseResult, Pos } from "./types";
@@ -44,6 +44,83 @@ describe("formatParseError", () => {
     expect(result).toContain("Expected: digit");
     expect(result).toContain("Found: x");
   });
+
+  it("should include parser name when provided", () => {
+    const error: ParseError = {
+      message: "Unexpected character",
+      pos: { offset: 5, line: 2, column: 1 },
+      parserName: "numberParser",
+    };
+    const input = "abc\nxyz";
+
+    const result = formatParseError(error, input);
+    expect(result).toContain("Parser: numberParser");
+  });
+
+  it("should format error with single context string", () => {
+    const error: ParseError = {
+      message: "Unexpected character",
+      pos: { offset: 5, line: 2, column: 1 },
+      context: "in expression",
+    };
+    const input = "abc\nxyz";
+
+    const result = formatParseError(error, input);
+    expect(result).toContain("Context: in expression");
+  });
+
+  it("should handle formatting without colorization", () => {
+    const error: ParseError = {
+      message: "Unexpected character",
+      pos: { offset: 5, line: 2, column: 1 },
+    };
+    const input = "abc\nxyz";
+
+    const result = formatParseError(error, input, { colorize: false });
+    expect(result).not.toContain("\x1b[31m"); // No ANSI color codes
+    expect(result).toContain("Parse error");
+  });
+
+  it("should format with custom context lines", () => {
+    const error: ParseError = {
+      message: "Unexpected character",
+      pos: { offset: 10, line: 3, column: 2 },
+    };
+    const input = "line1\nline2\nline3\nline4\nline5";
+
+    // With more context lines
+    const result1 = formatParseError(error, input, { contextLines: 3 });
+    expect(result1).toContain("line1");
+    expect(result1).toContain("line5");
+
+    // With fewer context lines
+    const result2 = formatParseError(error, input, { contextLines: 1 });
+    expect(result2).not.toContain("line1");
+    expect(result2).not.toContain("line5");
+  });
+
+  it("should format without highlighting errors", () => {
+    const error: ParseError = {
+      message: "Unexpected character",
+      pos: { offset: 5, line: 2, column: 1 },
+    };
+    const input = "abc\nxyz";
+
+    const result = formatParseError(error, input, { highlightErrors: false });
+    expect(result).not.toContain("^"); // No pointer to error position
+  });
+
+  it("should format without showing position", () => {
+    const error: ParseError = {
+      message: "Unexpected character",
+      pos: { offset: 5, line: 2, column: 1 },
+    };
+    const input = "abc\nxyz";
+
+    const result = formatParseError(error, input, { showPosition: false });
+    expect(result).not.toContain("Source:");
+    expect(result).not.toContain("| xyz");
+  });
 });
 
 describe("formatParseResult", () => {
@@ -78,38 +155,71 @@ describe("formatParseResult", () => {
     expect(formatted).toContain("line 2");
     expect(formatted).toContain("column 1");
   });
+
+  it("should pass options to formatParseError", () => {
+    const error: ParseError = {
+      message: "Unexpected character",
+      pos: { offset: 5, line: 2, column: 1 },
+    };
+
+    const result: ParseResult<string> = {
+      success: false,
+      error,
+    };
+    const input = "abc\nxyz";
+
+    const formatted = formatParseResult(result, input, {
+      colorize: false,
+      showPosition: false,
+    });
+    expect(formatted).not.toContain("Source:");
+    expect(formatted).not.toContain("\x1b[31m"); // No ANSI color codes
+  });
 });
 
 describe("reportParseError", () => {
-  it("should throw an error when parsing fails", () => {
+  it("should call console.error when parsing fails", () => {
     const input = "xyz";
     const result = parse(lit("abc"))(input);
-    // Redirect and capture console.error
-    const originalConsoleError = console.error;
-    let capturedError = "";
-    console.error = (msg) => {
-      capturedError = msg;
-    };
+
+    // Use spyOn to spy on console.error
+    const spy = spyOn(console, "error");
 
     reportParseError(result, input);
-    console.error = originalConsoleError;
 
-    expect(capturedError).toContain("Parse error");
+    expect(spy).toHaveBeenCalled();
+    expect(spy.mock.calls[0][0]).toContain("Parse error");
+
+    spy.mockRestore();
   });
 
-  it("should do nothing when parsing succeeds", () => {
+  it("should not call console.error when parsing succeeds", () => {
     const input = "abc";
     const result = parse(lit("abc"))(input);
-    // Redirect and capture console.error
-    const originalConsoleError = console.error;
-    let capturedError = "";
-    console.error = (msg) => {
-      capturedError = msg;
-    };
+
+    // Use spyOn to spy on console.error
+    const spy = spyOn(console, "error");
 
     reportParseError(result, input);
-    console.error = originalConsoleError;
 
-    expect(capturedError).toBe("");
+    expect(spy).not.toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it("should pass options to formatParseError", () => {
+    const input = "xyz";
+    const result = parse(lit("abc"))(input);
+
+    // Use spyOn to spy on console.error
+    const spy = spyOn(console, "error");
+
+    reportParseError(result, input, { colorize: false });
+
+    expect(spy).toHaveBeenCalled();
+    const errorMessage = spy.mock.calls[0][0];
+    expect(errorMessage).not.toContain("\x1b[31m"); // No ANSI color codes
+
+    spy.mockRestore();
   });
 });

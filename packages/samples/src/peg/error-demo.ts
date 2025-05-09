@@ -10,7 +10,7 @@ import {
   zeroOrMore,
 } from "tpeg-core";
 
-// 独自のParseErrorインターフェースを定義
+// Define a custom ParseError interface
 interface DemoParseError {
   message: string;
   pos: {
