@@ -1,9 +1,9 @@
 // @ts-nocheck
 import { describe, expect, it } from "bun:test";
 import { parse as originalParse } from "tpeg-core";
+import type { ParseResult, Pos } from "tpeg-core";
 import { jsonParser, parseJSON } from "./json";
 import type { JSONArray, JSONObject, JSONValue, Parser } from "./json";
-import type { ParseResult, Pos } from "tpeg-core";
 
 // Import helpers for testing internal components
 import {
@@ -37,6 +37,12 @@ interface ExtendedGlobal {
   };
 }
 
+// Global型を拡張
+declare global {
+  var jsonParserMock: typeof jsonParser | undefined;
+  var require: { main: { id: string } } | undefined;
+}
+
 // テスト用のJSON検証関数を実装
 const testJSON = (): { successes: number; failures: number } => {
   // コンソール出力を抑制
@@ -48,8 +54,7 @@ const testJSON = (): { successes: number; failures: number } => {
 
   // コンソール出力をキャプチャするモック
   const logs: string[] = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  console.log = (msg: any) => {
+  console.log = (msg: unknown) => {
     logs.push(String(msg));
   };
   console.error = () => {};
@@ -357,7 +362,7 @@ describe("JSON Parser", () => {
       if (!result.success) {
         const failure = result as {
           success: false;
-          error: { message: string; pos: any };
+          error: { message: string; pos: Pos };
         };
         expect(failure.error).toBeDefined();
       }
@@ -702,7 +707,7 @@ describe("JSON Parser", () => {
 
       // いくつかのエラーメッセージのパターンを確認
       expect(errorMessages.some((msg) => msg.includes("Parse error"))).toBe(
-        true
+        true,
       );
 
       console.error = originalConsoleError;
@@ -719,18 +724,17 @@ describe("JSON Parser", () => {
       // エラーをスローする関数をモック
       const originalJsonParser = jsonParser;
       try {
-        // ここだけ一時的にjsonParserを上書き
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (global as any).jsonParser = () => {
+        // ここだけ一時的にjsonParserをモック
+        globalThis.jsonParserMock = () => {
           throw new Error("Simulated error");
         };
 
+        // jsonParser関数を上書きして模擬的なエラーをテスト
         const result = parseJSON(mockCrashingInput);
         expect(result).toBeNull();
       } finally {
-        // 元の関数を復元
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (global as any).jsonParser = originalJsonParser;
+        // モックを削除
+        globalThis.jsonParserMock = undefined;
       }
 
       console.error = originalConsoleError;
@@ -751,7 +755,7 @@ describe("JSON Parser", () => {
 
       // Unicode文字と特殊なエスケープシーケンス
       expect(parseJSON('"\\u00A9 copyright symbol"')).toBe(
-        "\u00A9 copyright symbol"
+        "\u00A9 copyright symbol",
       );
       expect(parseJSON('"\\\\backslash"')).toBe("\\backslash");
       expect(parseJSON('"tab\\tafter"')).toBe("tab\tafter");
@@ -765,43 +769,46 @@ describe("JSON Parser", () => {
       const originalConsoleLog = console.log;
       const originalConsoleError = console.error;
 
-      const logs: string[] = [];
-      console.log = (msg: any) => {
-        logs.push(String(msg));
-      };
+      // コンソール出力をモック化
+      console.log = () => {};
       console.error = () => {};
 
-      // 基本的なテストケース
-      const testCases = ['{"simple": true}', "123", "[]", '["a", 1, null]'];
+      try {
+        // 基本的なテストケース
+        const testCases = ['{"simple": true}', "123", "[]", '["a", 1, null]'];
 
-      // testJSON関数の基本的な振る舞いをシミュレート
-      for (const testCase of testCases) {
-        const parsed = parseJSON(testCase);
+        // testJSON関数の基本的な振る舞いをシミュレート
+        for (const testCase of testCases) {
+          const parsed = parseJSON(testCase);
 
-        if (parsed !== null) {
-          // 結果の検証（JSON.parseとの比較）
-          const jsonString = JSON.stringify(parsed);
-          const expectedObj = JSON.parse(testCase);
-          const expectedString = JSON.stringify(expectedObj);
+          if (parsed !== null) {
+            // 結果の検証（JSON.parseとの比較）
+            const jsonString = JSON.stringify(parsed);
+            const expectedObj = JSON.parse(testCase);
+            const expectedString = JSON.stringify(expectedObj);
 
-          expect(jsonString).toBe(expectedString);
+            expect(jsonString).toBe(expectedString);
+          }
         }
+
+        // 無効なJSONケース
+        const invalidCases = [
+          '{invalid: "json"}',
+          '{"missing": }',
+          "[1, 2,]", // 末尾のカンマ
+        ];
+
+        for (const invalidCase of invalidCases) {
+          const parsed = parseJSON(invalidCase);
+          expect(parsed).toBeNull();
+        }
+
+        // テストが正常に実行されたことをアサート
+        expect(true).toBe(true);
+      } finally {
+        console.log = originalConsoleLog;
+        console.error = originalConsoleError;
       }
-
-      // 無効なJSONケース
-      const invalidCases = [
-        '{invalid: "json"}',
-        '{"missing": }',
-        "[1, 2,]", // 末尾のカンマ
-      ];
-
-      for (const invalidCase of invalidCases) {
-        const parsed = parseJSON(invalidCase);
-        expect(parsed).toBeNull();
-      }
-
-      console.log = originalConsoleLog;
-      console.error = originalConsoleError;
     });
 
     // testJSON関数のnullケース処理をシミュレート
@@ -848,7 +855,7 @@ describe("JSON Parser", () => {
       const originalConsoleLog = console.log;
       const logs: string[] = [];
 
-      console.log = (msg: any, ...args: any[]) => {
+      console.log = (msg: unknown, ...args: unknown[]) => {
         const logMsg =
           String(msg) + (args.length > 0 ? ` ${args.join(" ")}` : "");
         logs.push(logMsg);
@@ -870,7 +877,7 @@ describe("JSON Parser", () => {
           logs.push(
             `Result: ${
               parsed === null ? "Correctly failed" : "Incorrectly parsed"
-            }`
+            }`,
           );
           logs.push("---");
         }
@@ -892,10 +899,11 @@ describe("JSON Parser", () => {
 
       try {
         // テスト用のモックオブジェクト
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (global as any).require = {
+        const mockRequireObj = {
           main: { id: "main-module" },
         };
+
+        globalThis.require = mockRequireObj;
 
         // 実行テスト用のモック関数
         const mockTestJSON = () => {
@@ -903,8 +911,9 @@ describe("JSON Parser", () => {
         };
 
         // モジュール実行条件をシミュレート
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if ((global as any).require.main === (global as any).require.main) {
+        // self comparison を回避するために別の変数を作成
+        const isMainModule = true; // 常にtrueとして扱う
+        if (isMainModule) {
           mockTestJSON();
         }
 
@@ -912,8 +921,7 @@ describe("JSON Parser", () => {
         expect(testJSONCalled).toBe(true);
       } finally {
         // 元のrequireを復元
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (global as any).require = originalRequire;
+        globalThis.require = originalRequire;
       }
     });
   });
@@ -938,10 +946,10 @@ describe("JSON Parser", () => {
       const originalConsoleError = console.error;
 
       const logs: string[] = [];
-      console.log = (msg: any) => {
+      console.log = (msg: unknown) => {
         logs.push(String(msg));
       };
-      console.error = (msg: any) => {
+      console.error = (msg: unknown) => {
         logs.push(`ERROR: ${String(msg)}`);
       };
 
@@ -976,14 +984,16 @@ describe("JSON Parser", () => {
 
       try {
         // 基本的な構文テスト
-        [
+        const basicCases = [
           "123.45",
           "true",
           "false",
           "[]",
           "{}",
           '{"nested": {"value": true}}',
-        ].forEach((testCase) => {
+        ];
+
+        for (const testCase of basicCases) {
           const parsed = parseJSON(testCase);
           if (parsed !== null) {
             // 期待値との比較（testJSON関数内の検証に相当）
@@ -992,17 +1002,19 @@ describe("JSON Parser", () => {
             const expectedString = JSON.stringify(expectedObj);
             expect(jsonString).toBe(expectedString);
           }
-        });
+        }
 
         // 無効なケースの処理
-        [
+        const invalidCases = [
           '{invalid: "json"}',
           '{"missing": }',
           "[1, 2,]", // 末尾のカンマ
           '{"key": undefined}', // JavaScriptの値
-        ].forEach((invalidCase) => {
+        ];
+
+        for (const invalidCase of invalidCases) {
           expect(parseJSON(invalidCase)).toBeNull();
-        });
+        }
 
         // カバレッジのためにあえて失敗するケースを作成
         const nullTest = "null";
@@ -1026,7 +1038,7 @@ describe("JSON Parser", () => {
       try {
         // エスケープシーケンスを含む文字列
         const escapedString = parseJSON(
-          '"Line 1\\nLine 2\\tTabbed\\r\\nWindows line"'
+          '"Line 1\\nLine 2\\tTabbed\\r\\nWindows line"',
         );
         expect(escapedString).toBe("Line 1\nLine 2\tTabbed\r\nWindows line");
 
@@ -1114,14 +1126,14 @@ describe("JSON Parser", () => {
         };
 
         // requireをモック化
-        (global as any).require = mockModuleSystem;
+        globalThis.require = mockModuleSystem;
 
         // ダイレクト実行をシミュレート
         const result = mockTestJSON();
         expect(result).toBeDefined();
       } finally {
         // 元に戻す
-        (global as any).require = originalRequire;
+        globalThis.require = originalRequire;
       }
     });
   });
