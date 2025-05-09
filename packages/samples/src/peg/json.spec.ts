@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parse as originalParse } from "tpeg-core";
-import { jsonParser, parseJSON, testJSON } from "./json";
+import { jsonParser, parseJSON } from "./json";
 import type { JSONArray, JSONObject, JSONValue, Parser } from "./json";
 
 // Import helpers for testing internal components
@@ -26,6 +26,115 @@ import {
   seq,
   zeroOrMore,
 } from "tpeg-core";
+
+// テスト用のJSON検証関数を実装
+const testJSON = (): { successes: number; failures: number } => {
+  // コンソール出力を抑制
+  const originalConsoleLog = console.log;
+  const originalConsoleError = console.error;
+
+  let successes = 0;
+  let failures = 0;
+
+  // コンソール出力をキャプチャするモック
+  console.log = () => {};
+  console.error = () => {};
+
+  try {
+    // Basic test cases
+    const testCases = [
+      // 基本的な値
+      '"test string"',
+      "123.45",
+      "true",
+      "false",
+      "null",
+      // 配列
+      "[]",
+      '["a", 1, true]',
+      // オブジェクト
+      "{}",
+      '{"a": 1, "b": "string", "c": true}',
+      '{"a": [1, 2], "b": {"c": 3}}',
+      // 複雑な例
+      `
+      {
+        "name": "John Doe",
+        "age": 30,
+        "isActive": true,
+        "address": {
+          "street": "123 Main St",
+          "city": "Anytown"
+        },
+        "hobbies": ["reading", "cycling", "coding"]
+      }
+      `,
+      // エスケープされた文字を含む例
+      '{"escaped": "Line 1\\nLine 2\\tTabbed\\r\\nWindows line"}',
+      // ネストされた配列とオブジェクト
+      '[1, [2, 3], {"key": [4, {"nested": 5}]}]',
+    ];
+
+    // すべてのテストケースを実行
+    for (const testCase of testCases) {
+      const parsed = parseJSON(testCase);
+
+      // 特別なnullチェック
+      if (testCase.trim() === "null") {
+        if (parsed === null) {
+          successes++;
+        } else {
+          failures++;
+        }
+      } else {
+        if (parsed !== null) {
+          try {
+            // JSONとして文字列化して再度パースして比較
+            const jsonString = JSON.stringify(parsed);
+            const expectedObj = JSON.parse(testCase);
+            const expectedString = JSON.stringify(expectedObj);
+
+            if (jsonString === expectedString) {
+              successes++;
+            } else {
+              failures++;
+            }
+          } catch (e) {
+            failures++;
+          }
+        } else {
+          failures++;
+        }
+      }
+    }
+
+    // 無効なJSONのテスト
+    const invalidCases = [
+      '{invalid: "json"}',
+      '{"missing": }',
+      '{"unclosed": "string}',
+      "[1, 2,]", // 末尾のカンマ
+      '{"key": undefined}', // JavaScriptの値ですがJSONではない
+    ];
+
+    for (const invalidCase of invalidCases) {
+      const parsed = parseJSON(invalidCase);
+
+      // nullを期待
+      if (parsed === null) {
+        successes++;
+      } else {
+        failures++;
+      }
+    }
+
+    return { successes, failures };
+  } finally {
+    // 元のコンソール関数を復元
+    console.log = originalConsoleLog;
+    console.error = originalConsoleError;
+  }
+};
 
 // Override parse function to mock it for testing
 const parse = (parser: Parser<JSONValue>) => (input: string) => {
@@ -692,132 +801,115 @@ describe("JSON Parser", () => {
     });
   });
 
-  // testJSON関数をカバーするためのテスト追加
-  describe("testJSON internals", () => {
-    // 失敗しているテストを削除
-    // testJSON関数全体を直接テストするために実装した簡易バージョン
-    const mockTestJSON = () => {
+  describe("testJSON execution", () => {
+    it("should directly call testJSON function", () => {
+      // コンソール出力を抑制
       const originalConsoleLog = console.log;
-      const originalConsoleError = console.error;
+      let logCount = 0;
 
-      // コンソール出力をキャプチャ
-      const logs: string[] = [];
-      console.log = (msg: any) => {
-        logs.push(String(msg));
+      console.log = () => {
+        logCount++;
       };
-      console.error = () => {};
 
       try {
-        // testJSON関数内のすべてのテストケースを実行
-        const testCases = [
-          // 基本的な値
-          '"test string"',
-          "123.45",
-          "true",
-          "false",
-          "null",
-          // 配列
-          "[]",
-          '["a", 1, true]',
-          // オブジェクト
-          "{}",
-          '{"a": 1, "b": "string", "c": true}',
-          '{"a": [1, 2], "b": {"c": 3}}',
-          // 複雑な例
-          `{
-            "name": "John Doe",
-            "age": 30,
-            "isActive": true,
-            "address": {
-              "street": "123 Main St",
-              "city": "Anytown"
-            },
-            "hobbies": ["reading", "cycling", "coding"]
-          }`,
-          // エスケープされた文字を含む例
-          '{"escaped": "Line 1\\nLine 2\\tTabbed\\r\\nWindows line"}',
-          // ネストされた配列とオブジェクト
-          '[1, [2, 3], {"key": [4, {"nested": 5}]}]',
-        ];
+        // テスト関数を実行して、結果を検証
+        const result = testJSON();
 
-        // 各テストケースを実行
-        for (const testCase of testCases) {
-          // テストケースの表示（テスト名の短縮処理もテスト）
-          const displayName =
-            testCase.length > 50 ? testCase.substring(0, 47) + "..." : testCase;
+        // 少なくとも一定数のテストが成功していることを検証
+        expect(result.successes).toBeGreaterThan(0);
+        // 失敗がないことを検証
+        expect(result.failures).toBe(0);
+      } finally {
+        // 元のconsole.logを復元
+        console.log = originalConsoleLog;
+      }
+    });
 
-          // パース実行
-          const parsed = parseJSON(testCase);
+    it("should cover testJSON's error handling", () => {
+      // コンソール出力をキャプチャ
+      const originalConsoleLog = console.log;
+      const logs: string[] = [];
 
-          // null値の特別なチェック
-          if (testCase.trim() === "null") {
-            if (parsed === null) {
-              // 成功ケース
-            } else {
-              // 失敗ケース
-              throw new Error(
-                `Expected null for input ${testCase} but got: ${parsed}`
-              );
-            }
-          } else {
-            // 通常のパースチェック
-            if (parsed !== null) {
-              // バリデーション処理
-              try {
-                const jsonString = JSON.stringify(parsed);
-                const expectedObj = JSON.parse(testCase);
-                const expectedString = JSON.stringify(expectedObj);
+      console.log = (msg: any, ...args: any[]) => {
+        const logMsg =
+          String(msg) + (args.length > 0 ? " " + args.join(" ") : "");
+        logs.push(logMsg);
+      };
 
-                if (jsonString !== expectedString) {
-                  throw new Error(
-                    `Validation failed: Expected ${expectedString} but got ${jsonString}`
-                  );
-                }
-              } catch (e) {
-                // バリデーションエラー処理をカバー
-                logs.push(`Validation error: ${e}`);
-              }
-            }
-          }
-        }
-
-        // 無効なJSONのテスト
+      try {
+        // 無効なJSONのテスト部分を抽出して実行
         const invalidCases = [
           '{invalid: "json"}',
           '{"missing": }',
           '{"unclosed": "string}',
           "[1, 2,]", // 末尾のカンマ
-          '{"key": undefined}', // JavaScriptの値
+          '{"key": undefined}', // JavaScriptの値ですがJSONではない
         ];
 
         for (const invalidCase of invalidCases) {
-          // パース実行
+          logs.push(`Testing invalid: ${invalidCase}`);
           const parsed = parseJSON(invalidCase);
-
-          // 結果チェック
-          if (parsed !== null) {
-            throw new Error(
-              `Expected null for invalid input ${invalidCase} but got: ${parsed}`
-            );
-          }
+          logs.push(
+            `Result: ${
+              parsed === null ? "Correctly failed" : "Incorrectly parsed"
+            }`
+          );
+          logs.push("---");
         }
 
-        return logs;
+        // 実行結果を検証
+        expect(logs.length).toBeGreaterThan(0);
+        expect(logs.some((log) => log.includes("Correctly failed"))).toBe(true);
       } finally {
-        // 元のコンソール関数を復元
+        // 元のconsole.logを復元
         console.log = originalConsoleLog;
-        console.error = originalConsoleError;
       }
+    });
+
+    it("should test main module execution logic", () => {
+      // requireとmoduleをモック化
+      const originalRequire = global.require;
+
+      let testJSONCalled = false;
+
+      try {
+        // テスト用のモックオブジェクト
+        (global as any).require = {
+          main: { id: "main-module" },
+        };
+
+        // 実行テスト用のモック関数
+        const mockTestJSON = () => {
+          testJSONCalled = true;
+        };
+
+        // モジュール実行条件をシミュレート
+        if ((global as any).require.main === (global as any).require.main) {
+          mockTestJSON();
+        }
+
+        // 実行されたことを確認
+        expect(testJSONCalled).toBe(true);
+      } finally {
+        // 元のrequireを復元
+        (global as any).require = originalRequire;
+      }
+    });
+  });
+
+  describe("testJSON internals", () => {
+    // 失敗しているテストを削除
+    // testJSON関数全体を直接テストするために実装した簡易バージョン
+    const mockTestJSON = () => {
+      // 先ほど定義したtestJSON関数を再利用
+      const result = testJSON();
+
+      // 成功したテスト数を戻り値として返す
+      return [
+        `Total tests: ${result.successes + result.failures}`,
+        `Successes: ${result.successes}`,
+      ];
     };
-
-    // このテストを削除
-    // it("should simulate testJSON function completely", () => {
-    //   // testJSON関数のシミュレーション実行
-    //   const logs = mockTestJSON();
-
-    //   // 何らかのログが出力されていることを確認
-    //   expect(logs.length).toBeGreaterThan(0);
-    // });
 
     // testJSON関数のエラーケース処理を検証
     it("should handle testJSON edge cases", () => {
@@ -1008,100 +1100,6 @@ describe("JSON Parser", () => {
         expect(result).toBeDefined();
       } finally {
         // 元に戻す
-        (global as any).require = originalRequire;
-      }
-    });
-  });
-
-  describe("testJSON execution", () => {
-    it("should directly call testJSON function", () => {
-      // コンソール出力を抑制
-      const originalConsoleLog = console.log;
-      let logCount = 0;
-
-      console.log = () => {
-        logCount++;
-      };
-
-      try {
-        // testJSON関数を直接実行
-        testJSON();
-
-        // 何らかのログが出力されていることを確認
-        expect(logCount).toBeGreaterThan(0);
-      } finally {
-        // 元のconsole.logを復元
-        console.log = originalConsoleLog;
-      }
-    });
-
-    it("should cover testJSON's error handling", () => {
-      // コンソール出力をキャプチャ
-      const originalConsoleLog = console.log;
-      const logs: string[] = [];
-
-      console.log = (msg: any, ...args: any[]) => {
-        const logMsg =
-          String(msg) + (args.length > 0 ? " " + args.join(" ") : "");
-        logs.push(logMsg);
-      };
-
-      try {
-        // 無効なJSONのテスト部分を抽出して実行
-        const invalidCases = [
-          '{invalid: "json"}',
-          '{"missing": }',
-          '{"unclosed": "string}',
-          "[1, 2,]", // 末尾のカンマ
-          '{"key": undefined}', // JavaScriptの値ですがJSONではない
-        ];
-
-        for (const invalidCase of invalidCases) {
-          logs.push(`Testing invalid: ${invalidCase}`);
-          const parsed = parseJSON(invalidCase);
-          logs.push(
-            `Result: ${
-              parsed === null ? "Correctly failed" : "Incorrectly parsed"
-            }`
-          );
-          logs.push("---");
-        }
-
-        // 実行結果を検証
-        expect(logs.length).toBeGreaterThan(0);
-        expect(logs.some((log) => log.includes("Correctly failed"))).toBe(true);
-      } finally {
-        // 元のconsole.logを復元
-        console.log = originalConsoleLog;
-      }
-    });
-
-    it("should test main module execution logic", () => {
-      // requireとmoduleをモック化
-      const originalRequire = global.require;
-
-      let testJSONCalled = false;
-
-      try {
-        // テスト用のモックオブジェクト
-        (global as any).require = {
-          main: { id: "main-module" },
-        };
-
-        // 実行テスト用のモック関数
-        const mockTestJSON = () => {
-          testJSONCalled = true;
-        };
-
-        // モジュール実行条件をシミュレート
-        if ((global as any).require.main === (global as any).require.main) {
-          mockTestJSON();
-        }
-
-        // 実行されたことを確認
-        expect(testJSONCalled).toBe(true);
-      } finally {
-        // 元のrequireを復元
         (global as any).require = originalRequire;
       }
     });
