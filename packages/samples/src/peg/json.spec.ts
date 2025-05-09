@@ -686,7 +686,7 @@ describe("JSON Parser", () => {
 
       // いくつかのエラーメッセージのパターンを確認
       expect(errorMessages.some((msg) => msg.includes("Parse error"))).toBe(
-        true
+        true,
       );
 
       console.error = originalConsoleError;
@@ -733,7 +733,7 @@ describe("JSON Parser", () => {
 
       // Unicode文字と特殊なエスケープシーケンス
       expect(parseJSON('"\\u00A9 copyright symbol"')).toBe(
-        "\u00A9 copyright symbol"
+        "\u00A9 copyright symbol",
       );
       expect(parseJSON('"\\\\backslash"')).toBe("\\backslash");
       expect(parseJSON('"tab\\tafter"')).toBe("tab\tafter");
@@ -832,7 +832,7 @@ describe("JSON Parser", () => {
 
       console.log = (msg: any, ...args: any[]) => {
         const logMsg =
-          String(msg) + (args.length > 0 ? " " + args.join(" ") : "");
+          String(msg) + (args.length > 0 ? ` ${args.join(" ")}` : "");
         logs.push(logMsg);
       };
 
@@ -852,7 +852,7 @@ describe("JSON Parser", () => {
           logs.push(
             `Result: ${
               parsed === null ? "Correctly failed" : "Incorrectly parsed"
-            }`
+            }`,
           );
           logs.push("---");
         }
@@ -1005,7 +1005,7 @@ describe("JSON Parser", () => {
       try {
         // エスケープシーケンスを含む文字列
         const escapedString = parseJSON(
-          '"Line 1\\nLine 2\\tTabbed\\r\\nWindows line"'
+          '"Line 1\\nLine 2\\tTabbed\\r\\nWindows line"',
         );
         expect(escapedString).toBe("Line 1\nLine 2\tTabbed\r\nWindows line");
 
