@@ -1,3 +1,4 @@
+import { whitespace } from "tpeg-combinator";
 import type { ParseResult, Parser } from "tpeg-core";
 import {
   any,
@@ -59,45 +60,28 @@ ${" ".repeat(error.pos.column)}^
  */
 
 // Numbers
-const digit = () =>
-  choice(
-    lit("0"),
-    lit("1"),
-    lit("2"),
-    lit("3"),
-    lit("4"),
-    lit("5"),
-    lit("6"),
-    lit("7"),
-    lit("8"),
-    lit("9"),
-  );
-const integer = () => oneOrMore(digit());
-
-// Whitespace
-const whitespace = () => choice(lit(" "), lit("\t"), lit("\n"), lit("\r"));
-const spaces = () => zeroOrMore(whitespace());
+const digit = choice(
+  lit("0"),
+  lit("1"),
+  lit("2"),
+  lit("3"),
+  lit("4"),
+  lit("5"),
+  lit("6"),
+  lit("7"),
+  lit("8"),
+  lit("9")
+);
+const integer = oneOrMore(digit);
 
 // Operators
-const operator = () => choice(lit("+"), lit("-"), lit("*"), lit("/"));
+const operator = choice(lit("+"), lit("-"), lit("*"), lit("/"));
 
 // Terms
-const term = (): Parser<string> => {
-  const parser = seq(spaces(), integer(), spaces());
-
-  return map(parser, ([spaces1, digits, spaces2]) => {
-    return digits.join("");
-  });
-};
+const term = seq(whitespace(), integer, whitespace());
 
 // Expressions
-const expression = (): Parser<string> => {
-  const parser = seq(term(), operator(), term());
-
-  return map(parser, ([left, op, right]) => {
-    return `${left} ${op} ${right}`;
-  });
-};
+const expression = seq(term, operator, term);
 
 /**
  * Function to display parse results
@@ -111,7 +95,7 @@ function displayParseResult<T>(result: ParseResult<T>, input: string): void {
   } else {
     console.log("Parsing failed...");
     console.log(
-      formatParseError(result.error as unknown as DemoParseError, input),
+      formatParseError(result.error as unknown as DemoParseError, input)
     );
   }
 }
@@ -125,7 +109,7 @@ function runDemo(): void {
   // Successful case
   const validInput = "123 + 456";
   console.log("\nValid input:", validInput);
-  const validResult = parse(expression())(validInput);
+  const validResult = parse(expression)(validInput);
   displayParseResult(validResult, validInput);
 
   // Various error cases
@@ -138,7 +122,7 @@ function runDemo(): void {
 
   for (const { name, input } of errorCases) {
     console.log(`\n${name}:`, input);
-    const result = parse(expression())(input);
+    const result = parse(expression)(input);
     displayParseResult(result, input);
   }
 }
@@ -152,7 +136,6 @@ export {
   digit,
   integer,
   whitespace,
-  spaces,
   operator,
   term,
   expression,

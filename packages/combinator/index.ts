@@ -23,15 +23,6 @@ import {
 } from "tpeg-core";
 
 /**
- * Parser that checks for end of input (EOF).
- *
- * Succeeds only if the input is at the end.
- *
- * @returns Parser<never> A parser that succeeds at end of input, or fails otherwise.
- */
-export const EOF = not(any());
-
-/**
  * Parser that consumes characters until a condition is met.
  *
  * @template T Type of condition parser result
@@ -79,7 +70,7 @@ export const takeUntil =
  */
 export const between = <O, C>(
   open: Parser<O>,
-  close: Parser<C>,
+  close: Parser<C>
 ): Parser<string> =>
   map(seq(open, takeUntil(close), close), ([_, content]) => content);
 
@@ -94,16 +85,16 @@ export const between = <O, C>(
  */
 export const sepBy = <T, S>(
   value: Parser<T>,
-  separator: Parser<S>,
+  separator: Parser<S>
 ): Parser<T[]> => {
   const sepByOne = map(
     seq(value, zeroOrMore(map(seq(separator, value), ([_, v]) => v))),
-    ([first, rest]) => [first, ...rest],
+    ([first, rest]) => [first, ...rest]
   );
 
   return choice(
     sepByOne,
-    map(notPredicate(value), () => []),
+    map(notPredicate(value), () => [])
   );
 };
 
@@ -118,7 +109,7 @@ export const sepBy = <T, S>(
  */
 export const sepBy1 = <T, S>(
   value: Parser<T>,
-  separator: Parser<S>,
+  separator: Parser<S>
 ): Parser<NonEmptyArray<T>> => {
   // Parser for processing a single value
   const single = map(value, (v) => [v] as NonEmptyArray<T>);
@@ -126,71 +117,10 @@ export const sepBy1 = <T, S>(
   // Parser for processing multiple values
   const multiple = map(
     seq(value, oneOrMore(map(seq(separator, value), ([_, v]) => v))),
-    ([first, rest]) => [first, ...rest] as NonEmptyArray<T>,
+    ([first, rest]) => [first, ...rest] as NonEmptyArray<T>
   );
 
   return choice(multiple, single);
-};
-
-/**
- * Parser that consumes whitespace characters.
- *
- * @returns Parser<string> A parser that returns consumed whitespace characters
- */
-export const whitespace = (): Parser<string> =>
-  map(zeroOrMore(charClass(" ", "\t", "\n", "\r")), (chars) => chars.join(""));
-
-/**
- * Parser wrapper that consumes whitespace after the parser.
- *
- * @template T Type of the parser result
- * @param parser The parser to apply
- * @returns Parser<T> A parser that returns the result of the original parser
- */
-export const token = <T>(parser: Parser<T>): Parser<T> =>
-  map(seq(parser, whitespace()), ([value]) => value);
-
-/**
- * Parser for matching a JavaScript/JSON-style string with escape sequences.
- *
- * @returns Parser<string> A parser that returns the content of the string without quotes
- */
-export const quotedString = (): Parser<string> => {
-  const escapeSeq = map(seq(literal("\\"), anyChar()), ([_, char]) => {
-    switch (char) {
-      case "n":
-        return "\n";
-      case "r":
-        return "\r";
-      case "t":
-        return "\t";
-      case "b":
-        return "\b";
-      case "f":
-        return "\f";
-      case "\\":
-        return "\\";
-      case '"':
-        return '"';
-      case "'":
-        return "'";
-      default:
-        return char;
-    }
-  });
-
-  const stringChar = choice(
-    escapeSeq,
-    map(
-      seq(notPredicate(choice(literal('"'), literal("\\"))), anyChar()),
-      ([_, char]) => char,
-    ),
-  );
-
-  return map(
-    seq(literal('"'), zeroOrMore(stringChar), literal('"')),
-    ([_, chars]) => chars.join(""),
-  );
 };
 
 /**
@@ -286,51 +216,6 @@ export const labeled =
   };
 
 /**
- * Parser for matching a JavaScript/JSON-style number.
- *
- * @returns Parser<number> A parser that returns the parsed number
- */
-export const number = (): Parser<number> => {
-  const digits = map(oneOrMore(charClass(["0", "9"])), (chars) =>
-    chars.join(""),
-  );
-  const integer = map(
-    seq(optional(literal("-")), digits),
-    ([sign, num]) => (sign.length ? "-" : "") + num,
-  );
-
-  const fraction = map(seq(literal("."), digits), ([_, frac]) => `.${frac}`);
-
-  const exponent = map(
-    seq(charClass("e", "E"), optional(charClass("+", "-")), digits),
-    ([e, sign, exp]) => e + (sign.length ? sign[0] : "") + exp,
-  );
-
-  return map(
-    seq(integer, optional(fraction), optional(exponent)),
-    ([int, frac, exp]) => {
-      const numStr =
-        int + (frac.length ? frac[0] : "") + (exp.length ? exp[0] : "");
-      return Number(numStr);
-    },
-  );
-};
-
-/**
- * Parse an integer number.
- *
- * @returns Parser<number> A parser that returns the parsed integer
- */
-export const int = (): Parser<number> => {
-  return map(
-    seq(optional(literal("-")), oneOrMore(charClass(["0", "9"]))),
-    ([sign, digits]) => {
-      return Number.parseInt((sign.length ? "-" : "") + digits.join(""), 10);
-    },
-  );
-};
-
-/**
  * Create a parser that tracks line and column for better error reporting.
  *
  * @template T Type of the parser result
@@ -351,3 +236,125 @@ export const withPosition =
       val: { ...result.val, position: pos } as T & { position: Pos },
     };
   };
+
+/**
+ * Parser that checks for end of input (EOF).
+ *
+ * Succeeds only if the input is at the end.
+ *
+ * @returns Parser<never> A parser that succeeds at end of input, or fails otherwise.
+ */
+export const EOF = not(any());
+
+/**
+ * Parser that matches any newline sequence.
+ *
+ * @returns Parser<string> A parser that matches "\r\n", "\n", or "\r"
+ */
+export const newline = choice(literal("\r\n"), literal("\n"), literal("\r"));
+
+/**
+ * Parser that consumes whitespace characters.
+ *
+ * @returns Parser<string> A parser that returns consumed whitespace characters
+ */
+export const whitespace = () =>
+  map(zeroOrMore(charClass(" ", "\t", "\n", "\r")), (chars) => chars.join(""));
+
+/**
+ * Parser wrapper that consumes whitespace before and after the parser.
+ *
+ * @template T Type of the parser result
+ * @param parser The parser to apply
+ * @returns Parser<T> A parser that returns the result of the original parser
+ */
+export const token = <T>(parser: Parser<T>): Parser<T> =>
+  map(seq(whitespace(), parser, whitespace()), ([_, value]) => value);
+
+/**
+ * Parser for matching a JavaScript/JSON-style string with escape sequences.
+ *
+ * @returns Parser<string> A parser that returns the content of the string without quotes
+ */
+export const quotedString = (): Parser<string> => {
+  const escapeSeq = map(seq(literal("\\"), anyChar()), ([_, char]) => {
+    switch (char) {
+      case "n":
+        return "\n";
+      case "r":
+        return "\r";
+      case "t":
+        return "\t";
+      case "b":
+        return "\b";
+      case "f":
+        return "\f";
+      case "\\":
+        return "\\";
+      case '"':
+        return '"';
+      case "'":
+        return "'";
+      default:
+        return char;
+    }
+  });
+
+  const stringChar = choice(
+    escapeSeq,
+    map(
+      seq(notPredicate(choice(literal('"'), literal("\\"))), anyChar()),
+      ([_, char]) => char
+    )
+  );
+
+  return map(
+    seq(literal('"'), zeroOrMore(stringChar), literal('"')),
+    ([_, chars]) => chars.join("")
+  );
+};
+
+/**
+ * Parser for matching a JavaScript/JSON-style number.
+ *
+ * @returns Parser<number> A parser that returns the parsed number
+ */
+export const number = (): Parser<number> => {
+  const digits = map(oneOrMore(charClass(["0", "9"])), (chars) =>
+    chars.join("")
+  );
+  const integer = map(
+    seq(optional(literal("-")), digits),
+    ([sign, num]) => (sign.length ? "-" : "") + num
+  );
+
+  const fraction = map(seq(literal("."), digits), ([_, frac]) => `.${frac}`);
+
+  const exponent = map(
+    seq(charClass("e", "E"), optional(charClass("+", "-")), digits),
+    ([e, sign, exp]) => e + (sign.length ? sign[0] : "") + exp
+  );
+
+  return map(
+    seq(integer, optional(fraction), optional(exponent)),
+    ([int, frac, exp]) => {
+      const numStr =
+        int + (frac.length ? frac[0] : "") + (exp.length ? exp[0] : "");
+      return Number(numStr);
+    }
+  );
+};
+
+/**
+ * Parse an integer number.
+ *
+ * @returns Parser<number> A parser that returns the parsed integer
+ */
+export const int = (): Parser<number> => {
+  return map(
+    seq(optional(literal("-")), oneOrMore(charClass(["0", "9"]))),
+    ([sign, digits]) => {
+      return Number.parseInt((sign.length ? "-" : "") + digits.join(""), 10);
+    }
+  );
+};

@@ -448,7 +448,7 @@ describe("Tests for added combinators", () => {
       }
       `;
 
-      const { parseJSON } = require("./peg/json");
+      const { parseJSON } = require("./json/json");
       const result = parseJSON(jsonString);
 
       expect(result).toEqual({
@@ -468,7 +468,7 @@ John,30,New York
 Jane,25,Boston
 Bob,40,Chicago`;
 
-      const { parseCSV } = require("./peg/csv");
+      const { parseCSV } = require("./csv/csv");
       const result = parseCSV(csvString);
 
       expect(result).toEqual([
@@ -485,7 +485,7 @@ Bob,40,Chicago`;
 "John",30
 "Jane",25`;
 
-      const { parseCSV } = require("./peg/csv");
+      const { parseCSV } = require("./csv/csv");
       const result = parseCSV(csvString);
 
       expect(result).toEqual([
@@ -500,7 +500,7 @@ Bob,40,Chicago`;
 John,30,New York
 Jane,25,Boston`;
 
-      const { parseCSVWithHeaders } = require("./peg/csv");
+      const { parseCSVWithHeaders } = require("./csv/csv");
       const result = parseCSVWithHeaders(csvString);
 
       expect(result).toEqual([
