@@ -1,4 +1,4 @@
-import { sepBy, takeUntil, newline } from "tpeg-combinator";
+import { newline, sepBy, takeUntil } from "tpeg-combinator";
 import type { Parser } from "tpeg-core";
 import {
   charClass,
@@ -23,9 +23,9 @@ import {
 // Unquoted field (doesn't contain commas or newlines)
 const unquotedField = map(
   takeUntil(
-    choice(literal(","), literal("\n"), literal("\r\n"), literal("\r"))
+    choice(literal(","), literal("\n"), literal("\r\n"), literal("\r")),
   ),
-  (val) => val
+  (val) => val,
 );
 
 // Parse escaped quotes ("")
@@ -34,19 +34,19 @@ const escapedQuote = map(literal('""'), () => '"');
 // Character that is not the end quote (excluding double quote)
 const normalChar = map(
   seq(not(literal('"')), charClass(["0", "\uFFFF"])),
-  ([_, char]) => char
+  ([_, char]) => char,
 );
 
 // Content inside quotes
 const quotedContent = map(
   oneOrMore(choice(escapedQuote, normalChar)),
-  (chars) => chars.join("")
+  (chars) => chars.join(""),
 );
 
 // Quoted field
 const quotedField = map(
   seq(literal('"'), quotedContent, literal('"')),
-  ([_, content]) => content
+  ([_, content]) => content,
 );
 
 // Any field (quoted or unquoted)
@@ -75,7 +75,7 @@ export const parseCSV = (input: string): string[][] => {
 
 // Create an array of objects from CSV string with headers
 export const parseCSVWithHeaders = (
-  input: string
+  input: string,
 ): Record<string, string>[] => {
   const parsed = parseCSV(input);
 
