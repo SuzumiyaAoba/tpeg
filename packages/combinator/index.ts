@@ -262,6 +262,13 @@ export const whitespace = () =>
   map(zeroOrMore(charClass(" ", "\t", "\n", "\r")), (chars) => chars.join(""));
 
 /**
+ * Parser that consumes one or more whitespace characters.
+ *
+ * @returns Parser<string> A parser that returns consumed whitespace characters
+ */
+export const spaces = () => zeroOrMore(whitespace());
+
+/**
  * Parser wrapper that consumes whitespace before and after the parser.
  *
  * @template T Type of the parser result
