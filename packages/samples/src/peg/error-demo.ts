@@ -1,4 +1,4 @@
-import { whitespace } from "tpeg-combinator";
+import { spaces, whitespace } from "tpeg-combinator";
 import type { ParseResult, Parser } from "tpeg-core";
 import {
   any,
@@ -78,7 +78,7 @@ const integer = oneOrMore(digit);
 const operator = choice(lit("+"), lit("-"), lit("*"), lit("/"));
 
 // Terms
-const term = seq(whitespace(), integer, whitespace());
+const term = seq(spaces, integer, spaces);
 
 // Expressions
 const expression = seq(term, operator, term);

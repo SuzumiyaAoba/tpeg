@@ -7,7 +7,7 @@ describe("Error Demo", () => {
     const result = parse(term)("123");
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.val).toEqual(["", ["1", "2", "3"], ""]);
+      expect(result.val).toEqual([[], ["1", "2", "3"], []]);
     }
   });
 
@@ -16,9 +16,9 @@ describe("Error Demo", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toEqual([
-        ["", ["1", "2", "3"], " "],
+        [[], ["1", "2", "3"], [" "]],
         "+",
-        [" ", ["4", "5", "6"], ""],
+        [[" "], ["4", "5", "6"], []],
       ]);
     }
   });

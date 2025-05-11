@@ -61,10 +61,12 @@ const parseSimpleString = <T extends string>(
   str: NonEmptyString<T>,
   input: string,
   pos: Pos,
-  parserName = "literal",
+  parserName = "literal"
 ): ParseResult<T> | null => {
   // Fast path for ASCII-only strings with no newlines
-  const { offset, column, line } = pos;
+  const offset = pos.offset;
+  const column = pos.column;
+  const line = pos.line;
 
   // Check if the input has enough characters left
   if (offset + str.length > input.length) {
@@ -92,7 +94,7 @@ const parseSimpleString = <T extends string>(
           expected: str[i],
           found: input[offset + i],
           parserName,
-        },
+        }
       );
     }
   }
@@ -119,7 +121,7 @@ const parseComplexString = <T extends string>(
   str: NonEmptyString<T>,
   input: string,
   pos: Pos,
-  parserName = "literal",
+  parserName = "literal"
 ): ParseResult<T> => {
   let currentPos = { ...pos };
   let i = 0;
@@ -133,7 +135,7 @@ const parseComplexString = <T extends string>(
     // Get the character from the input
     const [inputChar, inputCharLen] = getCharAndLength(
       input,
-      currentPos.offset,
+      currentPos.offset
     );
 
     if (inputChar === "") {
@@ -144,7 +146,7 @@ const parseComplexString = <T extends string>(
           expected: str,
           found: "end of input",
           parserName,
-        },
+        }
       );
     }
 
@@ -156,7 +158,7 @@ const parseComplexString = <T extends string>(
           expected: strChar,
           found: inputChar,
           parserName,
-        },
+        }
       );
     }
 
@@ -184,7 +186,7 @@ const parseComplexString = <T extends string>(
 export const literal =
   <T extends string>(
     str: NonEmptyString<T>,
-    parserName = "literal",
+    parserName = "literal"
   ): Parser<T> =>
   (input: string, pos: Pos) => {
     // Use optimized path for simple strings

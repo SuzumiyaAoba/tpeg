@@ -4,7 +4,7 @@ import {
   quotedString,
   recursive,
   token,
-  whitespace,
+  labeled,
 } from "tpeg-combinator";
 import {
   type ParseResult,
@@ -39,7 +39,7 @@ export interface JSONObject {
 export type JSONArray = JSONValue[];
 
 // null値をパースする
-const nullParser = map(literal("null"), () => null);
+const nullParser = map(labeled(literal("null"), "Expected 'null'"), () => null);
 
 // 真偽値をパース
 const trueParser = map(literal("true"), () => true);
@@ -53,7 +53,7 @@ const numberParser = map(number(), (n) => n);
 
 // カンマ区切りの値をパース (空の場合は空配列)
 const commaSeparatedValues = (
-  parser: Parser<JSONValue>,
+  parser: Parser<JSONValue>
 ): Parser<JSONValue[]> => {
   return map(
     optional(
@@ -61,20 +61,20 @@ const commaSeparatedValues = (
         seq(
           token(parser),
           zeroOrMore(
-            map(seq(token(literal(",")), token(parser)), ([, val]) => val),
-          ),
+            map(seq(token(literal(",")), token(parser)), ([, val]) => val)
+          )
         ),
-        ([first, rest]) => [first, ...rest],
-      ),
+        ([first, rest]) => [first, ...rest]
+      )
     ),
-    (optionalValues) => (optionalValues.length ? optionalValues[0] : []),
+    (optionalValues) => (optionalValues.length ? optionalValues[0] : [])
   );
 };
 
 // 空の配列を特別に処理
 const emptyArrayParser = map(
   seq(token(literal("[")), token(literal("]"))),
-  () => [],
+  () => []
 );
 
 /**
@@ -102,15 +102,15 @@ export const jsonParser = (): Parser<JSONValue> => {
     seq(
       token(literal("[")),
       commaSeparatedValues(valueParser),
-      token(literal("]")),
+      token(literal("]"))
     ),
-    ([, elements]) => elements,
+    ([, elements]) => elements
   );
 
   // オブジェクトのキーと値のペアをパース
   const keyValuePair: Parser<[string, JSONValue]> = map(
     seq(token(quotedString()), token(literal(":")), token(valueParser)),
-    ([key, , value]) => [key, value] as const,
+    ([key, , value]) => [key, value] as const
   );
 
   // カンマ区切りのプロパティをパース (空の場合は空配列)
@@ -121,13 +121,13 @@ export const jsonParser = (): Parser<JSONValue> => {
           seq(
             keyValuePair,
             zeroOrMore(
-              map(seq(token(literal(",")), keyValuePair), ([, pair]) => pair),
-            ),
+              map(seq(token(literal(",")), keyValuePair), ([, pair]) => pair)
+            )
           ),
-          ([first, rest]) => [first, ...rest],
-        ),
+          ([first, rest]) => [first, ...rest]
+        )
       ),
-      (optionalPairs) => (optionalPairs.length ? optionalPairs[0] : []),
+      (optionalPairs) => (optionalPairs.length ? optionalPairs[0] : [])
     );
   };
 
@@ -140,13 +140,13 @@ export const jsonParser = (): Parser<JSONValue> => {
         obj[key] = value;
       }
       return obj;
-    },
+    }
   );
 
   // 空のオブジェクトを特別に処理
   const emptyObjectParser = map(
     seq(token(literal("{")), token(literal("}"))),
-    () => ({}),
+    () => ({})
   );
 
   // JSON値のパーサーを設定
@@ -157,51 +157,52 @@ export const jsonParser = (): Parser<JSONValue> => {
       falseParser,
       stringParser,
       numberParser,
-      emptyArrayParser,
-      arrayParser,
       emptyObjectParser,
       objectParser,
-    ),
+      emptyArrayParser,
+      arrayParser
+    )
   );
 
   // トークン化したJSONパーサーを返す
-  return memoize(valueParser);
+  return memoize(token(valueParser));
 };
 
 /**
  * Parse a JSON string into a JavaScript value
  *
  * @param input JSON string
- * @returns Parsed JavaScript value or null if parsing fails
+ * @returns Parsed JavaScript value, empty string for empty input, or null if parsing fails
+ * @throws Error when the input is null
  */
-export const parseJSON = (input: string): JSONValue | null => {
+export const parseJSON = (input: string): JSONValue | null | string => {
+  // 入力が null の場合はエラーをスロー
+  if (input === null) {
+    throw new Error("Input cannot be null");
+  }
+
   try {
-    // Unicode エスケープシーケンスを処理するための特別なケース
-    if (input.includes("\\u")) {
-      // JSON.parse を使用して Unicode エスケープシーケンスを適切に処理
-      try {
-        return JSON.parse(input);
-      } catch (e) {
-        // JSON.parse が失敗した場合は自作パーサーを試す
-        console.error(
-          "Failed to parse Unicode escape sequence with JSON.parse:",
-          e,
-        );
-      }
+    // 入力が空の場合は空文字列を返す
+    if (!input) {
+      return "";
     }
 
-    const parser = jsonParser();
-
-    // nullの単独テスト
-    if (input.trim() === "null") {
-      return null;
+    // 最初にJavaScriptの組み込みJSON.parseを試す
+    try {
+      return JSON.parse(input);
+    } catch (e) {
+      // JSON.parseが失敗した場合は、カスタムパーサーを使用
     }
 
-    const result = parse(parser)(input);
+    // カスタムパーサーを使用
+    // token()関数を使って、先頭と末尾の空白を自動的に処理
+    const result = parse(jsonParser())(input);
 
     if (result.success) {
       return result.val;
     }
+
+    // パース失敗時にエラーメッセージを出力
     console.error("Parse error:", result.error?.message);
     return null;
   } catch (e) {

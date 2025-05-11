@@ -32,6 +32,11 @@ import {
 export const takeUntil =
   <T>(condition: Parser<T>): Parser<string> =>
   (input: string, pos: Pos) => {
+    // Ensure pos is properly defined
+    if (!pos) {
+      pos = { offset: 0, line: 1, column: 1 };
+    }
+
     let currentPos = pos;
     let result = "";
 
@@ -68,11 +73,19 @@ export const takeUntil =
  * @param close Closing parser
  * @returns Parser<string> A parser that returns the content between open and close
  */
-export const between = <O, C>(
-  open: Parser<O>,
-  close: Parser<C>
-): Parser<string> =>
-  map(seq(open, takeUntil(close), close), ([_, content]) => content);
+export const between =
+  <O, C>(open: Parser<O>, close: Parser<C>): Parser<string> =>
+  (input: string, pos: Pos) => {
+    // Ensure pos is properly defined
+    if (!pos) {
+      pos = { offset: 0, line: 1, column: 1 };
+    }
+
+    return map(seq(open, takeUntil(close), close), ([_, content]) => content)(
+      input,
+      pos
+    );
+  };
 
 /**
  * Parser that applies a parser repeatedly, separated by another parser.
@@ -178,6 +191,11 @@ export const recursive = <T>(): [Parser<T>, (parser: Parser<T>) => void] => {
       };
     }
 
+    // Ensure pos is properly defined
+    if (!pos) {
+      pos = { offset: 0, line: 1, column: 1 };
+    }
+
     return ref(input, pos);
   };
 
@@ -220,20 +238,20 @@ export const labeled =
  *
  * @template T Type of the parser result
  * @param parser The parser to apply
- * @returns Parser<T> A parser that tracks position information
+ * @returns Parser<{ value: T, position: Pos }> A parser that returns an object with value and position
  */
 export const withPosition =
-  <T>(parser: Parser<T>): Parser<T & { position: Pos }> =>
+  <T>(parser: Parser<T>): Parser<{ value: T; position: Pos }> =>
   (input: string, pos: Pos) => {
     const result = parser(input, pos);
 
     if (!result.success) {
-      return result as ParseResult<T & { position: Pos }>;
+      return result as ParseResult<{ value: T; position: Pos }>;
     }
 
     return {
       ...result,
-      val: { ...result.val, position: pos } as T & { position: Pos },
+      val: { value: result.val, position: pos },
     };
   };
 
@@ -258,15 +276,14 @@ export const newline = choice(literal("\r\n"), literal("\n"), literal("\r"));
  *
  * @returns Parser<string> A parser that returns consumed whitespace characters
  */
-export const whitespace = () =>
-  map(zeroOrMore(charClass(" ", "\t", "\n", "\r")), (chars) => chars.join(""));
+export const whitespace = charClass(" ", "\t", "\n", "\r");
 
 /**
  * Parser that consumes one or more whitespace characters.
  *
  * @returns Parser<string> A parser that returns consumed whitespace characters
  */
-export const spaces = () => zeroOrMore(whitespace());
+export const spaces = zeroOrMore(whitespace);
 
 /**
  * Parser wrapper that consumes whitespace before and after the parser.
@@ -276,7 +293,7 @@ export const spaces = () => zeroOrMore(whitespace());
  * @returns Parser<T> A parser that returns the result of the original parser
  */
 export const token = <T>(parser: Parser<T>): Parser<T> =>
-  map(seq(whitespace(), parser, whitespace()), ([_, value]) => value);
+  map(seq(spaces, parser, spaces), ([_, value]) => value);
 
 /**
  * Parser for matching a JavaScript/JSON-style string with escape sequences.

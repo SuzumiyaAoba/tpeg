@@ -25,10 +25,9 @@
     "test:coverage": "bun test --coverage packages/**/*.spec.ts",
     "test:watch": "bun test --watch packages/**/*.spec.ts",
     "build": "bun run build:all",
-    "build:all": "bun run build:core && bun run build:ast && bun run build:combinator && bun run build:samples",
+    "build:all": "bun run build:core && bun run build:ast && bun run build:combinator",
     "build:core": "cd packages/core && bun run test && bun run build",
     "build:ast": "cd packages/ast && bun run build",
-    "build:combinator": "cd packages/combinator && bun run build",
-    "build:samples": "cd packages/samples && bun run build"
+    "build:combinator": "cd packages/combinator && bun run build"
   }
 }
