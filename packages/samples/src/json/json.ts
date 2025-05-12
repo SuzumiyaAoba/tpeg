@@ -1,10 +1,10 @@
 import {
+  labeled,
   memoize,
   number,
   quotedString,
   recursive,
   token,
-  labeled,
 } from "tpeg-combinator";
 import {
   type ParseResult,
@@ -53,7 +53,7 @@ const numberParser = map(number(), (n) => n);
 
 // カンマ区切りの値をパース (空の場合は空配列)
 const commaSeparatedValues = (
-  parser: Parser<JSONValue>
+  parser: Parser<JSONValue>,
 ): Parser<JSONValue[]> => {
   return map(
     optional(
@@ -61,20 +61,20 @@ const commaSeparatedValues = (
         seq(
           token(parser),
           zeroOrMore(
-            map(seq(token(literal(",")), token(parser)), ([, val]) => val)
-          )
+            map(seq(token(literal(",")), token(parser)), ([, val]) => val),
+          ),
         ),
-        ([first, rest]) => [first, ...rest]
-      )
+        ([first, rest]) => [first, ...rest],
+      ),
     ),
-    (optionalValues) => (optionalValues.length ? optionalValues[0] : [])
+    (optionalValues) => (optionalValues.length ? optionalValues[0] : []),
   );
 };
 
 // 空の配列を特別に処理
 const emptyArrayParser = map(
   seq(token(literal("[")), token(literal("]"))),
-  () => []
+  () => [],
 );
 
 /**
@@ -102,15 +102,15 @@ export const jsonParser = (): Parser<JSONValue> => {
     seq(
       token(literal("[")),
       commaSeparatedValues(valueParser),
-      token(literal("]"))
+      token(literal("]")),
     ),
-    ([, elements]) => elements
+    ([, elements]) => elements,
   );
 
   // オブジェクトのキーと値のペアをパース
   const keyValuePair: Parser<[string, JSONValue]> = map(
     seq(token(quotedString()), token(literal(":")), token(valueParser)),
-    ([key, , value]) => [key, value] as const
+    ([key, , value]) => [key, value] as const,
   );
 
   // カンマ区切りのプロパティをパース (空の場合は空配列)
@@ -121,13 +121,13 @@ export const jsonParser = (): Parser<JSONValue> => {
           seq(
             keyValuePair,
             zeroOrMore(
-              map(seq(token(literal(",")), keyValuePair), ([, pair]) => pair)
-            )
+              map(seq(token(literal(",")), keyValuePair), ([, pair]) => pair),
+            ),
           ),
-          ([first, rest]) => [first, ...rest]
-        )
+          ([first, rest]) => [first, ...rest],
+        ),
       ),
-      (optionalPairs) => (optionalPairs.length ? optionalPairs[0] : [])
+      (optionalPairs) => (optionalPairs.length ? optionalPairs[0] : []),
     );
   };
 
@@ -140,13 +140,13 @@ export const jsonParser = (): Parser<JSONValue> => {
         obj[key] = value;
       }
       return obj;
-    }
+    },
   );
 
   // 空のオブジェクトを特別に処理
   const emptyObjectParser = map(
     seq(token(literal("{")), token(literal("}"))),
-    () => ({})
+    () => ({}),
   );
 
   // JSON値のパーサーを設定
@@ -160,8 +160,8 @@ export const jsonParser = (): Parser<JSONValue> => {
       emptyObjectParser,
       objectParser,
       emptyArrayParser,
-      arrayParser
-    )
+      arrayParser,
+    ),
   );
 
   // トークン化したJSONパーサーを返す

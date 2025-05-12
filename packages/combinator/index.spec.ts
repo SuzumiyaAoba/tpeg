@@ -16,10 +16,10 @@ import {
   isSuccess,
   literal,
   map,
+  oneOrMore,
   parse,
   seq,
   zeroOrMore,
-  oneOrMore,
 } from "tpeg-core";
 import {
   EOF,
@@ -165,7 +165,7 @@ describe("tpeg-combinator additional tests", () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message).toBe(
-          'Unexpected character "a", expected one of  , \t, \n, \r'
+          'Unexpected character "a", expected one of  , \t, \n, \r',
         );
       }
     });
@@ -417,7 +417,7 @@ describe("tpeg-combinator additional tests", () => {
 // カスタムパーサーを作成して空文字列を返す
 const emptyStringParser: Parser<string> = (
   input: string,
-  pos: { offset: number; line: number; column: number }
+  pos: { offset: number; line: number; column: number },
 ) => {
   return {
     success: true as const,
@@ -649,13 +649,13 @@ describe("Additional coverage tests", () => {
       // A simple content parser that accepts any character except brackets
       const contentParser = map(
         takeUntil(choice(literal("["), literal("]"))),
-        (content) => content
+        (content) => content,
       );
 
       // Define the parser for a bracketed expression
       const bracketedExpr = map(
         seq(literal("["), choice(bracketsParser, contentParser), literal("]")),
-        ([open, content, close]) => `${open}${content}${close}`
+        ([open, content, close]) => `${open}${content}${close}`,
       );
 
       // Set the recursive parser
@@ -897,13 +897,13 @@ describe("Edge Cases and Error Handling", () => {
 
       // 数値パーサー
       const numberParser = map(oneOrMore(charClass(["0", "9"])), (digits) =>
-        parseInt(digits.join(""), 10)
+        Number.parseInt(digits.join(""), 10),
       );
 
       // 括弧内の式
       const parenExpr = map(
         seq(literal("("), exprParser, literal(")")),
-        ([_, expr]) => expr
+        ([_, expr]) => expr,
       );
 
       // 項（数値または括弧内の式）
@@ -912,7 +912,7 @@ describe("Edge Cases and Error Handling", () => {
       // 加算または減算
       const addSubExpr = map(
         seq(term, literal("+"), exprParser),
-        ([left, op, right]) => ({ op: "+", left, right })
+        ([left, op, right]) => ({ op: "+", left, right }),
       );
 
       // 式パーサーを設定
@@ -949,14 +949,13 @@ describe("Edge Cases and Error Handling", () => {
             current: pos,
             next: { ...pos, offset: pos.offset + 5 },
           };
-        } else {
-          return {
-            success: true,
-            val: "second",
-            current: pos,
-            next: { ...pos, offset: pos.offset + 6 },
-          };
         }
+        return {
+          success: true,
+          val: "second",
+          current: pos,
+          next: { ...pos, offset: pos.offset + 6 },
+        };
       };
 
       const memoizedParser = memoize(expensiveParser);
@@ -1004,8 +1003,8 @@ describe("withPosition advanced cases", () => {
     const parser = withPosition(
       map(
         seq(literal("hello"), literal(" "), literal("world")),
-        ([a, b, c]) => a + b + c
-      )
+        ([a, b, c]) => a + b + c,
+      ),
     );
 
     const result = parser("hello world", { offset: 0, line: 1, column: 1 });
@@ -1020,7 +1019,7 @@ describe("withPosition advanced cases", () => {
 
   it("should preserve position information in nested structures", () => {
     const wordParser = map(oneOrMore(charClass(["a", "z"])), (chars) =>
-      chars.join("")
+      chars.join(""),
     );
 
     const positionedWord = withPosition(wordParser);
@@ -1028,7 +1027,7 @@ describe("withPosition advanced cases", () => {
     // 単語のリストをパース
     const wordListParser = map(
       seq(positionedWord, literal(" "), positionedWord),
-      ([first, _, second]) => [first, second]
+      ([first, _, second]) => [first, second],
     );
 
     const result = wordListParser("hello world", {

@@ -70,7 +70,7 @@ const digit = choice(
   lit("6"),
   lit("7"),
   lit("8"),
-  lit("9")
+  lit("9"),
 );
 const integer = oneOrMore(digit);
 
@@ -95,7 +95,7 @@ function displayParseResult<T>(result: ParseResult<T>, input: string): void {
   } else {
     console.log("Parsing failed...");
     console.log(
-      formatParseError(result.error as unknown as DemoParseError, input)
+      formatParseError(result.error as unknown as DemoParseError, input),
     );
   }
 }

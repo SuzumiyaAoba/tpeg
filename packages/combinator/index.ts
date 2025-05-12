@@ -33,11 +33,9 @@ export const takeUntil =
   <T>(condition: Parser<T>): Parser<string> =>
   (input: string, pos: Pos) => {
     // Ensure pos is properly defined
-    if (!pos) {
-      pos = { offset: 0, line: 1, column: 1 };
-    }
+    const startPos = pos || { offset: 0, line: 1, column: 1 };
 
-    let currentPos = pos;
+    let currentPos = startPos;
     let result = "";
 
     while (currentPos.offset < input.length) {
@@ -59,7 +57,7 @@ export const takeUntil =
     return {
       success: true,
       val: result,
-      current: pos,
+      current: startPos,
       next: currentPos,
     };
   };
@@ -77,13 +75,11 @@ export const between =
   <O, C>(open: Parser<O>, close: Parser<C>): Parser<string> =>
   (input: string, pos: Pos) => {
     // Ensure pos is properly defined
-    if (!pos) {
-      pos = { offset: 0, line: 1, column: 1 };
-    }
+    const startPos = pos || { offset: 0, line: 1, column: 1 };
 
     return map(seq(open, takeUntil(close), close), ([_, content]) => content)(
       input,
-      pos
+      startPos,
     );
   };
 
@@ -98,16 +94,16 @@ export const between =
  */
 export const sepBy = <T, S>(
   value: Parser<T>,
-  separator: Parser<S>
+  separator: Parser<S>,
 ): Parser<T[]> => {
   const sepByOne = map(
     seq(value, zeroOrMore(map(seq(separator, value), ([_, v]) => v))),
-    ([first, rest]) => [first, ...rest]
+    ([first, rest]) => [first, ...rest],
   );
 
   return choice(
     sepByOne,
-    map(notPredicate(value), () => [])
+    map(notPredicate(value), () => []),
   );
 };
 
@@ -122,7 +118,7 @@ export const sepBy = <T, S>(
  */
 export const sepBy1 = <T, S>(
   value: Parser<T>,
-  separator: Parser<S>
+  separator: Parser<S>,
 ): Parser<NonEmptyArray<T>> => {
   // Parser for processing a single value
   const single = map(value, (v) => [v] as NonEmptyArray<T>);
@@ -130,7 +126,7 @@ export const sepBy1 = <T, S>(
   // Parser for processing multiple values
   const multiple = map(
     seq(value, oneOrMore(map(seq(separator, value), ([_, v]) => v))),
-    ([first, rest]) => [first, ...rest] as NonEmptyArray<T>
+    ([first, rest]) => [first, ...rest] as NonEmptyArray<T>,
   );
 
   return choice(multiple, single);
@@ -192,11 +188,9 @@ export const recursive = <T>(): [Parser<T>, (parser: Parser<T>) => void] => {
     }
 
     // Ensure pos is properly defined
-    if (!pos) {
-      pos = { offset: 0, line: 1, column: 1 };
-    }
+    const startPos = pos || { offset: 0, line: 1, column: 1 };
 
-    return ref(input, pos);
+    return ref(input, startPos);
   };
 
   const setParser = (p: Parser<T>): void => {
@@ -328,13 +322,13 @@ export const quotedString = (): Parser<string> => {
     escapeSeq,
     map(
       seq(notPredicate(choice(literal('"'), literal("\\"))), anyChar()),
-      ([_, char]) => char
-    )
+      ([_, char]) => char,
+    ),
   );
 
   return map(
     seq(literal('"'), zeroOrMore(stringChar), literal('"')),
-    ([_, chars]) => chars.join("")
+    ([_, chars]) => chars.join(""),
   );
 };
 
@@ -345,18 +339,18 @@ export const quotedString = (): Parser<string> => {
  */
 export const number = (): Parser<number> => {
   const digits = map(oneOrMore(charClass(["0", "9"])), (chars) =>
-    chars.join("")
+    chars.join(""),
   );
   const integer = map(
     seq(optional(literal("-")), digits),
-    ([sign, num]) => (sign.length ? "-" : "") + num
+    ([sign, num]) => (sign.length ? "-" : "") + num,
   );
 
   const fraction = map(seq(literal("."), digits), ([_, frac]) => `.${frac}`);
 
   const exponent = map(
     seq(charClass("e", "E"), optional(charClass("+", "-")), digits),
-    ([e, sign, exp]) => e + (sign.length ? sign[0] : "") + exp
+    ([e, sign, exp]) => e + (sign.length ? sign[0] : "") + exp,
   );
 
   return map(
@@ -365,7 +359,7 @@ export const number = (): Parser<number> => {
       const numStr =
         int + (frac.length ? frac[0] : "") + (exp.length ? exp[0] : "");
       return Number(numStr);
-    }
+    },
   );
 };
 
@@ -379,6 +373,6 @@ export const int = (): Parser<number> => {
     seq(optional(literal("-")), oneOrMore(charClass(["0", "9"]))),
     ([sign, digits]) => {
       return Number.parseInt((sign.length ? "-" : "") + digits.join(""), 10);
-    }
+    },
   );
 };

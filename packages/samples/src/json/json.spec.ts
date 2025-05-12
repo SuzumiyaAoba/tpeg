@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { describe, expect, it, beforeEach, afterEach, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { parse as originalParse } from "tpeg-core";
 import type { ParseResult, Pos } from "tpeg-core";
 import { jsonParser, parseJSON } from "./json";
@@ -20,6 +20,7 @@ import {
 import {
   charClass,
   choice,
+  labeled,
   literal,
   map,
   notPredicate,
@@ -27,7 +28,6 @@ import {
   optional,
   seq,
   zeroOrMore,
-  labeled,
 } from "tpeg-core";
 
 // テスト用に拡張されたグローバルオブジェクトの型
@@ -705,7 +705,7 @@ describe("JSON Parser", () => {
       const errorMessages: string[] = [];
 
       // エラーメッセージをキャプチャするモック
-      console.error = (...args: string[]) => {
+      console.error = (...args: unknown[]) => {
         errorMessages.push(args.join(" "));
       };
 
@@ -719,7 +719,7 @@ describe("JSON Parser", () => {
 
       // いくつかのエラーメッセージのパターンを確認
       expect(errorMessages.some((msg) => msg.includes("Parse error"))).toBe(
-        true
+        true,
       );
 
       console.error = originalConsoleError;
@@ -767,7 +767,7 @@ describe("JSON Parser", () => {
 
       // Unicode文字と特殊なエスケープシーケンス
       expect(parseJSON('"\\u00A9 copyright symbol"')).toBe(
-        "\u00A9 copyright symbol"
+        "\u00A9 copyright symbol",
       );
       expect(parseJSON('"\\\\backslash"')).toBe("\\backslash");
       expect(parseJSON('"tab\\tafter"')).toBe("tab\tafter");
@@ -889,7 +889,7 @@ describe("JSON Parser", () => {
           logs.push(
             `Result: ${
               parsed === null ? "Correctly failed" : "Incorrectly parsed"
-            }`
+            }`,
           );
           logs.push("---");
         }
@@ -1050,7 +1050,7 @@ describe("JSON Parser", () => {
       try {
         // エスケープシーケンスを含む文字列
         const escapedString = parseJSON(
-          '"Line 1\\nLine 2\\tTabbed\\r\\nWindows line"'
+          '"Line 1\\nLine 2\\tTabbed\\r\\nWindows line"',
         );
         expect(escapedString).toBe("Line 1\nLine 2\tTabbed\r\nWindows line");
 
@@ -1152,7 +1152,7 @@ describe("JSON Parser", () => {
 });
 
 // パース結果をモックするヘルパー関数（parser.spec.tsから移動）
-const mockParseResult = <T>(value: T, inputLength: number = 0) => ({
+const mockParseResult = <T>(value: T, inputLength = 0) => ({
   success: true,
   val: value,
   current: { offset: 0, line: 1, column: 1 },
@@ -1165,7 +1165,7 @@ describe("JSON Parser Additional Tests", () => {
     // null入力のテスト
     it("should throw an error when input is null", () => {
       expect(() => parseJSON(null as unknown as string)).toThrow(
-        "Input cannot be null"
+        "Input cannot be null",
       );
     });
 
@@ -1207,12 +1207,12 @@ describe("JSON Parser Additional Tests", () => {
   describe("JSON Parser error handling", () => {
     // エラーハンドリングのテスト
     let originalConsoleError: typeof console.error;
-    let consoleErrorCalls: any[][] = [];
+    let consoleErrorCalls: unknown[][] = [];
 
     beforeEach(() => {
       // コンソールエラーをモックして、エラーが出力されているか確認
       originalConsoleError = console.error;
-      console.error = (...args: any[]) => {
+      console.error = (...args: unknown[]) => {
         consoleErrorCalls.push(args);
       };
     });
@@ -1367,7 +1367,7 @@ describe("JSON Parser Additional Tests", () => {
 
     it("should parse mixed nested structures", () => {
       expect(
-        parseJSON('{"items": [1, {"id": 2, "values": [3, 4]}, 5]}')
+        parseJSON('{"items": [1, {"id": 2, "values": [3, 4]}, 5]}'),
       ).toEqual({
         items: [1, { id: 2, values: [3, 4] }, 5],
       });
@@ -1384,7 +1384,7 @@ describe("JSON Parser Additional Tests", () => {
 
     it("should parse array with mixed types", () => {
       expect(
-        parseJSON('[1, "string", true, null, {"key": 42}, [1, 2]]')
+        parseJSON('[1, "string", true, null, {"key": 42}, [1, 2]]'),
       ).toEqual([1, "string", true, null, { key: 42 }, [1, 2]]);
     });
 
@@ -1591,7 +1591,7 @@ describe("JSON Parser Implementation Details", () => {
 
     // 異なる型の値を持つオブジェクト
     const mixedObject = mockParser(
-      '{"str": "string", "num": 123, "bool": true, "null": null, "arr": [1,2], "obj": {"nested": true}}'
+      '{"str": "string", "num": 123, "bool": true, "null": null, "arr": [1,2], "obj": {"nested": true}}',
     );
     expect(mixedObject.success).toBe(true);
     if (mixedObject.success) {
@@ -1631,7 +1631,7 @@ describe("JSON Parser Implementation Details", () => {
 
     // 異なる型の値を持つ配列
     const mixedArray = mockParser(
-      '["string", 123, true, null, [1,2], {"key": "value"}]'
+      '["string", 123, true, null, [1,2], {"key": "value"}]',
     );
     expect(mixedArray.success).toBe(true);
     if (mixedArray.success) {
@@ -1736,7 +1736,7 @@ describe("parseJSON Advanced Error Cases", () => {
     try {
       // console.errorをモック
       let errorCalled = false;
-      console.error = (...args: any[]) => {
+      console.error = (...args: unknown[]) => {
         errorCalled = true;
       };
 
@@ -1809,7 +1809,7 @@ describe("JSON Parser Low-Level Functions", () => {
 
     // 特殊キー名
     const specialKeyObj = parseJSON(
-      '{"$special": true, "_underscore": 123, "hyphen-key": "allowed in JSON"}'
+      '{"$special": true, "_underscore": 123, "hyphen-key": "allowed in JSON"}',
     );
     expect(specialKeyObj).toEqual({
       $special: true,
@@ -1827,13 +1827,13 @@ describe("JSON Parser Low-Level Functions", () => {
 
     // 奇数個のプロパティを持つオブジェクト
     const objWithOddProps = parseJSON(
-      '{"a": 1, "b": 2, "c": 3, "d": 4, "e": 5}'
+      '{"a": 1, "b": 2, "c": 3, "d": 4, "e": 5}',
     );
     expect(objWithOddProps).toEqual({ a: 1, b: 2, c: 3, d: 4, e: 5 });
 
     // 値が異なる型のオブジェクト
     const mixedTypeObj = parseJSON(
-      '{"str": "string", "num": 42, "bool": true, "null": null, "arr": [1,2], "obj": {"nested": true}}'
+      '{"str": "string", "num": 42, "bool": true, "null": null, "arr": [1,2], "obj": {"nested": true}}',
     );
     expect(mixedTypeObj).toEqual({
       str: "string",
@@ -1867,7 +1867,7 @@ describe("JSON Parser Low-Level Functions", () => {
 
     // 様々な型の要素を持つ配列
     const mixedTypeArr = parseJSON(
-      '["string", 42, true, null, [1,2], {"key": "value"}]'
+      '["string", 42, true, null, [1,2], {"key": "value"}]',
     );
     expect(mixedTypeArr).toEqual([
       "string",
@@ -1888,7 +1888,7 @@ describe("JSON Parser Low-Level Functions", () => {
 
     // 大きな配列
     const largeArr = parseJSON(
-      "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]"
+      "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]",
     );
     expect(largeArr).toEqual([
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
@@ -1899,7 +1899,7 @@ describe("JSON Parser Low-Level Functions", () => {
   it("should test deep nesting and recursion", () => {
     // 深くネストされたオブジェクト
     const deepNestedObj = parseJSON(
-      '{"a": {"b": {"c": {"d": {"e": {"f": "value"}}}}}}'
+      '{"a": {"b": {"c": {"d": {"e": {"f": "value"}}}}}}',
     );
     expect(deepNestedObj).toEqual({
       a: { b: { c: { d: { e: { f: "value" } } } } },
@@ -1911,7 +1911,7 @@ describe("JSON Parser Low-Level Functions", () => {
 
     // 複雑な混合型のネスト
     const complexMixed = parseJSON(
-      '{"arr": [1, {"obj": [2, [3, {"inner": [4, 5]}]]}, 6]}'
+      '{"arr": [1, {"obj": [2, [3, {"inner": [4, 5]}]]}, 6]}',
     );
     expect(complexMixed).toEqual({
       arr: [1, { obj: [2, [3, { inner: [4, 5] }]] }, 6],
@@ -1943,7 +1943,7 @@ describe("JSON Parser Low-Level Functions", () => {
 
     // 特殊なエスケープシーケンスを含むJSONの処理
     const escapedJson = parseJSON(
-      '{"escaped": "\\t tab \\n newline \\r return \\f form feed \\b backspace \\u0026 ampersand"}'
+      '{"escaped": "\\t tab \\n newline \\r return \\f form feed \\b backspace \\u0026 ampersand"}',
     );
     expect(escapedJson).toEqual({
       escaped:
@@ -1968,7 +1968,7 @@ describe("JSON Parser Internal Functions Tests", () => {
 
     // 3. 特殊なキー名でテスト
     const specialKeys = parseJSON(
-      '{"$special": true, "a-b-c": 123, "key.with.dots": "valid"}'
+      '{"$special": true, "a-b-c": 123, "key.with.dots": "valid"}',
     );
     expect(specialKeys).toEqual({
       $special: true,
@@ -2446,7 +2446,7 @@ describe("Additional Coverage Tests", () => {
       const originalConsoleError = console.error;
       const errorMessages: string[] = [];
 
-      console.error = (...args: any[]) => {
+      console.error = (...args: unknown[]) => {
         errorMessages.push(args.join(" "));
       };
 
@@ -2462,7 +2462,7 @@ describe("Additional Coverage Tests", () => {
 
         // エラーメッセージの内容を確認
         expect(errorMessages.some((msg) => msg.includes("Parse error"))).toBe(
-          true
+          true,
         );
       } finally {
         console.error = originalConsoleError;
@@ -2642,7 +2642,7 @@ describe("Additional Coverage Tests", () => {
       expect(result).not.toBe(null);
 
       // 深いネストが正しくパースされたことを確認
-      let current: any = result;
+      let current: unknown = result;
       for (let i = 0; i < 20; i++) {
         expect(Array.isArray(current)).toBe(true);
         expect((current as JSONArray).length).toBe(1);

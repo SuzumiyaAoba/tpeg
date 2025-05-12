@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 import { literal as lit } from "./basic";
 import { charClass } from "./char-class";
 import { seq } from "./combinators";
-import { isFailure, isSuccess } from "./utils";
 import { oneOrMore, opt, optional, plus, star, zeroOrMore } from "./repetition";
 import type {
   ParseFailure,
@@ -11,6 +10,7 @@ import type {
   Parser,
   Pos,
 } from "./types";
+import { isFailure, isSuccess } from "./utils";
 
 describe("opt", () => {
   it("should parse with the given parser", () => {
