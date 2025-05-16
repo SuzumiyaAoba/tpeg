@@ -18,7 +18,7 @@ import {
   zeroOrMore,
 } from "tpeg-core";
 
-// Parser型をエクスポート
+// Export Parser type
 export type { Parser };
 
 // JSON value type
@@ -38,22 +38,22 @@ export interface JSONObject {
 // JSON array type
 export type JSONArray = JSONValue[];
 
-// null値をパースする
+// Parse null value
 const nullParser = map(labeled(literal("null"), "Expected 'null'"), () => null);
 
-// 真偽値をパース
+// Parse boolean values
 const trueParser = map(literal("true"), () => true);
 const falseParser = map(literal("false"), () => false);
 
-// 文字列をパース
+// Parse string values
 const stringParser = map(quotedString(), (s) => s);
 
-// 数値をパース
+// Parse number values
 const numberParser = map(number(), (n) => n);
 
-// カンマ区切りの値をパース (空の場合は空配列)
+// Parse comma-separated values (empty array if empty)
 const commaSeparatedValues = (
-  parser: Parser<JSONValue>,
+  parser: Parser<JSONValue>
 ): Parser<JSONValue[]> => {
   return map(
     optional(
@@ -61,20 +61,20 @@ const commaSeparatedValues = (
         seq(
           token(parser),
           zeroOrMore(
-            map(seq(token(literal(",")), token(parser)), ([, val]) => val),
-          ),
+            map(seq(token(literal(",")), token(parser)), ([, val]) => val)
+          )
         ),
-        ([first, rest]) => [first, ...rest],
-      ),
+        ([first, rest]) => [first, ...rest]
+      )
     ),
-    (optionalValues) => (optionalValues.length ? optionalValues[0] : []),
+    (optionalValues) => (optionalValues.length ? optionalValues[0] : [])
   );
 };
 
-// 空の配列を特別に処理
+// Handle empty arrays specifically
 const emptyArrayParser = map(
   seq(token(literal("[")), token(literal("]"))),
-  () => [],
+  () => []
 );
 
 /**
@@ -94,26 +94,26 @@ const parse =
  * @returns A parser for JSON values
  */
 export const jsonParser = (): Parser<JSONValue> => {
-  // 再帰的にJSONの値をパースする
+  // Parse JSON values recursively
   const [valueParser, setValueParser] = recursive<JSONValue>();
 
-  // 配列をパース
+  // Parse arrays
   const arrayParser = map(
     seq(
       token(literal("[")),
       commaSeparatedValues(valueParser),
-      token(literal("]")),
+      token(literal("]"))
     ),
-    ([, elements]) => elements,
+    ([, elements]) => elements
   );
 
-  // オブジェクトのキーと値のペアをパース
+  // Parse key-value pairs in objects
   const keyValuePair: Parser<[string, JSONValue]> = map(
     seq(token(quotedString()), token(literal(":")), token(valueParser)),
-    ([key, , value]) => [key, value] as const,
+    ([key, , value]) => [key, value] as const
   );
 
-  // カンマ区切りのプロパティをパース (空の場合は空配列)
+  // Parse comma-separated properties (empty array if empty)
   const commaSeparatedProperties = (): Parser<[string, JSONValue][]> => {
     return map(
       optional(
@@ -121,17 +121,17 @@ export const jsonParser = (): Parser<JSONValue> => {
           seq(
             keyValuePair,
             zeroOrMore(
-              map(seq(token(literal(",")), keyValuePair), ([, pair]) => pair),
-            ),
+              map(seq(token(literal(",")), keyValuePair), ([, pair]) => pair)
+            )
           ),
-          ([first, rest]) => [first, ...rest],
-        ),
+          ([first, rest]) => [first, ...rest]
+        )
       ),
-      (optionalPairs) => (optionalPairs.length ? optionalPairs[0] : []),
+      (optionalPairs) => (optionalPairs.length ? optionalPairs[0] : [])
     );
   };
 
-  // オブジェクトをパース
+  // Parse objects
   const objectParser = map(
     seq(token(literal("{")), commaSeparatedProperties(), token(literal("}"))),
     ([, pairs]) => {
@@ -140,16 +140,16 @@ export const jsonParser = (): Parser<JSONValue> => {
         obj[key] = value;
       }
       return obj;
-    },
+    }
   );
 
-  // 空のオブジェクトを特別に処理
+  // Handle empty objects specifically
   const emptyObjectParser = map(
     seq(token(literal("{")), token(literal("}"))),
-    () => ({}),
+    () => ({})
   );
 
-  // JSON値のパーサーを設定
+  // Set up the JSON value parser
   setValueParser(
     choice(
       nullParser,
@@ -160,11 +160,11 @@ export const jsonParser = (): Parser<JSONValue> => {
       emptyObjectParser,
       objectParser,
       emptyArrayParser,
-      arrayParser,
-    ),
+      arrayParser
+    )
   );
 
-  // トークン化したJSONパーサーを返す
+  // Return a tokenized JSON parser
   return memoize(token(valueParser));
 };
 
@@ -176,33 +176,33 @@ export const jsonParser = (): Parser<JSONValue> => {
  * @throws Error when the input is null
  */
 export const parseJSON = (input: string): JSONValue | null | string => {
-  // 入力が null の場合はエラーをスロー
+  // Throw error if input is null
   if (input === null) {
     throw new Error("Input cannot be null");
   }
 
   try {
-    // 入力が空の場合は空文字列を返す
+    // Return empty string if input is empty
     if (!input) {
       return "";
     }
 
-    // 最初にJavaScriptの組み込みJSON.parseを試す
+    // First try built-in JSON.parse
     try {
       return JSON.parse(input);
     } catch (e) {
-      // JSON.parseが失敗した場合は、カスタムパーサーを使用
+      // If JSON.parse fails, use custom parser
     }
 
-    // カスタムパーサーを使用
-    // token()関数を使って、先頭と末尾の空白を自動的に処理
+    // Use custom parser
+    // token() function automatically handles leading and trailing whitespace
     const result = parse(jsonParser())(input);
 
     if (result.success) {
       return result.val;
     }
 
-    // パース失敗時にエラーメッセージを出力
+    // Output error message when parsing fails
     console.error("Parse error:", result.error?.message);
     return null;
   } catch (e) {

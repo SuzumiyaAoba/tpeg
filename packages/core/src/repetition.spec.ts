@@ -119,16 +119,16 @@ describe("oneOrMore", () => {
   });
 });
 
-// 追加テスト - エッジケースと誤用シナリオ
+// Additional tests - edge cases and misuse scenarios
 describe("repetition edge cases", () => {
-  // 無限ループを検出するテスト
+  // Test for infinite loop detection
   it("should detect infinite loops in zeroOrMore", () => {
-    // 常に同じ位置を返すパーサー
+    // Parser that always returns the same position
     const infiniteParser: Parser<string> = (input, pos) => ({
       success: true,
       val: "",
       current: pos,
-      next: pos, // inputを消費しない
+      next: pos, // Does not consume input
     });
 
     const parser = zeroOrMore(infiniteParser);
@@ -141,18 +141,18 @@ describe("repetition edge cases", () => {
   });
 
   it("should detect infinite loops in oneOrMore", () => {
-    // 常に同じ位置を返すパーサー
+    // Parser that always returns the same position
     const infiniteParser: Parser<string> = (input, pos) => ({
       success: true,
       val: "",
       current: pos,
-      next: pos, // inputを消費しない
+      next: pos, // Does not consume input
     });
 
     const parser = oneOrMore(infiniteParser);
     const result = parser("test", { offset: 0, line: 1, column: 1 });
 
-    // 最初のマッチは成功するが、2回目以降が無限ループになる
+    // First match succeeds, but second and subsequent would cause infinite loop
     expect(isFailure(result)).toBe(true);
     if (!isSuccess(result)) {
       expect(result.error.message).toContain("Infinite loop detected");
@@ -160,7 +160,7 @@ describe("repetition edge cases", () => {
   });
 
   it("should handle sequences of repetitions", () => {
-    // 数字の連続のあとに文字の連続が続くパターン
+    // Pattern with sequence of digits followed by sequence of letters
     const digitParser = charClass(["0", "9"]);
     const letterParser = charClass(["a", "z"]);
 
@@ -177,18 +177,18 @@ describe("repetition edge cases", () => {
   });
 
   it("should handle optional parser with nested structure", () => {
-    // オプショナルなネストされた構造
+    // Optional nested structure
     const innerParser = seq(lit("("), lit(")"));
     const parser = optional(innerParser);
 
-    // マッチするケース
+    // Matching case
     const result1 = parser("()", { offset: 0, line: 1, column: 1 });
     expect(isSuccess(result1)).toBe(true);
     if (isSuccess(result1)) {
       expect(result1.val).toEqual([["(", ")"]]);
     }
 
-    // マッチしないケース
+    // Non-matching case
     const result2 = parser("x", { offset: 0, line: 1, column: 1 });
     expect(isSuccess(result2)).toBe(true);
     if (isSuccess(result2)) {
@@ -197,12 +197,12 @@ describe("repetition edge cases", () => {
   });
 
   it("should handle complex zeroOrMore patterns", () => {
-    // 複雑なzeroOrMore: (数字+文字)の0回以上の繰り返し
+    // Complex zeroOrMore: zero or more repetitions of (digit+letter)
     const pattern = seq(charClass(["0", "9"]), charClass(["a", "z"]));
 
     const parser = zeroOrMore(pattern);
 
-    // 複数マッチするケース
+    // Multiple match case
     const result1 = parser("1a2b3c", { offset: 0, line: 1, column: 1 });
     expect(isSuccess(result1)).toBe(true);
     if (isSuccess(result1)) {
@@ -213,7 +213,7 @@ describe("repetition edge cases", () => {
       ]);
     }
 
-    // マッチしないケース
+    // Non-matching case
     const result2 = parser("xyz", { offset: 0, line: 1, column: 1 });
     expect(isSuccess(result2)).toBe(true);
     if (isSuccess(result2)) {
@@ -222,12 +222,12 @@ describe("repetition edge cases", () => {
   });
 
   it("should test the boundary between opt and zeroOrMore", () => {
-    // optional (0か1回)と zeroOrMore (0回以上)の違いをテスト
+    // Test the difference between optional (0 or 1) and zeroOrMore (0 or more)
     const charA = lit("a");
     const optParser = optional(charA);
     const zeroOrMoreParser = zeroOrMore(charA);
 
-    // 単一の文字に対して
+    // For a single character
     const resultOpt1 = optParser("a", { offset: 0, line: 1, column: 1 });
     const resultZeroOrMore1 = zeroOrMoreParser("a", {
       offset: 0,
@@ -242,7 +242,7 @@ describe("repetition edge cases", () => {
       expect(resultZeroOrMore1.val).toEqual(["a"]);
     }
 
-    // 複数文字に対して
+    // For multiple characters
     const resultOpt2 = optParser("aaa", { offset: 0, line: 1, column: 1 });
     const resultZeroOrMore2 = zeroOrMoreParser("aaa", {
       offset: 0,
@@ -253,11 +253,11 @@ describe("repetition edge cases", () => {
     expect(isSuccess(resultOpt2)).toBe(true);
     expect(isSuccess(resultZeroOrMore2)).toBe(true);
     if (isSuccess(resultOpt2) && isSuccess(resultZeroOrMore2)) {
-      // optionalは最大1回しかマッチしない
+      // optional matches at most once
       expect(resultOpt2.val).toEqual(["a"]);
       expect(resultOpt2.next.offset).toBe(1);
 
-      // zeroOrMoreは最大限マッチする
+      // zeroOrMore matches as much as possible
       expect(resultZeroOrMore2.val).toEqual(["a", "a", "a"]);
       expect(resultZeroOrMore2.next.offset).toBe(3);
     }
