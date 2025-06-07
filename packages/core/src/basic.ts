@@ -9,7 +9,7 @@ import { createFailure, getCharAndLength, nextPos } from "./utils";
 export const anyChar =
   (parserName = "anyChar"): Parser<string> =>
   (input: string, pos: Pos) => {
-    const [char, charLength] = getCharAndLength(input, pos.offset);
+    const [char] = getCharAndLength(input, pos.offset);
 
     if (!char) {
       return createFailure("Unexpected EOI", pos, {
@@ -183,14 +183,15 @@ const parseComplexString = <T extends string>(
  * @param parserName Optional name for error reporting
  * @returns Parser<T> A parser that succeeds if the input matches the given string, or fails otherwise.
  */
-export const literal =
-  <T extends string>(
-    str: NonEmptyString<T>,
-    parserName = "literal",
-  ): Parser<T> =>
-  (input: string, pos: Pos) => {
-    // Use optimized path for simple strings
-    if (canUseOptimizedPath(str)) {
+export const literal = <T extends string>(
+  str: NonEmptyString<T>,
+  parserName = "literal",
+): Parser<T> => {
+  // Check once during parser creation to avoid repeated checks
+  const useOptimizedPath = canUseOptimizedPath(str);
+
+  return (input: string, pos: Pos) => {
+    if (useOptimizedPath) {
       const result = parseSimpleString(str, input, pos, parserName);
       if (result !== null) {
         return result;
@@ -200,6 +201,7 @@ export const literal =
     // Fall back to complex path
     return parseComplexString(str, input, pos, parserName);
   };
+};
 
 /**
  * Alias for {@link literal}.
