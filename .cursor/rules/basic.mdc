@@ -7,6 +7,13 @@ alwaysApply: true
 
 This document outlines the guidelines and rules for the TPEG project.
 
+## Rule Management and Continuous Improvement
+
+- **Self-directed rule reconstruction**: When discovering new knowledge, techniques, or best practices during development, proactively update this rule file to incorporate the learnings
+- **Knowledge integration**: Document new insights about parser implementation, testing strategies, performance optimizations, or code quality improvements
+- **Rule evolution**: Regularly review and refine these guidelines based on practical experience and emerging patterns in the codebase
+- **Context preservation**: Maintain historical context of why certain rules exist while adapting them to new requirements
+
 ## Languages
 
 - Write source code and documentation in English
@@ -63,6 +70,18 @@ This document outlines the guidelines and rules for the TPEG project.
 - Aim for high test coverage (>80%)
 - Use property-based testing for input validation when appropriate
 - Test with fuzzing techniques for robust parsers
+
+### Enhanced Testing Guidelines (Updated based on recent learnings)
+
+- **Comprehensive test coverage**: Ensure tests cover all code paths, including edge cases and error conditions
+- **Multiple input specifications**: Test parsers with various input types (single characters, ranges, multiple specifications)
+- **Boundary value testing**: Always test the boundaries of ranges (first and last valid values)
+- **Unicode support verification**: Include tests for international characters and Unicode ranges
+- **Special character handling**: Test special characters like newlines, tabs, carriage returns
+- **Position management**: Verify correct position tracking throughout parsing operations
+- **Error message quality**: Ensure error messages are descriptive and include expected vs. found information
+- **Input position testing**: Test parsing at various positions within input strings, not just at the beginning
+- **Implementation-aware testing**: Align test expectations with actual implementation behavior rather than assumed behavior
 
 ## Extensibility
 
