@@ -2,6 +2,42 @@ import type { NonEmptyArray, NonEmptyString, Parser } from "./types";
 import { createFailure, getCharAndLength, nextPos } from "./utils";
 
 /**
+ * Represents a character class specification - either a single character or a range
+ */
+type CharClassSpec = NonEmptyString | [NonEmptyString, NonEmptyString];
+
+/**
+ * Converts a character class specification to a readable string representation
+ * @param charOrRange Character or character range specification
+ * @returns String representation for display purposes
+ */
+const classToString = (charOrRange: CharClassSpec): string => {
+  if (typeof charOrRange === "string") {
+    return charOrRange;
+  }
+  return `${charOrRange[0]}-${charOrRange[1]}`;
+};
+
+/**
+ * Checks if a character matches a single character class specification
+ * @param char The character to test
+ * @param charCode The character's Unicode code point
+ * @param spec The character class specification
+ * @returns true if the character matches the specification
+ */
+const matchesSpec = (char: string, charCode: number, spec: CharClassSpec): boolean => {
+  if (typeof spec === "string") {
+    return char === spec;
+  }
+  
+  const [start, end] = spec;
+  const startCode = start.codePointAt(0) ?? 0;
+  const endCode = end.codePointAt(0) ?? 0;
+  
+  return charCode >= startCode && charCode <= endCode;
+};
+
+/**
  * Parser that matches a character against a set of characters or character ranges.
  *
  * @param charOrRanges Array of characters or character ranges to match against
@@ -9,27 +45,18 @@ import { createFailure, getCharAndLength, nextPos } from "./utils";
  * @example
  *   const digit = charClass(["0", "9"]); // matches any digit
  *   const vowel = charClass("a", "e", "i", "o", "u"); // matches any vowel
+ *   const alphaNumeric = charClass(["a", "z"], ["A", "Z"], ["0", "9"]); // matches alphanumeric
  */
 export const charClass =
   (
-    ...charOrRanges: NonEmptyArray<
-      NonEmptyString | [NonEmptyString, NonEmptyString]
-    >
+    ...charOrRanges: NonEmptyArray<CharClassSpec>
   ): Parser<string> =>
   (input, pos) => {
     const [char, charLength] = getCharAndLength(input, pos.offset);
+    const expected = charOrRanges.map(classToString).join(", ");
 
     if (!char) {
-      const classToString = (charOrRange: string | [string, string]) => {
-        if (typeof charOrRange === "string") {
-          return charOrRange;
-        }
-        return `${charOrRange[0]}-${charOrRange[1]}`;
-      };
-
-      const expected = charOrRanges.map(classToString).join(", ");
-
-      return createFailure(`Unexpected EOI, expected ${expected}`, pos, {
+      return createFailure(`Unexpected end of input, expected one of: ${expected}`, pos, {
         expected,
         found: "end of input",
         parserName: "charClass",
@@ -38,47 +65,21 @@ export const charClass =
 
     const charCode = char.codePointAt(0) ?? 0;
 
-    // Check if the character matches any of the given ranges
-    for (const charOrRange of charOrRanges) {
-      if (typeof charOrRange === "string") {
-        // Single character
-        if (char === charOrRange) {
-          return {
-            success: true,
-            val: char,
-            current: pos,
-            next: nextPos(char, pos),
-          };
-        }
-      } else {
-        // Character range
-        const [start, end] = charOrRange;
-        const startCode = start.codePointAt(0) ?? 0;
-        const endCode = end.codePointAt(0) ?? 0;
-
-        if (charCode >= startCode && charCode <= endCode) {
-          return {
-            success: true,
-            val: char,
-            current: pos,
-            next: nextPos(char, pos),
-          };
-        }
+    // Check if the character matches any of the given specifications
+    for (const spec of charOrRanges) {
+      if (matchesSpec(char, charCode, spec)) {
+        return {
+          success: true,
+          val: char,
+          current: pos,
+          next: nextPos(char, pos),
+        };
       }
     }
 
     // No match found
-    const classToString = (charOrRange: string | [string, string]) => {
-      if (typeof charOrRange === "string") {
-        return charOrRange;
-      }
-      return `${charOrRange[0]}-${charOrRange[1]}`;
-    };
-
-    const expected = charOrRanges.map(classToString).join(", ");
-
     return createFailure(
-      `Unexpected character "${char}", expected one of ${expected}`,
+      `Unexpected character "${char}", expected one of: ${expected}`,
       pos,
       {
         expected,
