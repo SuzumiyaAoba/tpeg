@@ -25,15 +25,19 @@ const classToString = (charOrRange: CharClassSpec): string => {
  * @param spec The character class specification
  * @returns true if the character matches the specification
  */
-const matchesSpec = (char: string, charCode: number, spec: CharClassSpec): boolean => {
+const matchesSpec = (
+  char: string,
+  charCode: number,
+  spec: CharClassSpec,
+): boolean => {
   if (typeof spec === "string") {
     return char === spec;
   }
-  
+
   const [start, end] = spec;
   const startCode = start.codePointAt(0) ?? 0;
   const endCode = end.codePointAt(0) ?? 0;
-  
+
   return charCode >= startCode && charCode <= endCode;
 };
 
@@ -48,19 +52,21 @@ const matchesSpec = (char: string, charCode: number, spec: CharClassSpec): boole
  *   const alphaNumeric = charClass(["a", "z"], ["A", "Z"], ["0", "9"]); // matches alphanumeric
  */
 export const charClass =
-  (
-    ...charOrRanges: NonEmptyArray<CharClassSpec>
-  ): Parser<string> =>
+  (...charOrRanges: NonEmptyArray<CharClassSpec>): Parser<string> =>
   (input, pos) => {
     const [char, charLength] = getCharAndLength(input, pos.offset);
     const expected = charOrRanges.map(classToString).join(", ");
 
     if (!char) {
-      return createFailure(`Unexpected end of input, expected one of: ${expected}`, pos, {
-        expected,
-        found: "end of input",
-        parserName: "charClass",
-      });
+      return createFailure(
+        `Unexpected end of input, expected one of: ${expected}`,
+        pos,
+        {
+          expected,
+          found: "end of input",
+          parserName: "charClass",
+        },
+      );
     }
 
     const charCode = char.codePointAt(0) ?? 0;

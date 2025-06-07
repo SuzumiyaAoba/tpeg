@@ -228,7 +228,9 @@ describe("literal", () => {
     const result = literal("abc")(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.message).toContain("Expected \"abc\" but got end of input");
+      expect(result.error.message).toContain(
+        'Expected "abc" but got end of input',
+      );
       expect(result.error.pos).toEqual(pos);
       expect(result.error.expected).toBe("abc");
       expect(result.error.found).toBe("end of input");
@@ -482,7 +484,7 @@ describe("Edge cases and performance", () => {
     // but we test the edge case behavior if it's allowed
     const input = "test";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    
+
     // Test successful case where empty string should match at any position
     // This behavior depends on implementation details
   });
@@ -498,29 +500,29 @@ describe("Edge cases and performance", () => {
     // Test with composed vs decomposed Unicode characters
     const composed = "é"; // Single code point U+00E9
     const decomposed = "e\u0301"; // e + combining acute accent U+0065 + U+0301
-    
+
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    
+
     const result1 = literal(composed)(composed, pos);
     const result2 = literal(decomposed)(decomposed, pos);
-    
+
     expect(result1.success).toBe(true);
     expect(result2.success).toBe(true);
-    
+
     // They should not match each other due to different normalization
     const result3 = literal(composed)(decomposed, pos);
     const result4 = literal(decomposed)(composed, pos);
-    
+
     expect(result3.success).toBe(false);
     expect(result4.success).toBe(false);
   });
 
   it("should handle maximum Unicode code points", () => {
     // Test with characters at the edge of Unicode range
-    const maxCodePoint = String.fromCodePoint(0x10FFFF); // Maximum valid Unicode code point
+    const maxCodePoint = String.fromCodePoint(0x10ffff); // Maximum valid Unicode code point
     const input = maxCodePoint;
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    
+
     const result = anyChar()(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
@@ -531,7 +533,7 @@ describe("Edge cases and performance", () => {
   it("should handle multiple consecutive newlines correctly", () => {
     const input = "\n\n\n";
     let pos: Pos = { offset: 0, column: 0, line: 1 };
-    
+
     // Parse first newline
     const result1 = anyChar()(input, pos);
     expect(result1.success).toBe(true);
@@ -539,7 +541,7 @@ describe("Edge cases and performance", () => {
       expect(result1.next).toEqual({ offset: 1, column: 0, line: 2 });
       pos = result1.next;
     }
-    
+
     // Parse second newline
     const result2 = anyChar()(input, pos);
     expect(result2.success).toBe(true);
@@ -547,7 +549,7 @@ describe("Edge cases and performance", () => {
       expect(result2.next).toEqual({ offset: 2, column: 0, line: 3 });
       pos = result2.next;
     }
-    
+
     // Parse third newline
     const result3 = anyChar()(input, pos);
     expect(result3.success).toBe(true);

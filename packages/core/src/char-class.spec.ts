@@ -87,10 +87,10 @@ describe("charClass", () => {
     const input1 = "a";
     const input2 = "z";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    
+
     const result1 = charClass(["a", "z"])(input1, pos);
     const result2 = charClass(["a", "z"])(input2, pos);
-    
+
     expect(result1.success).toBe(true);
     expect(result2.success).toBe(true);
     if (result1.success) expect(result1.val).toBe("a");
@@ -150,7 +150,7 @@ describe("charClass", () => {
     const result = charClass("a", ["0", "9"], "z")(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.message).toContain("Unexpected character \"x\"");
+      expect(result.error.message).toContain('Unexpected character "x"');
       expect(result.error.message).toContain("expected one of: a, 0-9, z");
       expect(result.error.pos).toEqual(pos);
     }

@@ -175,7 +175,7 @@ describe("tpeg-combinator additional tests", () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message).toBe(
-          'Unexpected character "a", expected one of  , \t, \n, \r',
+          'Unexpected character "a", expected one of:  , \t, \n, \r',
         );
       }
     });
