@@ -263,7 +263,7 @@ describe("jsonParser", () => {
 
     // Simple object
     const simpleObjectResult = parse(parser)(
-      '{"name": "John", "age": 30, "isActive": true}'
+      '{"name": "John", "age": 30, "isActive": true}',
     );
     expect(simpleObjectResult.success).toBe(true);
     if (simpleObjectResult.success) {
@@ -284,7 +284,7 @@ describe("jsonParser", () => {
 
     // Object with arrays
     const objectWithArrayResult = parse(parser)(
-      '{"numbers": [1, 2, 3], "active": true}'
+      '{"numbers": [1, 2, 3], "active": true}',
     );
     expect(objectWithArrayResult.success).toBe(true);
     if (objectWithArrayResult.success) {
@@ -359,7 +359,7 @@ describe("jsonParser", () => {
 // Tests for parseJSON function
 describe("parseJSON", () => {
   // Setup to mock console.error
-  let originalConsoleError;
+  let originalConsoleError: typeof console.error;
 
   beforeEach(() => {
     originalConsoleError = console.error;

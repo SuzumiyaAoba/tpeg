@@ -3,6 +3,119 @@ description:
 globs: 
 alwaysApply: true
 ---
+# TPEG Project Guidelines
+
+This document outlines the guidelines and rules for the TPEG project.
+
 ## Languages
 
-- Wrtie source code and documents in English
+- Write source code and documentation in English
+- Use proper formatting and indentation for all code
+- Add appropriate comments to explain complex logic
+- Follow TypeScript/JavaScript best practices
+
+## Code Style
+
+- Follow consistent naming conventions:
+  - Use camelCase for variables and functions
+  - Use PascalCase for classes and types
+  - Use UPPER_CASE for constants
+- Keep functions small and focused on a single responsibility
+- Avoid unnecessary complexity and deep nesting
+- Use `prettier` and `biome` for consistent formatting
+- Be explicit about types in TypeScript
+
+## Parser Implementation
+
+- Document each parser function with clear input/output descriptions
+- Include usage examples for complex parsers
+- Ensure all parsers handle edge cases and provide meaningful error messages
+- Avoid infinite recursion and ensure proper termination conditions
+- Optimize performance-critical parsers using techniques like memoization
+- Follow the PEG (Parsing Expression Grammar) principles consistently
+- Consider error recovery for user-facing parsers
+
+## Performance Guidelines
+
+- Profile parser performance for large inputs
+- Use memoization for recursive parsers to avoid exponential complexity
+- Be mindful of string operations that may cause frequent allocations
+- Consider streaming parsers for very large inputs
+- Avoid unnecessary backtracking when possible
+- Document performance characteristics for complex parsers
+- Add benchmarks for critical parsing operations
+- Provide performance comparison with similar parsers when relevant
+
+## Security Considerations
+
+- Validate and sanitize untrusted input
+- Set limits on input size and recursion depth to prevent DoS attacks
+- Be cautious about exposing parsers that could lead to excessive resource usage
+- Document security implications for parsers that handle untrusted input
+- Avoid using regular expressions that may be vulnerable to catastrophic backtracking
+
+## Testing
+
+- Write comprehensive tests for all parser functions
+- Include test cases for both valid and invalid inputs
+- Test edge cases and error conditions
+- Include performance benchmarks for critical parsers
+- Aim for high test coverage (>80%)
+- Use property-based testing for input validation when appropriate
+- Test with fuzzing techniques for robust parsers
+
+## Extensibility
+
+- Design parsers to be composable and reusable
+- Use clear abstractions that allow for extension
+- Document extension points and customization options
+- Provide hooks for customizing behavior when appropriate
+- Consider plugin mechanisms for major extensions
+
+## Build and Deployment
+
+- Execute `bun run build` to build the project
+- Execute `bun test` to ensure all tests pass
+- Fix any errors or warnings that appear during build or tests
+- Update documentation if necessary
+- Set up continuous integration to automate testing
+- Follow semantic versioning for releases
+
+## Git Workflow
+
+- Write clear and descriptive commit messages in English
+- Use present tense in commit messages (e.g., "Add feature" not "Added feature")
+- Reference issue numbers when applicable
+- Keep commits focused on a single logical change
+- Squash related changes before merging
+- Use feature branches for new development
+- Keep the main branch stable and deployable
+
+## Documentation
+
+- Keep README and other documentation up to date
+- Document public APIs with appropriate JSDoc comments
+- Include examples for complex functionality
+- Add detailed explanations of parsing concepts for new contributors
+- Document breaking changes in version updates
+- Provide migration guides for major version changes
+
+## Package Structure
+
+- Keep related parsers in appropriate packages
+- Maintain clean separation between core, combinator, and AST functionality
+- Ensure proper exports from each package
+- Minimize external dependencies
+- Use appropriate package versioning for releases
+- Structure the code to allow tree-shaking
+
+## Contributing Guidelines
+
+- Create an issue before working on major features
+- Submit pull requests with clear descriptions
+- Add or update tests for new functionality
+- Follow the existing code style and structure
+- Update documentation for user-facing changes
+- Be respectful and constructive in discussions
+- Consider backward compatibility when making changes
+- Participate in code reviews

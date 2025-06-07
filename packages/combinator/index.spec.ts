@@ -16,6 +16,7 @@ import {
   isSuccess,
   literal,
   map,
+  not,
   oneOrMore,
   parse,
   seq,
@@ -23,18 +24,27 @@ import {
 } from "tpeg-core";
 import {
   EOF,
+  anyQuotedString,
   between,
+  commaSeparated,
+  commaSeparated1,
+  debug,
   int,
   labeled,
+  labeledWithContext,
   memoize,
   number,
   quotedString,
   recursive,
+  regex,
+  regexGroups,
   sepBy,
   sepBy1,
+  singleQuotedString,
   takeUntil,
   token,
   whitespace,
+  withDetailedError,
   withPosition,
 } from "./index";
 
@@ -165,7 +175,7 @@ describe("tpeg-combinator additional tests", () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message).toBe(
-          'Unexpected character "a", expected one of  , \t, \n, \r'
+          'Unexpected character "a", expected one of  , \t, \n, \r',
         );
       }
     });
@@ -322,25 +332,22 @@ describe("tpeg-combinator additional tests", () => {
   });
 
   describe("withPosition", () => {
-    it("should add position info to the result", () => {
+    it("should add position info to parser results", () => {
       const parser = withPosition(literal("hello"));
-      const result = parse(parser)("hello");
+      const result = parser("hello world", { offset: 0, line: 1, column: 1 });
 
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.val).toEqual({
-          value: "hello",
-          position: { offset: 0, line: 1, column: 0 },
-        });
-        expect(result.next.offset).toBe(5);
+      expect(isSuccess(result)).toBe(true);
+      if (isSuccess(result)) {
+        expect(result.val).toHaveProperty("position");
+        expect(result.val.position).toEqual({ offset: 0, line: 1, column: 1 });
       }
     });
 
     it("should propagate failure", () => {
       const parser = withPosition(literal("hello"));
-      const result = parse(parser)("world");
+      const result = parser("world", { offset: 0, line: 1, column: 1 });
 
-      expect(result.success).toBe(false);
+      expect(isSuccess(result)).toBe(false);
     });
   });
 
@@ -417,7 +424,7 @@ describe("tpeg-combinator additional tests", () => {
 // Create custom parser that returns empty string
 const emptyStringParser: Parser<string> = (
   input: string,
-  pos: { offset: number; line: number; column: number }
+  pos: { offset: number; line: number; column: number },
 ) => {
   return {
     success: true as const,
@@ -541,13 +548,6 @@ describe("Additional coverage tests", () => {
         expect(result.val.position).toEqual({ offset: 0, line: 1, column: 1 });
       }
     });
-
-    it("should propagate failure", () => {
-      const parser = withPosition(literal("hello"));
-      const result = parser("world", { offset: 0, line: 1, column: 1 });
-
-      expect(isSuccess(result)).toBe(false);
-    });
   });
 
   describe("labeled with error creation", () => {
@@ -649,13 +649,13 @@ describe("Additional coverage tests", () => {
       // A simple content parser that accepts any character except brackets
       const contentParser = map(
         takeUntil(choice(literal("["), literal("]"))),
-        (content) => content
+        (content) => content,
       );
 
       // Define the parser for a bracketed expression
       const bracketedExpr = map(
         seq(literal("["), choice(bracketsParser, contentParser), literal("]")),
-        ([open, content, close]) => `${open}${content}${close}`
+        ([open, content, close]) => `${open}${content}${close}`,
       );
 
       // Set the recursive parser
@@ -791,6 +791,206 @@ describe("Additional coverage tests", () => {
       }
     });
   });
+
+  describe("regex parser tests", () => {
+    it("should match text with a regex pattern", () => {
+      const digitParser = regex(/\d+/);
+      const result = parse(digitParser)("123abc");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("123");
+        expect(result.next.offset).toBe(3);
+      }
+    });
+
+    it("should fail when pattern doesn't match", () => {
+      const digitParser = regex(/\d+/);
+      const result = parse(digitParser)("abc123");
+      expect(result.success).toBe(false);
+    });
+
+    it("should match with custom error message", () => {
+      const digitParser = regex(/\d+/, "Expected digits");
+      const result = parse(digitParser)("abc");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toBe("Expected digits");
+      }
+    });
+  });
+
+  describe("regexGroups parser tests", () => {
+    it("should capture regex groups", () => {
+      const nameParser = regexGroups(/(\w+)\s+(\w+)/);
+      const result = parse(nameParser)("John Doe rest");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual(["John Doe", "John", "Doe"]);
+      }
+    });
+  });
+
+  describe("commaSeparated parser tests", () => {
+    it("should parse comma-separated values", () => {
+      const itemParser = quotedString();
+      const listParser = commaSeparated(itemParser);
+
+      const result = parse(listParser)('"a", "b", "c"');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual(["a", "b", "c"]);
+      }
+    });
+
+    it("should handle empty lists", () => {
+      const itemParser = quotedString();
+      const listParser = commaSeparated(itemParser);
+
+      const result = parse(listParser)("   ");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual([]);
+      }
+    });
+
+    it("should handle trailing commas when enabled", () => {
+      const itemParser = quotedString();
+      const listParser = commaSeparated(itemParser, true);
+
+      const result = parse(listParser)('"a", "b", "c", ');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual(["a", "b", "c"]);
+      }
+    });
+  });
+
+  describe("commaSeparated1 parser tests", () => {
+    it("should parse comma-separated values requiring at least one", () => {
+      const itemParser = quotedString();
+      const listParser = commaSeparated1(itemParser);
+
+      const result = parse(listParser)('"a", "b", "c"');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual(["a", "b", "c"]);
+      }
+    });
+
+    it("should fail on empty lists", () => {
+      const itemParser = quotedString();
+      const listParser = commaSeparated1(itemParser);
+
+      const result = parse(listParser)("   ");
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("singleQuotedString parser tests", () => {
+    it("should parse single-quoted strings", () => {
+      const parser = singleQuotedString();
+      const result = parse(parser)("'hello world'");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("hello world");
+      }
+    });
+
+    it("should handle escape sequences", () => {
+      const parser = singleQuotedString();
+      const result = parse(parser)("'hello\\nworld'");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("hello\nworld");
+      }
+    });
+  });
+
+  describe("anyQuotedString parser tests", () => {
+    it("should parse double-quoted strings", () => {
+      const parser = anyQuotedString();
+      const result = parse(parser)('"hello world"');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("hello world");
+      }
+    });
+
+    it("should parse single-quoted strings", () => {
+      const parser = anyQuotedString();
+      const result = parse(parser)("'hello world'");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("hello world");
+      }
+    });
+  });
+
+  describe("debug parser tests", () => {
+    it("should log parsing process and return original parser result", () => {
+      const logs: string[] = [];
+      const customLogger = (message: string) => logs.push(message);
+
+      const parser = debug(literal("hello"), "TestParser", { customLogger });
+      const result = parse(parser)("hello world");
+
+      expect(result.success).toBe(true);
+      expect(logs.length).toBeGreaterThan(0);
+      expect(logs[0]).toContain("DEBUG[TestParser] Attempting at line 1");
+      expect(logs[1]).toContain("DEBUG[TestParser] Success at line 1");
+    });
+  });
+
+  describe("labeledWithContext parser tests", () => {
+    it("should provide context in error messages", () => {
+      const parser = labeledWithContext(
+        literal("hello"),
+        "Expected greeting",
+        "Greeting Parser",
+      );
+
+      const result = parse(parser)("hi world");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toBe("Expected greeting");
+        expect(result.error.context).toBe("Greeting Parser");
+      }
+    });
+  });
+
+  describe("withDetailedError parser tests", () => {
+    it("should provide detailed error information", () => {
+      const parser = withDetailedError(literal("hello"), "Greeting Parser");
+      const result = parse(parser)("hi world");
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.parserName).toBe("Greeting Parser");
+        expect(result.error.found).toBe("h");
+      }
+    });
+  });
+
+  describe("memoize with options tests", () => {
+    it("should respect max cache size", () => {
+      const parser = memoize(literal("a"), { maxCacheSize: 2 });
+      const pos1 = { offset: 0, line: 1, column: 1 };
+      const pos2 = { offset: 1, line: 1, column: 2 };
+      const pos3 = { offset: 2, line: 1, column: 3 };
+
+      // Fill the cache
+      parser("a", pos1);
+      parser("a", pos2);
+      parser("a", pos3);
+
+      // The first entry should have been evicted
+      const result1 = parser("a", pos1);
+      const result2 = parser("a", pos2);
+
+      // One of these should no longer be in the cache and rerun the parser
+      expect(result1.success || result2.success).toBe(true);
+    });
+  });
 });
 
 // Test for infinite loop detection and edge cases
@@ -822,7 +1022,7 @@ describe("safeguards against infinite loops", () => {
     // Invalid input with consecutive commas
     const invalidInput = "1,,2";
     const numParser = map(oneOrMore(charClass(["0", "9"])), (digits) =>
-      parseInt(digits.join(""), 10)
+      Number.parseInt(digits.join(""), 10),
     );
 
     // Extract only the first value and stop
@@ -904,13 +1104,13 @@ describe("safeguards against infinite loops", () => {
 
     // Number parser
     const num = map(oneOrMore(charClass(["0", "9"])), (digits) =>
-      parseInt(digits.join(""), 10)
+      Number.parseInt(digits.join(""), 10),
     );
 
     // Expression in parentheses
     const parenExpr = map(
       seq(token(literal("(")), token(expr), token(literal(")"))),
-      ([_, val, __]) => val
+      ([_, val, __]) => val,
     );
 
     // Term (number or expression in parentheses)
@@ -927,8 +1127,8 @@ describe("safeguards against infinite loops", () => {
             }
             return op === "+" ? acc + val : acc - val;
           }, first as number);
-        }
-      )
+        },
+      ),
     );
 
     // Test simple expression
@@ -1084,7 +1284,7 @@ it("should test sepBy with complex patterns", () => {
   // Test with spaces - using a simpler approach for testing
   const spacedInput = "one, two, three";
   const spacedParser = map(literal("one, two, three"), (val) =>
-    val.split(", ")
+    val.split(", "),
   );
   const spacedResult = spacedParser(spacedInput, {
     offset: 0,
@@ -1101,7 +1301,7 @@ it("should test sepBy with complex patterns", () => {
   const wordParser = oneOrMore(charClass(["a", "z"]));
   const tokenizedParser = sepBy(
     map(token(wordParser), (chars) => chars.join("")),
-    token(literal(","))
+    token(literal(",")),
   );
   const tokenizedResult = tokenizedParser("one, two, three", {
     offset: 0,

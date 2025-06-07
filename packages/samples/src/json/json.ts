@@ -53,7 +53,7 @@ const numberParser = map(number(), (n) => n);
 
 // Parse comma-separated values (empty array if empty)
 const commaSeparatedValues = (
-  parser: Parser<JSONValue>
+  parser: Parser<JSONValue>,
 ): Parser<JSONValue[]> => {
   return map(
     optional(
@@ -61,20 +61,20 @@ const commaSeparatedValues = (
         seq(
           token(parser),
           zeroOrMore(
-            map(seq(token(literal(",")), token(parser)), ([, val]) => val)
-          )
+            map(seq(token(literal(",")), token(parser)), ([, val]) => val),
+          ),
         ),
-        ([first, rest]) => [first, ...rest]
-      )
+        ([first, rest]) => [first, ...rest],
+      ),
     ),
-    (optionalValues) => (optionalValues.length ? optionalValues[0] : [])
+    (optionalValues) => (optionalValues.length ? optionalValues[0] : []),
   );
 };
 
 // Handle empty arrays specifically
 const emptyArrayParser = map(
   seq(token(literal("[")), token(literal("]"))),
-  () => []
+  () => [],
 );
 
 /**
@@ -102,15 +102,15 @@ export const jsonParser = (): Parser<JSONValue> => {
     seq(
       token(literal("[")),
       commaSeparatedValues(valueParser),
-      token(literal("]"))
+      token(literal("]")),
     ),
-    ([, elements]) => elements
+    ([, elements]) => elements,
   );
 
   // Parse key-value pairs in objects
   const keyValuePair: Parser<[string, JSONValue]> = map(
     seq(token(quotedString()), token(literal(":")), token(valueParser)),
-    ([key, , value]) => [key, value] as const
+    ([key, , value]) => [key, value] as const,
   );
 
   // Parse comma-separated properties (empty array if empty)
@@ -121,13 +121,13 @@ export const jsonParser = (): Parser<JSONValue> => {
           seq(
             keyValuePair,
             zeroOrMore(
-              map(seq(token(literal(",")), keyValuePair), ([, pair]) => pair)
-            )
+              map(seq(token(literal(",")), keyValuePair), ([, pair]) => pair),
+            ),
           ),
-          ([first, rest]) => [first, ...rest]
-        )
+          ([first, rest]) => [first, ...rest],
+        ),
       ),
-      (optionalPairs) => (optionalPairs.length ? optionalPairs[0] : [])
+      (optionalPairs) => (optionalPairs.length ? optionalPairs[0] : []),
     );
   };
 
@@ -140,13 +140,13 @@ export const jsonParser = (): Parser<JSONValue> => {
         obj[key] = value;
       }
       return obj;
-    }
+    },
   );
 
   // Handle empty objects specifically
   const emptyObjectParser = map(
     seq(token(literal("{")), token(literal("}"))),
-    () => ({})
+    () => ({}),
   );
 
   // Set up the JSON value parser
@@ -160,8 +160,8 @@ export const jsonParser = (): Parser<JSONValue> => {
       emptyObjectParser,
       objectParser,
       emptyArrayParser,
-      arrayParser
-    )
+      arrayParser,
+    ),
   );
 
   // Return a tokenized JSON parser

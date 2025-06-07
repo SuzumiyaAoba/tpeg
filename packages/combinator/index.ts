@@ -133,15 +133,88 @@ export const sepBy1 = <T, S>(
 };
 
 /**
+ * Parser for comma-separated values with customizable value parser.
+ * Returns an empty array if no values are present.
+ *
+ * @template T Type of the value parser result
+ * @param valueParser Parser for individual values
+ * @param allowTrailing Whether to allow a trailing comma
+ * @returns Parser<T[]> A parser that returns an array of values
+ */
+export const commaSeparated = <T>(
+  valueParser: Parser<T>,
+  allowTrailing = false,
+): Parser<T[]> => {
+  const comma = token(literal(","));
+
+  // No values case
+  const empty = map(notPredicate(valueParser), () => [] as T[]);
+
+  // One or more values with optional trailing comma
+  const nonEmpty = map(
+    seq(
+      token(valueParser),
+      zeroOrMore(map(seq(comma, token(valueParser)), ([_, val]) => val)),
+      allowTrailing ? optional(comma) : map(notPredicate(comma), () => null),
+    ),
+    ([first, rest]) => [first, ...rest],
+  );
+
+  return choice(nonEmpty, empty);
+};
+
+/**
+ * Parser for comma-separated values with customizable value parser.
+ * Requires at least one value to be present.
+ *
+ * @template T Type of the value parser result
+ * @param valueParser Parser for individual values
+ * @param allowTrailing Whether to allow a trailing comma
+ * @returns Parser<NonEmptyArray<T>> A parser that returns a non-empty array of values
+ */
+export const commaSeparated1 = <T>(
+  valueParser: Parser<T>,
+  allowTrailing = false,
+): Parser<NonEmptyArray<T>> => {
+  const comma = token(literal(","));
+
+  // Single value
+  const single = map(
+    seq(
+      token(valueParser),
+      allowTrailing ? optional(comma) : map(notPredicate(comma), () => null),
+    ),
+    ([val]) => [val] as NonEmptyArray<T>,
+  );
+
+  // Multiple values with optional trailing comma
+  const multiple = map(
+    seq(
+      token(valueParser),
+      oneOrMore(map(seq(comma, token(valueParser)), ([_, val]) => val)),
+      allowTrailing ? optional(comma) : map(notPredicate(comma), () => null),
+    ),
+    ([first, rest]) => [first, ...rest] as NonEmptyArray<T>,
+  );
+
+  return choice(multiple, single);
+};
+
+/**
  * Creates a memoized version of a parser.
  * This can significantly improve performance for recursive grammars.
  *
  * @template T Type of the parser result
  * @param parser The parser to memoize
+ * @param options Memoization options
  * @returns Parser<T> A memoized version of the parser
  */
-export const memoize = <T>(parser: Parser<T>): Parser<T> => {
+export const memoize = <T>(
+  parser: Parser<T>,
+  options: { maxCacheSize?: number } = {},
+): Parser<T> => {
   const cache = new Map<string, ParseResult<T>>();
+  const maxSize = options.maxCacheSize || Number.POSITIVE_INFINITY;
 
   return (input: string, pos: Pos) => {
     const key = `${pos.offset}`;
@@ -160,6 +233,16 @@ export const memoize = <T>(parser: Parser<T>): Parser<T> => {
     }
 
     const result = parser(input, pos);
+
+    // Add result to cache, managing cache size
+    if (cache.size >= maxSize && maxSize !== Number.POSITIVE_INFINITY) {
+      // Remove oldest entry when cache is full
+      const firstKey = cache.keys().next().value;
+      if (firstKey) {
+        cache.delete(firstKey);
+      }
+    }
+
     cache.set(key, result);
 
     return result;
@@ -228,6 +311,39 @@ export const labeled =
   };
 
 /**
+ * Creates a parser with enhanced error reporting including context information.
+ *
+ * @template T Type of the parser result
+ * @param parser The parser to apply
+ * @param errorMessage Custom error message
+ * @param context Additional context information (e.g., rule name, grammar part)
+ * @returns Parser<T> A parser with custom error message and context
+ */
+export const labeledWithContext =
+  <T>(
+    parser: Parser<T>,
+    errorMessage: string,
+    context: string | string[],
+  ): Parser<T> =>
+  (input: string, pos: Pos) => {
+    const result = parser(input, pos);
+
+    if (!result.success) {
+      const failure = result as ParseFailure;
+      return {
+        success: false,
+        error: {
+          message: errorMessage,
+          pos: failure.error.pos,
+          context: context,
+        },
+      };
+    }
+
+    return result;
+  };
+
+/**
  * Create a parser that tracks line and column for better error reporting.
  *
  * @template T Type of the parser result
@@ -248,6 +364,58 @@ export const withPosition =
       val: { value: result.val, position: pos },
     };
   };
+
+/**
+ * Creates a parser that provides more detailed error reporting with input excerpt.
+ *
+ * @template T Type of parser result
+ * @param parser The parser to apply
+ * @param parserName Name of the parser for error reporting
+ * @param contextSize Number of characters to include before and after error position
+ * @returns Parser<T> A parser with enhanced error reporting
+ */
+export const withDetailedError = <T>(
+  parser: Parser<T>,
+  parserName: string,
+  contextSize = 10,
+): Parser<T> => {
+  return (input: string, pos: Pos) => {
+    const result = parser(input, pos);
+
+    if (!result.success) {
+      // Type assertion to access the error property
+      const failure = result as ParseFailure;
+
+      // Only enhance the error if the error doesn't already have detailed information
+      const enhancedError = { ...failure.error };
+      enhancedError.parserName = parserName;
+
+      // Add input excerpt to show context around error
+      const start = Math.max(0, pos.offset - contextSize);
+      const end = Math.min(input.length, pos.offset + contextSize);
+
+      const before = input.substring(start, pos.offset);
+      const after = input.substring(pos.offset, end);
+
+      // First character at error position
+      const found = pos.offset < input.length ? input[pos.offset] : "EOF";
+
+      enhancedError.found = found;
+      enhancedError.message =
+        enhancedError.message ||
+        `${parserName}: Expected ${
+          enhancedError.expected || "valid input"
+        } but found '${found}'`;
+
+      return {
+        success: false,
+        error: enhancedError,
+      };
+    }
+
+    return result;
+  };
+};
 
 /**
  * Parser that checks for end of input (EOF).
@@ -333,6 +501,58 @@ export const quotedString = (): Parser<string> => {
 };
 
 /**
+ * Parser for matching a string with single quotes.
+ *
+ * @returns Parser<string> A parser that returns the content of the string without quotes
+ */
+export const singleQuotedString = (): Parser<string> => {
+  const escapeSeq = map(seq(literal("\\"), anyChar()), ([_, char]) => {
+    switch (char) {
+      case "n":
+        return "\n";
+      case "r":
+        return "\r";
+      case "t":
+        return "\t";
+      case "b":
+        return "\b";
+      case "f":
+        return "\f";
+      case "\\":
+        return "\\";
+      case "'":
+        return "'";
+      case '"':
+        return '"';
+      default:
+        return char;
+    }
+  });
+
+  const stringChar = choice(
+    escapeSeq,
+    map(
+      seq(notPredicate(choice(literal("'"), literal("\\"))), anyChar()),
+      ([_, char]) => char,
+    ),
+  );
+
+  return map(
+    seq(literal("'"), zeroOrMore(stringChar), literal("'")),
+    ([_, chars]) => chars.join(""),
+  );
+};
+
+/**
+ * Parser for matching a string with either single or double quotes.
+ *
+ * @returns Parser<string> A parser that returns the content of the string without quotes
+ */
+export const anyQuotedString = (): Parser<string> => {
+  return choice(quotedString(), singleQuotedString());
+};
+
+/**
  * Parser for matching a JavaScript/JSON-style number.
  *
  * @returns Parser<number> A parser that returns the parsed number
@@ -375,4 +595,178 @@ export const int = (): Parser<number> => {
       return Number.parseInt((sign.length ? "-" : "") + digits.join(""), 10);
     },
   );
+};
+
+/**
+ * Creates a debugging parser that logs information about the parsing process.
+ * Useful for troubleshooting and understanding parser behavior.
+ *
+ * @template T Type of the parser result
+ * @param parser The parser to debug
+ * @param name Name for identifying the parser in logs
+ * @param options Debug options
+ * @returns Parser<T> The original parser with added logging
+ */
+export const debug = <T>(
+  parser: Parser<T>,
+  name: string,
+  options: {
+    logSuccess?: boolean;
+    logFailure?: boolean;
+    logInput?: boolean;
+    logResult?: boolean;
+    customLogger?: (message: string) => void;
+  } = {},
+): Parser<T> => {
+  // Default options
+  const {
+    logSuccess = true,
+    logFailure = true,
+    logInput = true,
+    logResult = true,
+    customLogger = console.log,
+  } = options;
+
+  return (input: string, pos: Pos) => {
+    // Log attempt
+    const inputPreview = logInput
+      ? input
+          .substring(pos.offset, Math.min(pos.offset + 30, input.length))
+          .replace(/\n/g, "\\n")
+      : "";
+
+    customLogger(
+      `DEBUG[${name}] Attempting at line ${pos.line}, col ${pos.column}${
+        logInput
+          ? `: "${inputPreview}${inputPreview.length === 30 ? "..." : ""}"`
+          : ""
+      }`,
+    );
+
+    // Run the parser
+    const result = parser(input, pos);
+
+    // Log the result
+    if (result.success) {
+      if (logSuccess) {
+        customLogger(
+          `DEBUG[${name}] Success at line ${pos.line}, col ${pos.column}${
+            logResult ? `: ${JSON.stringify(result.val)}` : ""
+          }`,
+        );
+      }
+    } else {
+      if (logFailure) {
+        const failure = result as ParseFailure;
+        customLogger(
+          `DEBUG[${name}] Failure at line ${pos.line}, col ${pos.column}: ${failure.error.message}`,
+        );
+      }
+    }
+
+    return result;
+  };
+};
+
+/**
+ * Creates a parser that matches input against a regular expression.
+ *
+ * @param regex The regular expression to match against
+ * @param errorMessage Optional error message when matching fails
+ * @returns Parser<string> A parser that returns the matched string
+ */
+export const regex = (
+  regex: RegExp,
+  errorMessage = "Expected pattern match",
+): Parser<string> => {
+  return (input: string, pos: Pos) => {
+    // Ensure regex has the global flag to ensure we start matching from the current position
+    const flags = regex.flags.includes("g") ? regex.flags : `${regex.flags}g`;
+    const regexWithGlobalFlag = new RegExp(regex.source, flags);
+
+    // Set lastIndex to start matching from current position
+    regexWithGlobalFlag.lastIndex = pos.offset;
+
+    const match = regexWithGlobalFlag.exec(input);
+
+    // Check if we matched and if the match starts at the current position
+    if (match && match.index === pos.offset) {
+      const matchedText = match[0];
+
+      // Calculate new position after match
+      let newPos = { ...pos };
+      for (let i = 0; i < matchedText.length; i++) {
+        const char = matchedText[i];
+        newPos = nextPos(char, newPos);
+      }
+
+      return {
+        success: true,
+        val: matchedText,
+        current: pos,
+        next: newPos,
+      };
+    }
+
+    return {
+      success: false,
+      error: {
+        message: errorMessage,
+        pos,
+        expected: regex.toString(),
+      },
+    };
+  };
+};
+
+/**
+ * Creates a parser that returns all capture groups from a regex match.
+ *
+ * @param regex The regular expression to match against (must have capture groups)
+ * @param errorMessage Optional error message when matching fails
+ * @returns Parser<string[]> A parser that returns an array with the full match followed by all capture groups
+ */
+export const regexGroups = (
+  regex: RegExp,
+  errorMessage = "Expected pattern match",
+): Parser<string[]> => {
+  return (input: string, pos: Pos) => {
+    // Ensure regex has the global flag
+    const flags = regex.flags.includes("g") ? regex.flags : `${regex.flags}g`;
+    const regexWithGlobalFlag = new RegExp(regex.source, flags);
+
+    // Set lastIndex to start matching from current position
+    regexWithGlobalFlag.lastIndex = pos.offset;
+
+    const match = regexWithGlobalFlag.exec(input);
+
+    // Check if we matched and if the match starts at the current position
+    if (match && match.index === pos.offset) {
+      const matchedText = match[0];
+
+      // Calculate new position after match
+      let newPos = { ...pos };
+      for (let i = 0; i < matchedText.length; i++) {
+        const char = matchedText[i];
+        newPos = nextPos(char, newPos);
+      }
+
+      // Return all groups (match[0] is the full match, match[1...n] are capture groups)
+      return {
+        success: true,
+        val: Array.from(match),
+        current: pos,
+        next: newPos,
+      };
+    }
+
+    return {
+      success: false,
+      error: {
+        message: errorMessage,
+        pos,
+        expected: regex.toString(),
+      },
+    };
+  };
 };

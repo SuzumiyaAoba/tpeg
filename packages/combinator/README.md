@@ -69,6 +69,55 @@ const result = parse(parser)("hello world hello");
 console.log(result);
 ```
 
+## Parser Combinators
+
+This package provides many useful parser combinators built on top of tpeg-core:
+
+### String Parsing
+
+- `quotedString()`: Parses a JavaScript/JSON-style double-quoted string
+- `singleQuotedString()`: Parses a single-quoted string
+- `anyQuotedString()`: Parses a string with either single or double quotes
+- `takeUntil(condition)`: Consumes characters until a condition is met
+- `between(open, close)`: Matches content between two parsers
+
+### Pattern Matching
+
+- `regex(pattern)`: Parses text that matches a regular expression
+- `regexGroups(pattern)`: Parses and returns all capture groups from a regex match
+
+### Number Parsing
+
+- `number()`: Parses a JavaScript/JSON-style number including fractions and exponents
+- `int()`: Parses an integer number
+
+### List Parsing
+
+- `sepBy(value, separator)`: Parses values separated by a delimiter (zero or more)
+- `sepBy1(value, separator)`: Parses values separated by a delimiter (one or more)
+- `commaSeparated(value)`: Parses comma-separated values with optional trailing comma
+- `commaSeparated1(value)`: Parses comma-separated values (at least one)
+
+### Error Handling
+
+- `labeled(parser, message)`: Provides custom error messages
+- `labeledWithContext(parser, message, context)`: Adds context to error messages
+- `withDetailedError(parser, name)`: Creates detailed error reports with input excerpts
+- `withPosition(parser)`: Tracks line and column for better error reporting
+
+### Performance and Debugging
+
+- `memoize(parser, options)`: Creates a memoized version of a parser with cache size control
+- `recursive()`: Creates a recursive parser
+- `debug(parser, name, options)`: Logs parsing process for debugging
+
+### Whitespace and Tokens
+
+- `token(parser)`: Wraps a parser to consume whitespace before and after
+- `whitespace`: Consumes whitespace characters
+- `spaces`: Consumes zero or more whitespace characters
+- `newline`: Matches any newline sequence
+
 ## Getting Started
 
 ### Prerequisites
