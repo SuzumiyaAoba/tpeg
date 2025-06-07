@@ -64,9 +64,7 @@ const parseSimpleString = <T extends string>(
   parserName = "literal",
 ): ParseResult<T> | null => {
   // Fast path for ASCII-only strings with no newlines
-  const offset = pos.offset;
-  const column = pos.column;
-  const line = pos.line;
+  const { offset, column, line } = pos;
 
   // Check if the input has enough characters left
   if (offset + str.length > input.length) {
