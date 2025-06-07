@@ -1,0 +1,40 @@
+---
+description: Performance optimization guidelines for TPEG parsing operations
+alwaysApply: false
+---
+
+# Performance Guidelines
+
+## Parser Performance Optimization
+
+- Profile parser performance for large inputs
+- Use memoization for recursive parsers to avoid exponential complexity
+- Be mindful of string operations that may cause frequent allocations
+- Consider streaming parsers for very large inputs
+- Avoid unnecessary backtracking when possible
+- Document performance characteristics for complex parsers
+
+## Benchmarking and Measurement
+
+- Add benchmarks for critical parsing operations
+- Provide performance comparison with similar parsers when relevant
+- Monitor memory usage patterns during parsing
+- Test performance under various input sizes
+- Use profiling tools to identify bottlenecks
+
+## Optimization Strategies
+
+- Implement memoization for frequently called parsers
+- Use efficient data structures for intermediate results
+- Minimize object allocations in hot paths
+- Consider parser specialization for common patterns
+- Optimize string operations and character access
+- Use iterative approaches where recursion might cause stack overflow
+
+## Performance Testing
+
+- Include performance regression tests
+- Set performance benchmarks for critical operations
+- Test with large and complex inputs
+- Monitor parse time and memory consumption
+- Establish performance baselines for comparison

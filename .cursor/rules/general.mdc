@@ -1,0 +1,65 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# TPEG General Guidelines
+
+## Rule Management and Continuous Improvement
+
+- **Self-directed rule reconstruction**: When discovering new knowledge, techniques, or best practices during development, proactively update relevant rule files to incorporate the learnings
+- **Knowledge integration**: Document new insights about parser implementation, testing strategies, performance optimizations, or code quality improvements
+- **Rule evolution**: Regularly review and refine these guidelines based on practical experience and emerging patterns in the codebase
+- **Context preservation**: Maintain historical context of why certain rules exist while adapting them to new requirements
+
+## Languages
+
+- Write source code and documentation in English
+- Use proper formatting and indentation for all code
+- Add appropriate comments to explain complex logic
+
+## Extensibility
+
+- Design parsers to be composable and reusable
+- Use clear abstractions that allow for extension
+- Document extension points and customization options
+- Provide hooks for customizing behavior when appropriate
+- Consider plugin mechanisms for major extensions
+
+## Build and Deployment
+
+- Execute `bun run build` to build the project
+- Execute `bun test` to ensure all tests pass
+- Fix any errors or warnings that appear during build or tests
+- Update documentation if necessary
+- Set up continuous integration to automate testing
+- Follow semantic versioning for releases
+
+## Documentation
+
+- Keep README and other documentation up to date
+- Document public APIs with appropriate JSDoc comments
+- Include examples for complex functionality
+- Add detailed explanations of parsing concepts for new contributors
+- Document breaking changes in version updates
+- Provide migration guides for major version changes
+
+## Package Structure
+
+- Keep related parsers in appropriate packages
+- Maintain clean separation between core, combinator, and AST functionality
+- Ensure proper exports from each package
+- Minimize external dependencies
+- Use appropriate package versioning for releases
+- Structure the code to allow tree-shaking
+
+## Contributing Guidelines
+
+- Create an issue before working on major features
+- Submit pull requests with clear descriptions
+- Add or update tests for new functionality
+- Follow the existing code style and structure
+- Update documentation for user-facing changes
+- Be respectful and constructive in discussions
+- Consider backward compatibility when making changes
+- Participate in code reviews

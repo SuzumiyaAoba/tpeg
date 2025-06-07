@@ -1,0 +1,47 @@
+---
+description: Parser implementation guidelines specific to TPEG parsing engine
+globs:
+  - "packages/core/**/*.ts"
+  - "packages/combinator/**/*.ts"
+  - "packages/ast/**/*.ts"
+  - "packages/samples/**/*.ts"
+alwaysApply: false
+---
+
+# Parser Implementation Guidelines
+
+## Core Principles
+
+- Document each parser function with clear input/output descriptions
+- Include usage examples for complex parsers
+- Ensure all parsers handle edge cases and provide meaningful error messages
+- Avoid infinite recursion and ensure proper termination conditions
+- Follow the PEG (Parsing Expression Grammar) principles consistently
+- Consider error recovery for user-facing parsers
+
+## Parser Design
+
+- Design parsers to be composable and reusable
+- Use clear abstractions that allow for extension
+- Provide meaningful error messages with position information
+- Handle whitespace and comments appropriately
+- Support both consuming and non-consuming parsers
+- Implement proper backtracking behavior
+
+## Error Handling
+
+- Provide descriptive error messages that include:
+  - Expected input format
+  - Actual input received
+  - Position information
+- Use structured error types for different failure modes
+- Support error recovery mechanisms where appropriate
+- Maintain parse state consistency during error conditions
+
+## Combinator Patterns
+
+- Follow functional programming principles
+- Make combinators pure functions when possible
+- Use consistent naming patterns for similar operations
+- Document combinator behavior and usage patterns
+- Provide type-safe combinator interfaces

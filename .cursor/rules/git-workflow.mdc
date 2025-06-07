@@ -1,0 +1,62 @@
+---
+description: Git workflow and development process guidelines for TPEG project
+alwaysApply: false
+---
+
+# Git Workflow and Development Process
+
+## Git Workflow Standards
+
+- Write clear and descriptive commit messages in English
+- Use present tense in commit messages (e.g., "Add feature" not "Added feature")
+- Reference issue numbers when applicable
+- Keep commits focused on a single logical change
+- Squash related changes before merging
+- Use feature branches for new development
+- Keep the main branch stable and deployable
+
+## Commit Message Format
+
+Use the following format for commit messages:
+```
+<type>: <description>
+
+[optional body]
+
+[optional footer]
+```
+
+Types:
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation changes
+- `style`: Code style changes (formatting)
+- `refactor`: Code refactoring
+- `test`: Adding or updating tests
+- `chore`: Maintenance tasks
+
+## Branch Management
+
+- Use descriptive branch names (e.g., `feature/parser-optimization`, `fix/error-handling`)
+- Delete feature branches after merging
+- Keep feature branches up to date with main branch
+- Use pull requests for code review
+- Require at least one review before merging
+
+## Code Review Process
+
+- Review code for functionality, style, and security
+- Check that tests are included and passing
+- Verify documentation is updated
+- Ensure compatibility with existing code
+- Provide constructive feedback
+- Test the changes locally when possible
+
+## Release Process
+
+- Follow semantic versioning (MAJOR.MINOR.PATCH)
+- Create release notes documenting changes
+- Tag releases appropriately
+- Test thoroughly before releasing
+- Update changelog and documentation
+- Coordinate releases with team members

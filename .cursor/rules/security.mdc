@@ -1,0 +1,37 @@
+---
+description: Security considerations for TPEG parser implementations
+alwaysApply: false
+---
+
+# Security Considerations
+
+## Input Validation and Sanitization
+
+- Validate and sanitize untrusted input before parsing
+- Set limits on input size to prevent DoS attacks
+- Set limits on recursion depth to prevent stack overflow
+- Be cautious about exposing parsers that could lead to excessive resource usage
+- Document security implications for parsers that handle untrusted input
+
+## Regular Expression Safety
+
+- Avoid using regular expressions that may be vulnerable to catastrophic backtracking
+- Test regex patterns with potentially malicious inputs
+- Consider using finite automata instead of regex for complex patterns
+- Document regex complexity and potential vulnerabilities
+
+## Resource Management
+
+- Implement timeout mechanisms for long-running parsing operations
+- Set memory limits for parser operations
+- Monitor and limit CPU usage during parsing
+- Implement proper cleanup for allocated resources
+- Consider parser cancellation mechanisms
+
+## Secure Parsing Practices
+
+- Validate parser inputs against expected schemas
+- Implement proper error handling that doesn't leak sensitive information
+- Use structured error reporting that provides useful debugging info without exposing internals
+- Consider sandboxing for parsers that handle untrusted content
+- Document security boundaries and trust assumptions

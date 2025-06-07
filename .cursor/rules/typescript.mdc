@@ -1,0 +1,30 @@
+---
+description: TypeScript coding standards and best practices for TPEG
+globs: 
+  - "**/*.ts"
+  - "**/*.tsx"
+alwaysApply: false
+---
+
+# TypeScript Guidelines
+
+## Code Style
+
+- Follow TypeScript/JavaScript best practices
+- Follow consistent naming conventions:
+  - Use camelCase for variables and functions
+  - Use PascalCase for classes and types
+  - Use UPPER_CASE for constants
+- Keep functions small and focused on a single responsibility
+- Avoid unnecessary complexity and deep nesting
+- Use `prettier` and `biome` for consistent formatting
+- Be explicit about types in TypeScript
+
+## Type Safety
+
+- Always use TypeScript strict mode
+- Avoid using `any` type - use specific types or unions instead
+- Define proper interfaces for data structures
+- Use generics for reusable type-safe functions
+- Leverage TypeScript's type narrowing capabilities
+- Use discriminated unions for complex state management

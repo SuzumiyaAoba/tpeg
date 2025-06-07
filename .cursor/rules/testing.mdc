@@ -1,0 +1,55 @@
+---
+description: Comprehensive testing guidelines for TPEG parsers and components
+globs:
+  - "**/*.test.ts"
+  - "**/*.spec.ts"
+alwaysApply: false
+---
+
+# Testing Guidelines
+
+## Basic Testing Principles
+
+- Write comprehensive tests for all parser functions
+- Include test cases for both valid and invalid inputs
+- Test edge cases and error conditions
+- Include performance benchmarks for critical parsers
+- Aim for high test coverage (>80%)
+- Use property-based testing for input validation when appropriate
+- Test with fuzzing techniques for robust parsers
+
+## Enhanced Testing Standards
+
+### Comprehensive Test Coverage
+- Ensure tests cover all code paths, including edge cases and error conditions
+- Test both successful parsing and failure scenarios
+- Verify error messages are descriptive and helpful
+
+### Input Variety Testing
+- **Multiple input specifications**: Test parsers with various input types (single characters, ranges, multiple specifications)
+- **Boundary value testing**: Always test the boundaries of ranges (first and last valid values)
+- **Unicode support verification**: Include tests for international characters and Unicode ranges
+- **Special character handling**: Test special characters like newlines, tabs, carriage returns
+
+### Parser State Management
+- **Position management**: Verify correct position tracking throughout parsing operations
+- **Input position testing**: Test parsing at various positions within input strings, not just at the beginning
+- **State consistency**: Ensure parser state remains consistent across operations
+
+### Error Quality Assurance
+- **Error message quality**: Ensure error messages are descriptive and include expected vs. found information
+- **Error position accuracy**: Verify error positions are correctly reported
+- **Error recovery testing**: Test error recovery mechanisms where implemented
+
+### Implementation Alignment
+- **Implementation-aware testing**: Align test expectations with actual implementation behavior rather than assumed behavior
+- **Performance characteristics**: Test performance under various input sizes and complexity levels
+- **Memory usage**: Monitor memory consumption for large input processing
+
+## Test Organization
+
+- Group related tests using describe blocks
+- Use descriptive test names that explain the scenario
+- Follow AAA pattern (Arrange, Act, Assert)
+- Use beforeEach/afterEach for test setup and cleanup
+- Separate unit tests from integration tests

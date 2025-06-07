@@ -1,0 +1,278 @@
+---
+description: Comprehensive guidelines for writing effective Cursor rules in MDC format
+globs: .cursor/rules/*.mdc
+alwaysApply: false
+---
+
+# Cursor Rules Writing Guidelines
+
+This rule provides comprehensive guidance on how to write effective Cursor rules using the MDC (Markdown with metadata) format.
+
+## MDC File Format Structure
+
+Every Cursor rule file should follow this structure:
+
+```mdc
+---
+description: Brief description of what this rule does
+globs: pattern/to/match/files
+alwaysApply: false|true
+---
+
+# Rule Title
+
+Rule content goes here...
+```
+
+### Metadata Properties
+
+- **description**: Required for Agent Requested rules. Clear, concise explanation of the rule's purpose
+- **globs**: File patterns to match when auto-attaching rules (e.g., `**/*.ts`, `app/**/*.*`)
+- **alwaysApply**: Boolean flag to determine if rule should always be included in context
+
+## Rule Types
+
+### 1. Always Applied Rules
+```yaml
+---
+description: Project-wide coding standards
+alwaysApply: true
+---
+```
+- Always included in model context
+- Use for fundamental project guidelines
+- Keep concise to avoid context bloat
+
+### 2. Auto Attached Rules
+```yaml
+---
+description: TypeScript specific guidelines
+globs: **/*.ts, **/*.tsx
+alwaysApply: false
+---
+```
+- Automatically included when matching files are referenced
+- Perfect for technology-specific guidance
+- Use precise glob patterns
+
+### 3. Agent Requested Rules
+```yaml
+---
+description: Advanced debugging patterns for complex issues
+alwaysApply: false
+---
+```
+- AI decides whether to include based on context
+- Must have clear description
+- Good for specialized knowledge
+
+### 4. Manual Rules
+```yaml
+---
+description: Database migration templates
+alwaysApply: false
+---
+```
+- Only included when explicitly mentioned with @ruleName
+- Use for templates and specialized workflows
+
+## Best Practices
+
+### Content Guidelines
+- **Keep rules concise**: Target under 500 lines
+- **Be specific and actionable**: Avoid vague guidance
+- **Provide concrete examples**: Include code snippets or patterns
+- **Focus on one concept**: Split large concepts into multiple rules
+- **Use clear language**: Write like internal documentation
+
+### File Organization
+```
+.cursor/rules/
+├── general.mdc          # Always applied general guidelines
+├── typescript.mdc       # Auto-attached for TS files
+├── react.mdc           # Auto-attached for React components
+├── api.mdc             # Auto-attached for API routes
+└── templates/
+    ├── component.mdc   # Manual template rules
+    └── service.mdc     # Manual template rules
+```
+
+### Nested Rules
+- Place rules closer to relevant code in monorepos
+- Organize domain-specific rules in subdirectories
+- Rules are automatically attached when files in their directory are referenced
+
+## Rule Content Patterns
+
+### 1. Standards and Guidelines
+```markdown
+## Code Style Standards
+
+- Use camelCase for variables and functions
+- Use PascalCase for classes and types
+- Always use TypeScript strict mode
+- Include JSDoc comments for public APIs
+```
+
+### 2. Templates and Boilerplate
+```markdown
+## React Component Template
+
+Use this structure for new React components:
+
+@component-template.tsx
+
+Key points:
+- Props interface at the top
+- Component as named export
+- Styles using Tailwind classes
+```
+
+### 3. Workflow Automation
+```markdown
+## Testing Workflow
+
+When adding new features:
+
+1. Write tests first (TDD approach)
+2. Implement functionality
+3. Run full test suite with `bun test`
+4. Check coverage with `bun test --coverage`
+```
+
+### 4. Domain Knowledge
+```markdown
+## API Validation Standards
+
+For all API endpoints:
+
+- Use Zod for input validation
+- Define response schemas
+- Include proper error handling
+- Add rate limiting for public endpoints
+
+@api-template.ts
+```
+
+## File References
+
+Use `@filename.ext` to include additional context files:
+
+```markdown
+Use this Express service template:
+
+@express-service-template.ts
+
+Follow these patterns:
+- Middleware setup
+- Error handling
+- Logging configuration
+```
+
+## Common Patterns
+
+### Framework-Specific Rules
+```yaml
+---
+description: Next.js App Router best practices
+globs: app/**/*.*
+---
+
+- Use server components by default
+- Implement client components only when necessary
+- Utilize file-based routing system
+- Use layout.js for shared layouts
+```
+
+### Library-Specific Rules
+```yaml
+---
+description: Tailwind CSS styling guidelines
+globs: **/*.tsx, **/*.jsx, **/*.html
+---
+
+- Use Tailwind utility classes over custom CSS
+- Follow mobile-first responsive design
+- Use design system colors and spacing
+```
+
+### Testing Rules
+```yaml
+---
+description: Testing standards and patterns
+globs: **/*.test.ts, **/*.spec.ts
+---
+
+- Use descriptive test names
+- Follow AAA pattern (Arrange, Act, Assert)
+- Test edge cases and error conditions
+- Maintain high test coverage (>80%)
+```
+
+## Rule Management
+
+### Creating Rules
+1. Use `Cmd + Shift + P` > "New Cursor Rule" in Cursor
+2. Or create files manually in `.cursor/rules/`
+3. Use `/Generate Cursor Rules` command in chat to create from conversations
+
+### Rule Generation from Chat
+When you have a productive conversation with decisions about behavior:
+1. Use `/Generate Cursor Rules` command
+2. Review and refine the generated rule
+3. Save to appropriate location in `.cursor/rules/`
+
+### Version Control
+- All project rules are version-controlled
+- Share rules across team by committing to repository
+- Use descriptive commit messages when updating rules
+
+## Troubleshooting
+
+### Rule Not Applied?
+- Check rule type and metadata
+- Verify glob patterns match target files
+- Ensure description is provided for Agent Requested rules
+- Check file placement in `.cursor/rules/` directory
+
+### Rule Too Broad?
+- Split into multiple focused rules
+- Use more specific glob patterns
+- Consider making rule Manual instead of Always
+
+### Rule Conflicts?
+- Use nested rules for specificity
+- Order rules by priority (more specific first)
+- Test rule combinations in different scenarios
+
+## Examples from Cursor Team
+
+### Tailwind Usage Rule
+```markdown
+Tailwind is supported in this VS Code fork!
+
+Usage examples:
+- `text-error-foreground`
+- `bg-input-border`
+```
+
+### Settings Addition Rule
+```markdown
+First create a property to toggle in `@reactiveStorageTypes.ts`.
+
+Add a default value for it in `INIT_APPLICATION_USER_PERSISTENT_STORAGE`.
+
+If this is a beta feature, add a toggle in `@settingsBetaTab.tsx`.
+```
+
+## Migration from .cursorrules
+
+If you have existing `.cursorrules` files:
+1. Create new `.mdc` files in `.cursor/rules/`
+2. Add appropriate metadata headers
+3. Split content into focused, scoped rules
+4. Test new rules before removing old `.cursorrules`
+
+---
+
+*Sources: [Cursor Rules Documentation](mdc:https:/docs.cursor.com/context/rules), [Cursor Community Forum](mdc:https:/forum.cursor.com/t/optimal-structure-for-mdc-rules-files/52260)*
