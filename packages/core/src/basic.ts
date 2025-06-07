@@ -42,16 +42,9 @@ export const any = () => anyChar("any");
  * @returns Whether the string can use the optimized path
  */
 const canUseOptimizedPath = (str: string): boolean => {
-  // Simple check to see if the string contains only ASCII characters
-  // and no newlines, which allows for a simpler processing algorithm
-  for (let i = 0; i < str.length; i++) {
-    const code = str.charCodeAt(i);
-    // If the character is a non-ASCII char or a newline, use the complex path
-    if (code > 127 || code === 10) {
-      return false;
-    }
-  }
-  return true;
+  // Use a more efficient check for ASCII-only strings without newlines
+  // Check for ASCII printable characters (32-126) plus common whitespace (except newline)
+  return /^[ -~\t\r]*$/.test(str) && !str.includes("\n");
 };
 
 /**
@@ -62,7 +55,7 @@ const parseSimpleString = <T extends string>(
   input: string,
   pos: Pos,
   parserName = "literal",
-): ParseResult<T> | null => {
+): ParseResult<T> => {
   // Fast path for ASCII-only strings with no newlines
   const { offset, column, line } = pos;
 
@@ -75,40 +68,42 @@ const parseSimpleString = <T extends string>(
     });
   }
 
-  // Check character by character
-  for (let i = 0; i < str.length; i++) {
-    if (input[offset + i] !== str[i]) {
-      const errorPos = {
-        offset: offset + i,
-        column: column + i,
-        line,
-      };
-      return createFailure(
-        `Unexpected character "${input[offset + i]}" at position ${
-          offset + i
-        }, expected "${str[i]}"`,
-        errorPos,
-        {
-          expected: str[i],
-          found: input[offset + i],
-          parserName,
-        },
-      );
+  // Use slice for more efficient string comparison
+  const inputSlice = input.slice(offset, offset + str.length);
+  if (inputSlice !== str) {
+    // Find the first mismatched character for better error reporting
+    for (let i = 0; i < str.length; i++) {
+      if (input[offset + i] !== str[i]) {
+        const errorPos = {
+          offset: offset + i,
+          column: column + i,
+          line,
+        };
+        return createFailure(
+          `Unexpected character "${input[offset + i]}" at position ${
+            offset + i
+          }, expected "${str[i]}"`,
+          errorPos,
+          {
+            expected: str[i],
+            found: input[offset + i],
+            parserName,
+          },
+        );
+      }
     }
   }
 
-  // Success
-  const next = {
-    offset: offset + str.length,
-    column: column + str.length,
-    line,
-  };
-
+  // Success - all characters matched
   return {
     success: true,
     val: str,
     current: pos,
-    next,
+    next: {
+      offset: offset + str.length,
+      column: column + str.length,
+      line,
+    },
   };
 };
 
@@ -190,13 +185,10 @@ export const literal = <T extends string>(
 
   return (input: string, pos: Pos) => {
     if (useOptimizedPath) {
-      const result = parseSimpleString(str, input, pos, parserName);
-      if (result !== null) {
-        return result;
-      }
+      return parseSimpleString(str, input, pos, parserName);
     }
 
-    // Fall back to complex path
+    // Use complex path for Unicode strings
     return parseComplexString(str, input, pos, parserName);
   };
 };
