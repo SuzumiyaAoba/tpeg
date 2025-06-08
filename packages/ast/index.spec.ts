@@ -5,6 +5,7 @@ import {
   type Sequence,
   type Choice,
   type Optional,
+  type MapNode,
   type CharClass,
   type AnyChar,
   type AndPredicate,
@@ -20,6 +21,7 @@ import {
   sequence,
   choice,
   optional,
+  map,
   charClass,
   char,
   range,
@@ -33,6 +35,7 @@ import {
   isSequence,
   isChoice,
   isOptional,
+  isMap,
   isCharClass,
   isAnyChar,
   isAndPredicate,
@@ -825,6 +828,144 @@ import type {
       });
     });
   });
+
+    describe("Map Node Tests", () => {
+      it("should create map node with correct type and properties", () => {
+        const expr = literal("123");
+        const mapper = (value: string) => Number.parseInt(value, 10);
+        const mapNode = map(expr, mapper);
+
+        expect(mapNode.type).toBe("map");
+        expect(mapNode.children).toHaveLength(1);
+        expect(mapNode.children[0]).toBe(expr);
+        expect(mapNode.data.mapper).toBe(mapper);
+      });
+
+      it("should create map node with complex expression", () => {
+        const expr = sequence(
+          charClass(range("0", "9")),
+          optional(literal(".")),
+          charClass(range("0", "9"))
+        );
+        const mapper = (parts: unknown[]) => Number.parseFloat(parts.join(""));
+        const mapNode = map(expr, mapper);
+
+        expect(mapNode.type).toBe("map");
+        expect(mapNode.children).toHaveLength(1);
+        expect(mapNode.children[0]).toBe(expr);
+        expect(mapNode.data.mapper).toBe(mapper);
+      });
+
+      it("should support nested map operations", () => {
+        const innerExpr = literal("42");
+        const innerMapper = (value: string) => Number.parseInt(value, 10);
+        const innerMap = map(innerExpr, innerMapper);
+        
+        const outerMapper = (value: number) => value * 2;
+        const outerMap = map(innerMap, outerMapper);
+
+        expect(outerMap.type).toBe("map");
+        expect(outerMap.children).toHaveLength(1);
+        expect(outerMap.children[0]).toBe(innerMap);
+        expect(outerMap.data.mapper).toBe(outerMapper);
+
+        // Verify inner map
+        expect(innerMap.type).toBe("map");
+        expect(innerMap.children[0]).toBe(innerExpr);
+        expect(innerMap.data.mapper).toBe(innerMapper);
+      });
+
+      it("should work with type guards", () => {
+        const expr = identifier("test");
+        const mapper = (value: string) => value.toUpperCase();
+        const mapNode = map(expr, mapper);
+
+        expect(isMap(mapNode)).toBe(true);
+        expect(isLiteral(mapNode)).toBe(false);
+        expect(isSequence(mapNode)).toBe(false);
+        expect(isChoice(mapNode)).toBe(false);
+      });
+
+      it("should handle various mapper function types", () => {
+        // String transformation
+        const stringMap = map(literal("test"), (s: string) => s.toUpperCase());
+        expect(stringMap.type).toBe("map");
+
+        // Number transformation
+        const numberMap = map(literal("123"), (s: string) => Number.parseInt(s, 10));
+        expect(numberMap.type).toBe("map");
+
+        // Object transformation
+        const objectMap = map(
+          sequence(literal("name"), literal(":"), literal("value")),
+          ([name, _, value]: string[]) => ({ [name]: value })
+        );
+        expect(objectMap.type).toBe("map");
+
+        // Array transformation
+        const arrayMap = map(
+          choice(literal("a"), literal("b"), literal("c")),
+          (item: string) => [item]
+        );
+        expect(arrayMap.type).toBe("map");
+      });
+
+      it("should integrate with complex expressions", () => {
+        // Create a number parser with mapping
+        const digitSeq = sequence(
+          charClass(range("0", "9")),
+          optional(sequence(
+            charClass(range("0", "9")),
+            charClass(range("0", "9"))
+          ))
+        );
+        const numberParser = map(digitSeq, (digits: string[]) => {
+          return Number.parseInt(digits.join(""), 10);
+        });
+
+        expect(numberParser.type).toBe("map");
+        expect(numberParser.children).toHaveLength(1);
+        expect(numberParser.children[0].type).toBe("sequence");
+
+        // Create a list parser with mapping
+        const listItems = sequence(
+          literal("["),
+          optional(sequence(
+            literal("item"),
+            optional(sequence(literal(","), literal("item")))
+          )),
+          literal("]")
+        );
+        const listParser = map(listItems, (parts: string[]) => {
+          return parts.filter(p => p !== "[" && p !== "]" && p !== ",");
+        });
+
+        expect(listParser.type).toBe("map");
+        expect(listParser.children).toHaveLength(1);
+        expect(listParser.children[0].type).toBe("sequence");
+      });
+
+      it("should work in grammar definitions", () => {
+        const numberExpr = map(
+          charClass(range("0", "9")),
+          (digit: string) => Number.parseInt(digit, 10)
+        );
+        const numberDef = definition("number", numberExpr);
+        const numberGrammar = grammar(numberDef);
+
+        expect(numberGrammar.type).toBe("grammar");
+        expect(numberGrammar.children).toHaveLength(1);
+        
+        const def = numberGrammar.children[0];
+        expect(def.type).toBe("definition");
+        expect(def.children).toHaveLength(2);
+        expect(def.children[1].type).toBe("map");
+
+        const mappedExpr = def.children[1] as MapNode;
+        expect(mappedExpr.children).toHaveLength(1);
+        expect(mappedExpr.children[0].type).toBe("charClass");
+      });
+    });
 
     describe("Complex AST Construction", () => {
     it("should build simple grammar structures", () => {

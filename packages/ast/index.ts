@@ -39,6 +39,14 @@ export interface Optional<T extends ExprNode = ExprNode> extends PegParent, Expr
   children: [T];
 }
 
+export interface MapNode<T extends ExprNode = ExprNode, F = unknown> extends PegParent, Expr {
+  type: "map";
+  children: [T];
+  data: {
+    mapper: F;
+  };
+}
+
 export interface Char<T extends string = string> extends PegLiteral {
   type: "char";
   value: T;
@@ -90,6 +98,7 @@ export type ExprNode =
   | Sequence<readonly ExprNode[]>
   | Choice<readonly ExprNode[]>
   | Optional<ExprNode>
+  | MapNode<ExprNode, unknown>
   | CharClass<readonly CharClassElement[]>
   | AnyChar
   | AndPredicate<ExprNode>
@@ -118,6 +127,9 @@ export const isChoice = (node: PegAstNode): node is Choice<readonly ExprNode[]> 
 
 export const isOptional = (node: PegAstNode): node is Optional<ExprNode> =>
   node.type === "optional";
+
+export const isMap = (node: PegAstNode): node is MapNode<ExprNode, unknown> =>
+  node.type === "map";
 
 export const isCharClass = (node: PegAstNode): node is CharClass<readonly CharClassElement[]> =>
   node.type === "charClass";
@@ -162,6 +174,10 @@ export const choice = <T extends readonly ExprNode[]>(...exprs: T): Choice<T> =>
 
 export const optional = <T extends ExprNode>(expr: T): Optional<T> => {
   return u("optional", { children: [expr] }) as unknown as Optional<T>;
+};
+
+export const map = <T extends ExprNode, F>(expr: T, mapper: F): MapNode<T, F> => {
+  return u("map", { children: [expr], data: { mapper } }) as unknown as MapNode<T, F>;
 };
 
 export const char = <T extends string>(value: T): Char<T> => {
