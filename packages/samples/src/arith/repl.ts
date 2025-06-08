@@ -49,7 +49,7 @@ function printExamples() {
   console.log();
 }
 
-function handleCommand(input: string): boolean {
+function handleCommand(input: string) {
   const trimmed = input.trim();
 
   if (trimmed === "exit") {
