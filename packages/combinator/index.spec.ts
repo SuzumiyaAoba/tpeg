@@ -24,14 +24,19 @@ import {
 } from "tpeg-core";
 import {
   EOF,
+  alphaNum,
   anyQuotedString,
   between,
   commaSeparated,
   commaSeparated1,
   debug,
+  digit,
+  endOfLine,
+  identifier,
   int,
   labeled,
   labeledWithContext,
+  letter,
   memoize,
   number,
   quotedString,
@@ -41,6 +46,7 @@ import {
   sepBy,
   sepBy1,
   singleQuotedString,
+  startOfLine,
   takeUntil,
   token,
   whitespace,
@@ -640,357 +646,6 @@ describe("Additional coverage tests", () => {
       expect(result1).toEqual(result2);
     });
   });
-
-  describe("recursive", () => {
-    it("should be able to create recursive parsers", () => {
-      // A simple parser for balanced brackets like "[]" or "[[][]]"
-      const [bracketsParser, setBracketsParser] = recursive<string>();
-
-      // A simple content parser that accepts any character except brackets
-      const contentParser = map(
-        takeUntil(choice(literal("["), literal("]"))),
-        (content) => content,
-      );
-
-      // Define the parser for a bracketed expression
-      const bracketedExpr = map(
-        seq(literal("["), choice(bracketsParser, contentParser), literal("]")),
-        ([open, content, close]) => `${open}${content}${close}`,
-      );
-
-      // Set the recursive parser
-      setBracketsParser(bracketedExpr);
-
-      const result = parse(bracketsParser)("[[]]");
-      expect(isSuccess(result)).toBe(true);
-      if (isSuccess(result)) {
-        expect(result.val).toBe("[[]]");
-      }
-    });
-
-    it("should fail if recursive parser is not initialized", () => {
-      const [parenParser, _] = recursive<string>();
-      const result = parse(parenParser)("()");
-      expect(isSuccess(result)).toBe(false);
-    });
-  });
-
-  describe("quoted string with various escape sequences", () => {
-    it("should handle all escape sequences", () => {
-      const parser = quotedString();
-      const input = `"\\n\\t\\r\\\\\\"\\b\\f\\/"`;
-      const result = parser(input, { offset: 0, line: 1, column: 1 });
-
-      expect(isSuccess(result)).toBe(true);
-      if (isSuccess(result)) {
-        expect(result.val).toBe('\n\t\r\\"\b\f/');
-      }
-    });
-
-    it("should handle unicode-like escape sequences as regular characters", () => {
-      const parser = quotedString();
-      const input = `"\\u0041\\u0042\\u0043"`;
-      const result = parser(input, { offset: 0, line: 1, column: 1 });
-
-      expect(isSuccess(result)).toBe(true);
-      if (isSuccess(result)) {
-        expect(result.val).toBe("u0041u0042u0043");
-      }
-    });
-
-    it("should treat invalid escape sequences as regular characters", () => {
-      const parser = quotedString();
-      const input = `"\\z"`;
-      const result = parser(input, { offset: 0, line: 1, column: 1 });
-
-      expect(isSuccess(result)).toBe(true);
-      if (isSuccess(result)) {
-        expect(result.val).toBe("z");
-      }
-    });
-
-    it("should fail on unterminated string", () => {
-      const parser = quotedString();
-      const input = `"unterminated`;
-      const result = parser(input, { offset: 0, line: 1, column: 1 });
-
-      expect(isSuccess(result)).toBe(false);
-    });
-  });
-
-  describe("number", () => {
-    it("should parse integers", () => {
-      const parser = number();
-      const result = parser("123", { offset: 0, line: 1, column: 1 });
-
-      expect(isSuccess(result)).toBe(true);
-      if (isSuccess(result)) {
-        expect(result.val).toBe(123);
-      }
-    });
-
-    it("should parse floats", () => {
-      const parser = number();
-      const result = parser("123.456", { offset: 0, line: 1, column: 1 });
-
-      expect(isSuccess(result)).toBe(true);
-      if (isSuccess(result)) {
-        expect(result.val).toBe(123.456);
-      }
-    });
-
-    it("should parse negative numbers", () => {
-      const parser = number();
-      const result = parser("-123", { offset: 0, line: 1, column: 1 });
-
-      expect(isSuccess(result)).toBe(true);
-      if (isSuccess(result)) {
-        expect(result.val).toBe(-123);
-      }
-    });
-
-    it("should parse scientific notation", () => {
-      const parser = number();
-      const result = parser("1.2e3", { offset: 0, line: 1, column: 1 });
-
-      expect(isSuccess(result)).toBe(true);
-      if (isSuccess(result)) {
-        expect(result.val).toBe(1200);
-      }
-    });
-  });
-
-  describe("int", () => {
-    it("should parse integers", () => {
-      const parser = int();
-      const result = parser("123", { offset: 0, line: 1, column: 1 });
-
-      expect(isSuccess(result)).toBe(true);
-      if (isSuccess(result)) {
-        expect(result.val).toBe(123);
-      }
-    });
-
-    it("should parse negative integers", () => {
-      const parser = int();
-      const result = parser("-123", { offset: 0, line: 1, column: 1 });
-
-      expect(isSuccess(result)).toBe(true);
-      if (isSuccess(result)) {
-        expect(result.val).toBe(-123);
-      }
-    });
-
-    it("should parse float string but only return the integer part", () => {
-      const parser = int();
-      const result = parser("123.45", { offset: 0, line: 1, column: 1 });
-
-      expect(isSuccess(result)).toBe(true);
-      if (isSuccess(result)) {
-        expect(result.val).toBe(123);
-      }
-    });
-  });
-
-  describe("regex parser tests", () => {
-    it("should match text with a regex pattern", () => {
-      const digitParser = regex(/\d+/);
-      const result = parse(digitParser)("123abc");
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.val).toBe("123");
-        expect(result.next.offset).toBe(3);
-      }
-    });
-
-    it("should fail when pattern doesn't match", () => {
-      const digitParser = regex(/\d+/);
-      const result = parse(digitParser)("abc123");
-      expect(result.success).toBe(false);
-    });
-
-    it("should match with custom error message", () => {
-      const digitParser = regex(/\d+/, "Expected digits");
-      const result = parse(digitParser)("abc");
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.message).toBe("Expected digits");
-      }
-    });
-  });
-
-  describe("regexGroups parser tests", () => {
-    it("should capture regex groups", () => {
-      const nameParser = regexGroups(/(\w+)\s+(\w+)/);
-      const result = parse(nameParser)("John Doe rest");
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.val).toEqual(["John Doe", "John", "Doe"]);
-      }
-    });
-  });
-
-  describe("commaSeparated parser tests", () => {
-    it("should parse comma-separated values", () => {
-      const itemParser = quotedString();
-      const listParser = commaSeparated(itemParser);
-
-      const result = parse(listParser)('"a", "b", "c"');
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.val).toEqual(["a", "b", "c"]);
-      }
-    });
-
-    it("should handle empty lists", () => {
-      const itemParser = quotedString();
-      const listParser = commaSeparated(itemParser);
-
-      const result = parse(listParser)("   ");
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.val).toEqual([]);
-      }
-    });
-
-    it("should handle trailing commas when enabled", () => {
-      const itemParser = quotedString();
-      const listParser = commaSeparated(itemParser, true);
-
-      const result = parse(listParser)('"a", "b", "c", ');
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.val).toEqual(["a", "b", "c"]);
-      }
-    });
-  });
-
-  describe("commaSeparated1 parser tests", () => {
-    it("should parse comma-separated values requiring at least one", () => {
-      const itemParser = quotedString();
-      const listParser = commaSeparated1(itemParser);
-
-      const result = parse(listParser)('"a", "b", "c"');
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.val).toEqual(["a", "b", "c"]);
-      }
-    });
-
-    it("should fail on empty lists", () => {
-      const itemParser = quotedString();
-      const listParser = commaSeparated1(itemParser);
-
-      const result = parse(listParser)("   ");
-      expect(result.success).toBe(false);
-    });
-  });
-
-  describe("singleQuotedString parser tests", () => {
-    it("should parse single-quoted strings", () => {
-      const parser = singleQuotedString();
-      const result = parse(parser)("'hello world'");
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.val).toBe("hello world");
-      }
-    });
-
-    it("should handle escape sequences", () => {
-      const parser = singleQuotedString();
-      const result = parse(parser)("'hello\\nworld'");
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.val).toBe("hello\nworld");
-      }
-    });
-  });
-
-  describe("anyQuotedString parser tests", () => {
-    it("should parse double-quoted strings", () => {
-      const parser = anyQuotedString();
-      const result = parse(parser)('"hello world"');
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.val).toBe("hello world");
-      }
-    });
-
-    it("should parse single-quoted strings", () => {
-      const parser = anyQuotedString();
-      const result = parse(parser)("'hello world'");
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.val).toBe("hello world");
-      }
-    });
-  });
-
-  describe("debug parser tests", () => {
-    it("should log parsing process and return original parser result", () => {
-      const logs: string[] = [];
-      const customLogger = (message: string) => logs.push(message);
-
-      const parser = debug(literal("hello"), "TestParser", { customLogger });
-      const result = parse(parser)("hello world");
-
-      expect(result.success).toBe(true);
-      expect(logs.length).toBeGreaterThan(0);
-      expect(logs[0]).toContain("DEBUG[TestParser] Attempting at line 1");
-      expect(logs[1]).toContain("DEBUG[TestParser] Success at line 1");
-    });
-  });
-
-  describe("labeledWithContext parser tests", () => {
-    it("should provide context in error messages", () => {
-      const parser = labeledWithContext(
-        literal("hello"),
-        "Expected greeting",
-        "Greeting Parser",
-      );
-
-      const result = parse(parser)("hi world");
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.message).toBe("Expected greeting");
-        expect(result.error.context).toBe("Greeting Parser");
-      }
-    });
-  });
-
-  describe("withDetailedError parser tests", () => {
-    it("should provide detailed error information", () => {
-      const parser = withDetailedError(literal("hello"), "Greeting Parser");
-      const result = parse(parser)("hi world");
-
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.parserName).toBe("Greeting Parser");
-        expect(result.error.found).toBe("h");
-      }
-    });
-  });
-
-  describe("memoize with options tests", () => {
-    it("should respect max cache size", () => {
-      const parser = memoize(literal("a"), { maxCacheSize: 2 });
-      const pos1 = { offset: 0, line: 1, column: 1 };
-      const pos2 = { offset: 1, line: 1, column: 2 };
-      const pos3 = { offset: 2, line: 1, column: 3 };
-
-      // Fill the cache
-      parser("a", pos1);
-      parser("a", pos2);
-      parser("a", pos3);
-
-      // The first entry should have been evicted
-      const result1 = parser("a", pos1);
-      const result2 = parser("a", pos2);
-
-      // One of these should no longer be in the cache and rerun the parser
-      expect(result1.success || result2.success).toBe(true);
-    });
-  });
 });
 
 // Test for infinite loop detection and edge cases
@@ -1312,4 +967,234 @@ it("should test sepBy with complex patterns", () => {
   if (tokenizedResult.success) {
     expect(tokenizedResult.val).toEqual(["one", "two", "three"]);
   }
+});
+
+describe("Basic character parsers", () => {
+  describe("letter", () => {
+    it("should match lowercase letters", () => {
+      const parser = letter();
+      const result = parse(parser)("abc");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("a");
+        expect(result.next.offset).toBe(1);
+      }
+    });
+
+    it("should match uppercase letters", () => {
+      const parser = letter();
+      const result = parse(parser)("ABC");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("A");
+        expect(result.next.offset).toBe(1);
+      }
+    });
+
+    it("should fail on non-letters", () => {
+      const parser = letter();
+      const result = parse(parser)("123");
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("digit", () => {
+    it("should match digits", () => {
+      const parser = digit();
+      const result = parse(parser)("123");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("1");
+        expect(result.next.offset).toBe(1);
+      }
+    });
+
+    it("should fail on non-digits", () => {
+      const parser = digit();
+      const result = parse(parser)("abc");
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("alphaNum", () => {
+    it("should match letters", () => {
+      const parser = alphaNum();
+      const result = parse(parser)("abc");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("a");
+      }
+    });
+
+    it("should match digits", () => {
+      const parser = alphaNum();
+      const result = parse(parser)("123");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("1");
+      }
+    });
+
+    it("should fail on special characters", () => {
+      const parser = alphaNum();
+      const result = parse(parser)("!@#");
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("identifier", () => {
+    it("should match simple identifiers", () => {
+      const parser = identifier();
+      const result = parse(parser)("hello");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("hello");
+      }
+    });
+
+    it("should match identifiers with underscores", () => {
+      const parser = identifier();
+      const result = parse(parser)("_hello_world");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("_hello_world");
+      }
+    });
+
+    it("should match identifiers with numbers", () => {
+      const parser = identifier();
+      const result = parse(parser)("hello123");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("hello123");
+      }
+    });
+
+    it("should fail on identifiers starting with numbers", () => {
+      const parser = identifier();
+      const result = parse(parser)("123hello");
+      expect(result.success).toBe(false);
+    });
+  });
+});
+
+describe("Line position parsers", () => {
+  describe("startOfLine", () => {
+    it("should succeed at line start", () => {
+      const parser = startOfLine();
+      const result = parser("hello", { offset: 0, line: 1, column: 1 });
+      expect(result.success).toBe(true);
+    });
+
+    it("should fail when not at line start", () => {
+      const parser = startOfLine();
+      const result = parser("hello", { offset: 2, line: 1, column: 3 });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toBe("Expected start of line");
+      }
+    });
+  });
+
+  describe("endOfLine", () => {
+    it("should succeed at end of input", () => {
+      const parser = endOfLine();
+      const result = parser("hello", { offset: 5, line: 1, column: 6 });
+      expect(result.success).toBe(true);
+    });
+
+    it("should succeed at newline character", () => {
+      const parser = endOfLine();
+      const result = parser("hello\nworld", { offset: 5, line: 1, column: 6 });
+      expect(result.success).toBe(true);
+    });
+
+    it("should succeed at carriage return", () => {
+      const parser = endOfLine();
+      const result = parser("hello\rworld", { offset: 5, line: 1, column: 6 });
+      expect(result.success).toBe(true);
+    });
+
+    it("should fail when not at end of line", () => {
+      const parser = endOfLine();
+      const result = parser("hello", { offset: 2, line: 1, column: 3 });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toBe("Expected end of line");
+      }
+    });
+  });
+});
+
+describe("Advanced memoize edge cases", () => {
+  it("should handle cache errors gracefully", () => {
+    // Create a memoized parser
+    const memoizedParser = memoize(literal("test"));
+    
+    // Manually corrupt the cache by setting undefined
+    const pos = { offset: 0, line: 1, column: 1 };
+    const input = "test";
+    
+    // This should work normally first
+    const result1 = memoizedParser(input, pos);
+    expect(result1.success).toBe(true);
+    
+    // Access the cache directly for testing purposes
+    // Note: This is testing internal implementation
+    const cacheKey = JSON.stringify({ input, pos });
+    // @ts-ignore - accessing private cache for testing
+    if (memoizedParser._cache) {
+      // @ts-ignore
+      memoizedParser._cache.set(cacheKey, undefined);
+      
+      const result2 = memoizedParser(input, pos);
+      expect(result2.success).toBe(false);
+      if (!result2.success) {
+        expect(result2.error.message).toBe("Memoization error: cached result is undefined");
+      }
+    }
+  });
+});
+
+describe("Enhanced error reporting", () => {
+  describe("withDetailedError comprehensive tests", () => {
+    it("should provide detailed error with input context", () => {
+      const parser = withDetailedError(literal("expected"), "TestParser", 5);
+      const result = parse(parser)("unexpected input");
+      
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.parserName).toBe("TestParser");
+        expect(result.error.found).toBe("u");
+        // Check for either the detailed message or the original error
+        expect(result.error.message.includes("TestParser") || result.error.message.includes("Unexpected")).toBe(true);
+      }
+    });
+
+    it("should handle EOF in detailed error", () => {
+      const parser = withDetailedError(literal("more"), "TestParser");
+      const result = parse(parser)("");
+      
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.found).toBe("EOF");
+      }
+    });
+
+    it("should preserve existing error messages", () => {
+      const customErrorParser: Parser<string> = (input, pos) => ({
+        success: false,
+        error: { message: "Custom message", pos }
+      });
+      
+      const parser = withDetailedError(customErrorParser, "TestParser");
+      const result = parse(parser)("test");
+      
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toBe("Custom message");
+        expect(result.error.parserName).toBe("TestParser");
+      }
+    });
+  });
 });

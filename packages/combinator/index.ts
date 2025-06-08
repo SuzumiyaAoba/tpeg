@@ -22,29 +22,7 @@ import {
   zeroOrMore,
 } from "tpeg-core";
 
-// Re-export commonly used types and functions for convenience
-export type {
-  NonEmptyArray,
-  ParseFailure,
-  ParseResult,
-  Parser,
-  Pos,
-} from "tpeg-core";
 
-export {
-  any,
-  anyChar,
-  charClass,
-  choice,
-  literal,
-  map,
-  not,
-  notPredicate,
-  oneOrMore,
-  optional,
-  seq,
-  zeroOrMore,
-} from "tpeg-core";
 
 /**
  * Parser that consumes characters until a condition is met.
