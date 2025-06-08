@@ -22,6 +22,30 @@ import {
   zeroOrMore,
 } from "tpeg-core";
 
+// Re-export commonly used types and functions for convenience
+export type {
+  NonEmptyArray,
+  ParseFailure,
+  ParseResult,
+  Parser,
+  Pos,
+} from "tpeg-core";
+
+export {
+  any,
+  anyChar,
+  charClass,
+  choice,
+  literal,
+  map,
+  not,
+  notPredicate,
+  oneOrMore,
+  optional,
+  seq,
+  zeroOrMore,
+} from "tpeg-core";
+
 /**
  * Parser that consumes characters until a condition is met.
  *
@@ -36,7 +60,7 @@ export const takeUntil =
     const startPos = pos || { offset: 0, line: 1, column: 1 };
 
     let currentPos = startPos;
-    let result = "";
+    const chars: string[] = [];
 
     while (currentPos.offset < input.length) {
       // Try the condition parser at the current position
@@ -50,13 +74,13 @@ export const takeUntil =
       if (!char) break;
 
       // Consume the character
-      result += char;
+      chars.push(char);
       currentPos = nextPos(char, currentPos);
     }
 
     return {
       success: true,
-      val: result,
+      val: chars.join(""),
       current: startPos,
       next: currentPos,
     };
@@ -155,7 +179,7 @@ export const commaSeparated = <T>(
     seq(
       token(valueParser),
       zeroOrMore(map(seq(comma, token(valueParser)), ([_, val]) => val)),
-      allowTrailing ? optional(comma) : map(notPredicate(comma), () => null),
+      allowTrailing ? optional(comma) : map(notPredicate(comma), () => []),
     ),
     ([first, rest]) => [first, ...rest],
   );
@@ -182,7 +206,7 @@ export const commaSeparated1 = <T>(
   const single = map(
     seq(
       token(valueParser),
-      allowTrailing ? optional(comma) : map(notPredicate(comma), () => null),
+      allowTrailing ? optional(comma) : map(notPredicate(comma), () => []),
     ),
     ([val]) => [val] as NonEmptyArray<T>,
   );
@@ -192,7 +216,7 @@ export const commaSeparated1 = <T>(
     seq(
       token(valueParser),
       oneOrMore(map(seq(comma, token(valueParser)), ([_, val]) => val)),
-      allowTrailing ? optional(comma) : map(notPredicate(comma), () => null),
+      allowTrailing ? optional(comma) : map(notPredicate(comma), () => []),
     ),
     ([first, rest]) => [first, ...rest] as NonEmptyArray<T>,
   );
@@ -494,9 +518,12 @@ export const quotedString = (): Parser<string> => {
     ),
   );
 
-  return map(
-    seq(literal('"'), zeroOrMore(stringChar), literal('"')),
-    ([_, chars]) => chars.join(""),
+  return labeled(
+    map(
+      seq(literal('"'), zeroOrMore(stringChar), literal('"')),
+      ([_, chars]) => chars.join(""),
+    ),
+    "Expected valid quoted string"
   );
 };
 
@@ -563,21 +590,21 @@ export const number = (): Parser<number> => {
   );
   const integer = map(
     seq(optional(literal("-")), digits),
-    ([sign, num]) => (sign.length ? "-" : "") + num,
+    ([sign, num]) => (sign.length > 0 ? "-" : "") + num,
   );
 
   const fraction = map(seq(literal("."), digits), ([_, frac]) => `.${frac}`);
 
   const exponent = map(
     seq(charClass("e", "E"), optional(charClass("+", "-")), digits),
-    ([e, sign, exp]) => e + (sign.length ? sign[0] : "") + exp,
+    ([e, sign, exp]) => e + (sign.length > 0 ? sign[0] : "") + exp,
   );
 
   return map(
     seq(integer, optional(fraction), optional(exponent)),
     ([int, frac, exp]) => {
       const numStr =
-        int + (frac.length ? frac[0] : "") + (exp.length ? exp[0] : "");
+        int + (frac.length > 0 ? frac[0] : "") + (exp.length > 0 ? exp[0] : "");
       return Number(numStr);
     },
   );
@@ -592,7 +619,7 @@ export const int = (): Parser<number> => {
   return map(
     seq(optional(literal("-")), oneOrMore(charClass(["0", "9"]))),
     ([sign, digits]) => {
-      return Number.parseInt((sign.length ? "-" : "") + digits.join(""), 10);
+      return Number.parseInt((sign.length > 0 ? "-" : "") + digits.join(""), 10);
     },
   );
 };
@@ -766,6 +793,112 @@ export const regexGroups = (
         message: errorMessage,
         pos,
         expected: regex.toString(),
+      },
+    };
+  };
+};
+
+/**
+ * Parser for matching letters (alphabetic characters).
+ *
+ * @returns Parser<string> A parser that matches [a-zA-Z]
+ */
+export const letter = (): Parser<string> => {
+  return charClass(["a", "z"], ["A", "Z"]);
+};
+
+/**
+ * Parser for matching digits.
+ *
+ * @returns Parser<string> A parser that matches [0-9]
+ */
+export const digit = (): Parser<string> => {
+  return charClass(["0", "9"]);
+};
+
+/**
+ * Parser for matching alphanumeric characters.
+ *
+ * @returns Parser<string> A parser that matches [a-zA-Z0-9]
+ */
+export const alphaNum = (): Parser<string> => {
+  return charClass(["a", "z"], ["A", "Z"], ["0", "9"]);
+};
+
+/**
+ * Parser for matching identifiers (starts with letter/underscore, followed by alphanumeric/underscore).
+ *
+ * @returns Parser<string> A parser that matches valid identifiers
+ */
+export const identifier = (): Parser<string> => {
+  const firstChar = choice(letter(), literal("_"));
+  const restChars = zeroOrMore(choice(alphaNum(), literal("_")));
+  
+  return map(
+    seq(firstChar, restChars),
+    ([first, rest]) => first + rest.join("")
+  );
+};
+
+/**
+ * Parser that succeeds only at the beginning of a line.
+ *
+ * @returns Parser<never> A parser that succeeds at the start of a line
+ */
+export const startOfLine = (): Parser<never> => {
+  return (input: string, pos: Pos) => {
+    if (pos.column === 1) {
+      return {
+        success: true,
+        val: null as never,
+        current: pos,
+        next: pos,
+      };
+    }
+
+    return {
+      success: false,
+      error: {
+        message: "Expected start of line",
+        pos,
+      },
+    };
+  };
+};
+
+/**
+ * Parser that succeeds only at the end of a line (before newline or EOF).
+ *
+ * @returns Parser<never> A parser that succeeds at the end of a line
+ */
+export const endOfLine = (): Parser<never> => {
+  return (input: string, pos: Pos) => {
+    // At end of input
+    if (pos.offset >= input.length) {
+      return {
+        success: true,
+        val: null as never,
+        current: pos,
+        next: pos,
+      };
+    }
+
+    // Check if current position is at newline
+    const char = input[pos.offset];
+    if (char === '\n' || char === '\r') {
+      return {
+        success: true,
+        val: null as never,
+        current: pos,
+        next: pos,
+      };
+    }
+
+    return {
+      success: false,
+      error: {
+        message: "Expected end of line",
+        pos,
       },
     };
   };
