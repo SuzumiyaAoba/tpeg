@@ -24,8 +24,6 @@ export interface Identifier<T extends string = string> extends PegLiteral, Expr 
   value: T;
 }
 
-
-
 export interface Sequence extends PegParent, Expr {
   type: "sequence";
   children: Expr[];
@@ -41,14 +39,14 @@ export interface Optional extends PegParent, Expr {
   children: [Expr];
 }
 
-export interface Char extends PegLiteral {
+export interface Char<T extends string = string> extends PegLiteral {
   type: "char";
-  value: string;
+  value: T;
 }
 
-export interface Range extends PegLiteral {
+export interface Range<F extends string = string, T extends string = string> extends PegLiteral {
   type: "range";
-  value: [string, string];
+  value: [F, T];
 }
 
 export type CharClassElement = Char | Range;
@@ -163,12 +161,12 @@ export const optional = (expr: ExprNode): Optional => {
   return u("optional", { children: [expr] }) as unknown as Optional;
 };
 
-export const char = (value: string): Char => {
-  return u("char", { value }) as Char;
+export const char = <T extends string>(value: T): Char<T> => {
+  return u("char", { value }) as Char<T>;
 };
 
-export const range = (from: string, to: string): Range => {
-  return u("range", { value: [from, to] }) as Range;
+export const range = <F extends string, T extends string>(from: F, to: T): Range<F, T> => {
+  return u("range", { value: [from, to] }) as Range<F, T>;
 };
 
 export const charClass = (...elements: readonly CharClassElement[]): CharClass => {

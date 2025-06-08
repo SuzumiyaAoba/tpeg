@@ -13,6 +13,8 @@ import {
   type Grammar,
   type PegAstNode,
   type ExprNode,
+  type Char,
+  type Range,
   literal,
   identifier,
   sequence,
@@ -41,24 +43,152 @@ import {
   isGrammar,
 } from "./index";
 
-describe("AST Type Safety Tests", () => {
-  describe("Literal Type Tests", () => {
-    it("should create literal with correct type", () => {
-      const lit = literal("hello");
-      expect(lit.type).toBe("literal");
-      expect(lit.value).toBe("hello");
+// Import helper types for type-level testing
+import type {
+  Expect,
+  Not,
+  Equal,
+  TypesMatch,
+  TestSuite,
+  IsNodeType,
+  ExtractLiteralValue,
+  ExtractNodeType,
+} from "./test-types";
+
+// Type-level test suite
+// Execute type checking using TestSuite type while suppressing unused warnings
+// @ts-ignore
+type TypeLevelTests = TestSuite<[
+  // Literal type tests
+  Expect<Equal<ReturnType<typeof literal<"hello">>, Literal<"hello">>>,
+  Expect<Equal<ReturnType<typeof literal<"world">>, Literal<"world">>>,
+  Expect<Not<Equal<ReturnType<typeof literal<"hello">>, Literal<"world">>>>,
+  
+  // Identifier type tests
+  Expect<Equal<ReturnType<typeof identifier<"myVar">>, Identifier<"myVar">>>,
+  Expect<Not<Equal<ReturnType<typeof identifier<"myVar">>, Identifier<"otherVar">>>>,
+  
+  // Char type tests
+  Expect<Equal<ReturnType<typeof char<"a">>, Char<"a">>>,
+  Expect<Equal<ReturnType<typeof char<"1">>, Char<"1">>>,
+  Expect<Not<Equal<ReturnType<typeof char<"a">>, Char<"b">>>>,
+  
+  // Range type tests
+  Expect<Equal<ReturnType<typeof range<"a", "z">>, Range<"a", "z">>>,
+  Expect<Equal<ReturnType<typeof range<"0", "9">>, Range<"0", "9">>>,
+  Expect<Not<Equal<ReturnType<typeof range<"a", "z">>, Range<"0", "9">>>>,
+  
+  // Composite type tests
+  Expect<Equal<ReturnType<typeof sequence>, Sequence>>,
+  Expect<Equal<ReturnType<typeof choice>, Choice>>,
+  Expect<Equal<ReturnType<typeof optional>, Optional>>,
+  
+  // Type assignability tests
+  Expect<Equal<Literal extends ExprNode ? true : false, true>>,
+  Expect<Equal<Identifier extends ExprNode ? true : false, true>>,
+  Expect<Equal<Sequence extends ExprNode ? true : false, true>>,
+  Expect<Equal<Choice extends ExprNode ? true : false, true>>,
+  Expect<Equal<Char extends ExprNode ? true : false, false>>, // Char is not an ExprNode
+  Expect<Equal<Range extends ExprNode ? true : false, false>>, // Range is not an ExprNode
+
+  // New type helper tests
+  Expect<IsNodeType<Literal<"test">, "literal">>,
+  Expect<IsNodeType<Char<"a">, "char">>,
+  Expect<Not<IsNodeType<Literal<"test">, "char">>>,
+  
+  // Value and node type extraction tests
+  Expect<Equal<ExtractLiteralValue<Literal<"hello">>, "hello">>,
+  Expect<Equal<ExtractLiteralValue<Char<"x">>, "x">>,
+  Expect<Equal<ExtractNodeType<Literal<"test">>, "literal">>,
+  Expect<Equal<ExtractNodeType<Char<"a">>, "char">>
+]>;
+
+  describe("AST Type Safety Tests", () => {
+    describe("Type-Level Tests", () => {
+      it("should perform compile-time type checking", () => {
+        // Type-level tests do nothing at runtime but are type-checked at compile time
+        
+        // Correct type combinations should not cause errors
+        const testLiteral = literal("test");
+        const testIdentifier = identifier("myVar");
+        const testChar = char("x");
+        const testRange = range("a", "z");
+        
+        expect(testLiteral.type).toBe("literal");
+        expect(testIdentifier.type).toBe("identifier");
+        expect(testChar.type).toBe("char");
+        expect(testRange.type).toBe("range");
+      });
+
+      it("should validate type compatibility at compile time", () => {
+        // Test compile-time type compatibility
+        const testLiteral = literal("hello");
+        const testIdentifier = identifier("myVar");
+        const testChar = char("x");
+        const testRange = range("a", "z");
+        
+        // Verify that type inference works correctly
+        expect(testLiteral.value).toBe("hello");
+        expect(testIdentifier.value).toBe("myVar");
+        expect(testChar.value).toBe("x");
+        expect(testRange.value).toEqual(["a", "z"]);
+        
+        // Verify type guard behavior
+        expect(isLiteral(testLiteral)).toBe(true);
+        expect(isIdentifier(testIdentifier)).toBe(true);
+        expect(isChar(testChar)).toBe(true);
+        expect(isRange(testRange)).toBe(true);
+        
+        // Mutually exclusive type guards
+        expect(isLiteral(testChar)).toBe(false);
+        expect(isChar(testLiteral)).toBe(false);
+      });
+
+      it("should validate complex type relationships", () => {
+        // Test complex type relationships
+        const lit = literal("test");
+        const seq = sequence(lit);
+        const choiceNode = choice(lit); // Rename variable to avoid import collision
+        const opt = optional(lit);
+        
+        // Test type narrowing using type guards
+        const nodes: PegAstNode[] = [lit, seq, choiceNode, opt];
+        
+        for (const node of nodes) {
+          if (isLiteral(node)) {
+            // At this point, node is treated as Literal type
+            expect(node.value).toBe("test");
+          } else if (isSequence(node)) {
+            // At this point, node is treated as Sequence type
+            expect(node.children.length).toBeGreaterThanOrEqual(0);
+          } else if (isChoice(node)) {
+            // At this point, node is treated as Choice type
+            expect(node.children.length).toBeGreaterThanOrEqual(0);
+          } else if (isOptional(node)) {
+            // At this point, node is treated as Optional type
+            expect(node.children.length).toBe(1);
+          }
+        }
+      });
     });
 
-    it("should preserve literal type in TypeScript", () => {
-      const lit = literal("hello");
-      
-      // TypeScriptでは具体的なリテラル型が推論される
-      expect(lit.value).toBe("hello");
-      expect(lit.type).toBe("literal");
+    describe("Literal Type Tests", () => {
+      it("should create literal with correct type", () => {
+        const lit = literal("hello");
+        expect(lit.type).toBe("literal");
+        expect(lit.value).toBe("hello");
+      });
+
+      it("should preserve literal type in TypeScript", () => {
+        const lit = literal("hello");
+        
+        // In TypeScript, specific literal types are inferred
+        expect(lit.value).toBe("hello");
+        expect(lit.type).toBe("literal");
+      });
+
+
     });
-
-
-  });
 
   describe("Identifier Type Tests", () => {
     it("should create identifier with correct type", () => {
@@ -128,6 +258,74 @@ describe("AST Type Safety Tests", () => {
       const r = range("0", "9");
       expect(r.type).toBe("range");
       expect(r.value).toEqual(["0", "9"]);
+    });
+
+    it("should preserve literal types for char", () => {
+      const charA = char("a");
+      const charB = char("b");
+      const charNewline = char("\n");
+      
+      expect(charA.value).toBe("a");
+      expect(charB.value).toBe("b");
+      expect(charNewline.value).toBe("\n");
+      
+      // In TypeScript, specific literal types are inferred
+      expect(charA.type).toBe("char");
+      expect(charB.type).toBe("char");
+    });
+
+    it("should preserve literal types for range", () => {
+      const rangeAZ = range("a", "z");
+      const range09 = range("0", "9");
+      const rangeCustom = range("!", "~");
+      
+      expect(rangeAZ.value).toEqual(["a", "z"]);
+      expect(range09.value).toEqual(["0", "9"]);
+      expect(rangeCustom.value).toEqual(["!", "~"]);
+      
+      // In TypeScript, specific literal types are inferred
+      expect(rangeAZ.type).toBe("range");
+      expect(range09.type).toBe("range");
+    });
+
+    it("should handle special characters in char and range", () => {
+      const charSpace = char(" ");
+      const charTab = char("\t");
+      const charQuote = char("'");
+      const charBackslash = char("\\");
+      
+      expect(charSpace.value).toBe(" ");
+      expect(charTab.value).toBe("\t");
+      expect(charQuote.value).toBe("'");
+      expect(charBackslash.value).toBe("\\");
+      
+      const rangeSpecial = range("!", "/");
+      expect(rangeSpecial.value).toEqual(["!", "/"]);
+    });
+
+    it("should work with char class containing typed chars and ranges", () => {
+      const charA = char("a");
+      const charZ = char("z");
+      const range09 = range("0", "9");
+      const rangeAZ = range("A", "Z");
+      
+      const cc = charClass(charA, charZ, range09, rangeAZ);
+      
+      expect(cc.type).toBe("charClass");
+      expect(cc.children).toHaveLength(4);
+      
+      // Test using type guards
+      expect(isChar(cc.children[0])).toBe(true);
+      expect(isChar(cc.children[1])).toBe(true);
+      expect(isRange(cc.children[2])).toBe(true);
+      expect(isRange(cc.children[3])).toBe(true);
+      
+      if (isChar(cc.children[0])) {
+        expect(cc.children[0].value).toBe("a");
+      }
+      if (isRange(cc.children[2])) {
+        expect(cc.children[2].value).toEqual(["0", "9"]);
+      }
     });
   });
 
@@ -210,11 +408,11 @@ describe("AST Type Safety Tests", () => {
       expect(isGrammar(gram)).toBe(true);
     });
 
-    it("should provide correct type narrowing", () => {
+          it("should provide correct type narrowing", () => {
       const node: PegAstNode = literal("test");
       
       if (isLiteral(node)) {
-        // 型が正しくnarrowingされているか確認
+        // Verify that types are correctly narrowed
         expect(node.value).toBe("test");
         expect(node.type).toBe("literal");
       }
@@ -235,9 +433,161 @@ describe("AST Type Safety Tests", () => {
       expect(isRange(nodes[3])).toBe(true);
       expect(isAnyChar(nodes[4])).toBe(true);
       
-      // 相互排他的であることを確認
+      // Verify mutual exclusivity
       expect(isLiteral(nodes[1])).toBe(false);
       expect(isIdentifier(nodes[0])).toBe(false);
+    });
+  });
+
+      describe("Advanced Type-Level Testing", () => {
+      it("should validate type inference with literal types", () => {
+        // Verify that specific literal types are inferred
+        const specificLiteral = literal("exactValue");
+        const specificIdentifier = identifier("exactName");
+        const specificChar = char("a");
+        const specificRange = range("0", "9");
+        
+        // TypeScript's type inference preserves specific literal types
+        expect(specificLiteral.value).toBe("exactValue");
+        expect(specificIdentifier.value).toBe("exactName");
+        expect(specificChar.value).toBe("a");
+        expect(specificRange.value).toEqual(["0", "9"]);
+        
+        // Type system level verification (compile time)
+        const _typeCheck1: Literal<"exactValue"> = specificLiteral;
+        const _typeCheck2: Identifier<"exactName"> = specificIdentifier;
+        const _typeCheck3: Char<"a"> = specificChar;
+        const _typeCheck4: Range<"0", "9"> = specificRange;
+        
+        // Verify that type check variables are correctly assigned
+        expect(_typeCheck1).toBe(specificLiteral);
+        expect(_typeCheck2).toBe(specificIdentifier);
+        expect(_typeCheck3).toBe(specificChar);
+        expect(_typeCheck4).toBe(specificRange);
+      });
+
+      it("should handle generic type parameters correctly", () => {
+        // Test generic type parameter behavior
+        function createTypedLiteral<T extends string>(value: T): Literal<T> {
+          return literal(value);
+        }
+        
+        function createTypedChar<T extends string>(value: T): Char<T> {
+          return char(value);
+        }
+        
+        const typedLit = createTypedLiteral("hello");
+        const typedChar = createTypedChar("x");
+        
+        expect(typedLit.value).toBe("hello");
+        expect(typedChar.value).toBe("x");
+        expect(typedLit.type).toBe("literal");
+        expect(typedChar.type).toBe("char");
+      });
+
+      it("should validate union types and type narrowing", () => {
+        // Test union types and type narrowing
+        type TestNode = Literal<"a"> | Literal<"b"> | Char<"x"> | Char<"y">;
+        
+        const nodeA: TestNode = literal("a");
+        const nodeB: TestNode = literal("b");
+        const charX: TestNode = char("x");
+        const charY: TestNode = char("y");
+        
+        const testNodes: TestNode[] = [nodeA, nodeB, charX, charY];
+        
+        for (const node of testNodes) {
+          if (isLiteral(node)) {
+            // After type narrowing, treated as Literal type
+            expect(["a", "b"]).toContain(node.value);
+            expect(node.type).toBe("literal");
+          } else if (isChar(node)) {
+            // After type narrowing, treated as Char type
+            expect(["x", "y"]).toContain(node.value);
+            expect(node.type).toBe("char");
+          }
+        }
+      });
+    });
+
+    describe("Char and Range Literal Type Safety", () => {
+      it("should infer specific literal types for char", () => {
+        const charA = char("a");
+        const charDigit = char("1");
+        const charSymbol = char("@");
+        
+        // Verify that types are correctly inferred
+        expect(charA.value).toBe("a");
+        expect(charDigit.value).toBe("1");
+        expect(charSymbol.value).toBe("@");
+        
+        // Verify that type guards work correctly
+        expect(isChar(charA)).toBe(true);
+        expect(isRange(charA)).toBe(false);
+        expect(isLiteral(charA)).toBe(false);
+      });
+
+    it("should infer specific literal types for range", () => {
+      const rangeAZ = range("a", "z");
+      const range09 = range("0", "9");
+      const rangeSymbol = range("!", "~");
+      
+      // Verify that types are correctly inferred
+      expect(rangeAZ.value).toEqual(["a", "z"]);
+      expect(range09.value).toEqual(["0", "9"]);
+      expect(rangeSymbol.value).toEqual(["!", "~"]);
+      
+      // Verify that type guards work correctly
+      expect(isRange(rangeAZ)).toBe(true);
+      expect(isChar(rangeAZ)).toBe(false);
+      expect(isLiteral(rangeAZ)).toBe(false);
+    });
+
+    it("should work correctly in type narrowing contexts", () => {
+      const nodes = [
+        char("x") as PegAstNode,
+        range("a", "z") as PegAstNode,
+        literal("test") as PegAstNode,
+      ];
+      
+      // Test type narrowing
+      for (const node of nodes) {
+        if (isChar(node)) {
+          expect(node.type).toBe("char");
+          expect(typeof node.value).toBe("string");
+        } else if (isRange(node)) {
+          expect(node.type).toBe("range");
+          expect(Array.isArray(node.value)).toBe(true);
+          expect(node.value).toHaveLength(2);
+        } else if (isLiteral(node)) {
+          expect(node.type).toBe("literal");
+          expect(typeof node.value).toBe("string");
+        }
+      }
+    });
+
+    it("should maintain type safety in character class construction", () => {
+      const elements = [
+        char("a"),
+        char("b"),
+        range("0", "9"),
+        range("A", "Z"),
+      ];
+      
+      const cc = charClass(...elements);
+      
+      expect(cc.type).toBe("charClass");
+      expect(cc.children).toHaveLength(4);
+      
+      // Verify that each element has the correct type
+      for (let i = 0; i < cc.children.length; i++) {
+        const element = cc.children[i];
+        if (i < 2) {
+          expect(isChar(element)).toBe(true);
+        } else {
+          expect(isRange(element)).toBe(true);
+        }
+      }
     });
   });
 
@@ -284,7 +634,7 @@ describe("AST Type Safety Tests", () => {
 
     describe("Complex AST Construction", () => {
     it("should build simple grammar structures", () => {
-      // 基本的な文法構造のテスト
+      // Test basic grammar structures
       const simpleExpr = literal("hello");
       const simpleRule = definition("greeting", simpleExpr);
       const simpleGrammar = grammar(simpleRule);
@@ -295,7 +645,7 @@ describe("AST Type Safety Tests", () => {
     });
 
     it("should build choice-based rules", () => {
-      // 選択肢を持つルール
+      // Rules with choice options
       const optionA = literal("yes");
       const optionB = literal("no");
       const yesOrNo = choice(optionA, optionB);
