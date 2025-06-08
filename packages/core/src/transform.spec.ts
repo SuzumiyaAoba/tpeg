@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { lit } from "./basic";
-import { map, mapResult, mapError, filter, tap } from "./transform";
+import { filter, map, mapError, mapResult, tap } from "./transform";
 import type { ParseSuccess, Pos } from "./types";
 
 describe("map", () => {
@@ -53,10 +53,10 @@ describe("mapError", () => {
   it("should transform error on failure", () => {
     const input = "def";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = mapError(
-      lit("abc"),
-      (error) => ({ ...error, error: { ...error.error, message: "Custom error message" } })
-    )(input, pos);
+    const result = mapError(lit("abc"), (error) => ({
+      ...error,
+      error: { ...error.error, message: "Custom error message" },
+    }))(input, pos);
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -67,10 +67,10 @@ describe("mapError", () => {
   it("should propagate success", () => {
     const input = "abc";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = mapError(
-      lit("abc"),
-      (error) => ({ ...error, error: { ...error.error, message: "This shouldn't be called" } })
-    )(input, pos);
+    const result = mapError(lit("abc"), (error) => ({
+      ...error,
+      error: { ...error.error, message: "This shouldn't be called" },
+    }))(input, pos);
 
     expect(result.success).toBe(true);
     if (result.success) {
@@ -86,7 +86,7 @@ describe("filter", () => {
     const result = filter(
       lit("abc"),
       (val) => val.length === 3,
-      "Length must be 3"
+      "Length must be 3",
     )(input, pos);
 
     expect(result.success).toBe(true);
@@ -101,7 +101,7 @@ describe("filter", () => {
     const result = filter(
       lit("abc"),
       (val) => val.length === 5,
-      "Length must be 5"
+      "Length must be 5",
     )(input, pos);
 
     expect(result.success).toBe(false);
@@ -117,7 +117,7 @@ describe("filter", () => {
     const result = filter(
       lit("abc"),
       (val) => val.length === 3,
-      "Length must be 3"
+      "Length must be 3",
     )(input, pos);
 
     expect(result.success).toBe(false);
@@ -129,11 +129,10 @@ describe("tap", () => {
     let sideEffectValue = "";
     const input = "abc";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    
-    const result = tap(
-      lit("abc"),
-      (val: string) => { sideEffectValue = val; }
-    )(input, pos);
+
+    const result = tap(lit("abc"), (val: string) => {
+      sideEffectValue = val;
+    })(input, pos);
 
     expect(result.success).toBe(true);
     if (result.success) {
@@ -146,11 +145,10 @@ describe("tap", () => {
     let sideEffectCalled = false;
     const input = "def";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    
-    const result = tap(
-      lit("abc"),
-      () => { sideEffectCalled = true; }
-    )(input, pos);
+
+    const result = tap(lit("abc"), () => {
+      sideEffectCalled = true;
+    })(input, pos);
 
     expect(result.success).toBe(false);
     expect(sideEffectCalled).toBe(false);
@@ -159,12 +157,11 @@ describe("tap", () => {
   it("should return original result unchanged", () => {
     const input = "abc";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    
+
     const originalResult = lit("abc")(input, pos);
-    const tappedResult = tap(
-      lit("abc"),
-      () => { /* do nothing */ }
-    )(input, pos);
+    const tappedResult = tap(lit("abc"), () => {
+      /* do nothing */
+    })(input, pos);
 
     expect(tappedResult).toEqual(originalResult);
   });

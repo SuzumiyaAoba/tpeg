@@ -1130,15 +1130,15 @@ describe("Advanced memoize edge cases", () => {
   it("should handle cache errors gracefully", () => {
     // Create a memoized parser
     const memoizedParser = memoize(literal("test"));
-    
+
     // Manually corrupt the cache by setting undefined
     const pos = { offset: 0, line: 1, column: 1 };
     const input = "test";
-    
+
     // This should work normally first
     const result1 = memoizedParser(input, pos);
     expect(result1.success).toBe(true);
-    
+
     // Access the cache directly for testing purposes
     // Note: This is testing internal implementation
     const cacheKey = JSON.stringify({ input, pos });
@@ -1146,11 +1146,13 @@ describe("Advanced memoize edge cases", () => {
     if (memoizedParser._cache) {
       // @ts-ignore
       memoizedParser._cache.set(cacheKey, undefined);
-      
+
       const result2 = memoizedParser(input, pos);
       expect(result2.success).toBe(false);
       if (!result2.success) {
-        expect(result2.error.message).toBe("Memoization error: cached result is undefined");
+        expect(result2.error.message).toBe(
+          "Memoization error: cached result is undefined",
+        );
       }
     }
   });
@@ -1161,20 +1163,23 @@ describe("Enhanced error reporting", () => {
     it("should provide detailed error with input context", () => {
       const parser = withDetailedError(literal("expected"), "TestParser", 5);
       const result = parse(parser)("unexpected input");
-      
+
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.parserName).toBe("TestParser");
         expect(result.error.found).toBe("u");
         // Check for either the detailed message or the original error
-        expect(result.error.message.includes("TestParser") || result.error.message.includes("Unexpected")).toBe(true);
+        expect(
+          result.error.message.includes("TestParser") ||
+            result.error.message.includes("Unexpected"),
+        ).toBe(true);
       }
     });
 
     it("should handle EOF in detailed error", () => {
       const parser = withDetailedError(literal("more"), "TestParser");
       const result = parse(parser)("");
-      
+
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.found).toBe("EOF");
@@ -1184,12 +1189,12 @@ describe("Enhanced error reporting", () => {
     it("should preserve existing error messages", () => {
       const customErrorParser: Parser<string> = (input, pos) => ({
         success: false,
-        error: { message: "Custom message", pos }
+        error: { message: "Custom message", pos },
       });
-      
+
       const parser = withDetailedError(customErrorParser, "TestParser");
       const result = parse(parser)("test");
-      
+
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message).toBe("Custom message");

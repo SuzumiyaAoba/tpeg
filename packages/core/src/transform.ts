@@ -28,7 +28,7 @@ export const map =
         next: result.next,
       };
     }
-    
+
     return result as ParseFailure;
   };
 
@@ -60,7 +60,7 @@ export const mapResult =
         next: result.next,
       };
     }
-    
+
     return result as ParseFailure;
   };
 
@@ -86,7 +86,7 @@ export const mapError =
     if (result.success) {
       return result;
     }
-    
+
     return f(result as ParseFailure);
   };
 
@@ -107,7 +107,11 @@ export const mapError =
  *   // Parses a digit and ensures it's even
  */
 export const filter =
-  <T>(parser: Parser<T>, predicate: (value: T) => boolean, errorMessage: string): Parser<T> =>
+  <T>(
+    parser: Parser<T>,
+    predicate: (value: T) => boolean,
+    errorMessage: string,
+  ): Parser<T> =>
   (input: string, pos) => {
     const result = parser(input, pos);
 
@@ -115,7 +119,7 @@ export const filter =
       if (predicate(result.val)) {
         return result;
       }
-      
+
       return {
         success: false,
         error: {
@@ -125,7 +129,7 @@ export const filter =
         },
       };
     }
-    
+
     return result as ParseFailure;
   };
 
@@ -152,6 +156,6 @@ export const tap =
       effect(result.val);
       return result;
     }
-    
+
     return result as ParseFailure;
   };

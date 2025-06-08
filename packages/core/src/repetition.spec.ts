@@ -163,7 +163,7 @@ describe("repetition edge cases", () => {
   it("should handle empty input correctly", () => {
     const input = "";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    
+
     // optional should return empty array
     const optResult = opt(lit("a"))(input, pos);
     expect(optResult.success).toBe(true);
@@ -193,7 +193,7 @@ describe("repetition edge cases", () => {
     const input = "xyz";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
     const result = plus(lit("a"))(input, pos);
-    
+
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toContain("Unexpected character");
@@ -205,7 +205,7 @@ describe("repetition edge cases", () => {
   it("should maintain correct position information", () => {
     const input = "abcdef";
     const pos: Pos = { offset: 2, column: 3, line: 1 };
-    
+
     // Position should be maintained correctly
     const result = zeroOrMore(lit("c"))(input, pos);
     expect(result.success).toBe(true);
@@ -221,7 +221,7 @@ describe("repetition edge cases", () => {
     // Pattern: zero or more groups of (one or more 'a' followed by optional 'b')
     const groupParser = seq(oneOrMore(lit("a")), optional(lit("b")));
     const parser = zeroOrMore(groupParser);
-    
+
     const result = parser("aaabaaab", { offset: 0, line: 1, column: 1 });
     expect(isSuccess(result)).toBe(true);
     if (isSuccess(result)) {
@@ -237,7 +237,7 @@ describe("repetition edge cases", () => {
     const input = "aaa";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
     const result = oneOrMore(lit("a"))(input, pos);
-    
+
     expect(result.success).toBe(true);
     if (result.success) {
       // TypeScriptの型システムによりNonEmptyArrayであることが保証される
@@ -250,11 +250,11 @@ describe("repetition edge cases", () => {
   it("should handle large inputs efficiently", () => {
     const largeInput = "a".repeat(1000);
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    
+
     const startTime = performance.now();
     const result = zeroOrMore(lit("a"))(largeInput, pos);
     const endTime = performance.now();
-    
+
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val.length).toBe(1000);
@@ -267,7 +267,7 @@ describe("repetition edge cases", () => {
   it("should handle multiline input correctly", () => {
     const input = "a\na\na";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    
+
     // Should parse first 'a' only (literal doesn't cross lines)
     const result = zeroOrMore(lit("a"))(input, pos);
     expect(result.success).toBe(true);

@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 
 import {
+  astToString,
   calculate,
   calculateDirect,
-  parseToAST,
-  astToString,
   examples,
+  parseToAST,
   runExamples,
 } from "./calculator";
 
@@ -31,22 +31,21 @@ function calculateExpression(expr: string) {
   try {
     console.log(`\nExpression: ${expr}`);
     console.log("─".repeat(40));
-    
+
     // Direct calculation
     const directResult = calculateDirect(expr);
     console.log(`Direct calc: ${directResult}`);
-    
+
     // AST-based calculation
     const astResult = calculate(expr);
     console.log(`AST calc:    ${astResult}`);
-    
+
     // Verify results
     if (directResult === astResult) {
       console.log("✓ Both calculation methods produced the same result");
     } else {
       console.log("⚠ Calculation results differ");
     }
-    
   } catch (error) {
     console.error(`❌ Error: ${error}`);
   }
@@ -56,14 +55,13 @@ function showAST(expr: string) {
   try {
     console.log(`\nExpression: ${expr}`);
     console.log("─".repeat(40));
-    
+
     const ast = parseToAST(expr);
     const result = calculate(expr);
-    
+
     console.log("AST Structure:");
     console.log(astToString(ast));
     console.log(`\nResult: ${result}`);
-    
   } catch (error) {
     console.error(`❌ Error: ${error}`);
   }
@@ -71,22 +69,22 @@ function showAST(expr: string) {
 
 function runInteractiveDemo() {
   console.log("=== TPEG Arithmetic Parser - Interactive Demo ===\n");
-  
+
   const testExpressions = [
     "1 + 2",
-    "1 + 2 * 3", 
+    "1 + 2 * 3",
     "(1 + 2) * 3",
     "3.14 * 2",
     "((1 + 2) * 3 - 4) / 2",
     "-5 + 3",
-    "+5 - 3"
+    "+5 - 3",
   ];
-  
+
   console.log("Basic calculation examples:");
   for (const expr of testExpressions) {
     calculateExpression(expr);
   }
-  
+
   console.log(`\n${"=".repeat(50)}`);
   console.log("For more detailed examples, use --examples");
 }
@@ -109,4 +107,4 @@ if (args.length === 0) {
   // Treat as expression
   const expr = args.join(" ");
   calculateExpression(expr);
-} 
+}

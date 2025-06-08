@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 
 import {
+  astToString,
   calculate,
   calculateDirect,
-  parseToAST,
-  astToString,
   examples,
+  parseToAST,
 } from "./calculator";
 
 // Simple REPL implementation
@@ -35,29 +35,37 @@ function printHelp() {
 
 function printExamples() {
   console.log("\nExample expressions:");
-  examples.forEach(ex => {
-    console.log(`  ${ex.expression.padEnd(20)} => ${ex.expected}`);
-  });
+  for (const [category, exprs] of Object.entries(examples)) {
+    console.log(`\n${category}:`);
+    for (const expr of exprs) {
+      try {
+        const result = calculate(expr);
+        console.log(`  ${expr.padEnd(20)} => ${result}`);
+      } catch (error) {
+        console.log(`  ${expr.padEnd(20)} => Error: ${error}`);
+      }
+    }
+  }
   console.log();
 }
 
 function handleCommand(input: string): boolean {
   const trimmed = input.trim();
-  
+
   if (trimmed === "exit") {
     return true;
   }
-  
+
   if (trimmed === ":help") {
     printHelp();
     return false;
   }
-  
+
   if (trimmed === ":examples") {
     printExamples();
     return false;
   }
-  
+
   if (trimmed.startsWith(":ast ")) {
     const expression = trimmed.slice(5);
     try {
@@ -71,7 +79,7 @@ function handleCommand(input: string): boolean {
     }
     return false;
   }
-  
+
   // Regular expression calculation
   try {
     const result = calculate(trimmed);
@@ -79,22 +87,22 @@ function handleCommand(input: string): boolean {
   } catch (error) {
     console.error(`Error: ${error}`);
   }
-  
+
   return false;
 }
 
 async function repl() {
   printWelcome();
-  
-  const readline = require("readline");
+
+  const readline = require("node:readline");
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: "calc> "
+    prompt: "calc> ",
   });
-  
+
   rl.prompt();
-  
+
   rl.on("line", (input: string) => {
     const shouldExit = handleCommand(input);
     if (shouldExit) {
@@ -104,7 +112,7 @@ async function repl() {
       rl.prompt();
     }
   });
-  
+
   rl.on("close", () => {
     process.exit(0);
   });
@@ -113,4 +121,4 @@ async function repl() {
 // Start REPL if this file is run directly
 if (import.meta.main) {
   repl();
-} 
+}

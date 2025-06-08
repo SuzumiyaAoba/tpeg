@@ -10,7 +10,7 @@ import { createFailure, isFailure } from "./utils";
  * @template T Type of the parse result value
  * @param parser Target parser to check
  * @returns Parser<undefined> A parser that only checks for success without consuming input
- * 
+ *
  * @example
  * ```typescript
  * // Check if next characters are "hello" without consuming them
@@ -25,9 +25,9 @@ export const andPredicate =
     const result = parser(input, pos);
 
     if (isFailure(result)) {
-      const context = result.error.context 
-        ? Array.isArray(result.error.context) 
-          ? result.error.context 
+      const context = result.error.context
+        ? Array.isArray(result.error.context)
+          ? result.error.context
           : [result.error.context]
         : [];
 
@@ -89,7 +89,7 @@ export const assert = andPredicate;
  * @template T Type of the parse result value
  * @param parser Target parser to check for failure
  * @returns Parser<undefined> A parser that only checks for failure without consuming input
- * 
+ *
  * @example
  * ```typescript
  * // Ensure next characters are NOT "end" before parsing
@@ -112,14 +112,14 @@ export const notPredicate =
     }
 
     return createFailure(
-      "Negative lookahead failed: expected pattern not to match", 
-      pos, 
+      "Negative lookahead failed: expected pattern not to match",
+      pos,
       {
         parserName: "notPredicate",
         context: ["in negative lookahead"],
         expected: "pattern not to match",
         found: "matching pattern",
-      }
+      },
     );
   };
 
@@ -137,7 +137,7 @@ export const not = notPredicate;
  * Alias for {@link notPredicate}.
  *
  * @template T Type of the parse result value
- * @param parser Target parser to check for failure  
+ * @param parser Target parser to check for failure
  * @returns Parser<undefined> A parser that only checks for failure without consuming input
  * @see notPredicate
  */

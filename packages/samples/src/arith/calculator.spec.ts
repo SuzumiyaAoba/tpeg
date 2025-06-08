@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import {
+  type ExpressionNode,
+  astToString,
   calculate,
   calculateDirect,
-  parseToAST,
   evaluate,
-  astToString,
   examples,
-  type ExpressionNode,
+  parseToAST,
 } from "./calculator";
 
 describe("Calculator", () => {
@@ -72,9 +72,9 @@ describe("Calculator", () => {
         "1 + 2 * 3",
         "(1 + 2) * 3",
         "((1 + 2) * 3 - 4) / 2",
-                 "2 * 3 + 4 * 5 - 6 / 2",
-         "-5 + 3"
-         // "+(2 * 3)" // 現在サポートしていない
+        "2 * 3 + 4 * 5 - 6 / 2",
+        "-5 + 3",
+        // "+(2 * 3)" // 現在サポートしていない
       ];
 
       for (const expr of expressions) {
@@ -90,13 +90,13 @@ describe("Calculator", () => {
         ...examples.float,
         ...examples.precedence,
         ...examples.complex,
-        ...examples.signed
+        ...examples.signed,
       ];
 
       for (const expr of allExamples) {
         expect(() => calculate(expr)).not.toThrow();
         expect(() => calculateDirect(expr)).not.toThrow();
-        
+
         const directResult = calculateDirect(expr);
         const astResult = calculate(expr);
         expect(astResult).toBe(directResult);
@@ -108,12 +108,12 @@ describe("Calculator", () => {
     it("should create correct AST for simple expressions", () => {
       const ast = parseToAST("1 + 2");
       expect(ast.type).toBe("binaryOp");
-      
+
       if (ast.type === "binaryOp") {
         expect(ast.operator).toBe("+");
         expect(ast.left.type).toBe("number");
         expect(ast.right.type).toBe("number");
-        
+
         if (ast.left.type === "number" && ast.right.type === "number") {
           expect(ast.left.value).toBe(1);
           expect(ast.right.value).toBe(2);
@@ -124,15 +124,15 @@ describe("Calculator", () => {
     it("should create correct AST for nested expressions", () => {
       const ast = parseToAST("(1 + 2) * 3");
       expect(ast.type).toBe("binaryOp");
-      
+
       if (ast.type === "binaryOp") {
         expect(ast.operator).toBe("*");
         expect(ast.left.type).toBe("group");
         expect(ast.right.type).toBe("number");
-        
+
         if (ast.left.type === "group") {
           expect(ast.left.expression.type).toBe("binaryOp");
-          
+
           if (ast.left.expression.type === "binaryOp") {
             expect(ast.left.expression.operator).toBe("+");
           }
@@ -143,11 +143,11 @@ describe("Calculator", () => {
     it("should create correct AST for unary expressions", () => {
       const ast = parseToAST("-5");
       expect(ast.type).toBe("unaryOp");
-      
+
       if (ast.type === "unaryOp") {
         expect(ast.operator).toBe("-");
         expect(ast.operand.type).toBe("number");
-        
+
         if (ast.operand.type === "number") {
           expect(ast.operand.value).toBe(5);
         }
@@ -159,7 +159,7 @@ describe("Calculator", () => {
     it("should generate readable string representation", () => {
       const ast = parseToAST("1 + 2");
       const str = astToString(ast);
-      
+
       expect(str).toContain("BinaryOp(+)");
       expect(str).toContain("Number(1)");
       expect(str).toContain("Number(2)");
@@ -168,7 +168,7 @@ describe("Calculator", () => {
     it("should handle nested structures", () => {
       const ast = parseToAST("(1 + 2) * 3");
       const str = astToString(ast);
-      
+
       expect(str).toContain("BinaryOp(*)");
       expect(str).toContain("Group");
       expect(str).toContain("BinaryOp(+)");
@@ -178,7 +178,7 @@ describe("Calculator", () => {
     it("should handle unary operations", () => {
       const ast = parseToAST("-5");
       const str = astToString(ast);
-      
+
       expect(str).toContain("UnaryOp(-)");
       expect(str).toContain("Number(5)");
     });
@@ -225,7 +225,7 @@ describe("Calculator", () => {
       // ASTパーサーではmapを使ってAST ノードを構築
       const ast = parseToAST("2 + 3");
       expect(ast.type).toBe("binaryOp");
-      
+
       if (ast.type === "binaryOp") {
         expect(ast.operator).toBe("+");
         expect(ast.left.type).toBe("number");
@@ -235,16 +235,16 @@ describe("Calculator", () => {
 
     it("should show different approaches: direct vs AST", () => {
       const expr = "2 * (3 + 4)";
-      
+
       // 直接計算: mapで即座に計算結果を生成
       const directResult = calculateDirect(expr);
       expect(directResult).toBe(14);
-      
+
       // AST経由: mapでASTを構築してから評価
       const ast = parseToAST(expr);
       const astResult = evaluate(ast);
       expect(astResult).toBe(14);
-      
+
       // 結果は同じだが、AST経由の場合は中間表現を取得できる
       expect(astResult).toBe(directResult);
       expect(ast.type).toBe("binaryOp");
@@ -270,4 +270,4 @@ describe("Calculator", () => {
       expect(result).toBe(7);
     });
   });
-}); 
+});

@@ -22,8 +22,6 @@ import {
   zeroOrMore,
 } from "tpeg-core";
 
-
-
 /**
  * Parser that consumes characters until a condition is met.
  *
@@ -497,11 +495,10 @@ export const quotedString = (): Parser<string> => {
   );
 
   return labeled(
-    map(
-      seq(literal('"'), zeroOrMore(stringChar), literal('"')),
-      ([_, chars]) => chars.join(""),
+    map(seq(literal('"'), zeroOrMore(stringChar), literal('"')), ([_, chars]) =>
+      chars.join(""),
     ),
-    "Expected valid quoted string"
+    "Expected valid quoted string",
   );
 };
 
@@ -597,7 +594,10 @@ export const int = (): Parser<number> => {
   return map(
     seq(optional(literal("-")), oneOrMore(charClass(["0", "9"]))),
     ([sign, digits]) => {
-      return Number.parseInt((sign.length > 0 ? "-" : "") + digits.join(""), 10);
+      return Number.parseInt(
+        (sign.length > 0 ? "-" : "") + digits.join(""),
+        10,
+      );
     },
   );
 };
@@ -811,10 +811,10 @@ export const alphaNum = (): Parser<string> => {
 export const identifier = (): Parser<string> => {
   const firstChar = choice(letter(), literal("_"));
   const restChars = zeroOrMore(choice(alphaNum(), literal("_")));
-  
+
   return map(
     seq(firstChar, restChars),
-    ([first, rest]) => first + rest.join("")
+    ([first, rest]) => first + rest.join(""),
   );
 };
 
@@ -863,7 +863,7 @@ export const endOfLine = (): Parser<never> => {
 
     // Check if current position is at newline
     const char = input[pos.offset];
-    if (char === '\n' || char === '\r') {
+    if (char === "\n" || char === "\r") {
       return {
         success: true,
         val: null as never,

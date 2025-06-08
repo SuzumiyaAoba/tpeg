@@ -1,11 +1,18 @@
 import { describe, expect, it } from "bun:test";
 import { lit } from "./basic";
-import { and, andPredicate, not, notPredicate, positive, assert, negative } from "./lookahead";
+import {
+  assert,
+  and,
+  andPredicate,
+  negative,
+  not,
+  notPredicate,
+  positive,
+} from "./lookahead";
 import { createPos } from "./test-utils";
 import type { Pos } from "./types";
 
 describe("andPredicate", () => {
-
   it("should succeed if the parser succeeds", () => {
     const input = "abc";
     const pos = createPos(0);
@@ -25,7 +32,9 @@ describe("andPredicate", () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       // The error message should indicate it's a positive lookahead failure
-      expect(result.error.message).toMatch(/Positive lookahead failed|Unexpected character/);
+      expect(result.error.message).toMatch(
+        /Positive lookahead failed|Unexpected character/,
+      );
       expect(result.error.parserName).toBe("andPredicate");
       expect(result.error.context).toContain("in positive lookahead");
     }
@@ -61,13 +70,14 @@ describe("andPredicate", () => {
     const result = andPredicate(lit("a"))(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.context).toEqual(expect.arrayContaining(["in positive lookahead"]));
+      expect(result.error.context).toEqual(
+        expect.arrayContaining(["in positive lookahead"]),
+      );
     }
   });
 });
 
 describe("notPredicate", () => {
-
   it("should succeed if the parser fails", () => {
     const input = "bcd";
     const pos = createPos(0);
@@ -86,7 +96,9 @@ describe("notPredicate", () => {
     const result = notPredicate(lit("a"))(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.message).toBe("Negative lookahead failed: expected pattern not to match");
+      expect(result.error.message).toBe(
+        "Negative lookahead failed: expected pattern not to match",
+      );
       expect(result.error.parserName).toBe("notPredicate");
       expect(result.error.context).toContain("in negative lookahead");
       expect(result.error.expected).toBe("pattern not to match");
@@ -121,7 +133,6 @@ describe("notPredicate", () => {
 });
 
 describe("Aliases", () => {
-
   describe("and", () => {
     it("should be an alias for andPredicate", () => {
       const input = "abc";
@@ -193,7 +204,6 @@ describe("Aliases", () => {
 });
 
 describe("Edge Cases", () => {
-
   it("should handle complex nested lookaheads", () => {
     const input = "abc";
     const pos = createPos(0);
@@ -211,7 +221,7 @@ describe("Edge Cases", () => {
     // Positive lookahead for "a" followed by negative lookahead for "b"
     const positiveResult = andPredicate(lit("a"))(input, pos);
     expect(positiveResult.success).toBe(true);
-    
+
     const negativeResult = notPredicate(lit("b"))(input, pos);
     expect(negativeResult.success).toBe(true); // "b" is not at position 0
   });

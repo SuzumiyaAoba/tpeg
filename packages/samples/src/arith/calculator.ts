@@ -8,9 +8,9 @@ import {
   map,
   not,
   oneOrMore,
+  parse,
   seq,
   star,
-  parse,
 } from "tpeg-core";
 
 // =============================================================================
@@ -35,21 +35,17 @@ export const Digit = charClass(["0", "9"]);
 /**
  * Integer
  */
-export const Integer = map(oneOrMore(Digit), (digits: string[]) => 
-  Number.parseInt(digits.join(""), 10)
+export const Integer = map(oneOrMore(Digit), (digits: string[]) =>
+  Number.parseInt(digits.join(""), 10),
 );
 
 /**
  * Floating point number
  */
 export const Float = map(
-  seq(
-    oneOrMore(Digit),
-    lit("."),
-    oneOrMore(Digit)
-  ),
-  ([intPart, , fracPart]: [string[], string, string[]]) => 
-    Number.parseFloat(`${intPart.join("")}.${fracPart.join("")}`)
+  seq(oneOrMore(Digit), lit("."), oneOrMore(Digit)),
+  ([intPart, , fracPart]: [string[], string, string[]]) =>
+    Number.parseFloat(`${intPart.join("")}.${fracPart.join("")}`),
 );
 
 /**
@@ -84,7 +80,11 @@ export interface GroupNode {
   expression: ExpressionNode;
 }
 
-export type ExpressionNode = NumberNode | BinaryOpNode | UnaryOpNode | GroupNode;
+export type ExpressionNode =
+  | NumberNode
+  | BinaryOpNode
+  | UnaryOpNode
+  | GroupNode;
 
 // =============================================================================
 // 3. AST Builder Functions
@@ -98,7 +98,7 @@ export const createNumber = (value: number): NumberNode => ({
 export const createBinaryOp = (
   operator: BinaryOpNode["operator"],
   left: ExpressionNode,
-  right: ExpressionNode
+  right: ExpressionNode,
 ): BinaryOpNode => ({
   type: "binaryOp",
   operator,
@@ -108,7 +108,7 @@ export const createBinaryOp = (
 
 export const createUnaryOp = (
   operator: UnaryOpNode["operator"],
-  operand: ExpressionNode
+  operand: ExpressionNode,
 ): UnaryOpNode => ({
   type: "unaryOp",
   operator,
@@ -128,40 +128,47 @@ export function evaluate(node: ExpressionNode): number {
   switch (node.type) {
     case "number":
       return node.value;
-    
+
     case "binaryOp": {
       const left = evaluate(node.left);
       const right = evaluate(node.right);
-      
+
       switch (node.operator) {
-        case "+": return left + right;
-        case "-": return left - right;
-        case "*": return left * right;
-        case "/": 
+        case "+":
+          return left + right;
+        case "-":
+          return left - right;
+        case "*":
+          return left * right;
+        case "/":
           if (right === 0) throw new Error("Division by zero");
           return left / right;
-        case "%": 
+        case "%":
           if (right === 0) throw new Error("Modulo by zero");
           return left % right;
         default:
-          throw new Error(`Unknown binary operator: ${node.operator as string}`);
+          throw new Error(
+            `Unknown binary operator: ${node.operator as string}`,
+          );
       }
     }
-    
+
     case "unaryOp": {
       const operand = evaluate(node.operand);
-      
+
       switch (node.operator) {
-        case "+": return +operand;
-        case "-": return -operand;
+        case "+":
+          return +operand;
+        case "-":
+          return -operand;
         default:
           throw new Error(`Unknown unary operator: ${node.operator as string}`);
       }
     }
-    
+
     case "group":
       return evaluate(node.expression);
-    
+
     default: {
       const exhaustiveCheck: never = node;
       throw new Error(`Unknown node type: ${exhaustiveCheck}`);
@@ -178,7 +185,7 @@ export function evaluate(node: ExpressionNode): number {
  */
 export const NumberLiteral = map(
   seq(_, NumberParser, _),
-  ([, value]: [unknown, number, unknown]) => createNumber(value)
+  ([, value]: [unknown, number, unknown]) => createNumber(value),
 );
 
 /**
@@ -189,15 +196,24 @@ export function Factor(input: string, pos: Pos): ParseResult<ExpressionNode> {
     // Parenthesized expression
     map(
       seq(_, lit("("), _, Expression, _, lit(")"), _),
-      ([,,, expr]: [unknown, string, unknown, ExpressionNode, unknown, string, unknown]) => createGroup(expr)
+      ([, , , expr]: [
+        unknown,
+        string,
+        unknown,
+        ExpressionNode,
+        unknown,
+        string,
+        unknown,
+      ]) => createGroup(expr),
     ),
     // Signed number
     map(
       seq(_, choice(lit("+"), lit("-")), NumberLiteral),
-      ([, operator, operand]: [unknown, string, ExpressionNode]) => createUnaryOp(operator as "+" | "-", operand)
+      ([, operator, operand]: [unknown, string, ExpressionNode]) =>
+        createUnaryOp(operator as "+" | "-", operand),
     ),
     // Regular number
-    NumberLiteral
+    NumberLiteral,
   )(input, pos);
 }
 
@@ -207,46 +223,52 @@ export function Factor(input: string, pos: Pos): ParseResult<ExpressionNode> {
 export function Term(input: string, pos: Pos): ParseResult<ExpressionNode> {
   return map(
     seq(
-      Factor, 
+      Factor,
       star(
         choice(
           seq(_, lit("*"), _, Factor),
           seq(_, lit("/"), _, Factor),
-          seq(_, lit("%"), _, Factor)
-        )
-      )
+          seq(_, lit("%"), _, Factor),
+        ),
+      ),
     ),
-    ([first, rest]: [ExpressionNode, [unknown, string, unknown, ExpressionNode][]]) => {
+    ([first, rest]: [
+      ExpressionNode,
+      [unknown, string, unknown, ExpressionNode][],
+    ]) => {
       // Construct AST using map functions
-      return rest.reduce((left, [, operator, , right]) => 
-        createBinaryOp(operator as "*" | "/" | "%", left, right), 
-        first
+      return rest.reduce(
+        (left, [, operator, , right]) =>
+          createBinaryOp(operator as "*" | "/" | "%", left, right),
+        first,
       );
-    }
+    },
   )(input, pos);
 }
 
 /**
  * Expression (addition, subtraction with map-based left associativity)
  */
-export function Expression(input: string, pos: Pos): ParseResult<ExpressionNode> {
+export function Expression(
+  input: string,
+  pos: Pos,
+): ParseResult<ExpressionNode> {
   return map(
     seq(
       Term,
-      star(
-        choice(
-          seq(_, lit("+"), _, Term),
-          seq(_, lit("-"), _, Term)
-        )
-      )
+      star(choice(seq(_, lit("+"), _, Term), seq(_, lit("-"), _, Term))),
     ),
-    ([first, rest]: [ExpressionNode, [unknown, string, unknown, ExpressionNode][]]) => {
+    ([first, rest]: [
+      ExpressionNode,
+      [unknown, string, unknown, ExpressionNode][],
+    ]) => {
       // Construct AST using map functions
-      return rest.reduce((left, [, operator, , right]) =>
-        createBinaryOp(operator as "+" | "-", left, right),
-        first
+      return rest.reduce(
+        (left, [, operator, , right]) =>
+          createBinaryOp(operator as "+" | "-", left, right),
+        first,
       );
-    }
+    },
   )(input, pos);
 }
 
@@ -255,7 +277,7 @@ export function Expression(input: string, pos: Pos): ParseResult<ExpressionNode>
  */
 export const CalculatorGrammar = map(
   seq(_, Expression, _, not(any())),
-  ([, result]: [unknown, ExpressionNode, unknown, unknown]) => result
+  ([, result]: [unknown, ExpressionNode, unknown, unknown]) => result,
 );
 
 // =============================================================================
@@ -270,16 +292,27 @@ export function DirectFactor(input: string, pos: Pos): ParseResult<number> {
     // Parenthesized expression
     map(
       seq(_, lit("("), _, DirectExpression, _, lit(")"), _),
-      ([,,, value]: [unknown, string, unknown, number, unknown, string, unknown]) => value
+      ([, , , value]: [
+        unknown,
+        string,
+        unknown,
+        number,
+        unknown,
+        string,
+        unknown,
+      ]) => value,
     ),
-    // Signed number  
+    // Signed number
     map(
       seq(_, choice(lit("+"), lit("-")), NumberParser, _),
-      ([, operator, value]: [unknown, string, number, unknown]) => 
-        operator === "+" ? +value : -value
+      ([, operator, value]: [unknown, string, number, unknown]) =>
+        operator === "+" ? +value : -value,
     ),
     // Regular number
-    map(seq(_, NumberParser, _), ([, value]: [unknown, number, unknown]) => value)
+    map(
+      seq(_, NumberParser, _),
+      ([, value]: [unknown, number, unknown]) => value,
+    ),
   )(input, pos);
 }
 
@@ -294,26 +327,27 @@ export function DirectTerm(input: string, pos: Pos): ParseResult<number> {
         choice(
           seq(_, lit("*"), _, DirectFactor),
           seq(_, lit("/"), _, DirectFactor),
-          seq(_, lit("%"), _, DirectFactor)
-        )
-      )
+          seq(_, lit("%"), _, DirectFactor),
+        ),
+      ),
     ),
     ([first, rest]: [number, [unknown, string, unknown, number][]]) => {
       // Direct calculation using map functions
       return rest.reduce((left, [, operator, , right]) => {
         switch (operator) {
-          case "*": return left * right;
-          case "/": 
+          case "*":
+            return left * right;
+          case "/":
             if (right === 0) throw new Error("Division by zero");
             return left / right;
-          case "%": 
+          case "%":
             if (right === 0) throw new Error("Modulo by zero");
             return left % right;
           default:
             throw new Error(`Unknown operator: ${operator}`);
         }
       }, first);
-    }
+    },
   )(input, pos);
 }
 
@@ -327,21 +361,23 @@ export function DirectExpression(input: string, pos: Pos): ParseResult<number> {
       star(
         choice(
           seq(_, lit("+"), _, DirectTerm),
-          seq(_, lit("-"), _, DirectTerm)
-        )
-      )
+          seq(_, lit("-"), _, DirectTerm),
+        ),
+      ),
     ),
     ([first, rest]: [number, [unknown, string, unknown, number][]]) => {
       // Direct calculation using map functions
       return rest.reduce((left, [, operator, , right]) => {
         switch (operator) {
-          case "+": return left + right;
-          case "-": return left - right;
+          case "+":
+            return left + right;
+          case "-":
+            return left - right;
           default:
             throw new Error(`Unknown operator: ${operator}`);
         }
       }, first);
-    }
+    },
   )(input, pos);
 }
 
@@ -350,7 +386,7 @@ export function DirectExpression(input: string, pos: Pos): ParseResult<number> {
  */
 export const DirectCalculatorGrammar = map(
   seq(_, DirectExpression, _, not(any())),
-  ([, result]: [unknown, number, unknown, unknown]) => result
+  ([, result]: [unknown, number, unknown, unknown]) => result,
 );
 
 // =============================================================================
@@ -392,34 +428,34 @@ export function calculate(input: string): number {
  */
 export function astToString(node: ExpressionNode, indent = 0): string {
   const spaces = "  ".repeat(indent);
-  
+
   switch (node.type) {
     case "number":
       return `${spaces}Number(${node.value})`;
-    
+
     case "binaryOp":
       return [
         `${spaces}BinaryOp(${node.operator})`,
         `${spaces}  left:`,
         astToString(node.left, indent + 2),
         `${spaces}  right:`,
-        astToString(node.right, indent + 2)
+        astToString(node.right, indent + 2),
       ].join("\n");
-    
+
     case "unaryOp":
       return [
         `${spaces}UnaryOp(${node.operator})`,
         `${spaces}  operand:`,
-        astToString(node.operand, indent + 2)
+        astToString(node.operand, indent + 2),
       ].join("\n");
-    
+
     case "group":
       return [
         `${spaces}Group`,
         `${spaces}  expression:`,
-        astToString(node.expression, indent + 2)
+        astToString(node.expression, indent + 2),
       ].join("\n");
-    
+
     default: {
       const exhaustiveCheck: never = node;
       return `${spaces}Unknown(${exhaustiveCheck})`;
@@ -434,42 +470,42 @@ export function astToString(node: ExpressionNode, indent = 0): string {
 export const examples = {
   // Basic arithmetic operations
   basic: [
-    "1 + 2",      // 3
-    "3 - 1",      // 2
-    "2 * 3",      // 6
-    "6 / 2",      // 3
-    "7 % 3"       // 1
+    "1 + 2", // 3
+    "3 - 1", // 2
+    "2 * 3", // 6
+    "6 / 2", // 3
+    "7 % 3", // 1
   ],
-  
+
   // Floating point numbers
   float: [
-    "1.5 + 2.5",    // 4
-    "3.14 * 2",     // 6.28
-    "10.0 / 3.0"    // 3.333...
+    "1.5 + 2.5", // 4
+    "3.14 * 2", // 6.28
+    "10.0 / 3.0", // 3.333...
   ],
-  
+
   // Operator precedence
   precedence: [
-    "1 + 2 * 3",     // 7
-    "2 * 3 + 1",     // 7
-    "(1 + 2) * 3",   // 9
-    "2 * (3 + 1)"    // 8
+    "1 + 2 * 3", // 7
+    "2 * 3 + 1", // 7
+    "(1 + 2) * 3", // 9
+    "2 * (3 + 1)", // 8
   ],
-  
+
   // Complex expressions
   complex: [
-    "((1 + 2) * 3 - 4) / 2",   // 2.5
-    "2 * 3 + 4 * 5 - 6 / 2",  // 23
-    "1 + 2 * 3 + 4 * 5 + 6"   // 33
+    "((1 + 2) * 3 - 4) / 2", // 2.5
+    "2 * 3 + 4 * 5 - 6 / 2", // 23
+    "1 + 2 * 3 + 4 * 5 + 6", // 33
   ],
-  
+
   // Signed numbers
   signed: [
-    "-5 + 3",        // -2
-    "+5 - 3"         // 2
+    "-5 + 3", // -2
+    "+5 - 3", // 2
     // "-(2 + 3)",      // -5 (not currently supported)
     // "+(2 * 3)"       // 6  (not currently supported)
-  ]
+  ],
 };
 
 /**
@@ -477,19 +513,19 @@ export const examples = {
  */
 export function runExamples(): void {
   console.log("=== Arithmetic Parser Demo ===\n");
-  
+
   for (const [category, exprs] of Object.entries(examples)) {
-    console.log("--- " + category + " ---");
+    console.log(`--- ${category} ---`);
     for (const expr of exprs) {
       try {
         const directResult = calculateDirect(expr);
         const astResult = calculate(expr);
         const ast = parseToAST(expr);
-        
+
         console.log(`${expr} = ${directResult}`);
         console.log(`  Direct calc: ${directResult}`);
         console.log(`  AST calc:    ${astResult}`);
-        console.log(`  AST structure:`);
+        console.log("  AST structure:");
         console.log(astToString(ast, 2));
         console.log();
       } catch (error) {
@@ -498,4 +534,4 @@ export function runExamples(): void {
     }
     console.log();
   }
-} 
+}

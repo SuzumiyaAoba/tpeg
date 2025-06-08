@@ -47,7 +47,7 @@ export interface FormatErrorOptions {
   /** Whether to colorize output (default: true) */
   colorize?: boolean;
   /** Language setting (default: 'en') */
-  locale?: 'en' | 'ja';
+  locale?: "en" | "ja";
   /** Custom messages */
   messages?: Partial<I18nMessages>;
 }
@@ -66,25 +66,33 @@ const createColorHelper = (colorize: boolean) => ({
 /**
  * Validates and normalizes options
  */
-const validateAndNormalizeOptions = (options: FormatErrorOptions = {}): Required<FormatErrorOptions> => {
+const validateAndNormalizeOptions = (
+  options: FormatErrorOptions = {},
+): Required<FormatErrorOptions> => {
   const {
     contextLines = 2,
     highlightErrors = true,
     showPosition = true,
     colorize = true,
-    locale = 'en',
+    locale = "en",
     messages = {},
   } = options;
 
   // Range check for contextLines
-  const normalizedContextLines = Math.max(0, Math.min(10, Math.floor(contextLines)));
-  
+  const normalizedContextLines = Math.max(
+    0,
+    Math.min(10, Math.floor(contextLines)),
+  );
+
   if (contextLines !== normalizedContextLines) {
-    console.warn(`contextLines was adjusted from ${contextLines} to ${normalizedContextLines} (valid range: 0-10)`);
+    console.warn(
+      `contextLines was adjusted from ${contextLines} to ${normalizedContextLines} (valid range: 0-10)`,
+    );
   }
 
   // Merge messages
-  const baseMessages = locale === 'ja' ? DEFAULT_MESSAGES_JA : DEFAULT_MESSAGES_EN;
+  const baseMessages =
+    locale === "ja" ? DEFAULT_MESSAGES_JA : DEFAULT_MESSAGES_EN;
   const mergedMessages = { ...baseMessages, ...messages };
 
   return {
@@ -100,8 +108,11 @@ const validateAndNormalizeOptions = (options: FormatErrorOptions = {}): Required
 /**
  * Processes message templates
  */
-const formatMessage = (template: string | undefined, params: Record<string, string | number>): string => {
-  if (!template) return '';
+const formatMessage = (
+  template: string | undefined,
+  params: Record<string, string | number>,
+): string => {
+  if (!template) return "";
   return template.replace(/\{(\w+)\}/g, (match, key) => {
     const value = params[key];
     return value !== undefined ? String(value) : match;
@@ -111,28 +122,40 @@ const formatMessage = (template: string | undefined, params: Record<string, stri
 /**
  * Normalizes context strings
  */
-const normalizeContext = (context: string | string[] | undefined): string | undefined => {
+const normalizeContext = (
+  context: string | string[] | undefined,
+): string | undefined => {
   if (!context) return undefined;
-  
+
   if (Array.isArray(context)) {
-    return context.filter(c => typeof c === 'string' && c.trim().length > 0).join(" > ");
+    return context
+      .filter((c) => typeof c === "string" && c.trim().length > 0)
+      .join(" > ");
   }
-  
-  return typeof context === 'string' && context.trim().length > 0 ? context.trim() : undefined;
+
+  return typeof context === "string" && context.trim().length > 0
+    ? context.trim()
+    : undefined;
 };
 
 /**
  * Normalizes expected value strings
  */
-const normalizeExpected = (expected: string | string[] | undefined): string | undefined => {
+const normalizeExpected = (
+  expected: string | string[] | undefined,
+): string | undefined => {
   if (!expected) return undefined;
-  
+
   if (Array.isArray(expected)) {
-    const filtered = expected.filter(e => typeof e === 'string' && e.trim().length > 0);
+    const filtered = expected.filter(
+      (e) => typeof e === "string" && e.trim().length > 0,
+    );
     return filtered.length > 0 ? filtered.join(", ") : undefined;
   }
-  
-  return typeof expected === 'string' && expected.trim().length > 0 ? expected.trim() : undefined;
+
+  return typeof expected === "string" && expected.trim().length > 0
+    ? expected.trim()
+    : undefined;
 };
 
 /**
@@ -149,72 +172,88 @@ export const formatParseError = (
   options: FormatErrorOptions = {},
 ): string => {
   // Input validation
-  if (!error || typeof error !== 'object') {
-    throw new Error('Invalid error object provided');
+  if (!error || typeof error !== "object") {
+    throw new Error("Invalid error object provided");
   }
 
-  if (typeof input !== 'string') {
-    throw new Error('Input must be a string');
+  if (typeof input !== "string") {
+    throw new Error("Input must be a string");
   }
 
   const normalizedOptions = validateAndNormalizeOptions(options);
-  const { contextLines, highlightErrors, showPosition, colorize, messages } = normalizedOptions;
-  
+  const { contextLines, highlightErrors, showPosition, colorize, messages } =
+    normalizedOptions;
+
   const color = createColorHelper(colorize);
   const { pos, message, expected, found, parserName, context } = error;
-  
+
   // Position information validation
-  if (!pos || typeof pos.line !== 'number' || typeof pos.column !== 'number') {
-    throw new Error('Invalid position information in error object');
+  if (!pos || typeof pos.line !== "number" || typeof pos.column !== "number") {
+    throw new Error("Invalid position information in error object");
   }
 
   const { line, column } = pos;
   const parts: string[] = [];
 
   // Basic error message
-  parts.push(color.bold(color.red(
-    formatMessage(messages.parseError, { line, column })
-  )));
+  parts.push(
+    color.bold(color.red(formatMessage(messages.parseError, { line, column }))),
+  );
 
   // Context information
   const normalizedContext = normalizeContext(context);
   if (normalizedContext) {
-    parts.push(color.blue(
-      formatMessage(messages.context, { context: normalizedContext })
-    ));
+    parts.push(
+      color.blue(
+        formatMessage(messages.context, { context: normalizedContext }),
+      ),
+    );
   }
 
   // Parser name
-  if (parserName && typeof parserName === 'string' && parserName.trim().length > 0) {
-    parts.push(color.blue(
-      formatMessage(messages.parser, { parser: parserName.trim() })
-    ));
+  if (
+    parserName &&
+    typeof parserName === "string" &&
+    parserName.trim().length > 0
+  ) {
+    parts.push(
+      color.blue(formatMessage(messages.parser, { parser: parserName.trim() })),
+    );
   }
 
   // Expected value information
   const normalizedExpected = normalizeExpected(expected);
   if (normalizedExpected) {
-    parts.push(color.green(
-      formatMessage(messages.expected, { expected: normalizedExpected })
-    ));
+    parts.push(
+      color.green(
+        formatMessage(messages.expected, { expected: normalizedExpected }),
+      ),
+    );
   }
 
   // Found value
-  if (found && typeof found === 'string' && found.trim().length > 0) {
-    parts.push(color.red(
-      formatMessage(messages.found, { found: found.trim() })
-    ));
+  if (found && typeof found === "string" && found.trim().length > 0) {
+    parts.push(
+      color.red(formatMessage(messages.found, { found: found.trim() })),
+    );
   }
 
   // Error message
-  if (message && typeof message === 'string' && message.trim().length > 0) {
+  if (message && typeof message === "string" && message.trim().length > 0) {
     parts.push(formatMessage(messages.error, { message: message.trim() }));
   }
 
   // Add source context
   if (showPosition && input.length > 0 && contextLines > 0) {
     try {
-      const sourceContext = formatSourceContext(input, line, column, contextLines, highlightErrors, color);
+      const sourceContext = formatSourceContext(
+        input,
+        line,
+        column,
+        contextLines,
+        highlightErrors,
+        color,
+      );
       if (sourceContext) {
         parts.push(""); // Add empty line
         parts.push(color.bold(messages.source || "Source:"));
@@ -222,11 +261,11 @@ export const formatParseError = (
       }
     } catch (error) {
       // Skip if an error occurs while displaying source context
-      console.warn('Failed to format source context:', error);
+      console.warn("Failed to format source context:", error);
     }
   }
 
-  return parts.join('\n');
+  return parts.join("\n");
 };
 
 /**
@@ -240,7 +279,7 @@ const formatSourceContext = (
   highlightErrors: boolean,
   color: ReturnType<typeof createColorHelper>,
 ): string | null => {
-  const lines = input.split('\n');
+  const lines = input.split("\n");
   const totalLines = lines.length;
 
   // Line number validation
@@ -258,7 +297,7 @@ const formatSourceContext = (
   // Generate context lines
   for (let i = startLine; i <= endLine; i++) {
     const isErrorLine = i === errorLine;
-    const lineContent = lines[i - 1] || ''; // lines are 0-indexed
+    const lineContent = lines[i - 1] || ""; // lines are 0-indexed
     const lineNumber = i.toString().padStart(maxLineNumberWidth);
 
     // Format line number
@@ -272,12 +311,12 @@ const formatSourceContext = (
     // Error position pointer
     if (isErrorLine && highlightErrors && errorColumn >= 0) {
       const pointerOffset = maxLineNumberWidth + 3 + errorColumn; // " | " = 3 chars
-      const pointer = ' '.repeat(pointerOffset) + color.bold(color.red('^'));
+      const pointer = " ".repeat(pointerOffset) + color.bold(color.red("^"));
       contextParts.push(pointer);
     }
   }
 
-  return contextParts.join('\n');
+  return contextParts.join("\n");
 };
 
 /**
@@ -294,8 +333,8 @@ export const formatParseResult = <T>(
   input: string,
   options?: FormatErrorOptions,
 ): string | null => {
-  if (!result || typeof result !== 'object') {
-    throw new Error('Invalid parse result provided');
+  if (!result || typeof result !== "object") {
+    throw new Error("Invalid parse result provided");
   }
 
   return isFailure(result)
@@ -316,8 +355,8 @@ export const reportParseError = <T>(
   input: string,
   options?: FormatErrorOptions,
 ): void => {
-  if (!result || typeof result !== 'object') {
-    console.error('Invalid parse result provided');
+  if (!result || typeof result !== "object") {
+    console.error("Invalid parse result provided");
     return;
   }
 
@@ -326,8 +365,8 @@ export const reportParseError = <T>(
       const errorMessage = formatParseError(result.error, input, options);
       console.error(errorMessage);
     } catch (error) {
-      console.error('Failed to format parse error:', error);
-      console.error('Original error:', result.error);
+      console.error("Failed to format parse error:", error);
+      console.error("Original error:", result.error);
     }
   }
 };

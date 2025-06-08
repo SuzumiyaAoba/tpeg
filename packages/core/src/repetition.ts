@@ -1,4 +1,4 @@
-import type { NonEmptyArray, Parser, ParseFailure } from "./types";
+import type { NonEmptyArray, ParseFailure, Parser } from "./types";
 import { createFailure, isFailure } from "./utils";
 
 /**
@@ -101,7 +101,7 @@ export const star = zeroOrMore;
 
 /**
  * Parser for one or more occurrences of a pattern.
- * 
+ *
  * This implementation is optimized to avoid calling zeroOrMore internally,
  * reducing function call overhead and providing better error messages.
  *
