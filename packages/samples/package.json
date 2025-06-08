@@ -6,12 +6,16 @@
   "type": "module",
   "scripts": {
     "dev": "bun run ./src/index.ts",
-    "csv": "bun run ./src/peg/csv.ts",
-    "json": "bun run ./src/peg/json.ts",
+    "samples": "bun run ./src/index.ts",
+    "csv": "bun run ./src/csv/demo.ts",
+    "json": "bun run ./src/json/demo.ts",
+    "peg": "bun run ./src/peg/demo.ts",
     "arith": "bun run ./src/arith/demo.ts",
     "arith:examples": "bun run ./src/arith/demo.ts --examples",
     "arith:repl": "bun run ./src/arith/repl.ts",
     "arith:test": "bun test ./src/arith/calculator.spec.ts",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
     "typecheck": "tsc --noEmit",
     "build": "bun build ./src --outdir ./dist",
     "build:types": "tsc --emitDeclarationOnly --skipLibCheck --declaration --outDir ./dist"

@@ -41,7 +41,7 @@ describe("Calculator", () => {
     it("should handle signed numbers", () => {
       expect(calculateDirect("-5 + 3")).toBe(-2);
       expect(calculateDirect("+5 - 3")).toBe(2);
-      // 括弧の符号は現在サポートしていないためコメントアウト
+      // Parenthesized signs are not currently supported, commented out
       // expect(calculateDirect("-(2 + 3)")).toBe(-5);
       // expect(calculateDirect("+(2 * 3)")).toBe(6);
     });
@@ -74,7 +74,7 @@ describe("Calculator", () => {
         "((1 + 2) * 3 - 4) / 2",
         "2 * 3 + 4 * 5 - 6 / 2",
         "-5 + 3",
-        // "+(2 * 3)" // 現在サポートしていない
+        // "+(2 * 3)" // Currently not supported
       ];
 
       for (const expr of expressions) {
@@ -187,9 +187,9 @@ describe("Calculator", () => {
   describe("Error Handling", () => {
     it("should throw on invalid syntax", () => {
       expect(() => parseToAST("1 +")).toThrow();
-      // "+ 1"は符号付き数値として有効なのでコメントアウト
+      // "+ 1" is valid as a signed number, so commented out
       // expect(() => parseToAST("+ 1")).toThrow();
-      // "1 + + 2"は"1 + (+2)"として有効なのでコメントアウト
+      // "1 + + 2" is valid as "1 + (+2)", so commented out
       // expect(() => parseToAST("1 + + 2")).toThrow();
       expect(() => parseToAST("(1 + 2")).toThrow();
       expect(() => parseToAST("1 + 2)")).toThrow();
@@ -209,20 +209,20 @@ describe("Calculator", () => {
 
   describe("Map Function Demonstration", () => {
     it("should demonstrate map usage in parsing numbers", () => {
-      // 数値パーサーではmapを使って文字列を数値に変換
+      // Number parser uses map to convert strings to numbers
       const result = calculateDirect("123");
       expect(result).toBe(123);
       expect(typeof result).toBe("number");
     });
 
     it("should demonstrate map usage in operator parsing", () => {
-      // 演算子パーサーではmapを使って計算を実行
+      // Operator parser uses map to perform calculations
       const result = calculateDirect("2 + 3 * 4"); // 2 + (3 * 4) = 14
       expect(result).toBe(14);
     });
 
     it("should demonstrate map usage in AST construction", () => {
-      // ASTパーサーではmapを使ってAST ノードを構築
+      // AST parser uses map to construct AST nodes
       const ast = parseToAST("2 + 3");
       expect(ast.type).toBe("binaryOp");
 
@@ -236,16 +236,16 @@ describe("Calculator", () => {
     it("should show different approaches: direct vs AST", () => {
       const expr = "2 * (3 + 4)";
 
-      // 直接計算: mapで即座に計算結果を生成
+      // Direct calculation: map generates immediate calculation results
       const directResult = calculateDirect(expr);
       expect(directResult).toBe(14);
 
-      // AST経由: mapでASTを構築してから評価
+      // Via AST: map constructs AST then evaluates
       const ast = parseToAST(expr);
       const astResult = evaluate(ast);
       expect(astResult).toBe(14);
 
-      // 結果は同じだが、AST経由の場合は中間表現を取得できる
+      // Results are the same, but AST route provides intermediate representation
       expect(astResult).toBe(directResult);
       expect(ast.type).toBe("binaryOp");
     });
