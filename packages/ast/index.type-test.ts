@@ -10,6 +10,9 @@ import type {
   CharClassElement,
   AndPredicate,
   NotPredicate,
+  ZeroOrMore,
+  OneOrMore,
+  Group,
   Definition,
   Grammar,
   ExprNode,
@@ -26,6 +29,9 @@ import type {
   charClass,
   andPredicate,
   notPredicate,
+  zeroOrMore,
+  oneOrMore,
+  group,
   definition,
   grammar,
 } from "./index";
@@ -73,6 +79,9 @@ type TypeLevelTests = TestSuite<[
   Expect<Equal<Identifier<string> extends ExprNode ? true : false, true>>,
   Expect<Equal<Sequence<readonly ExprNode[]> extends ExprNode ? true : false, true>>,
   Expect<Equal<Choice<readonly ExprNode[]> extends ExprNode ? true : false, true>>,
+  Expect<Equal<ZeroOrMore<ExprNode> extends ExprNode ? true : false, true>>,
+  Expect<Equal<OneOrMore<ExprNode> extends ExprNode ? true : false, true>>,
+  Expect<Equal<Group<ExprNode> extends ExprNode ? true : false, true>>,
   Expect<Equal<Char<string> extends ExprNode ? true : false, false>>, // Char is not an ExprNode
   Expect<Equal<Range<string, string> extends ExprNode ? true : false, false>>, // Range is not an ExprNode
 
@@ -122,6 +131,20 @@ type TypeLevelTests = TestSuite<[
     ReturnType<typeof notPredicate<CharClass<[Range<"a", "z">]>>>,
     NotPredicate<CharClass<[Range<"a", "z">]>>
   >>,
+
+  // Repetition combinator tests
+  Expect<Equal<
+    ReturnType<typeof zeroOrMore<Literal<"repeat">>>,
+    ZeroOrMore<Literal<"repeat">>
+  >>,
+  Expect<Equal<
+    ReturnType<typeof oneOrMore<CharClass<[Range<"0", "9">]>>>,
+    OneOrMore<CharClass<[Range<"0", "9">]>>
+  >>,
+  Expect<Equal<
+    ReturnType<typeof group<Sequence<[Literal<"grouped">, Literal<"expression">]>>>,
+    Group<Sequence<[Literal<"grouped">, Literal<"expression">]>>
+  >>,
   
   // Definition and Grammar complex types
   Expect<Equal<
@@ -152,6 +175,20 @@ type TypeLevelTests = TestSuite<[
     ReturnType<typeof andPredicate<NotPredicate<Choice<[Literal<"not">, Literal<"this">]>>>>,
     AndPredicate<NotPredicate<Choice<[Literal<"not">, Literal<"this">]>>>
   >>,
+
+  // Complex repetition nesting
+  Expect<Equal<
+    ReturnType<typeof zeroOrMore<OneOrMore<Group<Literal<"nested">>>>>,
+    ZeroOrMore<OneOrMore<Group<Literal<"nested">>>>
+  >>,
+  Expect<Equal<
+    ReturnType<typeof group<ZeroOrMore<Choice<[Literal<"a">, Literal<"b">]>>>>,
+    Group<ZeroOrMore<Choice<[Literal<"a">, Literal<"b">]>>>
+  >>,
+  Expect<Equal<
+    ReturnType<typeof oneOrMore<Group<Sequence<[Literal<"repeat">, Literal<"this">]>>>>,
+    OneOrMore<Group<Sequence<[Literal<"repeat">, Literal<"this">]>>>
+  >>,
   
   // Type compatibility with deeply nested structures
   Expect<Equal<
@@ -160,6 +197,14 @@ type TypeLevelTests = TestSuite<[
   >>,
   Expect<Equal<
     AndPredicate<NotPredicate<CharClass<[Char<"x">, Range<"a", "z">]>>> extends ExprNode ? true : false,
+    true
+  >>,
+  Expect<Equal<
+    ZeroOrMore<OneOrMore<Group<Choice<[Literal<"complex">, Literal<"nesting">]>>>> extends ExprNode ? true : false,
+    true
+  >>,
+  Expect<Equal<
+    Group<ZeroOrMore<AndPredicate<Literal<"predicate">>>> extends ExprNode ? true : false,
     true
   >>,
   

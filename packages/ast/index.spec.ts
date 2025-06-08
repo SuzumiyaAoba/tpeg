@@ -10,6 +10,9 @@ import {
   type AnyChar,
   type AndPredicate,
   type NotPredicate,
+  type ZeroOrMore,
+  type OneOrMore,
+  type Group,
   type Definition,
   type Grammar,
   type PegAstNode,
@@ -28,6 +31,9 @@ import {
   anyChar,
   andPredicate,
   notPredicate,
+  zeroOrMore,
+  oneOrMore,
+  group,
   definition,
   grammar,
   isLiteral,
@@ -40,6 +46,9 @@ import {
   isAnyChar,
   isAndPredicate,
   isNotPredicate,
+  isZeroOrMore,
+  isOneOrMore,
+  isGroup,
   isChar,
   isRange,
   isDefinition,
@@ -107,9 +116,12 @@ import type {
         const seq = sequence(lit);
         const choiceNode = choice(lit); // Rename variable to avoid import collision
         const opt = optional(lit);
+        const zeroOrMoreNode = zeroOrMore(lit);
+        const oneOrMoreNode = oneOrMore(lit);
+        const groupNode = group(lit);
         
         // Test type narrowing using type guards
-        const nodes: PegAstNode[] = [lit, seq, choiceNode, opt];
+        const nodes: PegAstNode[] = [lit, seq, choiceNode, opt, zeroOrMoreNode, oneOrMoreNode, groupNode];
         
         for (const node of nodes) {
           if (isLiteral(node)) {
@@ -123,6 +135,15 @@ import type {
             expect(node.children.length).toBeGreaterThanOrEqual(0);
           } else if (isOptional(node)) {
             // At this point, node is treated as Optional type
+            expect(node.children.length).toBe(1);
+          } else if (isZeroOrMore(node)) {
+            // At this point, node is treated as ZeroOrMore type
+            expect(node.children.length).toBe(1);
+          } else if (isOneOrMore(node)) {
+            // At this point, node is treated as OneOrMore type
+            expect(node.children.length).toBe(1);
+          } else if (isGroup(node)) {
+            // At this point, node is treated as Group type
             expect(node.children.length).toBe(1);
           }
         }
@@ -306,6 +327,60 @@ import type {
     });
   });
 
+  describe("Repetition Tests", () => {
+    it("should create zero or more", () => {
+      const lit = literal("test");
+      const zeroOrMoreNode = zeroOrMore(lit);
+      
+      expect(zeroOrMoreNode.type).toBe("zeroOrMore");
+      expect(zeroOrMoreNode.children).toHaveLength(1);
+      expect(zeroOrMoreNode.children[0]).toBe(lit);
+    });
+
+    it("should create one or more", () => {
+      const lit = literal("test");
+      const oneOrMoreNode = oneOrMore(lit);
+      
+      expect(oneOrMoreNode.type).toBe("oneOrMore");
+      expect(oneOrMoreNode.children).toHaveLength(1);
+      expect(oneOrMoreNode.children[0]).toBe(lit);
+    });
+
+    it("should create group", () => {
+      const lit = literal("test");
+      const groupNode = group(lit);
+      
+      expect(groupNode.type).toBe("group");
+      expect(groupNode.children).toHaveLength(1);
+      expect(groupNode.children[0]).toBe(lit);
+    });
+
+    it("should support nested repetition", () => {
+      const lit = literal("a");
+      const opt = optional(lit);
+      const zeroOrMoreNode = zeroOrMore(opt);
+      const oneOrMoreNode = oneOrMore(zeroOrMoreNode);
+      
+      expect(oneOrMoreNode.type).toBe("oneOrMore");
+      expect(oneOrMoreNode.children[0].type).toBe("zeroOrMore");
+      expect(oneOrMoreNode.children[0].children[0].type).toBe("optional");
+      expect(oneOrMoreNode.children[0].children[0].children[0]).toBe(lit);
+    });
+
+    it("should support grouping with repetition", () => {
+      const lit1 = literal("hello");
+      const lit2 = literal("world");
+      const seq = sequence(lit1, lit2);
+      const groupedSeq = group(seq);
+      const repeatedGroup = zeroOrMore(groupedSeq);
+      
+      expect(repeatedGroup.type).toBe("zeroOrMore");
+      expect(repeatedGroup.children[0].type).toBe("group");
+      expect(repeatedGroup.children[0].children[0].type).toBe("sequence");
+      expect(repeatedGroup.children[0].children[0].children).toHaveLength(2);
+    });
+  });
+
   describe("Grammar Structure Tests", () => {
     it("should create definition with identifier and expression", () => {
       const expr = literal("value");
@@ -341,6 +416,9 @@ import type {
       const any = anyChar();
       const andPred = andPredicate(lit);
       const notPred = notPredicate(lit);
+      const zeroOrMoreNode = zeroOrMore(lit);
+      const oneOrMoreNode = oneOrMore(lit);
+      const groupNode = group(lit);
       const c = char("x");
       const r = range("a", "z");
       const def = definition("rule", lit);
@@ -359,6 +437,9 @@ import type {
       expect(isAnyChar(any)).toBe(true);
       expect(isAndPredicate(andPred)).toBe(true);
       expect(isNotPredicate(notPred)).toBe(true);
+      expect(isZeroOrMore(zeroOrMoreNode)).toBe(true);
+      expect(isOneOrMore(oneOrMoreNode)).toBe(true);
+      expect(isGroup(groupNode)).toBe(true);
       expect(isChar(c)).toBe(true);
       expect(isRange(r)).toBe(true);
       expect(isDefinition(def)).toBe(true);
@@ -382,6 +463,9 @@ import type {
         char("c") as PegAstNode,
         range("a", "z") as PegAstNode,
         anyChar() as PegAstNode,
+        zeroOrMore(literal("a")) as PegAstNode,
+        oneOrMore(literal("b")) as PegAstNode,
+        group(literal("c")) as PegAstNode,
       ];
       
       expect(isLiteral(nodes[0])).toBe(true);
@@ -389,10 +473,16 @@ import type {
       expect(isChar(nodes[2])).toBe(true);
       expect(isRange(nodes[3])).toBe(true);
       expect(isAnyChar(nodes[4])).toBe(true);
+      expect(isZeroOrMore(nodes[5])).toBe(true);
+      expect(isOneOrMore(nodes[6])).toBe(true);
+      expect(isGroup(nodes[7])).toBe(true);
       
       // Verify mutual exclusivity
       expect(isLiteral(nodes[1])).toBe(false);
       expect(isIdentifier(nodes[0])).toBe(false);
+      expect(isZeroOrMore(nodes[6])).toBe(false);
+      expect(isOneOrMore(nodes[5])).toBe(false);
+      expect(isGroup(nodes[0])).toBe(false);
     });
   });
 

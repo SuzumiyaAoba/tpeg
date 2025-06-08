@@ -78,6 +78,21 @@ export interface NotPredicate<T extends ExprNode = ExprNode> extends PegParent, 
   children: [T];
 }
 
+export interface ZeroOrMore<T extends ExprNode = ExprNode> extends PegParent, Expr {
+  type: "zeroOrMore";
+  children: [T];
+}
+
+export interface OneOrMore<T extends ExprNode = ExprNode> extends PegParent, Expr {
+  type: "oneOrMore";
+  children: [T];
+}
+
+export interface Group<T extends ExprNode = ExprNode> extends PegParent, Expr {
+  type: "group";
+  children: [T];
+}
+
 export interface Definition<
   I extends Identifier = Identifier,
   E extends ExprNode = ExprNode
@@ -102,7 +117,10 @@ export type ExprNode =
   | CharClass<readonly CharClassElement[]>
   | AnyChar
   | AndPredicate<ExprNode>
-  | NotPredicate<ExprNode>;
+  | NotPredicate<ExprNode>
+  | ZeroOrMore<ExprNode>
+  | OneOrMore<ExprNode>
+  | Group<ExprNode>;
 
 // Union of all node types
 export type PegAstNode =
@@ -142,6 +160,15 @@ export const isAndPredicate = (node: PegAstNode): node is AndPredicate<ExprNode>
 
 export const isNotPredicate = (node: PegAstNode): node is NotPredicate<ExprNode> =>
   node.type === "notPredicate";
+
+export const isZeroOrMore = (node: PegAstNode): node is ZeroOrMore<ExprNode> =>
+  node.type === "zeroOrMore";
+
+export const isOneOrMore = (node: PegAstNode): node is OneOrMore<ExprNode> =>
+  node.type === "oneOrMore";
+
+export const isGroup = (node: PegAstNode): node is Group<ExprNode> =>
+  node.type === "group";
 
 export const isChar = (node: PegAstNode): node is Char<string> =>
   node.type === "char";
@@ -202,6 +229,18 @@ export const andPredicate = <T extends ExprNode>(expr: T): AndPredicate<T> => {
 
 export const notPredicate = <T extends ExprNode>(expr: T): NotPredicate<T> => {
   return u("notPredicate", { children: [expr] }) as unknown as NotPredicate<T>;
+};
+
+export const zeroOrMore = <T extends ExprNode>(expr: T): ZeroOrMore<T> => {
+  return u("zeroOrMore", { children: [expr] }) as ZeroOrMore<T>;
+};
+
+export const oneOrMore = <T extends ExprNode>(expr: T): OneOrMore<T> => {
+  return u("oneOrMore", { children: [expr] }) as OneOrMore<T>;
+};
+
+export const group = <T extends ExprNode>(expr: T): Group<T> => {
+  return u("group", { children: [expr] }) as Group<T>;
 };
 
 export const definition = <I extends string, E extends ExprNode>(id: I, expr: E): Definition<Identifier<I>, E> => {
