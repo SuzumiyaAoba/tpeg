@@ -17,12 +17,19 @@ import type { ParseFailure, ParseSuccess, Parser } from "./types";
  */
 export const map =
   <T, U>(parser: Parser<T>, f: (value: T) => U): Parser<U> =>
-  (input: string, index) => {
-    const result = parser(input, index);
+  (input: string, pos) => {
+    const result = parser(input, pos);
 
-    return result.success
-      ? { ...result, val: f(result.val) }
-      : (result as ParseFailure);
+    if (result.success) {
+      return {
+        success: true,
+        val: f(result.val),
+        current: result.current,
+        next: result.next,
+      };
+    }
+    
+    return result;
   };
 
 /**
@@ -42,10 +49,108 @@ export const map =
  */
 export const mapResult =
   <T, U>(parser: Parser<T>, f: (value: ParseSuccess<T>) => U): Parser<U> =>
-  (input: string, index) => {
-    const result = parser(input, index);
+  (input: string, pos) => {
+    const result = parser(input, pos);
 
-    return result.success
-      ? { ...result, val: f(result) }
-      : (result as ParseFailure);
+    if (result.success) {
+      return {
+        success: true,
+        val: f(result),
+        current: result.current,
+        next: result.next,
+      };
+    }
+    
+    return result;
+  };
+
+/**
+ * Parser that transforms the error message on failure.
+ *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @param f Function to transform the error
+ * @returns Parser<T> A parser that returns the original value on success, or the transformed error on failure.
+ * @example
+ *   const number = mapError(
+ *     charClass(["0", "9"]),
+ *     error => ({ ...error, message: "Expected a digit" })
+ *   );
+ *   // Provides a custom error message for digit parsing
+ */
+export const mapError =
+  <T>(parser: Parser<T>, f: (error: ParseFailure) => ParseFailure): Parser<T> =>
+  (input: string, pos) => {
+    const result = parser(input, pos);
+
+    if (result.success) {
+      return result;
+    }
+    
+    return f(result);
+  };
+
+/**
+ * Parser that applies a predicate to filter parse results.
+ *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @param predicate Function to test the parsed value
+ * @param errorMessage Error message to use when predicate fails
+ * @returns Parser<T> A parser that succeeds only if both parsing and predicate succeed.
+ * @example
+ *   const evenDigit = filter(
+ *     map(charClass(["0", "9"]), char => parseInt(char, 10)),
+ *     n => n % 2 === 0,
+ *     "Expected an even digit"
+ *   );
+ *   // Parses a digit and ensures it's even
+ */
+export const filter =
+  <T>(parser: Parser<T>, predicate: (value: T) => boolean, errorMessage: string): Parser<T> =>
+  (input: string, pos) => {
+    const result = parser(input, pos);
+
+    if (result.success) {
+      if (predicate(result.val)) {
+        return result;
+      }
+      
+      return {
+        success: false,
+        error: {
+          message: errorMessage,
+          pos: result.current,
+          parserName: "filter",
+        },
+      };
+    }
+    
+    return result;
+  };
+
+/**
+ * Parser that executes a side effect on successful parse without changing the result.
+ *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @param effect Function to execute as a side effect
+ * @returns Parser<T> A parser that returns the original result after executing the side effect.
+ * @example
+ *   const loggedParser = tap(
+ *     literal("hello"),
+ *     value => console.log(`Parsed: ${value}`)
+ *   );
+ *   // Logs the parsed value without changing the result
+ */
+export const tap =
+  <T>(parser: Parser<T>, effect: (value: T) => void): Parser<T> =>
+  (input: string, pos) => {
+    const result = parser(input, pos);
+
+    if (result.success) {
+      effect(result.val);
+    }
+    
+    return result;
   };
