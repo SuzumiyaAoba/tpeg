@@ -159,6 +159,124 @@ describe("repetition edge cases", () => {
     }
   });
 
+  // 新しいテストケース：空文字列の処理
+  it("should handle empty input correctly", () => {
+    const input = "";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    
+    // optional should return empty array
+    const optResult = opt(lit("a"))(input, pos);
+    expect(optResult.success).toBe(true);
+    if (optResult.success) {
+      expect(optResult.val).toEqual([]);
+      expect(optResult.next).toEqual(pos);
+    }
+
+    // zeroOrMore should return empty array
+    const starResult = star(lit("a"))(input, pos);
+    expect(starResult.success).toBe(true);
+    if (starResult.success) {
+      expect(starResult.val).toEqual([]);
+      expect(starResult.next).toEqual(pos);
+    }
+
+    // oneOrMore should fail
+    const plusResult = plus(lit("a"))(input, pos);
+    expect(plusResult.success).toBe(false);
+    if (!plusResult.success) {
+      expect(plusResult.error.message).toContain("end of input");
+    }
+  });
+
+  // 新しいテストケース：エラーメッセージの品質確認
+  it("should provide meaningful error messages for oneOrMore failures", () => {
+    const input = "xyz";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = plus(lit("a"))(input, pos);
+    
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.message).toContain("Unexpected character");
+      expect(result.error.pos.offset).toBe(0);
+    }
+  });
+
+  // 新しいテストケース：位置情報の正確性確認
+  it("should maintain correct position information", () => {
+    const input = "abcdef";
+    const pos: Pos = { offset: 2, column: 3, line: 1 };
+    
+    // Position should be maintained correctly
+    const result = zeroOrMore(lit("c"))(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toEqual(["c"]);
+      expect(result.current).toEqual(pos);
+      expect(result.next).toEqual({ offset: 3, column: 4, line: 1 });
+    }
+  });
+
+  // 新しいテストケース：複雑なネストしたパターン
+  it("should handle deeply nested repetitions", () => {
+    // Pattern: zero or more groups of (one or more 'a' followed by optional 'b')
+    const groupParser = seq(oneOrMore(lit("a")), optional(lit("b")));
+    const parser = zeroOrMore(groupParser);
+    
+    const result = parser("aaabaaab", { offset: 0, line: 1, column: 1 });
+    expect(isSuccess(result)).toBe(true);
+    if (isSuccess(result)) {
+      expect(result.val).toEqual([
+        [["a", "a", "a"], ["b"]],
+        [["a", "a", "a"], ["b"]],
+      ]);
+    }
+  });
+
+  // 新しいテストケース：NonEmptyArray型の型安全性確認
+  it("should ensure type safety for NonEmptyArray", () => {
+    const input = "aaa";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = oneOrMore(lit("a"))(input, pos);
+    
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // TypeScriptの型システムによりNonEmptyArrayであることが保証される
+      expect(result.val.length).toBeGreaterThan(0);
+      expect(result.val[0]).toBe("a");
+    }
+  });
+
+  // 新しいテストケース：パフォーマンス関連
+  it("should handle large inputs efficiently", () => {
+    const largeInput = "a".repeat(1000);
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    
+    const startTime = performance.now();
+    const result = zeroOrMore(lit("a"))(largeInput, pos);
+    const endTime = performance.now();
+    
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.length).toBe(1000);
+      // 1秒以内に完了することを確認（合理的なパフォーマンス期待）
+      expect(endTime - startTime).toBeLessThan(1000);
+    }
+  });
+
+  // 新しいテストケース：複数行の処理
+  it("should handle multiline input correctly", () => {
+    const input = "a\na\na";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    
+    // Should parse first 'a' only (literal doesn't cross lines)
+    const result = zeroOrMore(lit("a"))(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toEqual(["a"]);
+      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
+    }
+  });
+
   it("should handle sequences of repetitions", () => {
     // Pattern with sequence of digits followed by sequence of letters
     const digitParser = charClass(["0", "9"]);

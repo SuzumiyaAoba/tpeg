@@ -64,11 +64,15 @@ export const zeroOrMore =
       // Check for infinite loop (position doesn't advance)
       if (result.next.offset === currentPos.offset) {
         return createFailure(
-          "Infinite loop detected in zeroOrMore",
+          `Infinite loop detected in zeroOrMore: Parser succeeded but consumed no input at position ${currentPos.offset}`,
           currentPos,
           {
             parserName: "zeroOrMore",
-            context: ["Parser matched but did not consume any input"],
+            context: [
+              "Parser matched but did not consume any input",
+              `Input: "${input.slice(currentPos.offset, currentPos.offset + 10)}${input.length > currentPos.offset + 10 ? "..." : ""}"`,
+              `Position: line ${currentPos.line}, column ${currentPos.column}`,
+            ],
           },
         );
       }
@@ -97,6 +101,9 @@ export const star = zeroOrMore;
 
 /**
  * Parser for one or more occurrences of a pattern.
+ * 
+ * This implementation is optimized to avoid calling zeroOrMore internally,
+ * reducing function call overhead and providing better error messages.
  *
  * @template T Type of the parse result value
  * @param parser Target parser
@@ -105,41 +112,64 @@ export const star = zeroOrMore;
 export const oneOrMore =
   <T>(parser: Parser<T>): Parser<NonEmptyArray<T>> =>
   (input: string, pos) => {
-    const firstResult = parser(input, pos);
+    const results: T[] = [];
+    let currentPos = pos;
+    let isFirstIteration = true;
 
-    if (isFailure(firstResult)) {
-      return createFailure(
-        `Expected at least one occurrence: ${firstResult.error.message}`,
-        firstResult.error.pos,
-        {
-          ...firstResult.error,
-          parserName: "oneOrMore",
-          context: [
-            "in oneOrMore",
-            ...(firstResult.error.context
-              ? Array.isArray(firstResult.error.context)
-                ? firstResult.error.context
-                : [firstResult.error.context]
-              : []),
-          ],
-        },
-      );
+    while (true) {
+      const result = parser(input, currentPos);
+
+      if (!result.success) {
+        if (isFirstIteration) {
+          // First iteration failed - return error
+          return createFailure(
+            `Expected at least one occurrence: ${result.error.message}`,
+            result.error.pos,
+            {
+              ...result.error,
+              parserName: "oneOrMore",
+              context: [
+                "in oneOrMore",
+                ...(result.error.context
+                  ? Array.isArray(result.error.context)
+                    ? result.error.context
+                    : [result.error.context]
+                  : []),
+              ],
+            },
+          );
+        }
+        // Later iterations failed - break and return what we have
+        break;
+      }
+
+      // Check for infinite loop (position doesn't advance)
+      if (result.next.offset === currentPos.offset) {
+        return createFailure(
+          `Infinite loop detected in oneOrMore: Parser succeeded but consumed no input at position ${currentPos.offset}`,
+          currentPos,
+          {
+            parserName: "oneOrMore",
+            context: [
+              "Parser matched but did not consume any input",
+              `Input: "${input.slice(currentPos.offset, currentPos.offset + 10)}${input.length > currentPos.offset + 10 ? "..." : ""}"`,
+              `Position: line ${currentPos.line}, column ${currentPos.column}`,
+              `Results so far: ${results.length} item(s)`,
+            ],
+          },
+        );
+      }
+
+      results.push(result.val);
+      currentPos = result.next;
+      isFirstIteration = false;
     }
 
-    // Get the rest using zeroOrMore
-    const restResult = zeroOrMore(parser)(input, firstResult.next);
-
-    // Check for infinite loop
-    if (isFailure(restResult)) {
-      return restResult;
-    }
-
-    // Combine first and rest
     return {
       success: true,
-      val: [firstResult.val, ...restResult.val] as NonEmptyArray<T>,
+      val: results as NonEmptyArray<T>,
       current: pos,
-      next: restResult.next,
+      next: currentPos,
     };
   };
 
