@@ -1,11 +1,26 @@
 import type { Parser } from "./types";
 import { createFailure, isFailure } from "./utils";
+import type { ParseSuccess } from "./types";
+
+/**
+ * 共通の成功結果オブジェクト（メモリ最適化のため）
+ */
+const createSuccessResult = (pos: import("./types").Pos): ParseSuccess<undefined> => ({
+  success: true as const,
+  val: undefined,
+  current: pos,
+  next: pos,
+});
 
 /**
  * Parser for positive lookahead (does not consume input).
  *
  * Succeeds if the given parser succeeds at the current position, but does not consume any input.
  * This is equivalent to the `&expr` syntax in PEG notation.
+ * 
+ * **Important**: This parser returns `undefined` as its value since it only checks
+ * for pattern existence without consuming input. The input position remains unchanged
+ * regardless of success or failure.
  *
  * @template T Type of the parse result value
  * @param parser Target parser to check
@@ -17,6 +32,12 @@ import { createFailure, isFailure } from "./utils";
  * const checkHello = andPredicate(literal("hello"));
  * const result = checkHello("hello world", { offset: 0, line: 1, column: 1 });
  * // result.success === true, but position remains unchanged
+ * 
+ * // Common usage: ensure pattern exists before parsing
+ * const identifier = sequence(
+ *   andPredicate(letter), // ensure it starts with a letter
+ *   many(alphaNumeric)    // then parse the rest
+ * );
  * ```
  */
 export const andPredicate =
@@ -25,11 +46,10 @@ export const andPredicate =
     const result = parser(input, pos);
 
     if (isFailure(result)) {
-      const context = result.error.context
-        ? Array.isArray(result.error.context)
-          ? result.error.context
-          : [result.error.context]
-        : [];
+      const existingContext = result.error.context || [];
+      const contextArray = Array.isArray(existingContext) 
+        ? existingContext 
+        : [existingContext];
 
       return createFailure(
         `Positive lookahead failed: ${result.error.message}`,
@@ -37,17 +57,12 @@ export const andPredicate =
         {
           ...result.error,
           parserName: "andPredicate",
-          context: ["in positive lookahead", ...context],
+          context: ["in positive lookahead", ...contextArray],
         },
       );
     }
 
-    return {
-      success: true,
-      val: undefined,
-      current: pos,
-      next: pos,
-    };
+    return createSuccessResult(pos);
   };
 
 /**
@@ -85,6 +100,10 @@ export const assert = andPredicate;
  *
  * Succeeds if the given parser fails at the current position, but does not consume any input.
  * This is equivalent to the `!expr` syntax in PEG notation.
+ * 
+ * **Important**: This parser returns `undefined` as its value since it only checks
+ * for pattern absence without consuming input. The input position remains unchanged
+ * regardless of success or failure.
  *
  * @template T Type of the parse result value
  * @param parser Target parser to check for failure
@@ -96,6 +115,12 @@ export const assert = andPredicate;
  * const notEnd = notPredicate(literal("end"));
  * const result = notEnd("start", { offset: 0, line: 1, column: 1 });
  * // result.success === true because "start" doesn't match "end"
+ * 
+ * // Common usage: parse until a terminator without consuming it
+ * const content = many(sequence(
+ *   notPredicate(literal("</tag>")), // don't consume the closing tag
+ *   anyChar()                        // but consume any other character
+ * ));
  * ```
  */
 export const notPredicate =
@@ -103,12 +128,7 @@ export const notPredicate =
   (input: string, pos) => {
     const result = parser(input, pos);
     if (!result.success) {
-      return {
-        success: true,
-        val: undefined,
-        current: pos,
-        next: pos,
-      };
+      return createSuccessResult(pos);
     }
 
     return createFailure(
