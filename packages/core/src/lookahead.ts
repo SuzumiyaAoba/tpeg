@@ -1,11 +1,13 @@
 import type { Parser } from "./types";
-import { createFailure, isFailure } from "./utils";
 import type { ParseSuccess } from "./types";
+import { createFailure, isFailure } from "./utils";
 
 /**
  * 共通の成功結果オブジェクト（メモリ最適化のため）
  */
-const createSuccessResult = (pos: import("./types").Pos): ParseSuccess<undefined> => ({
+const createSuccessResult = (
+  pos: import("./types").Pos,
+): ParseSuccess<undefined> => ({
   success: true as const,
   val: undefined,
   current: pos,
@@ -17,7 +19,7 @@ const createSuccessResult = (pos: import("./types").Pos): ParseSuccess<undefined
  *
  * Succeeds if the given parser succeeds at the current position, but does not consume any input.
  * This is equivalent to the `&expr` syntax in PEG notation.
- * 
+ *
  * **Important**: This parser returns `undefined` as its value since it only checks
  * for pattern existence without consuming input. The input position remains unchanged
  * regardless of success or failure.
@@ -32,7 +34,7 @@ const createSuccessResult = (pos: import("./types").Pos): ParseSuccess<undefined
  * const checkHello = andPredicate(literal("hello"));
  * const result = checkHello("hello world", { offset: 0, line: 1, column: 1 });
  * // result.success === true, but position remains unchanged
- * 
+ *
  * // Common usage: ensure pattern exists before parsing
  * const identifier = sequence(
  *   andPredicate(letter), // ensure it starts with a letter
@@ -47,8 +49,8 @@ export const andPredicate =
 
     if (isFailure(result)) {
       const existingContext = result.error.context || [];
-      const contextArray = Array.isArray(existingContext) 
-        ? existingContext 
+      const contextArray = Array.isArray(existingContext)
+        ? existingContext
         : [existingContext];
 
       return createFailure(
@@ -100,7 +102,7 @@ export const assert = andPredicate;
  *
  * Succeeds if the given parser fails at the current position, but does not consume any input.
  * This is equivalent to the `!expr` syntax in PEG notation.
- * 
+ *
  * **Important**: This parser returns `undefined` as its value since it only checks
  * for pattern absence without consuming input. The input position remains unchanged
  * regardless of success or failure.
@@ -115,7 +117,7 @@ export const assert = andPredicate;
  * const notEnd = notPredicate(literal("end"));
  * const result = notEnd("start", { offset: 0, line: 1, column: 1 });
  * // result.success === true because "start" doesn't match "end"
- * 
+ *
  * // Common usage: parse until a terminator without consuming it
  * const content = many(sequence(
  *   notPredicate(literal("</tag>")), // don't consume the closing tag

@@ -360,16 +360,17 @@ export const Sequence = mapResult(many(Prefix), ($) => {
  * Expression <- Sequence (SLASH Sequence)*
  * ```
  */
-export const Expression = map(
+export const Expression = mapResult(
   seq(Sequence, many(map(seq(SLASH, Sequence), ($) => $[1]))),
   ($) => {
-    if ($[1].length === 0) {
-      return $[0];
+    if ($.val[1].length === 0) {
+      return $.val[0];
     }
 
     return {
       type: "Choice",
-      value: [$[0], ...$[1]],
+      value: [$.val[0], ...$.val[1]],
+      pos: $.current,
     } as const;
   },
 );
@@ -379,13 +380,14 @@ export const Expression = map(
  * Definition <- Identifier LEFTARROW Expression
  * ```
  */
-export const Definition = map(
+export const Definition = mapResult(
   seq(Identifier, LEFTARROW, Expression),
   ($) =>
     ({
       type: "Definition",
-      name: $[0].value,
-      expr: $[2],
+      name: $.val[0].value,
+      expr: $.val[2],
+      pos: $.current,
     }) as const,
 );
 
@@ -394,11 +396,12 @@ export const Definition = map(
  * Grammar <- Spacing Definition+ EndOfFile
  * ```
  */
-export const Grammar = map(
+export const Grammar = mapResult(
   seq(Spacing, many1(Definition), EndOfFile),
   ($) =>
     ({
       type: "Grammar",
-      value: $[1],
+      value: $.val[1],
+      pos: $.current,
     }) as const,
 );
