@@ -1,8 +1,9 @@
 /**
  * TPEG String Literal Parser
  * 
- * Implements parsing of string literals: "hello", 'world', `template`
+ * Implements parsing of string literals: "hello", 'world'
  * Based on docs/peg-grammar.md specification.
+ * Note: Template literals (`template`) are planned for future extension
  */
 
 import type { Parser } from 'tpeg-core';
@@ -12,11 +13,11 @@ import { between } from 'tpeg-combinator';
 
 /**
  * Parses escape sequences within string literals.
- * Supports: \n, \r, \t, \\, \", \', \`
+ * Supports: \n, \r, \t, \\, \", \'
  */
 const escapeSequence = (): Parser<string> => {
   return map(
-    seq(literal('\\'), charClass('n', 'r', 't', '\\', '"', "'", '`')),
+    seq(literal('\\'), charClass('n', 'r', 't', '\\', '"', "'")),
     ([_, char]) => {
       switch (char) {
         case 'n': return '\n';
@@ -25,7 +26,6 @@ const escapeSequence = (): Parser<string> => {
         case '\\': return '\\';
         case '"': return '"';
         case "'": return "'";
-        case '`': return '`';
         default: return char;
       }
     }
@@ -53,18 +53,6 @@ const singleQuoteChar = (): Parser<string> => {
     escapeSequence(),
     // Any character except ' and \
     charClass([' ', '&'], ['(', '['], [']', '~'])
-  );
-};
-
-/**
- * Parses a character within a template literal.
- * Handles escape sequences and regular characters.
- */
-const templateChar = (): Parser<string> => {
-  return choice(
-    escapeSequence(),
-    // Any character except ` and \
-    charClass([' ', '_'], ['a', '~'])
   );
 };
 
@@ -105,26 +93,8 @@ const singleQuotedString = (): Parser<StringLiteral> => {
 };
 
 /**
- * Parses template literals: `hello world`
- */
-const templateLiteral = (): Parser<StringLiteral> => {
-  return map(
-    seq(
-      literal('`'),
-      map(zeroOrMore(templateChar()), chars => chars.join('')),
-      literal('`')
-    ),
-    ([_, content, __]) => ({
-      type: 'StringLiteral' as const,
-      value: content,
-      quote: '`' as const
-    })
-  );
-};
-
-/**
  * Parses any valid TPEG string literal.
- * Supports double quotes, single quotes, and template literals.
+ * Supports double quotes and single quotes.
  * 
  * @returns Parser<StringLiteral> Parser that matches string literals
  * 
@@ -135,15 +105,11 @@ const templateLiteral = (): Parser<StringLiteral> => {
  * 
  * const result2 = stringLiteral()("'world'", { offset: 0, line: 1, column: 1 });
  * // result2.success === true, result2.val.value === "world", result2.val.quote === "'"
- * 
- * const result3 = stringLiteral()("`template`", { offset: 0, line: 1, column: 1 });
- * // result3.success === true, result3.val.value === "template", result3.val.quote === "`"
  * ```
  */
 export const stringLiteral = (): Parser<StringLiteral> => {
   return choice(
     doubleQuotedString(),
-    singleQuotedString(),
-    templateLiteral()
+    singleQuotedString()
   );
 }; 

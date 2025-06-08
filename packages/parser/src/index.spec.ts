@@ -34,17 +34,7 @@ describe('basicSyntax', () => {
       }
     });
 
-    it('should parse template literals', () => {
-      const result = parser('`template`', pos);
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.val.type).toBe('StringLiteral');
-        if (result.val.type === 'StringLiteral') {
-          expect(result.val.value).toBe('template');
-          expect(result.val.quote).toBe('`');
-        }
-      }
-    });
+
   });
 
   describe('character classes', () => {

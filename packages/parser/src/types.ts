@@ -6,12 +6,13 @@
 
 /**
  * String literal node in TPEG grammar AST.
- * Represents string literals like "hello", 'world', `template`
+ * Represents string literals like "hello", 'world'
+ * Note: Template literals (`template`) are planned for future extension
  */
 export interface StringLiteral {
   type: 'StringLiteral';
   value: string;
-  quote: '"' | "'" | '`';
+  quote: '"' | "'";
 }
 
 /**

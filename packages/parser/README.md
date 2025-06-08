@@ -6,7 +6,7 @@ TPEG Grammar Parser implements parsing functionality for TPEG (TypeScript Parsin
 
 This package provides parsers for the fundamental syntax elements of TPEG grammar as defined in `docs/peg-grammar.md`:
 
-- **String Literals**: `"hello"`, `'world'`, `` `template` ``
+- **String Literals**: `"hello"`, `'world'`
 - **Character Classes**: `[a-z]`, `[A-Z]`, `[0-9]`, `[^0-9]`, `.`
 - **Identifiers**: Rule references like `expression`, `number`, `identifier`
 
@@ -88,7 +88,7 @@ type BasicSyntaxNode = StringLiteral | CharacterClass | Identifier | AnyChar;
 interface StringLiteral {
   type: 'StringLiteral';
   value: string;
-  quote: '"' | "'" | '`';
+  quote: '"' | "'";
 }
 ```
 
@@ -130,8 +130,9 @@ Combined parser for all basic TPEG syntax elements.
 Parser for string literals with support for:
 - Double quotes: `"hello"`
 - Single quotes: `'world'`
-- Template literals: `` `template` ``
-- Escape sequences: `\n`, `\r`, `\t`, `\\`, `\"`, `\'`, `` \` ``
+- Escape sequences: `\n`, `\r`, `\t`, `\\`, `\"`, `\'`
+
+Note: Template literals (`` `template` ``) are planned for future extension.
 
 #### `characterClass(): Parser<CharacterClass | AnyChar>`
 Parser for character classes and any character dot:
