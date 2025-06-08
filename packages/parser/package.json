@@ -1,0 +1,36 @@
+{
+  "name": "tpeg-parser",
+  "version": "0.1.0",
+  "description": "TPEG Grammar Parser - implements parsing functionality for TPEG grammar syntax",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "parser",
+    "peg",
+    "tpeg",
+    "grammar",
+    "parsing",
+    "typescript"
+  ],
+  "dependencies": {
+    "tpeg-core": "workspace:*",
+    "tpeg-combinator": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SuzumiyaAoba/tpeg.git",
+    "directory": "packages/parser"
+  },
+  "license": "MIT"
+} 
