@@ -1,4 +1,4 @@
-import type { NonEmptyArray, Parser } from "./types";
+import type { NonEmptyArray, Parser, ParseFailure } from "./types";
 import { createFailure, isFailure } from "./utils";
 
 /**
@@ -122,18 +122,19 @@ export const oneOrMore =
       if (!result.success) {
         if (isFirstIteration) {
           // First iteration failed - return error
+          const failure = result as ParseFailure;
           return createFailure(
-            `Expected at least one occurrence: ${result.error.message}`,
-            result.error.pos,
+            `Expected at least one occurrence: ${failure.error.message}`,
+            failure.error.pos,
             {
-              ...result.error,
+              ...failure.error,
               parserName: "oneOrMore",
               context: [
                 "in oneOrMore",
-                ...(result.error.context
-                  ? Array.isArray(result.error.context)
-                    ? result.error.context
-                    : [result.error.context]
+                ...(failure.error.context
+                  ? Array.isArray(failure.error.context)
+                    ? failure.error.context
+                    : [failure.error.context]
                   : []),
               ],
             },

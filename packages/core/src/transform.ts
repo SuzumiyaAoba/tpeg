@@ -29,7 +29,7 @@ export const map =
       };
     }
     
-    return result;
+    return result as ParseFailure;
   };
 
 /**
@@ -61,7 +61,7 @@ export const mapResult =
       };
     }
     
-    return result;
+    return result as ParseFailure;
   };
 
 /**
@@ -87,7 +87,7 @@ export const mapError =
       return result;
     }
     
-    return f(result);
+    return f(result as ParseFailure);
   };
 
 /**
@@ -126,7 +126,7 @@ export const filter =
       };
     }
     
-    return result;
+    return result as ParseFailure;
   };
 
 /**
@@ -150,7 +150,8 @@ export const tap =
 
     if (result.success) {
       effect(result.val);
+      return result;
     }
     
-    return result;
+    return result as ParseFailure;
   };
