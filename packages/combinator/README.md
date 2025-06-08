@@ -52,6 +52,35 @@ TPEG includes sample parsers for:
 - Arithmetic Expression Parser
 - PEG Grammar Parser
 
+### Try the Arithmetic Calculator
+
+You can easily try our arithmetic expression parser with the interactive tools:
+
+```bash
+# Clone and setup
+git clone https://github.com/SuzumiyaAoba/tpeg.git
+cd tpeg
+bun install
+
+# Try the calculator with different modes
+cd packages/samples
+
+# Basic demo
+bun run arith
+
+# Calculate a specific expression
+bun run arith "1 + 2 * 3"
+
+# Show AST structure
+bun run arith --ast "(1 + 2) * 3"
+
+# Run all examples
+bun run arith:examples
+
+# Interactive REPL
+bun run arith:repl
+```
+
 ### Basic Example
 
 ```typescript
