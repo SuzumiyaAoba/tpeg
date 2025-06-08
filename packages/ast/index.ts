@@ -14,15 +14,17 @@ export interface PegParent extends UnistParent, PegNode {}
 
 export interface Expr extends PegNode {}
 
-export interface Literal extends PegLiteral, Expr {
+export interface Literal<T extends string = string> extends PegLiteral, Expr {
   type: "literal";
-  value: string;
+  value: T;
 }
 
-export interface Identifier extends PegLiteral, Expr {
+export interface Identifier<T extends string = string> extends PegLiteral, Expr {
   type: "identifier";
-  value: string;
+  value: T;
 }
+
+
 
 export interface Sequence extends PegParent, Expr {
   type: "sequence";
@@ -141,12 +143,12 @@ export const isGrammar = (node: PegAstNode): node is Grammar =>
   node.type === "grammar";
 
 // ビルダー関数（型安全性を向上）
-export const literal = (value: string): Literal => {
-  return u("literal", { value }) as Literal;
+export const literal = <T extends string>(value: T): Literal<T> => {
+  return u("literal", { value }) as Literal<T>;
 };
 
-export const identifier = (value: string): Identifier => {
-  return u("identifier", { value }) as Identifier;
+export const identifier = <T extends string>(value: T): Identifier<T> => {
+  return u("identifier", { value }) as Identifier<T>;
 };
 
 export const sequence = (...exprs: readonly ExprNode[]): Sequence => {
@@ -196,3 +198,5 @@ export const grammar = (...definitions: readonly Definition[]): Grammar => {
     children: [...definitions],
   }) as Grammar;
 };
+
+
