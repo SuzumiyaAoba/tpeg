@@ -24,19 +24,19 @@ export interface Identifier<T extends string = string> extends PegLiteral, Expr 
   value: T;
 }
 
-export interface Sequence extends PegParent, Expr {
+export interface Sequence<T extends readonly ExprNode[] = ExprNode[]> extends PegParent, Expr {
   type: "sequence";
-  children: Expr[];
+  children: [...T];
 }
 
-export interface Choice extends PegParent, Expr {
+export interface Choice<T extends readonly ExprNode[] = ExprNode[]> extends PegParent, Expr {
   type: "choice";
-  children: Expr[];
+  children: [...T];
 }
 
-export interface Optional extends PegParent, Expr {
+export interface Optional<T extends ExprNode = ExprNode> extends PegParent, Expr {
   type: "optional";
-  children: [Expr];
+  children: [T];
 }
 
 export interface Char<T extends string = string> extends PegLiteral {
@@ -51,96 +51,99 @@ export interface Range<F extends string = string, T extends string = string> ext
 
 export type CharClassElement = Char | Range;
 
-export interface CharClass extends PegParent, Expr {
+export interface CharClass<T extends readonly CharClassElement[] = CharClassElement[]> extends PegParent, Expr {
   type: "charClass";
-  children: CharClassElement[];
+  children: [...T];
 }
 
 export interface AnyChar extends PegLiteral, Expr {
   type: "anyChar";
 }
 
-export interface AndPredicate extends PegParent, Expr {
+export interface AndPredicate<T extends ExprNode = ExprNode> extends PegParent, Expr {
   type: "andPredicate";
-  children: [Expr];
+  children: [T];
 }
 
-export interface NotPredicate extends PegParent, Expr {
+export interface NotPredicate<T extends ExprNode = ExprNode> extends PegParent, Expr {
   type: "notPredicate";
-  children: [Expr];
+  children: [T];
 }
 
-export interface Definition extends PegParent {
+export interface Definition<
+  I extends Identifier = Identifier,
+  E extends ExprNode = ExprNode
+> extends PegParent {
   type: "definition";
-  children: [Identifier, Expr];
+  children: [I, E];
 }
 
-export interface Grammar extends PegParent {
+export interface Grammar<T extends readonly Definition[] = Definition[]> extends PegParent {
   type: "grammar";
-  children: Definition[];
+  children: [...T];
 }
 
-// タグ付きユニオン型でより型安全なExpr型を定義
+// Tagged union type for more type-safe Expr types
 export type ExprNode =
-  | Literal
-  | Identifier
-  | Sequence
-  | Choice
-  | Optional
-  | CharClass
+  | Literal<string>
+  | Identifier<string>
+  | Sequence<readonly ExprNode[]>
+  | Choice<readonly ExprNode[]>
+  | Optional<ExprNode>
+  | CharClass<readonly CharClassElement[]>
   | AnyChar
-  | AndPredicate
-  | NotPredicate;
+  | AndPredicate<ExprNode>
+  | NotPredicate<ExprNode>;
 
-// すべてのノード型のユニオン
+// Union of all node types
 export type PegAstNode =
   | ExprNode
-  | Char
-  | Range
-  | Definition
-  | Grammar;
+  | Char<string>
+  | Range<string, string>
+  | Definition<Identifier<string>, ExprNode>
+  | Grammar<readonly Definition<Identifier<string>, ExprNode>[]>;
 
 // 型ガード関数
-export const isLiteral = (node: PegAstNode): node is Literal =>
+export const isLiteral = (node: PegAstNode): node is Literal<string> =>
   node.type === "literal";
 
-export const isIdentifier = (node: PegAstNode): node is Identifier =>
+export const isIdentifier = (node: PegAstNode): node is Identifier<string> =>
   node.type === "identifier";
 
-export const isSequence = (node: PegAstNode): node is Sequence =>
+export const isSequence = (node: PegAstNode): node is Sequence<readonly ExprNode[]> =>
   node.type === "sequence";
 
-export const isChoice = (node: PegAstNode): node is Choice =>
+export const isChoice = (node: PegAstNode): node is Choice<readonly ExprNode[]> =>
   node.type === "choice";
 
-export const isOptional = (node: PegAstNode): node is Optional =>
+export const isOptional = (node: PegAstNode): node is Optional<ExprNode> =>
   node.type === "optional";
 
-export const isCharClass = (node: PegAstNode): node is CharClass =>
+export const isCharClass = (node: PegAstNode): node is CharClass<readonly CharClassElement[]> =>
   node.type === "charClass";
 
 export const isAnyChar = (node: PegAstNode): node is AnyChar =>
   node.type === "anyChar";
 
-export const isAndPredicate = (node: PegAstNode): node is AndPredicate =>
+export const isAndPredicate = (node: PegAstNode): node is AndPredicate<ExprNode> =>
   node.type === "andPredicate";
 
-export const isNotPredicate = (node: PegAstNode): node is NotPredicate =>
+export const isNotPredicate = (node: PegAstNode): node is NotPredicate<ExprNode> =>
   node.type === "notPredicate";
 
-export const isChar = (node: PegAstNode): node is Char =>
+export const isChar = (node: PegAstNode): node is Char<string> =>
   node.type === "char";
 
-export const isRange = (node: PegAstNode): node is Range =>
+export const isRange = (node: PegAstNode): node is Range<string, string> =>
   node.type === "range";
 
-export const isDefinition = (node: PegAstNode): node is Definition =>
+export const isDefinition = (node: PegAstNode): node is Definition<Identifier<string>, ExprNode> =>
   node.type === "definition";
 
-export const isGrammar = (node: PegAstNode): node is Grammar =>
+export const isGrammar = (node: PegAstNode): node is Grammar<readonly Definition<Identifier<string>, ExprNode>[]> =>
   node.type === "grammar";
 
-// ビルダー関数（型安全性を向上）
+// Builder functions with improved type safety
 export const literal = <T extends string>(value: T): Literal<T> => {
   return u("literal", { value }) as Literal<T>;
 };
@@ -149,16 +152,16 @@ export const identifier = <T extends string>(value: T): Identifier<T> => {
   return u("identifier", { value }) as Identifier<T>;
 };
 
-export const sequence = (...exprs: readonly ExprNode[]): Sequence => {
-  return u("sequence", { children: [...exprs] }) as Sequence;
+export const sequence = <T extends readonly ExprNode[]>(...exprs: T): Sequence<T> => {
+  return u("sequence", { children: [...exprs] }) as Sequence<T>;
 };
 
-export const choice = (...exprs: readonly ExprNode[]): Choice => {
-  return u("choice", { children: [...exprs] }) as Choice;
+export const choice = <T extends readonly ExprNode[]>(...exprs: T): Choice<T> => {
+  return u("choice", { children: [...exprs] }) as Choice<T>;
 };
 
-export const optional = (expr: ExprNode): Optional => {
-  return u("optional", { children: [expr] }) as unknown as Optional;
+export const optional = <T extends ExprNode>(expr: T): Optional<T> => {
+  return u("optional", { children: [expr] }) as unknown as Optional<T>;
 };
 
 export const char = <T extends string>(value: T): Char<T> => {
@@ -169,32 +172,32 @@ export const range = <F extends string, T extends string>(from: F, to: T): Range
   return u("range", { value: [from, to] }) as Range<F, T>;
 };
 
-export const charClass = (...elements: readonly CharClassElement[]): CharClass => {
-  return u("charClass", { children: [...elements] }) as CharClass;
+export const charClass = <T extends readonly CharClassElement[]>(...elements: T): CharClass<T> => {
+  return u("charClass", { children: [...elements] }) as CharClass<T>;
 };
 
 export const anyChar = (): AnyChar => {
   return u("anyChar") as AnyChar;
 };
 
-export const andPredicate = (expr: ExprNode): AndPredicate => {
-  return u("andPredicate", { children: [expr] }) as unknown as AndPredicate;
+export const andPredicate = <T extends ExprNode>(expr: T): AndPredicate<T> => {
+  return u("andPredicate", { children: [expr] }) as unknown as AndPredicate<T>;
 };
 
-export const notPredicate = (expr: ExprNode): NotPredicate => {
-  return u("notPredicate", { children: [expr] }) as unknown as NotPredicate;
+export const notPredicate = <T extends ExprNode>(expr: T): NotPredicate<T> => {
+  return u("notPredicate", { children: [expr] }) as unknown as NotPredicate<T>;
 };
 
-export const definition = (id: string, expr: ExprNode): Definition => {
+export const definition = <I extends string, E extends ExprNode>(id: I, expr: E): Definition<Identifier<I>, E> => {
   return u("definition", {
     children: [identifier(id), expr],
-  }) as Definition;
+  }) as Definition<Identifier<I>, E>;
 };
 
-export const grammar = (...definitions: readonly Definition[]): Grammar => {
+export const grammar = <T extends readonly Definition[]>(...definitions: T): Grammar<T> => {
   return u("grammar", {
     children: [...definitions],
-  }) as Grammar;
+  }) as Grammar<T>;
 };
 
 

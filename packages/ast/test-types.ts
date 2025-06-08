@@ -18,13 +18,11 @@
 export type Expect<T extends true> = T;
 
 /**
- * 型がfalseであることを要求するヘルパー型（ネガティブテスト用）
+ * Not type - inverts the result of a type test
  * 
- * @example
- * ```typescript
- * type Test = Not<Equal<string, number>>; // OK (falseを期待)
- * type Test = Not<Equal<string, string>>; // エラー (trueなのでNG)
- * ```
+ * Examples:
+ * type Test = Not<Equal<string, number>>; // OK (expects false)
+ * type Test = Not<Equal<string, string>>; // Error (true is NG)
  */
 export type Not<T extends false> = true;
 
@@ -111,7 +109,7 @@ export type Awaited<T> = T extends Promise<infer U> ? U : T;
  */
 export type TestSuite<T extends readonly true[]> = T;
 
-// TPEG AST特有の型テストヘルパー
+// TPEG AST-specific type test helpers
 
 /**
  * 型がExprNodeのサブタイプかどうかをチェックする型

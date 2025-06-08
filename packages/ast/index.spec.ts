@@ -55,53 +55,7 @@ import type {
   ExtractNodeType,
 } from "./test-types";
 
-// Type-level test suite
-// Execute type checking using TestSuite type while suppressing unused warnings
-// @ts-ignore
-type TypeLevelTests = TestSuite<[
-  // Literal type tests
-  Expect<Equal<ReturnType<typeof literal<"hello">>, Literal<"hello">>>,
-  Expect<Equal<ReturnType<typeof literal<"world">>, Literal<"world">>>,
-  Expect<Not<Equal<ReturnType<typeof literal<"hello">>, Literal<"world">>>>,
-  
-  // Identifier type tests
-  Expect<Equal<ReturnType<typeof identifier<"myVar">>, Identifier<"myVar">>>,
-  Expect<Not<Equal<ReturnType<typeof identifier<"myVar">>, Identifier<"otherVar">>>>,
-  
-  // Char type tests
-  Expect<Equal<ReturnType<typeof char<"a">>, Char<"a">>>,
-  Expect<Equal<ReturnType<typeof char<"1">>, Char<"1">>>,
-  Expect<Not<Equal<ReturnType<typeof char<"a">>, Char<"b">>>>,
-  
-  // Range type tests
-  Expect<Equal<ReturnType<typeof range<"a", "z">>, Range<"a", "z">>>,
-  Expect<Equal<ReturnType<typeof range<"0", "9">>, Range<"0", "9">>>,
-  Expect<Not<Equal<ReturnType<typeof range<"a", "z">>, Range<"0", "9">>>>,
-  
-  // Composite type tests
-  Expect<Equal<ReturnType<typeof sequence>, Sequence>>,
-  Expect<Equal<ReturnType<typeof choice>, Choice>>,
-  Expect<Equal<ReturnType<typeof optional>, Optional>>,
-  
-  // Type assignability tests
-  Expect<Equal<Literal extends ExprNode ? true : false, true>>,
-  Expect<Equal<Identifier extends ExprNode ? true : false, true>>,
-  Expect<Equal<Sequence extends ExprNode ? true : false, true>>,
-  Expect<Equal<Choice extends ExprNode ? true : false, true>>,
-  Expect<Equal<Char extends ExprNode ? true : false, false>>, // Char is not an ExprNode
-  Expect<Equal<Range extends ExprNode ? true : false, false>>, // Range is not an ExprNode
-
-  // New type helper tests
-  Expect<IsNodeType<Literal<"test">, "literal">>,
-  Expect<IsNodeType<Char<"a">, "char">>,
-  Expect<Not<IsNodeType<Literal<"test">, "char">>>,
-  
-  // Value and node type extraction tests
-  Expect<Equal<ExtractLiteralValue<Literal<"hello">>, "hello">>,
-  Expect<Equal<ExtractLiteralValue<Char<"x">>, "x">>,
-  Expect<Equal<ExtractNodeType<Literal<"test">>, "literal">>,
-  Expect<Equal<ExtractNodeType<Char<"a">>, "char">>
-]>;
+// Type-level tests have been moved to a separate file (index.type-test.ts)
 
   describe("AST Type Safety Tests", () => {
     describe("Type-Level Tests", () => {
@@ -631,6 +585,246 @@ type TypeLevelTests = TestSuite<[
   });
 
 
+
+  describe("Complex Combinator Tests", () => {
+    describe("Deeply Nested Structures", () => {
+      it("should handle deeply nested sequences", () => {
+        const innerSeq = sequence(literal("a"), literal("b"));
+        const outerSeq = sequence(innerSeq, literal("c"));
+        const deepestSeq = sequence(outerSeq, literal("d"));
+        
+        expect(deepestSeq.type).toBe("sequence");
+        expect(deepestSeq.children).toHaveLength(2);
+        expect(deepestSeq.children[0].type).toBe("sequence");
+        expect(deepestSeq.children[1].type).toBe("literal");
+        
+        // Verify nested structure preservation
+        const firstChild = deepestSeq.children[0] as Sequence;
+        expect(firstChild.children).toHaveLength(2);
+        expect(firstChild.children[0].type).toBe("sequence");
+      });
+
+             it("should handle nested choices with mixed types", () => {
+         const charClassA = charClass(char("a"));
+         const charClassB = charClass(char("b"));
+         const charOptions = choice(charClassA, charClassB);
+         const literalOptions = choice(literal("hello"), literal("world"));
+         const mixedChoice = choice(charOptions, literalOptions);
+         
+         expect(mixedChoice.type).toBe("choice");
+         expect(mixedChoice.children).toHaveLength(2);
+         expect(mixedChoice.children[0].type).toBe("choice");
+         expect(mixedChoice.children[1].type).toBe("choice");
+       });
+
+      it("should handle complex optional nesting", () => {
+        const baseExpr = literal("base");
+        const firstOpt = optional(baseExpr);
+        const secondOpt = optional(firstOpt);
+        const thirdOpt = optional(secondOpt);
+        
+        expect(thirdOpt.type).toBe("optional");
+        expect(thirdOpt.children).toHaveLength(1);
+        expect(thirdOpt.children[0].type).toBe("optional");
+        
+        // Verify deep nesting
+        const secondLevel = thirdOpt.children[0] as Optional;
+        expect(secondLevel.children).toHaveLength(1);
+        expect(secondLevel.children[0].type).toBe("optional");
+      });
+    });
+
+    describe("Mixed Combinator Structures", () => {
+      it("should handle sequence with choice and optional", () => {
+        const signChoice = choice(literal("+"), literal("-"));
+        const signOpt = optional(signChoice);
+        const digit = charClass(range("0", "9"));
+        const numberSeq = sequence(signOpt, digit);
+        
+        expect(numberSeq.type).toBe("sequence");
+        expect(numberSeq.children).toHaveLength(2);
+        expect(numberSeq.children[0].type).toBe("optional");
+        expect(numberSeq.children[1].type).toBe("charClass");
+        
+        // Verify internal structure
+        const optionalSign = numberSeq.children[0] as Optional;
+        expect(optionalSign.children[0].type).toBe("choice");
+      });
+
+      it("should handle choice with complex nested elements", () => {
+        const ifStmt = sequence(literal("if"), identifier("condition"), literal("then"));
+        const whileStmt = sequence(literal("while"), identifier("condition"), literal("do"));
+        const statements = choice(ifStmt, whileStmt);
+        
+        expect(statements.type).toBe("choice");
+        expect(statements.children).toHaveLength(2);
+        
+        for (const child of statements.children) {
+          expect(child.type).toBe("sequence");
+          const seqChild = child as Sequence;
+          expect(seqChild.children).toHaveLength(3);
+        }
+      });
+
+      it("should handle predicate combinators with complex expressions", () => {
+        const complexExpr = sequence(
+          charClass(char("a"), range("b", "z")),
+          optional(literal("suffix"))
+        );
+        
+        const andPred = andPredicate(complexExpr);
+        const notPred = notPredicate(complexExpr);
+        
+        expect(andPred.type).toBe("andPredicate");
+        expect(notPred.type).toBe("notPredicate");
+        
+        expect(andPred.children).toHaveLength(1);
+        expect(notPred.children).toHaveLength(1);
+        
+        expect(andPred.children[0].type).toBe("sequence");
+        expect(notPred.children[0].type).toBe("sequence");
+      });
+
+      it("should handle nested predicate combinators", () => {
+        const baseExpr = literal("test");
+        const notExpr = notPredicate(baseExpr);
+        const andNotExpr = andPredicate(notExpr);
+        
+        expect(andNotExpr.type).toBe("andPredicate");
+        expect(andNotExpr.children).toHaveLength(1);
+        expect(andNotExpr.children[0].type).toBe("notPredicate");
+        
+        const innerNotPred = andNotExpr.children[0] as NotPredicate;
+        expect(innerNotPred.children).toHaveLength(1);
+        expect(innerNotPred.children[0].type).toBe("literal");
+      });
+    });
+
+    describe("Complex Character Classes", () => {
+      it("should handle character class with multiple element types", () => {
+        const alphaLower = range("a", "z");
+        const alphaUpper = range("A", "Z");
+        const digits = range("0", "9");
+        const underscore = char("_");
+        const dollar = char("$");
+        
+        const identifier = charClass(alphaLower, alphaUpper, digits, underscore, dollar);
+        
+        expect(identifier.type).toBe("charClass");
+        expect(identifier.children).toHaveLength(5);
+        
+        // Verify element types
+        expect(identifier.children[0].type).toBe("range");
+        expect(identifier.children[1].type).toBe("range");
+        expect(identifier.children[2].type).toBe("range");
+        expect(identifier.children[3].type).toBe("char");
+        expect(identifier.children[4].type).toBe("char");
+      });
+
+      it("should preserve character class element ordering", () => {
+        const elements = [
+          char("a"), char("b"), char("c"),
+          range("x", "z"), range("0", "9")
+        ];
+        
+        const cc = charClass(...elements);
+        
+        expect(cc.children).toHaveLength(5);
+        
+        for (let i = 0; i < elements.length; i++) {
+          expect(cc.children[i]).toBe(elements[i]);
+        }
+      });
+    });
+
+    describe("Grammar and Definition Complex Tests", () => {
+      it("should handle grammar with interdependent rules", () => {
+        const exprRef = identifier("expr");
+        const termRef = identifier("term");
+        const factorRef = identifier("factor");
+        
+        const number = charClass(range("0", "9"));
+        const factorDef = definition("factor", choice(number, exprRef));
+        const termDef = definition("term", sequence(factorRef, optional(sequence(literal("*"), factorRef))));
+        const exprDef = definition("expr", sequence(termRef, optional(sequence(literal("+"), termRef))));
+        
+        const arithmeticGrammar = grammar(exprDef, termDef, factorDef);
+        
+        expect(arithmeticGrammar.type).toBe("grammar");
+        expect(arithmeticGrammar.children).toHaveLength(3);
+        
+        // Verify all definitions are present
+        for (const def of arithmeticGrammar.children) {
+          expect(def.type).toBe("definition");
+          expect(def.children).toHaveLength(2);
+          expect(def.children[0].type).toBe("identifier");
+        }
+      });
+
+      it("should handle complex definition with nested structures", () => {
+        const stringContent = sequence(
+          literal('"'),
+          optional(sequence(
+            charClass(range("a", "z"), range("A", "Z"), range("0", "9")),
+            optional(literal("\\"))
+          )),
+          literal('"')
+        );
+        
+        const stringDef = definition("string", stringContent);
+        
+        expect(stringDef.type).toBe("definition");
+        expect(stringDef.children).toHaveLength(2);
+        expect(stringDef.children[0].type).toBe("identifier");
+        expect(stringDef.children[1].type).toBe("sequence");
+        
+        // Verify nested structure
+        const seqExpr = stringDef.children[1] as Sequence;
+        expect(seqExpr.children).toHaveLength(3);
+        expect(seqExpr.children[0].type).toBe("literal");
+        expect(seqExpr.children[1].type).toBe("optional");
+        expect(seqExpr.children[2].type).toBe("literal");
+      });
+    });
+
+    describe("Type Safety in Complex Structures", () => {
+      it("should maintain type safety across complex nesting", () => {
+        const complexStructure = sequence(
+          choice(literal("start"), literal("begin")),
+          optional(charClass(char("a"), range("b", "z"))),
+          andPredicate(notPredicate(literal("end")))
+        );
+        
+        expect(complexStructure.type).toBe("sequence");
+        expect(complexStructure.children).toHaveLength(3);
+        
+        // Type safety verification through type guards
+        const [choiceNode, optNode, andPredNode] = complexStructure.children;
+        
+        expect(isChoice(choiceNode as PegAstNode)).toBe(true);
+        expect(isOptional(optNode as PegAstNode)).toBe(true);
+        expect(isAndPredicate(andPredNode as PegAstNode)).toBe(true);
+      });
+
+      it("should handle empty and single-element collections", () => {
+        const emptySeq = sequence();
+        const emptyChoice = choice();
+        const singleSeq = sequence(literal("alone"));
+        const singleChoice = choice(literal("only"));
+        
+        expect(emptySeq.children).toHaveLength(0);
+        expect(emptyChoice.children).toHaveLength(0);
+        expect(singleSeq.children).toHaveLength(1);
+        expect(singleChoice.children).toHaveLength(1);
+        
+        // Type safety verification
+        expect(emptySeq.type).toBe("sequence");
+        expect(emptyChoice.type).toBe("choice");
+        expect(singleSeq.type).toBe("sequence");
+        expect(singleChoice.type).toBe("choice");
+      });
+    });
+  });
 
     describe("Complex AST Construction", () => {
     it("should build simple grammar structures", () => {

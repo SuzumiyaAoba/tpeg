@@ -1,0 +1,251 @@
+import type {
+  Literal,
+  Identifier,
+  Sequence,
+  Choice,
+  Optional,
+  Char,
+  Range,
+  CharClass,
+  CharClassElement,
+  AndPredicate,
+  NotPredicate,
+  Definition,
+  Grammar,
+  ExprNode,
+} from "./index";
+
+import type {
+  literal,
+  identifier,
+  sequence,
+  choice,
+  optional,
+  char,
+  range,
+  charClass,
+  andPredicate,
+  notPredicate,
+  definition,
+  grammar,
+} from "./index";
+
+import type {
+  TestSuite,
+  Expect,
+  Equal,
+  Not,
+  IsNodeType,
+  ExtractLiteralValue,
+  ExtractNodeType,
+} from "./test-types";
+
+// Type-level test suite
+// Uses TestSuite type to perform compile-time type checking
+// @ts-ignore
+type TypeLevelTests = TestSuite<[
+  // Basic literal type tests
+  Expect<Equal<ReturnType<typeof literal<"hello">>, Literal<"hello">>>,
+  Expect<Equal<ReturnType<typeof literal<"world">>, Literal<"world">>>,
+  Expect<Not<Equal<ReturnType<typeof literal<"hello">>, Literal<"world">>>>,
+  
+  // Identifier type tests
+  Expect<Equal<ReturnType<typeof identifier<"myVar">>, Identifier<"myVar">>>,
+  Expect<Not<Equal<ReturnType<typeof identifier<"myVar">>, Identifier<"otherVar">>>>,
+  
+  // Character type tests
+  Expect<Equal<ReturnType<typeof char<"a">>, Char<"a">>>,
+  Expect<Equal<ReturnType<typeof char<"1">>, Char<"1">>>,
+  Expect<Not<Equal<ReturnType<typeof char<"a">>, Char<"b">>>>,
+  
+  // Range type tests
+  Expect<Equal<ReturnType<typeof range<"a", "z">>, Range<"a", "z">>>,
+  Expect<Equal<ReturnType<typeof range<"0", "9">>, Range<"0", "9">>>,
+  Expect<Not<Equal<ReturnType<typeof range<"a", "z">>, Range<"0", "9">>>>,
+  
+  // Composite type tests - updated for generic types
+  Expect<Equal<ReturnType<typeof sequence<[Literal<"a">, Literal<"b">]>>, Sequence<[Literal<"a">, Literal<"b">]>>>,
+  Expect<Equal<ReturnType<typeof choice<[Literal<"a">, Literal<"b">]>>, Choice<[Literal<"a">, Literal<"b">]>>>,
+  Expect<Equal<ReturnType<typeof optional<Literal<"test">>>, Optional<Literal<"test">>>>,
+  
+  // Type assignability tests - updated for generic types
+  Expect<Equal<Literal<string> extends ExprNode ? true : false, true>>,
+  Expect<Equal<Identifier<string> extends ExprNode ? true : false, true>>,
+  Expect<Equal<Sequence<readonly ExprNode[]> extends ExprNode ? true : false, true>>,
+  Expect<Equal<Choice<readonly ExprNode[]> extends ExprNode ? true : false, true>>,
+  Expect<Equal<Char<string> extends ExprNode ? true : false, false>>, // Char is not an ExprNode
+  Expect<Equal<Range<string, string> extends ExprNode ? true : false, false>>, // Range is not an ExprNode
+
+  // Type helper tests
+  Expect<IsNodeType<Literal<"test">, "literal">>,
+  Expect<IsNodeType<Char<"a">, "char">>,
+  Expect<Not<IsNodeType<Literal<"test">, "char">>>,
+  
+  // Value and node type extraction tests
+  Expect<Equal<ExtractLiteralValue<Literal<"hello">>, "hello">>,
+  Expect<Equal<ExtractLiteralValue<Char<"x">>, "x">>,
+  Expect<Equal<ExtractNodeType<Literal<"test">>, "literal">>,
+  Expect<Equal<ExtractNodeType<Char<"a">>, "char">>,
+
+  // Complex combinator type tests
+  
+  // Nested sequences - preserve exact tuple types
+  Expect<Equal<
+    ReturnType<typeof sequence<[Sequence<[Literal<"a">, Literal<"b">]>, Literal<"c">]>>,
+    Sequence<[Sequence<[Literal<"a">, Literal<"b">]>, Literal<"c">]>
+  >>,
+  
+  // Nested choices - preserve exact tuple types
+  Expect<Equal<
+    ReturnType<typeof choice<[Choice<[Literal<"x">, Literal<"y">]>, Literal<"z">]>>,
+    Choice<[Choice<[Literal<"x">, Literal<"y">]>, Literal<"z">]>
+  >>,
+  
+  // Mixed nesting - sequence containing choice and optional
+  Expect<Equal<
+    ReturnType<typeof sequence<[Choice<[Literal<"if">, Literal<"while">]>, Optional<Identifier<"condition">>, Literal<"then">]>>,
+    Sequence<[Choice<[Literal<"if">, Literal<"while">]>, Optional<Identifier<"condition">>, Literal<"then">]>
+  >>,
+  
+  // Complex character classes - preserve multiple element types
+  Expect<Equal<
+    ReturnType<typeof charClass<[Char<"a">, Range<"b", "z">, Char<"0">, Range<"1", "9">]>>,
+    CharClass<[Char<"a">, Range<"b", "z">, Char<"0">, Range<"1", "9">]>
+  >>,
+  
+  // Predicate combinator tests
+  Expect<Equal<
+    ReturnType<typeof andPredicate<Literal<"lookahead">>>,
+    AndPredicate<Literal<"lookahead">>
+  >>,
+  Expect<Equal<
+    ReturnType<typeof notPredicate<CharClass<[Range<"a", "z">]>>>,
+    NotPredicate<CharClass<[Range<"a", "z">]>>
+  >>,
+  
+  // Definition and Grammar complex types
+  Expect<Equal<
+    ReturnType<typeof definition<"number", Sequence<[Optional<Choice<[Literal<"+">, Literal<"-">]>>, CharClass<[Range<"0", "9">]>]>>>,
+    Definition<Identifier<"number">, Sequence<[Optional<Choice<[Literal<"+">, Literal<"-">]>>, CharClass<[Range<"0", "9">]>]>>
+  >>,
+  
+  // Grammar with multiple complex definitions
+  Expect<Equal<
+    ReturnType<typeof grammar<[
+      Definition<Identifier<"expr">, Choice<[Identifier<"number">, Identifier<"string">]>>,
+      Definition<Identifier<"number">, Sequence<[Optional<Literal<"-">>, CharClass<[Range<"0", "9">]>]>>
+    ]>>,
+    Grammar<[
+      Definition<Identifier<"expr">, Choice<[Identifier<"number">, Identifier<"string">]>>,
+      Definition<Identifier<"number">, Sequence<[Optional<Literal<"-">>, CharClass<[Range<"0", "9">]>]>>
+    ]>
+  >>,
+  
+  // Deeply nested optional structures
+  Expect<Equal<
+    ReturnType<typeof optional<Optional<Sequence<[Literal<"deeply">, Literal<"nested">]>>>>,
+    Optional<Optional<Sequence<[Literal<"deeply">, Literal<"nested">]>>>
+  >>,
+  
+  // Complex predicate nesting
+  Expect<Equal<
+    ReturnType<typeof andPredicate<NotPredicate<Choice<[Literal<"not">, Literal<"this">]>>>>,
+    AndPredicate<NotPredicate<Choice<[Literal<"not">, Literal<"this">]>>>
+  >>,
+  
+  // Type compatibility with deeply nested structures
+  Expect<Equal<
+    Sequence<[Choice<[Literal<"a">, Literal<"b">]>, Optional<Literal<"c">>]> extends ExprNode ? true : false,
+    true
+  >>,
+  Expect<Equal<
+    AndPredicate<NotPredicate<CharClass<[Char<"x">, Range<"a", "z">]>>> extends ExprNode ? true : false,
+    true
+  >>,
+  
+  // Empty sequence and choice types
+  Expect<Equal<
+    ReturnType<typeof sequence<[]>>,
+    Sequence<[]>
+  >>,
+  Expect<Equal<
+    ReturnType<typeof choice<[]>>,
+    Choice<[]>
+  >>,
+  
+  // Single element sequence and choice preserve exact types
+  Expect<Equal<
+    ReturnType<typeof sequence<[Literal<"single">]>>,
+    Sequence<[Literal<"single">]>
+  >>,
+  Expect<Equal<
+    ReturnType<typeof choice<[Identifier<"only">]>>,
+    Choice<[Identifier<"only">]>
+  >>,
+
+  // Advanced type pattern tests
+  
+  // Conditional statement syntax elements
+  Expect<Equal<
+    ReturnType<typeof sequence<[
+      Choice<[Literal<"if">, Literal<"unless">]>,
+      Optional<Literal<"(">>,
+      Identifier<"condition">,
+      Optional<Literal<")">>,
+      Literal<"then">
+    ]>>,
+    Sequence<[
+      Choice<[Literal<"if">, Literal<"unless">]>,
+      Optional<Literal<"(">>,
+      Identifier<"condition">,
+      Optional<Literal<")">>,
+      Literal<"then">
+    ]>
+  >>,
+
+  // Function definition syntax elements
+  Expect<Equal<
+    ReturnType<typeof sequence<[
+      Literal<"function">,
+      Identifier<"name">,
+      Literal<"(">,
+      Optional<Sequence<[Identifier<"param">, Optional<Sequence<[Literal<",">, Identifier<"param">]>>]>>,
+      Literal<")">,
+      Literal<"{">
+    ]>>,
+    Sequence<[
+      Literal<"function">,
+      Identifier<"name">,
+      Literal<"(">,
+      Optional<Sequence<[Identifier<"param">, Optional<Sequence<[Literal<",">, Identifier<"param">]>>]>>,
+      Literal<")">,
+      Literal<"{">
+    ]>
+  >>,
+
+  // Complex numeric literal definition (Char cannot be used directly in Choice, so wrap with CharClass)
+  Expect<Equal<
+    ReturnType<typeof sequence<[
+      Optional<Choice<[Literal<"+">, Literal<"-">]>>,
+      Choice<[
+        Sequence<[CharClass<[Range<"1", "9">]>, Optional<CharClass<[Range<"0", "9">]>>]>,
+        CharClass<[Char<"0">]>
+      ]>,
+      Optional<Sequence<[Literal<".">, CharClass<[Range<"0", "9">]>]>>,
+      Optional<Sequence<[Choice<[Literal<"e">, Literal<"E">]>, Optional<Choice<[Literal<"+">, Literal<"-">]>>, CharClass<[Range<"0", "9">]>]>>
+    ]>>,
+    Sequence<[
+      Optional<Choice<[Literal<"+">, Literal<"-">]>>,
+      Choice<[
+        Sequence<[CharClass<[Range<"1", "9">]>, Optional<CharClass<[Range<"0", "9">]>>]>,
+        CharClass<[Char<"0">]>
+      ]>,
+      Optional<Sequence<[Literal<".">, CharClass<[Range<"0", "9">]>]>>,
+      Optional<Sequence<[Choice<[Literal<"e">, Literal<"E">]>, Optional<Choice<[Literal<"+">, Literal<"-">]>>, CharClass<[Range<"0", "9">]>]>>
+    ]>
+  >>
+]>;
+
+// Execute type-level tests (only evaluated at compile time)
+// Export as type is sufficient
+export type { TypeLevelTests }; 
