@@ -24,3 +24,6 @@ export * from "./src/transform";
 
 // Error handling
 export * from "./src/error";
+
+// Test utilities
+export * from "./src/test-utils";

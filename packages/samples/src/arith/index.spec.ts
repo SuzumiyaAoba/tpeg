@@ -1,12 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { createPos } from "tpeg-core";
 import { Grammar } from "./index";
-
-// Helper function to create a Pos object
-const createPos = (offset: number, line = 1, column?: number) => ({
-  offset,
-  line,
-  column: column ?? offset,
-});
 
 const START = {
   offset: 0,
