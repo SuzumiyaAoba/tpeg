@@ -39,36 +39,33 @@ export interface Optional extends PegParent, Expr {
   children: [Expr];
 }
 
-export interface CharClassElement extends PegLiteral {
-  type: "char" | "range";
-  value: string | [string, string];
-}
-
-export interface Char extends CharClassElement {
+export interface Char extends PegLiteral {
   type: "char";
   value: string;
 }
 
-export interface Range extends CharClassElement {
+export interface Range extends PegLiteral {
   type: "range";
   value: [string, string];
 }
 
+export type CharClassElement = Char | Range;
+
 export interface CharClass extends PegParent, Expr {
   type: "charClass";
-  children: (Char | Range)[];
+  children: CharClassElement[];
 }
 
-export interface AnyChar extends PegNode {
+export interface AnyChar extends PegLiteral, Expr {
   type: "anyChar";
 }
 
-export interface AndPredicate extends PegNode {
+export interface AndPredicate extends PegParent, Expr {
   type: "andPredicate";
   children: [Expr];
 }
 
-export interface NotPredicate extends PegNode {
+export interface NotPredicate extends PegParent, Expr {
   type: "notPredicate";
   children: [Expr];
 }
@@ -83,58 +80,119 @@ export interface Grammar extends PegParent {
   children: Definition[];
 }
 
+// タグ付きユニオン型でより型安全なExpr型を定義
+export type ExprNode =
+  | Literal
+  | Identifier
+  | Sequence
+  | Choice
+  | Optional
+  | CharClass
+  | AnyChar
+  | AndPredicate
+  | NotPredicate;
+
+// すべてのノード型のユニオン
+export type PegAstNode =
+  | ExprNode
+  | Char
+  | Range
+  | Definition
+  | Grammar;
+
+// 型ガード関数
+export const isLiteral = (node: PegAstNode): node is Literal =>
+  node.type === "literal";
+
+export const isIdentifier = (node: PegAstNode): node is Identifier =>
+  node.type === "identifier";
+
+export const isSequence = (node: PegAstNode): node is Sequence =>
+  node.type === "sequence";
+
+export const isChoice = (node: PegAstNode): node is Choice =>
+  node.type === "choice";
+
+export const isOptional = (node: PegAstNode): node is Optional =>
+  node.type === "optional";
+
+export const isCharClass = (node: PegAstNode): node is CharClass =>
+  node.type === "charClass";
+
+export const isAnyChar = (node: PegAstNode): node is AnyChar =>
+  node.type === "anyChar";
+
+export const isAndPredicate = (node: PegAstNode): node is AndPredicate =>
+  node.type === "andPredicate";
+
+export const isNotPredicate = (node: PegAstNode): node is NotPredicate =>
+  node.type === "notPredicate";
+
+export const isChar = (node: PegAstNode): node is Char =>
+  node.type === "char";
+
+export const isRange = (node: PegAstNode): node is Range =>
+  node.type === "range";
+
+export const isDefinition = (node: PegAstNode): node is Definition =>
+  node.type === "definition";
+
+export const isGrammar = (node: PegAstNode): node is Grammar =>
+  node.type === "grammar";
+
+// ビルダー関数（型安全性を向上）
 export const literal = (value: string): Literal => {
-  return u("literal", { value });
+  return u("literal", { value }) as Literal;
 };
 
 export const identifier = (value: string): Identifier => {
-  return u("identifier", { value });
+  return u("identifier", { value }) as Identifier;
 };
 
-export const sequence = (exprs: Expr[]): Sequence => {
-  return u("sequence", { children: exprs });
+export const sequence = (...exprs: readonly ExprNode[]): Sequence => {
+  return u("sequence", { children: [...exprs] }) as Sequence;
 };
 
-export const choice = (exprs: Expr[]): Choice => {
-  return u("choice", { children: exprs });
+export const choice = (...exprs: readonly ExprNode[]): Choice => {
+  return u("choice", { children: [...exprs] }) as Choice;
 };
 
-export const optional = (expr: Expr): Optional => {
-  return u("optional", { children: [expr] satisfies [Expr] });
+export const optional = (expr: ExprNode): Optional => {
+  return u("optional", { children: [expr] }) as unknown as Optional;
 };
 
-export const charClass = (
-  elements: (string | [string, string])[],
-): CharClass => {
-  return u("charClass", {
-    children: elements.map((child) =>
-      typeof child === "string"
-        ? u("char", { value: child })
-        : u("range", { value: child }),
-    ),
-  });
+export const char = (value: string): Char => {
+  return u("char", { value }) as Char;
+};
+
+export const range = (from: string, to: string): Range => {
+  return u("range", { value: [from, to] }) as Range;
+};
+
+export const charClass = (...elements: readonly CharClassElement[]): CharClass => {
+  return u("charClass", { children: [...elements] }) as CharClass;
 };
 
 export const anyChar = (): AnyChar => {
-  return u("anyChar");
+  return u("anyChar") as AnyChar;
 };
 
-export const andPredicate = (expr: Expr): AndPredicate => {
-  return u("andPredicate", { children: [expr] satisfies [Expr] });
+export const andPredicate = (expr: ExprNode): AndPredicate => {
+  return u("andPredicate", { children: [expr] }) as unknown as AndPredicate;
 };
 
-export const notPredicate = (expr: Expr): NotPredicate => {
-  return u("notPredicate", { children: [expr] satisfies [Expr] });
+export const notPredicate = (expr: ExprNode): NotPredicate => {
+  return u("notPredicate", { children: [expr] }) as unknown as NotPredicate;
 };
 
-export const definition = (id: string, expr: Expr): Definition => {
+export const definition = (id: string, expr: ExprNode): Definition => {
   return u("definition", {
-    children: [identifier(id), expr] satisfies [Identifier, Expr],
-  });
+    children: [identifier(id), expr],
+  }) as Definition;
 };
 
-export const grammar = (definitions: Definition[]): Grammar => {
+export const grammar = (...definitions: readonly Definition[]): Grammar => {
   return u("grammar", {
-    children: definitions,
-  });
+    children: [...definitions],
+  }) as Grammar;
 };
