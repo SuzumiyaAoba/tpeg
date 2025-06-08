@@ -64,7 +64,7 @@ export interface CharClass<T extends readonly CharClassElement[] = CharClassElem
   children: [...T];
 }
 
-export interface AnyChar extends PegLiteral, Expr {
+export interface AnyChar extends PegNode, Expr {
   type: "anyChar";
 }
 
@@ -193,7 +193,7 @@ export const charClass = <T extends readonly CharClassElement[]>(...elements: T)
 };
 
 export const anyChar = (): AnyChar => {
-  return u("anyChar") as AnyChar;
+  return u("anyChar", {}) as AnyChar;
 };
 
 export const andPredicate = <T extends ExprNode>(expr: T): AndPredicate<T> => {

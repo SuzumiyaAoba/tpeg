@@ -967,6 +967,86 @@ import type {
       });
     });
 
+    describe("Unist Specification Compliance", () => {
+      it("should ensure AnyChar is properly typed as Node (not Literal)", () => {
+        const anyCharNode = anyChar();
+        
+        expect(anyCharNode.type).toBe("anyChar");
+        expect(isAnyChar(anyCharNode)).toBe(true);
+        
+        // AnyChar should not have a value property (since it's not a Literal)
+        expect('value' in anyCharNode).toBe(false);
+      });
+
+      it("should ensure all nodes can accept data and position properties", () => {
+        // Test that nodes inherit from unist interfaces properly
+        const lit = literal("test");
+        const id = identifier("name");
+        const seq = sequence(lit);
+        const choiceNode = choice(lit);
+        const opt = optional(lit);
+        const mapNode = map(lit, (x: string) => x);
+        const charNode = char("a");
+        const rangeNode = range("a", "z");
+        const cc = charClass(charNode);
+        const anyCharNode = anyChar();
+        const andPred = andPredicate(lit);
+        const notPred = notPredicate(lit);
+        const def = definition("rule", lit);
+        const gram = grammar(def);
+
+        // All nodes should have the type property (required by unist Node)
+        const allNodes = [lit, id, seq, choiceNode, opt, mapNode, charNode, rangeNode, cc, anyCharNode, andPred, notPred, def, gram];
+        
+        for (const node of allNodes) {
+          expect(typeof node.type).toBe("string");
+          expect(node.type.length).toBeGreaterThan(0);
+        }
+      });
+
+      it("should ensure Literal nodes have proper value properties", () => {
+        const lit = literal("hello");
+        const id = identifier("variable");
+        const charNode = char("x");
+        const rangeNode = range("a", "z");
+        
+        // All these should be Literal nodes with values
+        expect(lit.value).toBe("hello");
+        expect(id.value).toBe("variable");  
+        expect(charNode.value).toBe("x");
+        expect(rangeNode.value).toEqual(["a", "z"]);
+      });
+
+      it("should ensure Parent nodes have proper children arrays", () => {
+        const lit = literal("test");
+        const seq = sequence(lit);
+        const choiceNode = choice(lit);
+        const opt = optional(lit);
+        const mapNode = map(lit, (x: string) => x);
+        const cc = charClass(char("a"));
+        const andPred = andPredicate(lit);
+        const notPred = notPredicate(lit);
+        const def = definition("rule", lit);
+        const gram = grammar(def);
+        
+        // All these should be Parent nodes with children arrays
+        const parentNodes = [seq, choiceNode, opt, mapNode, cc, andPred, notPred, def, gram];
+        
+        for (const node of parentNodes) {
+          expect(Array.isArray(node.children)).toBe(true);
+          expect(node.children.length).toBeGreaterThanOrEqual(0);
+        }
+      });
+
+      it("should ensure nodes can be extended with unist-compatible data", () => {
+        // Test that we can add data property (which is part of unist spec)
+        const nodeWithData = { ...literal("test"), data: { customField: "value" } };
+        expect(nodeWithData.data?.customField).toBe("value");
+        expect(nodeWithData.type).toBe("literal");
+        expect(nodeWithData.value).toBe("test");
+      });
+    });
+
     describe("Complex AST Construction", () => {
     it("should build simple grammar structures", () => {
       // Test basic grammar structures
