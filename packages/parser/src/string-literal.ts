@@ -8,7 +8,7 @@
 
 import type { Parser } from 'tpeg-core';
 import type { StringLiteral } from './types';
-import { literal, charClass, map, choice, seq, zeroOrMore } from 'tpeg-core';
+import { literal, charClass, map, choice, seq, zeroOrMore, notPredicate, anyChar } from 'tpeg-core';
 import { between } from 'tpeg-combinator';
 
 /**
@@ -40,7 +40,10 @@ const doubleQuoteChar = (): Parser<string> => {
   return choice(
     escapeSequence(),
     // Any character except " and \
-    charClass([' ', '!'], ['#', '['], [']', '~'])
+    map(
+      seq(notPredicate(choice(literal('"'), literal('\\'))), anyChar()),
+      ([_, char]) => char
+    )
   );
 };
 
@@ -52,7 +55,10 @@ const singleQuoteChar = (): Parser<string> => {
   return choice(
     escapeSequence(),
     // Any character except ' and \
-    charClass([' ', '&'], ['(', '['], [']', '~'])
+    map(
+      seq(notPredicate(choice(literal("'"), literal('\\'))), anyChar()),
+      ([_, char]) => char
+    )
   );
 };
 
