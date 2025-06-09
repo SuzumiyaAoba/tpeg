@@ -1,9 +1,27 @@
 ---
 description: Git workflow and development process guidelines for TPEG project
+globs: 
 alwaysApply: false
 ---
-
 # Git Workflow and Development Process
+
+## GitHub Issue Management
+
+- Use GitHub Issues to track implementation plans and tasks
+- Create issues for new features, bug fixes, and improvements
+- Use issue templates for consistent formatting
+- Assign issues to team members or yourself
+- Use labels to categorize issues (e.g., feature, bug, enhancement, documentation)
+- Link commits and pull requests to related issues using keywords (e.g., "Fixes #123", "Closes #456")
+- Use the `gh` command for issue operations:
+  - `gh issue create` - Create new issues
+  - `gh issue list` - List existing issues
+  - `gh issue view <number>` - View issue details
+  - `gh issue close <number>` - Close completed issues
+  - `gh issue edit <number>` - Edit issue details
+- Keep issues updated with progress and status changes
+- Use milestones to group related issues for releases
+- Reference issues in commit messages and pull requests
 
 ## Git Workflow Standards
 
@@ -51,6 +69,20 @@ Types:
 - Ensure compatibility with existing code
 - Provide constructive feedback
 - Test the changes locally when possible
+
+## Pull Request Signature
+
+All Pull Requests should include a signature at the end of the description to indicate when they were created with AI assistance:
+
+```
+---
+*This Pull Request was created with assistance from Claude 4 Sonnet*
+```
+
+This signature should be added to:
+- Pull request descriptions
+- Significant commit messages when AI assistance was used
+- Documentation changes made with AI assistance
 
 ## Release Process
 
