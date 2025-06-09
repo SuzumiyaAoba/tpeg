@@ -2,7 +2,7 @@
  * TPEG Parser - Entry Point
  * 
  * Main entry point for the TPEG Grammar Parser.
- * Exports all basic syntax parsers and types.
+ * Exports all basic syntax parsers, composition operators, and types.
  */
 
 // Export types
@@ -13,16 +13,25 @@ export { stringLiteral } from './string-literal';
 export { characterClass } from './character-class';
 export { identifier } from './identifier';
 
+// Export composition operators
+export { 
+  expression, 
+  sequenceOperator, 
+  choiceOperator, 
+  groupOperator 
+} from './composition';
+
 // Re-export core and combinator parsers that might be useful
 export { choice, seq, map, optional, zeroOrMore, oneOrMore } from 'tpeg-core';
 export { token, sepBy, sepBy1 } from 'tpeg-combinator';
 
 import type { Parser } from 'tpeg-core';
-import type { BasicSyntaxNode } from './types';
+import type { BasicSyntaxNode, Expression } from './types';
 import { choice } from 'tpeg-core';
 import { stringLiteral } from './string-literal';
 import { characterClass } from './character-class';
 import { identifier } from './identifier';
+import { expression } from './composition';
 
 /**
  * Combined parser for all basic TPEG syntax elements.
@@ -48,4 +57,29 @@ export const basicSyntax = (): Parser<BasicSyntaxNode> => {
     characterClass(),
     identifier()
   );
+};
+
+/**
+ * Combined parser for all TPEG expression elements including composition operators.
+ * Supports sequences, choices, groups, and basic syntax elements.
+ * 
+ * @returns Parser<Expression> Parser that matches any TPEG expression
+ * 
+ * @example
+ * ```typescript
+ * // Parse basic syntax
+ * const result1 = tpegExpression()('"hello"', { offset: 0, line: 1, column: 1 });
+ * 
+ * // Parse sequence
+ * const result2 = tpegExpression()('"hello" " " "world"', { offset: 0, line: 1, column: 1 });
+ * 
+ * // Parse choice
+ * const result3 = tpegExpression()('"true" / "false"', { offset: 0, line: 1, column: 1 });
+ * 
+ * // Parse group with complex precedence
+ * const result4 = tpegExpression()('("a" / "b") "c"', { offset: 0, line: 1, column: 1 });
+ * ```
+ */
+export const tpegExpression = (): Parser<Expression> => {
+  return expression();
 }; 
