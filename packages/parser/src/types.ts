@@ -51,6 +51,33 @@ export interface AnyChar {
 }
 
 /**
+ * Sequence node in TPEG grammar AST.
+ * Represents sequential matching like: pattern1 pattern2 pattern3
+ */
+export interface Sequence {
+  type: 'Sequence';
+  elements: Expression[];
+}
+
+/**
+ * Choice node in TPEG grammar AST.
+ * Represents alternative matching like: pattern1 / pattern2 / pattern3
+ */
+export interface Choice {
+  type: 'Choice';
+  alternatives: Expression[];
+}
+
+/**
+ * Group node in TPEG grammar AST.
+ * Represents grouping for precedence control like: (pattern1 / pattern2)
+ */
+export interface Group {
+  type: 'Group';
+  expression: Expression;
+}
+
+/**
  * Union type for all basic TPEG syntax elements.
  */
 export type BasicSyntaxNode = 
@@ -60,9 +87,24 @@ export type BasicSyntaxNode =
   | AnyChar;
 
 /**
- * Token represents a parsed basic syntax element with position information.
+ * Union type for composition operators.
  */
-export interface Token<T extends BasicSyntaxNode = BasicSyntaxNode> {
+export type CompositionNode = 
+  | Sequence
+  | Choice
+  | Group;
+
+/**
+ * Union type for all TPEG expression nodes.
+ */
+export type Expression = 
+  | BasicSyntaxNode
+  | CompositionNode;
+
+/**
+ * Token represents a parsed expression with position information.
+ */
+export interface Token<T extends Expression = Expression> {
   node: T;
   start: number;
   end: number;
