@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh api:*)",
+      "Bash(bun test:*)",
+      "Bash(bun run:*)",
+      "Bash(bunx biome check:*)",
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "Bash(gh issue view:*)",
+      "Bash(grep:*)",
+      "Bash(git checkout:*)",
+      "Bash(ls:*)",
+      "Bash(bun:*)",
+      "Bash(find:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(git commit:*)",
+      "Bash(npm test)",
+      "Bash(npm run typecheck:*)",
+      "Bash(gh issue list:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(gh issue edit:*)"
+    ],
+    "deny": []
+  }
+}
