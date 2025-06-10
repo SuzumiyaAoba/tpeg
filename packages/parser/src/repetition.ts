@@ -50,7 +50,7 @@ export const quantifiedOperator = (): Parser<{ min: number; max?: number }> => {
   const positiveInt = (): Parser<number> => {
     return map(
       oneOrMore(charClass(['0', '9'])),
-      (digits) => parseInt(digits.join(''), 10)
+      (digits) => Number.parseInt(digits.join(''), 10)
     );
   };
 
@@ -128,15 +128,14 @@ export const applyRepetition = (
       default:
         return expression;
     }
-  } else {
-    // Quantified repetition
-    return {
-      type: 'Quantified' as const,
-      expression,
-      min: operator.min,
-      max: operator.max
-    } as Quantified;
   }
+  // Quantified repetition
+  return {
+    type: 'Quantified' as const,
+    expression,
+    min: operator.min,
+    max: operator.max
+  } as Quantified;
 };
 
 /**
