@@ -12,11 +12,12 @@
 
 import type { Parser } from 'tpeg-core';
 import type { Expression, Sequence, Choice, Group, BasicSyntaxNode } from './types';
-import { literal, choice, seq, map, oneOrMore, zeroOrMore, charClass } from 'tpeg-core';
+import { literal, choice, seq, map, oneOrMore, zeroOrMore, charClass, optional } from 'tpeg-core';
 import { recursive } from 'tpeg-combinator';
 import { stringLiteral } from './string-literal';
 import { characterClass } from './character-class';
 import { identifier } from './identifier';
+import { withRepetition } from './repetition';
 
 /**
  * Parses whitespace and returns nothing.
@@ -56,6 +57,14 @@ const primary = (): Parser<Expression> => {
 };
 
 /**
+ * Parses a postfix expression (primary with optional repetition operators).
+ * Repetition operators have higher precedence than sequences and choices.
+ */
+const postfix = (): Parser<Expression> => {
+  return withRepetition(primary());
+};
+
+/**
  * Parses a group expression: (expression)
  * Groups have the highest precedence and can contain any expression.
  */
@@ -78,17 +87,17 @@ const groupExpression = (): Parser<Group> => {
 };
 
 /**
- * Parses a sequence of primary expressions separated by whitespace.
+ * Parses a sequence of postfix expressions separated by whitespace.
  * Returns a single expression if only one element, otherwise a Sequence.
  */
 const sequenceExpression = (): Parser<Expression> => {
   return map(
     seq(
-      primary(),
+      postfix(),
       zeroOrMore(
         seq(
           oneOrMore(charClass(' ', '\t', '\n', '\r')), // Require at least one whitespace
-          primary()
+          postfix()
         )
       )
     ),
@@ -158,6 +167,14 @@ setExpressionParser(choiceExpression());
  */
 export const expression = (): Parser<Expression> => {
   return expressionParser;
+};
+
+/**
+ * Parses a postfix expression specifically.
+ * Exported for direct use when postfix parsing is needed.
+ */
+export const postfixOperator = (): Parser<Expression> => {
+  return postfix();
 };
 
 /**

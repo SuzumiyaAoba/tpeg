@@ -87,6 +87,44 @@ export type BasicSyntaxNode =
   | AnyChar;
 
 /**
+ * Star repetition node in TPEG grammar AST.
+ * Represents zero or more repetitions like: expr*
+ */
+export interface Star {
+  type: 'Star';
+  expression: Expression;
+}
+
+/**
+ * Plus repetition node in TPEG grammar AST.
+ * Represents one or more repetitions like: expr+
+ */
+export interface Plus {
+  type: 'Plus';
+  expression: Expression;
+}
+
+/**
+ * Optional node in TPEG grammar AST.
+ * Represents zero or one occurrence like: expr?
+ */
+export interface Optional {
+  type: 'Optional';
+  expression: Expression;
+}
+
+/**
+ * Quantified repetition node in TPEG grammar AST.
+ * Represents exact count, range, or minimum repetitions like: expr{3}, expr{2,5}, expr{3,}
+ */
+export interface Quantified {
+  type: 'Quantified';
+  expression: Expression;
+  min: number;
+  max?: number; // undefined means infinite (for {n,} syntax)
+}
+
+/**
  * Union type for composition operators.
  */
 export type CompositionNode = 
@@ -95,11 +133,21 @@ export type CompositionNode =
   | Group;
 
 /**
+ * Union type for repetition operators.
+ */
+export type RepetitionNode = 
+  | Star
+  | Plus
+  | Optional
+  | Quantified;
+
+/**
  * Union type for all TPEG expression nodes.
  */
 export type Expression = 
   | BasicSyntaxNode
-  | CompositionNode;
+  | CompositionNode
+  | RepetitionNode;
 
 /**
  * Token represents a parsed expression with position information.
