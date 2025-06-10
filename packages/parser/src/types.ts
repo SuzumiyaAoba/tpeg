@@ -142,12 +142,40 @@ export type RepetitionNode =
   | Quantified;
 
 /**
+ * Positive lookahead node in TPEG grammar AST.
+ * Represents positive lookahead like: &expr
+ * Succeeds if the expression matches without consuming input.
+ */
+export interface PositiveLookahead {
+  type: 'PositiveLookahead';
+  expression: Expression;
+}
+
+/**
+ * Negative lookahead node in TPEG grammar AST.
+ * Represents negative lookahead like: !expr
+ * Succeeds if the expression does not match without consuming input.
+ */
+export interface NegativeLookahead {
+  type: 'NegativeLookahead';
+  expression: Expression;
+}
+
+/**
+ * Union type for lookahead operators.
+ */
+export type LookaheadNode = 
+  | PositiveLookahead
+  | NegativeLookahead;
+
+/**
  * Union type for all TPEG expression nodes.
  */
 export type Expression = 
   | BasicSyntaxNode
   | CompositionNode
-  | RepetitionNode;
+  | RepetitionNode
+  | LookaheadNode;
 
 /**
  * Token represents a parsed expression with position information.

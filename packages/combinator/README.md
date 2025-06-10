@@ -11,8 +11,9 @@ TPEG is a TypeScript library for building parsers using Parsing Expression Gramm
 - Lightweight: Minimal dependencies with a small footprint
 - Declarative Grammars: Define grammars using composable combinators
 - Modular Architecture: Use only the packages you need
-- TypeScript Support: Built with TypeScript
+- TypeScript Support: Built with TypeScript from the ground up
 - AST Support: Generate Abstract Syntax Trees for parsed content
+- Repetition Operators: Full support for PEG repetition operators (`*`, `+`, `?`, `{n,m}`)
 - Efficient: Designed with performance in mind
 
 ## Packages
@@ -41,6 +42,14 @@ Tools for building and manipulating Abstract Syntax Trees.
 
 ```bash
 npm install tpeg-ast
+```
+
+### tpeg-parser (In Development)
+
+PEG grammar parser for TPEG syntax with full repetition operator support.
+
+```bash
+npm install tpeg-parser
 ```
 
 ## Usage Examples

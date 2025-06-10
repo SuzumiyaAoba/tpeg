@@ -5,9 +5,11 @@
  * Based on docs/peg-grammar.md specification.
  * 
  * Operator precedence (highest to lowest):
- * 1. Group: (expr)
- * 2. Sequence: expr1 expr2 expr3
- * 3. Choice: expr1 / expr2 / expr3
+ * 1. Primary: Basic syntax and Groups (expr)
+ * 2. Prefix operators: Lookahead (&expr, !expr)
+ * 3. Postfix operators: Repetition (expr*, expr+, expr?, expr{n,m})
+ * 4. Sequence: expr1 expr2 expr3
+ * 5. Choice: expr1 / expr2 / expr3
  */
 
 import type { Parser } from 'tpeg-core';
@@ -18,6 +20,7 @@ import { stringLiteral } from './string-literal';
 import { characterClass } from './character-class';
 import { identifier } from './identifier';
 import { withRepetition } from './repetition';
+import { withLookahead } from './lookahead';
 
 /**
  * Parses whitespace and returns nothing.
@@ -57,11 +60,19 @@ const primary = (): Parser<Expression> => {
 };
 
 /**
- * Parses a postfix expression (primary with optional repetition operators).
+ * Parses a prefix expression (primary with optional lookahead operators).
+ * Lookahead operators have higher precedence than repetition operators.
+ */
+const prefix = (): Parser<Expression> => {
+  return withLookahead(primary());
+};
+
+/**
+ * Parses a postfix expression (prefix with optional repetition operators).
  * Repetition operators have higher precedence than sequences and choices.
  */
 const postfix = (): Parser<Expression> => {
-  return withRepetition(primary());
+  return withRepetition(prefix());
 };
 
 /**
