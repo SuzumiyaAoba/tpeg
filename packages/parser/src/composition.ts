@@ -6,10 +6,11 @@
  * 
  * Operator precedence (highest to lowest):
  * 1. Primary: Basic syntax and Groups (expr)
- * 2. Prefix operators: Lookahead (&expr, !expr)
- * 3. Postfix operators: Repetition (expr*, expr+, expr?, expr{n,m})
- * 4. Sequence: expr1 expr2 expr3
- * 5. Choice: expr1 / expr2 / expr3
+ * 2. Labels: Label expressions (name:expr)  
+ * 3. Prefix operators: Lookahead (&expr, !expr)
+ * 4. Postfix operators: Repetition (expr*, expr+, expr?, expr{n,m})
+ * 5. Sequence: expr1 expr2 expr3
+ * 6. Choice: expr1 / expr2 / expr3
  */
 
 import type { Parser } from 'tpeg-core';
@@ -21,6 +22,7 @@ import { characterClass } from './character-class';
 import { identifier } from './identifier';
 import { withRepetition } from './repetition';
 import { withLookahead } from './lookahead';
+import { withOptionalLabel } from './label';
 
 /**
  * Parses whitespace and returns nothing.
@@ -60,11 +62,19 @@ const primary = (): Parser<Expression> => {
 };
 
 /**
- * Parses a prefix expression (primary with optional lookahead operators).
+ * Parses a labeled expression (primary with optional labels).
+ * Labels have higher precedence than lookahead operators.
+ */
+const labeled = (): Parser<Expression> => {
+  return withOptionalLabel(primary());
+};
+
+/**
+ * Parses a prefix expression (labeled with optional lookahead operators).
  * Lookahead operators have higher precedence than repetition operators.
  */
 const prefix = (): Parser<Expression> => {
-  return withLookahead(primary());
+  return withLookahead(labeled);
 };
 
 /**

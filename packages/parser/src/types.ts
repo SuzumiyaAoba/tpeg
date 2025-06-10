@@ -169,13 +169,25 @@ export type LookaheadNode =
   | NegativeLookahead;
 
 /**
+ * Labeled expression node in TPEG grammar AST.
+ * Represents labeled expressions like: name:expr
+ * Associates a label with an expression for capture purposes.
+ */
+export interface LabeledExpression {
+  type: 'LabeledExpression';
+  label: string;
+  expression: Expression;
+}
+
+/**
  * Union type for all TPEG expression nodes.
  */
 export type Expression = 
   | BasicSyntaxNode
   | CompositionNode
   | RepetitionNode
-  | LookaheadNode;
+  | LookaheadNode
+  | LabeledExpression;
 
 /**
  * Token represents a parsed expression with position information.
