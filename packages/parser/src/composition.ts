@@ -6,9 +6,9 @@
  * 
  * Operator precedence (highest to lowest):
  * 1. Primary: Basic syntax and Groups (expr)
- * 2. Labels: Label expressions (name:expr)  
- * 3. Prefix operators: Lookahead (&expr, !expr)
- * 4. Postfix operators: Repetition (expr*, expr+, expr?, expr{n,m})
+ * 2. Prefix operators: Lookahead (&expr, !expr)
+ * 3. Postfix operators: Repetition (expr*, expr+, expr?, expr{n,m})
+ * 4. Labels: Label expressions (name:expr)  
  * 5. Sequence: expr1 expr2 expr3
  * 6. Choice: expr1 / expr2 / expr3
  */
@@ -16,7 +16,6 @@
 import type { Parser } from 'tpeg-core';
 import type { Expression, Sequence, Choice, Group, BasicSyntaxNode } from './types';
 import { literal, choice, seq, map, oneOrMore, zeroOrMore, charClass, optional } from 'tpeg-core';
-import { recursive } from 'tpeg-combinator';
 import { stringLiteral } from './string-literal';
 import { characterClass } from './character-class';
 import { identifier } from './identifier';
@@ -48,7 +47,11 @@ const basicSyntax = (): Parser<BasicSyntaxNode> => {
 };
 
 // Create recursive parser for expressions
-const [expressionParser, setExpressionParser] = recursive<Expression>();
+let expressionParser: Parser<Expression>;
+
+const setExpressionParser = (parser: Parser<Expression>) => {
+  expressionParser = parser;
+};
 
 /**
  * Parses a primary expression (basic syntax or grouped expression).
@@ -62,27 +65,27 @@ const primary = (): Parser<Expression> => {
 };
 
 /**
- * Parses a labeled expression (primary with optional labels).
- * Labels have higher precedence than lookahead operators.
- */
-const labeled = (): Parser<Expression> => {
-  return withOptionalLabel(primary());
-};
-
-/**
- * Parses a prefix expression (labeled with optional lookahead operators).
+ * Parses a prefix expression (primary with optional lookahead operators).
  * Lookahead operators have higher precedence than repetition operators.
  */
 const prefix = (): Parser<Expression> => {
-  return withLookahead(labeled);
+  return withLookahead(primary());
 };
 
 /**
  * Parses a postfix expression (prefix with optional repetition operators).
- * Repetition operators have higher precedence than sequences and choices.
+ * Repetition operators have higher precedence than labels.
  */
 const postfix = (): Parser<Expression> => {
   return withRepetition(prefix());
+};
+
+/**
+ * Parses a labeled expression (postfix with optional labels).
+ * Labels have lower precedence than repetition operators.
+ */
+const labeled = (): Parser<Expression> => {
+  return withOptionalLabel(postfix());
 };
 
 /**
@@ -95,7 +98,7 @@ const groupExpression = (): Parser<Group> => {
       literal('('),
       seq(
         whitespace(),
-        expressionParser,
+        (input, pos) => expressionParser(input, pos),
         whitespace()
       ),
       literal(')')
@@ -108,17 +111,17 @@ const groupExpression = (): Parser<Group> => {
 };
 
 /**
- * Parses a sequence of postfix expressions separated by whitespace.
+ * Parses a sequence of labeled expressions separated by whitespace.
  * Returns a single expression if only one element, otherwise a Sequence.
  */
 const sequenceExpression = (): Parser<Expression> => {
   return map(
     seq(
-      postfix(),
+      labeled(),
       zeroOrMore(
         seq(
           oneOrMore(charClass(' ', '\t', '\n', '\r')), // Require at least one whitespace
-          postfix()
+          labeled()
         )
       )
     ),
@@ -196,6 +199,14 @@ export const expression = (): Parser<Expression> => {
  */
 export const postfixOperator = (): Parser<Expression> => {
   return postfix();
+};
+
+/**
+ * Parses a labeled expression specifically.
+ * Exported for direct use when labeled parsing is needed.
+ */
+export const labeledOperator = (): Parser<Expression> => {
+  return labeled();
 };
 
 /**
