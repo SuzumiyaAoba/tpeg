@@ -1,28 +1,36 @@
 /**
  * TPEG Repetition Operators Parser
- * 
+ *
  * Implements parsing of repetition operators: *, +, ?, {n,m}
  * Based on docs/peg-grammar.md specification.
- * 
+ *
  * Repetition operators are postfix operators with high precedence:
  * - expr* (zero or more)
- * - expr+ (one or more)  
+ * - expr+ (one or more)
  * - expr? (zero or one)
  * - expr{n} (exactly n times)
  * - expr{n,m} (n to m times)
  * - expr{n,} (n or more times)
  */
 
-import type { Parser } from 'tpeg-core';
-import type { Expression, Star, Plus, Optional, Quantified } from './types';
-import { literal, choice, seq, map, optional, charClass, oneOrMore } from 'tpeg-core';
+import type { Parser } from "tpeg-core";
+import {
+  charClass,
+  choice,
+  literal,
+  map,
+  oneOrMore,
+  optional,
+  seq,
+} from "tpeg-core";
+import type { Expression, Optional, Plus, Quantified, Star } from "./types";
 
 /**
  * Parses a star repetition operator: expr*
  * Zero or more repetitions of the given expression.
  */
 export const starOperator = (): Parser<string> => {
-  return literal('*');
+  return literal("*");
 };
 
 /**
@@ -30,7 +38,7 @@ export const starOperator = (): Parser<string> => {
  * One or more repetitions of the given expression.
  */
 export const plusOperator = (): Parser<string> => {
-  return literal('+');
+  return literal("+");
 };
 
 /**
@@ -38,7 +46,7 @@ export const plusOperator = (): Parser<string> => {
  * Zero or one occurrence of the given expression.
  */
 export const optionalOperator = (): Parser<string> => {
-  return literal('?');
+  return literal("?");
 };
 
 /**
@@ -48,34 +56,24 @@ export const optionalOperator = (): Parser<string> => {
 export const quantifiedOperator = (): Parser<{ min: number; max?: number }> => {
   // Parse a positive integer
   const positiveInt = (): Parser<number> => {
-    return map(
-      oneOrMore(charClass(['0', '9'])),
-      (digits) => Number.parseInt(digits.join(''), 10)
+    return map(oneOrMore(charClass(["0", "9"])), (digits) =>
+      Number.parseInt(digits.join(""), 10),
     );
   };
 
   // Parse {n} - exactly n times
   const exactCount = (): Parser<{ min: number; max?: number }> => {
     return map(
-      seq(
-        literal('{'),
-        positiveInt(),
-        literal('}')
-      ),
-      ([_, count, __]) => ({ min: count, max: count })
+      seq(literal("{"), positiveInt(), literal("}")),
+      ([_, count, __]) => ({ min: count, max: count }),
     );
   };
 
   // Parse {n,} - n or more times
   const minCount = (): Parser<{ min: number; max?: number }> => {
     return map(
-      seq(
-        literal('{'),
-        positiveInt(),
-        literal(','),
-        literal('}')
-      ),
-      ([_, min, __, ___]) => ({ min, max: undefined })
+      seq(literal("{"), positiveInt(), literal(","), literal("}")),
+      ([_, min, __, ___]) => ({ min, max: undefined }),
     );
   };
 
@@ -83,21 +81,17 @@ export const quantifiedOperator = (): Parser<{ min: number; max?: number }> => {
   const rangeCount = (): Parser<{ min: number; max?: number }> => {
     return map(
       seq(
-        literal('{'),
+        literal("{"),
         positiveInt(),
-        literal(','),
+        literal(","),
         positiveInt(),
-        literal('}')
+        literal("}"),
       ),
-      ([_, min, __, max, ___]) => ({ min, max })
+      ([_, min, __, max, ___]) => ({ min, max }),
     );
   };
 
-  return choice(
-    rangeCount(),
-    minCount(),
-    exactCount()
-  );
+  return choice(rangeCount(), minCount(), exactCount());
 };
 
 /**
@@ -106,24 +100,24 @@ export const quantifiedOperator = (): Parser<{ min: number; max?: number }> => {
  */
 export const applyRepetition = (
   expression: Expression,
-  operator: string | { min: number; max?: number }
+  operator: string | { min: number; max?: number },
 ): Expression => {
-  if (typeof operator === 'string') {
+  if (typeof operator === "string") {
     switch (operator) {
-      case '*':
+      case "*":
         return {
-          type: 'Star' as const,
-          expression
+          type: "Star" as const,
+          expression,
         } as Star;
-      case '+':
+      case "+":
         return {
-          type: 'Plus' as const,
-          expression
+          type: "Plus" as const,
+          expression,
         } as Plus;
-      case '?':
+      case "?":
         return {
-          type: 'Optional' as const,
-          expression
+          type: "Optional" as const,
+          expression,
         } as Optional;
       default:
         return expression;
@@ -131,10 +125,10 @@ export const applyRepetition = (
   }
   // Quantified repetition
   return {
-    type: 'Quantified' as const,
+    type: "Quantified" as const,
     expression,
     min: operator.min,
-    max: operator.max
+    max: operator.max,
   } as Quantified;
 };
 
@@ -142,12 +136,14 @@ export const applyRepetition = (
  * Parses any repetition operator.
  * Returns the operator information for later application.
  */
-export const repetitionOperator = (): Parser<string | { min: number; max?: number }> => {
+export const repetitionOperator = (): Parser<
+  string | { min: number; max?: number }
+> => {
   return choice(
     starOperator(),
     plusOperator(),
     optionalOperator(),
-    quantifiedOperator()
+    quantifiedOperator(),
   );
 };
 
@@ -155,12 +151,14 @@ export const repetitionOperator = (): Parser<string | { min: number; max?: numbe
  * Parses a postfix expression with optional repetition operators.
  * Handles multiple consecutive repetition operators like: expr*+?
  */
-export const parseRepetition = (baseExpression: Expression): Parser<Expression> => {
+export const parseRepetition = (
+  baseExpression: Expression,
+): Parser<Expression> => {
   return map(
     seq(
       // The base expression is already parsed
       // Just parse any following repetition operators
-      optional(repetitionOperator())
+      optional(repetitionOperator()),
     ),
     ([repetitionOp]) => {
       // repetitionOp is either [operator] or [] from optional parser
@@ -168,7 +166,7 @@ export const parseRepetition = (baseExpression: Expression): Parser<Expression> 
         return applyRepetition(baseExpression, repetitionOp[0]);
       }
       return baseExpression;
-    }
+    },
   );
 };
 
@@ -177,7 +175,7 @@ export const parseRepetition = (baseExpression: Expression): Parser<Expression> 
  * This is a higher-order function that wraps any expression parser with repetition support.
  */
 export const withRepetition = <T extends Expression>(
-  expressionParser: Parser<T>
+  expressionParser: Parser<T>,
 ): Parser<Expression> => {
   return (input: string, pos) => {
     // First parse the base expression
@@ -198,8 +196,8 @@ export const withRepetition = <T extends Expression>(
  */
 export const starExpression = (baseExpression: Expression): Star => {
   return {
-    type: 'Star' as const,
-    expression: baseExpression
+    type: "Star" as const,
+    expression: baseExpression,
   };
 };
 
@@ -209,8 +207,8 @@ export const starExpression = (baseExpression: Expression): Star => {
  */
 export const plusExpression = (baseExpression: Expression): Plus => {
   return {
-    type: 'Plus' as const,
-    expression: baseExpression
+    type: "Plus" as const,
+    expression: baseExpression,
   };
 };
 
@@ -220,8 +218,8 @@ export const plusExpression = (baseExpression: Expression): Plus => {
  */
 export const optionalExpression = (baseExpression: Expression): Optional => {
   return {
-    type: 'Optional' as const,
-    expression: baseExpression
+    type: "Optional" as const,
+    expression: baseExpression,
   };
 };
 
@@ -232,12 +230,12 @@ export const optionalExpression = (baseExpression: Expression): Optional => {
 export const quantifiedExpression = (
   baseExpression: Expression,
   min: number,
-  max?: number
+  max?: number,
 ): Quantified => {
   return {
-    type: 'Quantified' as const,
+    type: "Quantified" as const,
     expression: baseExpression,
     min,
-    max
+    max,
   };
 };

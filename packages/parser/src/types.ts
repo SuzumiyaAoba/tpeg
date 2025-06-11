@@ -1,6 +1,6 @@
 /**
  * TPEG Grammar Parser Types
- * 
+ *
  * Type definitions for TPEG basic syntax elements based on docs/peg-grammar.md specification.
  */
 
@@ -10,7 +10,7 @@
  * Note: Template literals (`template`) are planned for future extension
  */
 export interface StringLiteral {
-  type: 'StringLiteral';
+  type: "StringLiteral";
   value: string;
   quote: '"' | "'";
 }
@@ -20,7 +20,7 @@ export interface StringLiteral {
  * Represents character classes like [a-z], [A-Z], [0-9], [^0-9], .
  */
 export interface CharacterClass {
-  type: 'CharacterClass';
+  type: "CharacterClass";
   ranges: CharRange[];
   negated: boolean;
 }
@@ -39,7 +39,7 @@ export interface CharRange {
  * Represents rule references like 'number', 'identifier', 'expression'
  */
 export interface Identifier {
-  type: 'Identifier';
+  type: "Identifier";
   name: string;
 }
 
@@ -47,7 +47,7 @@ export interface Identifier {
  * Any character dot (.) node in TPEG grammar AST.
  */
 export interface AnyChar {
-  type: 'AnyChar';
+  type: "AnyChar";
 }
 
 /**
@@ -55,7 +55,7 @@ export interface AnyChar {
  * Represents sequential matching like: pattern1 pattern2 pattern3
  */
 export interface Sequence {
-  type: 'Sequence';
+  type: "Sequence";
   elements: Expression[];
 }
 
@@ -64,7 +64,7 @@ export interface Sequence {
  * Represents alternative matching like: pattern1 / pattern2 / pattern3
  */
 export interface Choice {
-  type: 'Choice';
+  type: "Choice";
   alternatives: Expression[];
 }
 
@@ -73,17 +73,17 @@ export interface Choice {
  * Represents grouping for precedence control like: (pattern1 / pattern2)
  */
 export interface Group {
-  type: 'Group';
+  type: "Group";
   expression: Expression;
 }
 
 /**
  * Union type for all basic TPEG syntax elements.
  */
-export type BasicSyntaxNode = 
-  | StringLiteral 
-  | CharacterClass 
-  | Identifier 
+export type BasicSyntaxNode =
+  | StringLiteral
+  | CharacterClass
+  | Identifier
   | AnyChar;
 
 /**
@@ -91,7 +91,7 @@ export type BasicSyntaxNode =
  * Represents zero or more repetitions like: expr*
  */
 export interface Star {
-  type: 'Star';
+  type: "Star";
   expression: Expression;
 }
 
@@ -100,7 +100,7 @@ export interface Star {
  * Represents one or more repetitions like: expr+
  */
 export interface Plus {
-  type: 'Plus';
+  type: "Plus";
   expression: Expression;
 }
 
@@ -109,7 +109,7 @@ export interface Plus {
  * Represents zero or one occurrence like: expr?
  */
 export interface Optional {
-  type: 'Optional';
+  type: "Optional";
   expression: Expression;
 }
 
@@ -118,7 +118,7 @@ export interface Optional {
  * Represents exact count, range, or minimum repetitions like: expr{3}, expr{2,5}, expr{3,}
  */
 export interface Quantified {
-  type: 'Quantified';
+  type: "Quantified";
   expression: Expression;
   min: number;
   max?: number; // undefined means infinite (for {n,} syntax)
@@ -127,19 +127,12 @@ export interface Quantified {
 /**
  * Union type for composition operators.
  */
-export type CompositionNode = 
-  | Sequence
-  | Choice
-  | Group;
+export type CompositionNode = Sequence | Choice | Group;
 
 /**
  * Union type for repetition operators.
  */
-export type RepetitionNode = 
-  | Star
-  | Plus
-  | Optional
-  | Quantified;
+export type RepetitionNode = Star | Plus | Optional | Quantified;
 
 /**
  * Positive lookahead node in TPEG grammar AST.
@@ -147,7 +140,7 @@ export type RepetitionNode =
  * Succeeds if the expression matches without consuming input.
  */
 export interface PositiveLookahead {
-  type: 'PositiveLookahead';
+  type: "PositiveLookahead";
   expression: Expression;
 }
 
@@ -157,16 +150,14 @@ export interface PositiveLookahead {
  * Succeeds if the expression does not match without consuming input.
  */
 export interface NegativeLookahead {
-  type: 'NegativeLookahead';
+  type: "NegativeLookahead";
   expression: Expression;
 }
 
 /**
  * Union type for lookahead operators.
  */
-export type LookaheadNode = 
-  | PositiveLookahead
-  | NegativeLookahead;
+export type LookaheadNode = PositiveLookahead | NegativeLookahead;
 
 /**
  * Labeled expression node in TPEG grammar AST.
@@ -174,7 +165,7 @@ export type LookaheadNode =
  * Associates a label with an expression for capture purposes.
  */
 export interface LabeledExpression {
-  type: 'LabeledExpression';
+  type: "LabeledExpression";
   label: string;
   expression: Expression;
 }
@@ -182,7 +173,7 @@ export interface LabeledExpression {
 /**
  * Union type for all TPEG expression nodes.
  */
-export type Expression = 
+export type Expression =
   | BasicSyntaxNode
   | CompositionNode
   | RepetitionNode
@@ -225,4 +216,4 @@ export interface TokenizeError {
   position: number;
   line: number;
   column: number;
-} 
+}

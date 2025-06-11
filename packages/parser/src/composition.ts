@@ -1,37 +1,49 @@
 /**
  * TPEG Composition Operators Parser
- * 
+ *
  * Implements parsing of composition operators: sequence, choice, group
  * Based on docs/peg-grammar.md specification.
- * 
+ *
  * Operator precedence (highest to lowest):
  * 1. Primary: Basic syntax and Groups (expr)
  * 2. Prefix operators: Lookahead (&expr, !expr)
  * 3. Postfix operators: Repetition (expr*, expr+, expr?, expr{n,m})
- * 4. Labels: Label expressions (name:expr)  
+ * 4. Labels: Label expressions (name:expr)
  * 5. Sequence: expr1 expr2 expr3
  * 6. Choice: expr1 / expr2 / expr3
  */
 
-import type { Parser } from 'tpeg-core';
-import type { Expression, Sequence, Choice, Group, BasicSyntaxNode } from './types';
-import { literal, choice, seq, map, oneOrMore, zeroOrMore, charClass, optional } from 'tpeg-core';
-import { stringLiteral } from './string-literal';
-import { characterClass } from './character-class';
-import { identifier } from './identifier';
-import { withRepetition } from './repetition';
-import { withLookahead } from './lookahead';
-import { withOptionalLabel } from './label';
+import type { Parser } from "tpeg-core";
+import {
+  charClass,
+  choice,
+  literal,
+  map,
+  oneOrMore,
+  optional,
+  seq,
+  zeroOrMore,
+} from "tpeg-core";
+import { characterClass } from "./character-class";
+import { identifier } from "./identifier";
+import { withOptionalLabel } from "./label";
+import { withLookahead } from "./lookahead";
+import { withRepetition } from "./repetition";
+import { stringLiteral } from "./string-literal";
+import type {
+  BasicSyntaxNode,
+  Choice,
+  Expression,
+  Group,
+  Sequence,
+} from "./types";
 
 /**
  * Parses whitespace and returns nothing.
  * Used for optional whitespace in composition operators.
  */
 const whitespace = (): Parser<void> => {
-  return map(
-    zeroOrMore(charClass(' ', '\t', '\n', '\r')),
-    () => undefined
-  );
+  return map(zeroOrMore(charClass(" ", "\t", "\n", "\r")), () => undefined);
 };
 
 /**
@@ -39,11 +51,7 @@ const whitespace = (): Parser<void> => {
  * This is a local version to avoid circular imports.
  */
 const basicSyntax = (): Parser<BasicSyntaxNode> => {
-  return choice(
-    stringLiteral(),
-    characterClass(),
-    identifier()
-  );
+  return choice(stringLiteral(), characterClass(), identifier());
 };
 
 // Create recursive parser for expressions
@@ -60,7 +68,7 @@ const setExpressionParser = (parser: Parser<Expression>) => {
 const primary = (): Parser<Expression> => {
   return choice(
     groupExpression(),
-    map(basicSyntax(), (node): Expression => node)
+    map(basicSyntax(), (node): Expression => node),
   );
 };
 
@@ -95,18 +103,18 @@ const labeled = (): Parser<Expression> => {
 const groupExpression = (): Parser<Group> => {
   return map(
     seq(
-      literal('('),
+      literal("("),
       seq(
         whitespace(),
         (input, pos) => expressionParser(input, pos),
-        whitespace()
+        whitespace(),
       ),
-      literal(')')
+      literal(")"),
     ),
     ([_, [__, expr, ___], ____]) => ({
-      type: 'Group' as const,
-      expression: expr
-    })
+      type: "Group" as const,
+      expression: expr,
+    }),
   );
 };
 
@@ -120,10 +128,10 @@ const sequenceExpression = (): Parser<Expression> => {
       labeled(),
       zeroOrMore(
         seq(
-          oneOrMore(charClass(' ', '\t', '\n', '\r')), // Require at least one whitespace
-          labeled()
-        )
-      )
+          oneOrMore(charClass(" ", "\t", "\n", "\r")), // Require at least one whitespace
+          labeled(),
+        ),
+      ),
     ),
     ([first, rest]) => {
       if (rest.length === 0) {
@@ -131,10 +139,10 @@ const sequenceExpression = (): Parser<Expression> => {
       }
       const elements = [first, ...rest.map(([_, expr]) => expr)];
       return {
-        type: 'Sequence' as const,
-        elements
+        type: "Sequence" as const,
+        elements,
       } as Sequence;
-    }
+    },
   );
 };
 
@@ -147,13 +155,8 @@ const choiceExpression = (): Parser<Expression> => {
     seq(
       sequenceExpression(),
       zeroOrMore(
-        seq(
-          whitespace(),
-          literal('/'),
-          whitespace(),
-          sequenceExpression()
-        )
-      )
+        seq(whitespace(), literal("/"), whitespace(), sequenceExpression()),
+      ),
     ),
     ([first, rest]) => {
       if (rest.length === 0) {
@@ -161,10 +164,10 @@ const choiceExpression = (): Parser<Expression> => {
       }
       const alternatives = [first, ...rest.map(([_, __, ___, expr]) => expr)];
       return {
-        type: 'Choice' as const,
-        alternatives
+        type: "Choice" as const,
+        alternatives,
       } as Choice;
-    }
+    },
   );
 };
 
@@ -174,17 +177,17 @@ setExpressionParser(choiceExpression());
 /**
  * Parses any TPEG expression.
  * This is the main entry point for parsing composition operators.
- * 
+ *
  * @returns Parser<Expression> Parser that matches any TPEG expression
- * 
+ *
  * @example
  * ```typescript
  * // Parse a simple sequence
  * const result1 = expression()('"hello" " " "world"', { offset: 0, line: 1, column: 1 });
- * 
+ *
  * // Parse a choice
  * const result2 = expression()('"true" / "false"', { offset: 0, line: 1, column: 1 });
- * 
+ *
  * // Parse a grouped expression
  * const result3 = expression()('("a" / "b") "c"', { offset: 0, line: 1, column: 1 });
  * ```
@@ -215,19 +218,16 @@ export const labeledOperator = (): Parser<Expression> => {
  */
 export const sequenceOperator = (): Parser<Sequence> => {
   const result = sequenceExpression();
-  return map(
-    result,
-    (expr) => {
-      if (expr.type === 'Sequence') {
-        return expr;
-      }
-      // If it's not a sequence, wrap it in a sequence with one element
-      return {
-        type: 'Sequence' as const,
-        elements: [expr]
-      };
+  return map(result, (expr) => {
+    if (expr.type === "Sequence") {
+      return expr;
     }
-  );
+    // If it's not a sequence, wrap it in a sequence with one element
+    return {
+      type: "Sequence" as const,
+      elements: [expr],
+    };
+  });
 };
 
 /**
@@ -236,19 +236,16 @@ export const sequenceOperator = (): Parser<Sequence> => {
  */
 export const choiceOperator = (): Parser<Choice> => {
   const result = choiceExpression();
-  return map(
-    result,
-    (expr) => {
-      if (expr.type === 'Choice') {
-        return expr;
-      }
-      // If it's not a choice, wrap it in a choice with one alternative
-      return {
-        type: 'Choice' as const,
-        alternatives: [expr]
-      };
+  return map(result, (expr) => {
+    if (expr.type === "Choice") {
+      return expr;
     }
-  );
+    // If it's not a choice, wrap it in a choice with one alternative
+    return {
+      type: "Choice" as const,
+      alternatives: [expr],
+    };
+  });
 };
 
 /**
