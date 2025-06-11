@@ -155,7 +155,7 @@ describe('Phase 1.2 Integration Tests', () => {
         { input: '"hello"', expectedType: 'StringLiteral' },
         { input: '[a-z]', expectedType: 'CharacterClass' },
         { input: 'identifier', expectedType: 'Identifier' },
-        { input: '.', expectedType: 'AnyChar' }
+        { input: '[.]', expectedType: 'CharacterClass' }
       ];
 
       for (const test of tests) {

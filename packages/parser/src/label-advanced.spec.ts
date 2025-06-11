@@ -10,7 +10,7 @@ import { withOptionalLabel } from './label';
 import { stringLiteral } from './string-literal';
 import { characterClass } from './character-class';
 import type { Pos } from 'tpeg-core';
-import type { LabeledExpression, Sequence, Choice, Star, Plus, Optional, Quantified } from './types';
+import type { LabeledExpression, Sequence, Choice, Star, Plus, Optional, Quantified, Group, PositiveLookahead } from './types';
 
 const createPosition = (offset = 0, line = 1, column = 1): Pos => ({
   offset,
@@ -35,7 +35,7 @@ describe('Label Advanced Tests', () => {
         
         // The expression inside the star is the group, not the labeled expression
         expect(star.expression.type).toBe('Group');
-        const group = star.expression as any;
+        const group = star.expression as Group;
         
         const innerLabeled = group.expression as LabeledExpression;
         expect(innerLabeled.type).toBe('LabeledExpression');
@@ -72,7 +72,7 @@ describe('Label Advanced Tests', () => {
         const checkLabeled = result.val as LabeledExpression;
         expect(checkLabeled.label).toBe('check');
         
-        const lookahead = checkLabeled.expression as any;
+        const lookahead = checkLabeled.expression as PositiveLookahead;
         expect(lookahead.type).toBe('PositiveLookahead');
         expect(lookahead.expression.type).toBe('StringLiteral');
       }
@@ -88,7 +88,7 @@ describe('Label Advanced Tests', () => {
         expect(valueLabeled.label).toBe('value');
         expect(valueLabeled.expression.type).toBe('Group');
         
-        const group = valueLabeled.expression as any;
+        const group = valueLabeled.expression as Group;
         const choice = group.expression as Choice;
         expect(choice.type).toBe('Choice');
         expect(choice.alternatives).toHaveLength(3);
@@ -167,13 +167,13 @@ describe('Label Advanced Tests', () => {
         '_underscore_:"test"'
       ];
       
-      validLabels.forEach(input => {
+      for (const input of validLabels) {
         const result = parser(input, createPosition());
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe('LabeledExpression');
         }
-      });
+      }
     });
 
     test('invalid label identifiers', () => {
@@ -186,13 +186,13 @@ describe('Label Advanced Tests', () => {
         '+name:"test"',  // starts with plus
       ];
       
-      invalidLabels.forEach(input => {
+      for (const input of invalidLabels) {
         const result = parser(input, createPosition());
         // Should either fail completely or not parse as labeled expression
         if (result.success) {
           expect(result.val.type).not.toBe('LabeledExpression');
         }
-      });
+      }
     });
 
     test('empty and minimal labels', () => {
@@ -234,7 +234,7 @@ describe('Label Advanced Tests', () => {
           
           if (index < expectedLabels.length - 1) {
             expect(current.expression.type).toBe('Group');
-            const group = current.expression as any;
+            const group = current.expression as Group;
             current = group.expression;
           } else {
             expect(current.expression.type).toBe('StringLiteral');
@@ -289,7 +289,7 @@ describe('Label Advanced Tests', () => {
         { input: 'minimum:"a"{3,}', operatorType: 'Quantified' }
       ];
       
-      testCases.forEach(({ input, operatorType }) => {
+      for (const { input, operatorType } of testCases) {
         const result = parser(input, createPosition());
         expect(result.success).toBe(true);
         if (result.success) {
@@ -297,7 +297,7 @@ describe('Label Advanced Tests', () => {
           expect(labeled.type).toBe('LabeledExpression');
           expect(labeled.expression.type).toBe(operatorType);
         }
-      });
+      }
     });
 
     test('labels with all lookahead operators', () => {
@@ -308,7 +308,7 @@ describe('Label Advanced Tests', () => {
         { input: 'negative:!"test"', operatorType: 'NegativeLookahead' }
       ];
       
-      testCases.forEach(({ input, operatorType }) => {
+      for (const { input, operatorType } of testCases) {
         const result = parser(input, createPosition());
         expect(result.success).toBe(true);
         if (result.success) {
@@ -316,7 +316,7 @@ describe('Label Advanced Tests', () => {
           expect(labeled.type).toBe('LabeledExpression');
           expect(labeled.expression.type).toBe(operatorType);
         }
-      });
+      }
     });
 
     test('labels with all basic syntax elements', () => {
@@ -328,7 +328,7 @@ describe('Label Advanced Tests', () => {
         { input: 'ref:identifier', syntaxType: 'Identifier' }
       ];
       
-      testCases.forEach(({ input, syntaxType }) => {
+      for (const { input, syntaxType } of testCases) {
         const result = parser(input, createPosition());
         expect(result.success).toBe(true);
         if (result.success) {
@@ -336,7 +336,7 @@ describe('Label Advanced Tests', () => {
           expect(labeled.type).toBe('LabeledExpression');
           expect(labeled.expression.type).toBe(syntaxType);
         }
-      });
+      }
     });
   });
 

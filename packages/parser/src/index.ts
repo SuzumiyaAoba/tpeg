@@ -21,9 +21,8 @@ export {
   groupOperator 
 } from './composition';
 
-// Re-export core and combinator parsers that might be useful
+// Re-export core parsers that might be useful
 export { choice, seq, map, optional, zeroOrMore, oneOrMore } from 'tpeg-core';
-export { token, sepBy, sepBy1 } from 'tpeg-combinator';
 
 import type { Parser } from 'tpeg-core';
 import type { BasicSyntaxNode, Expression } from './types';
