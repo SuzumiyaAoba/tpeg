@@ -61,15 +61,13 @@ const field = choice(quotedField, unquotedField);
 const csvRow = sepBy(field, literal(","));
 
 // Parse multiple rows
-const csvParser = (): Parser<string[][]> => {
-  return sepBy(csvRow, newline);
-};
+const csvParser: Parser<string[][]> = sepBy(csvRow, newline);
 
 /**
  * Parse CSV string and return array of string arrays
  */
 export const parseCSV = (input: string): string[][] => {
-  const result = parse(csvParser())(input);
+  const result = parse(csvParser)(input);
 
   if (result.success) {
     // Filter out completely empty rows

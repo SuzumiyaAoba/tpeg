@@ -109,7 +109,7 @@ export const jsonParser = (): Parser<JSONValue> => {
 
   // Parse key-value pairs in objects
   const keyValuePair: Parser<[string, JSONValue]> = map(
-    seq(token(quotedString()), token(literal(":")), token(valueParser)),
+    seq(token(quotedString), token(literal(":")), token(valueParser)),
     ([key, , value]) => [key, value] as const,
   );
 

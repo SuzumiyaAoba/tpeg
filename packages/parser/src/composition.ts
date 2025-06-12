@@ -43,17 +43,13 @@ import type {
  * Parses whitespace and returns nothing.
  * Used for optional whitespace in composition operators.
  */
-const whitespace = (): Parser<void> => {
-  return map(zeroOrMore(charClass(" ", "\t", "\n", "\r")), () => undefined);
-};
+const whitespace: Parser<void> = map(zeroOrMore(charClass(" ", "\t", "\n", "\r")), () => undefined);
 
 /**
  * Parses any basic syntax element (string literal, character class, identifier, any char).
  * This is a local version to avoid circular imports.
  */
-const basicSyntax = (): Parser<BasicSyntaxNode> => {
-  return choice(stringLiteral(), characterClass(), identifier());
-};
+const basicSyntax: Parser<BasicSyntaxNode> = choice(stringLiteral, characterClass, identifier);
 
 // Create recursive parser for expressions using the recursive combinator
 const [expressionParser, setExpressionParser] = recursive<Expression>();
@@ -65,7 +61,7 @@ const [expressionParser, setExpressionParser] = recursive<Expression>();
 const primary = (): Parser<Expression> => {
   return choice(
     groupExpression(),
-    map(basicSyntax(), (node): Expression => node),
+    map(basicSyntax, (node): Expression => node),
   );
 };
 
@@ -102,9 +98,9 @@ const groupExpression = (): Parser<Group> => {
     seq(
       literal("("),
       seq(
-        whitespace(),
+        whitespace,
         (input, pos) => expressionParser(input, pos),
-        whitespace(),
+        whitespace,
       ),
       literal(")"),
     ),

@@ -17,17 +17,13 @@ import type { Expression, NegativeLookahead, PositiveLookahead } from "./types";
  * Parses a positive lookahead operator: &
  * Used in expressions like &expr
  */
-export const positiveLookaheadOperator = (): Parser<string> => {
-  return literal("&");
-};
+export const positiveLookaheadOperator: Parser<string> = literal("&");
 
 /**
  * Parses a negative lookahead operator: !
  * Used in expressions like !expr
  */
-export const negativeLookaheadOperator = (): Parser<string> => {
-  return literal("!");
-};
+export const negativeLookaheadOperator: Parser<string> = literal("!");
 
 /**
  * Creates a positive lookahead AST node.
@@ -59,9 +55,7 @@ export const createNegativeLookahead = (
  * Parses any lookahead operator.
  * Returns the operator string for later application.
  */
-export const lookaheadOperator = (): Parser<string> => {
-  return choice(positiveLookaheadOperator(), negativeLookaheadOperator());
-};
+export const lookaheadOperator: Parser<string> = choice(positiveLookaheadOperator, negativeLookaheadOperator);
 
 /**
  * Applies a lookahead operator to a base expression.
@@ -94,7 +88,7 @@ export const withLookahead = <T extends Expression>(
 ): Parser<Expression> => {
   return (input: string, pos) => {
     // First try to parse a lookahead operator
-    const operatorResult = lookaheadOperator()(input, pos);
+    const operatorResult = lookaheadOperator(input, pos);
 
     if (operatorResult.success) {
       // If we found a lookahead operator, parse the following expression

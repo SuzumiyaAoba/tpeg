@@ -54,9 +54,7 @@ import type { BasicSyntaxNode, Expression } from "./types";
  * // result3.success === true, result3.val.type === "Identifier"
  * ```
  */
-export const basicSyntax = (): Parser<BasicSyntaxNode> => {
-  return coreChoice(stringLiteral(), characterClass(), identifier());
-};
+export const basicSyntax: Parser<BasicSyntaxNode> = coreChoice(stringLiteral, characterClass, identifier);
 
 /**
  * Combined parser for all TPEG expression elements including composition operators.
@@ -79,6 +77,4 @@ export const basicSyntax = (): Parser<BasicSyntaxNode> => {
  * const result4 = tpegExpression()('("a" / "b") "c"', { offset: 0, line: 1, column: 1 });
  * ```
  */
-export const tpegExpression = (): Parser<Expression> => {
-  return expression();
-};
+export const tpegExpression: Parser<Expression> = expression();

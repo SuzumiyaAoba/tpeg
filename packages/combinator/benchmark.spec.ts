@@ -1,4 +1,5 @@
 import { describe, it } from "bun:test";
+import type { Parser } from "tpeg-core";
 import { any, charClass, lit } from "tpeg-core";
 
 const EMOJI = "😊";
@@ -13,7 +14,7 @@ const N = 10000;
 // Utility for running and timing a parser N times
 function benchParser(
   name: string,
-  parser: ReturnType<typeof any | typeof charClass | typeof lit>,
+  parser: Parser<string>,
   input: string,
 ) {
   it(`benchmark: ${name} x${N}`, () => {
@@ -27,9 +28,9 @@ function benchParser(
 }
 
 describe("Benchmark: Unicode parsing performance", () => {
-  benchParser("any(ASCII)", any(), ASCII);
-  benchParser("any(EMOJI)", any(), EMOJI);
-  benchParser("any(SURROGATE)", any(), SURROGATE);
+  benchParser("any(ASCII)", any, ASCII);
+  benchParser("any(EMOJI)", any, EMOJI);
+  benchParser("any(SURROGATE)", any, SURROGATE);
   benchParser("charClass(ASCII)", charClass(ASCII), ASCII);
   benchParser("charClass(EMOJI)", charClass(EMOJI), EMOJI);
   benchParser("charClass(SURROGATE)", charClass(SURROGATE), SURROGATE);
