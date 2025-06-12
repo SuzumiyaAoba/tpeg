@@ -148,7 +148,7 @@ const choiceExpression = (): Parser<Expression> => {
     seq(
       sequenceExpression(),
       zeroOrMore(
-        seq(whitespace(), literal("/"), whitespace(), sequenceExpression()),
+        seq(whitespace, literal("/"), whitespace, sequenceExpression()),
       ),
     ),
     ([first, rest]) => {

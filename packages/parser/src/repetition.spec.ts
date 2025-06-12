@@ -32,7 +32,7 @@ describe("repetition operators", () => {
   describe("basic operator parsers", () => {
     describe("starOperator", () => {
       it("should parse star operator", () => {
-        const result = starOperator()("*", pos);
+        const result = starOperator("*", pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val).toBe("*");
@@ -40,14 +40,14 @@ describe("repetition operators", () => {
       });
 
       it("should fail on non-star input", () => {
-        const result = starOperator()("+", pos);
+        const result = starOperator("+", pos);
         expect(result.success).toBe(false);
       });
     });
 
     describe("plusOperator", () => {
       it("should parse plus operator", () => {
-        const result = plusOperator()("+", pos);
+        const result = plusOperator("+", pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val).toBe("+");
@@ -55,14 +55,14 @@ describe("repetition operators", () => {
       });
 
       it("should fail on non-plus input", () => {
-        const result = plusOperator()("*", pos);
+        const result = plusOperator("*", pos);
         expect(result.success).toBe(false);
       });
     });
 
     describe("optionalOperator", () => {
       it("should parse optional operator", () => {
-        const result = optionalOperator()("?", pos);
+        const result = optionalOperator("?", pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val).toBe("?");
@@ -70,14 +70,14 @@ describe("repetition operators", () => {
       });
 
       it("should fail on non-optional input", () => {
-        const result = optionalOperator()("*", pos);
+        const result = optionalOperator("*", pos);
         expect(result.success).toBe(false);
       });
     });
 
     describe("quantifiedOperator", () => {
       it("should parse exact count {n}", () => {
-        const result = quantifiedOperator()("{3}", pos);
+        const result = quantifiedOperator("{3}", pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val).toEqual({ min: 3, max: 3 });
@@ -85,7 +85,7 @@ describe("repetition operators", () => {
       });
 
       it("should parse range count {n,m}", () => {
-        const result = quantifiedOperator()("{2,5}", pos);
+        const result = quantifiedOperator("{2,5}", pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val).toEqual({ min: 2, max: 5 });
@@ -93,7 +93,7 @@ describe("repetition operators", () => {
       });
 
       it("should parse minimum count {n,}", () => {
-        const result = quantifiedOperator()("{3,}", pos);
+        const result = quantifiedOperator("{3,}", pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val).toEqual({ min: 3, max: undefined });
@@ -101,7 +101,7 @@ describe("repetition operators", () => {
       });
 
       it("should parse zero count {0}", () => {
-        const result = quantifiedOperator()("{0}", pos);
+        const result = quantifiedOperator("{0}", pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val).toEqual({ min: 0, max: 0 });
@@ -109,7 +109,7 @@ describe("repetition operators", () => {
       });
 
       it("should parse large numbers", () => {
-        const result = quantifiedOperator()("{123,456}", pos);
+        const result = quantifiedOperator("{123,456}", pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val).toEqual({ min: 123, max: 456 });
@@ -119,7 +119,7 @@ describe("repetition operators", () => {
       it("should fail on invalid quantified syntax", () => {
         const tests = ["{", "}", "{a}", "{1,a}", "{,1}", "{}"];
         for (const test of tests) {
-          const result = quantifiedOperator()(test, pos);
+          const result = quantifiedOperator(test, pos);
           expect(result.success).toBe(false);
         }
       });
@@ -137,7 +137,7 @@ describe("repetition operators", () => {
         ];
 
         for (const test of tests) {
-          const result = repetitionOperator()(test.input, pos);
+          const result = repetitionOperator(test.input, pos);
           expect(result.success).toBe(true);
           if (result.success) {
             expect(result.val).toEqual(test.expected);
@@ -148,7 +148,7 @@ describe("repetition operators", () => {
       it("should fail on invalid operators", () => {
         const tests = ["&", "!", "#", "{a}"];
         for (const test of tests) {
-          const result = repetitionOperator()(test, pos);
+          const result = repetitionOperator(test, pos);
           expect(result.success).toBe(false);
         }
       });
@@ -275,7 +275,7 @@ describe("repetition operators", () => {
   describe("edge cases", () => {
     describe("quantified operator edge cases", () => {
       it("should handle single digit numbers", () => {
-        const result = quantifiedOperator()("{0,9}", pos);
+        const result = quantifiedOperator("{0,9}", pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val).toEqual({ min: 0, max: 9 });
@@ -283,7 +283,7 @@ describe("repetition operators", () => {
       });
 
       it("should handle large multi-digit numbers", () => {
-        const result = quantifiedOperator()("{1000,2000}", pos);
+        const result = quantifiedOperator("{1000,2000}", pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val).toEqual({ min: 1000, max: 2000 });
@@ -293,7 +293,7 @@ describe("repetition operators", () => {
       it("should fail on negative numbers", () => {
         const tests = ["{-1}", "{1,-1}", "{-1,-2}"];
         for (const test of tests) {
-          const result = quantifiedOperator()(test, pos);
+          const result = quantifiedOperator(test, pos);
           expect(result.success).toBe(false);
         }
       });
@@ -301,7 +301,7 @@ describe("repetition operators", () => {
       it("should fail on invalid range (min > max)", () => {
         // Note: This test checks parser syntax, not semantic validation
         // Semantic validation would happen at a higher level
-        const result = quantifiedOperator()("{5,3}", pos);
+        const result = quantifiedOperator("{5,3}", pos);
         expect(result.success).toBe(true); // Parser succeeds, semantic check would catch this
         if (result.success) {
           expect(result.val).toEqual({ min: 5, max: 3 });
@@ -313,7 +313,7 @@ describe("repetition operators", () => {
       it("should handle multiple repetition operators gracefully", () => {
         // Note: This tests the individual operators, not chaining
         // Chaining like expr*+ would be handled at the expression level
-        const result1 = repetitionOperator()("*+", pos);
+        const result1 = repetitionOperator("*+", pos);
         expect(result1.success).toBe(true);
         if (result1.success) {
           expect(result1.val).toBe("*");

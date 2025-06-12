@@ -25,7 +25,7 @@ describe("lookahead operators", () => {
   describe("operator parsing", () => {
     describe("positive lookahead operator (&)", () => {
       it("should parse & operator", () => {
-        const result = positiveLookaheadOperator()("&", pos);
+        const result = positiveLookaheadOperator("&", pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val).toBe("&");
@@ -34,19 +34,19 @@ describe("lookahead operators", () => {
       });
 
       it("should fail on non-& characters", () => {
-        const result = positiveLookaheadOperator()("!", pos);
+        const result = positiveLookaheadOperator("!", pos);
         expect(result.success).toBe(false);
       });
 
       it("should fail on empty input", () => {
-        const result = positiveLookaheadOperator()("", pos);
+        const result = positiveLookaheadOperator("", pos);
         expect(result.success).toBe(false);
       });
     });
 
     describe("negative lookahead operator (!)", () => {
       it("should parse ! operator", () => {
-        const result = negativeLookaheadOperator()("!", pos);
+        const result = negativeLookaheadOperator("!", pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val).toBe("!");
@@ -55,19 +55,19 @@ describe("lookahead operators", () => {
       });
 
       it("should fail on non-! characters", () => {
-        const result = negativeLookaheadOperator()("&", pos);
+        const result = negativeLookaheadOperator("&", pos);
         expect(result.success).toBe(false);
       });
 
       it("should fail on empty input", () => {
-        const result = negativeLookaheadOperator()("", pos);
+        const result = negativeLookaheadOperator("", pos);
         expect(result.success).toBe(false);
       });
     });
 
     describe("lookahead operator choice", () => {
       it("should parse & operator", () => {
-        const result = lookaheadOperator()("&", pos);
+        const result = lookaheadOperator("&", pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val).toBe("&");
@@ -75,7 +75,7 @@ describe("lookahead operators", () => {
       });
 
       it("should parse ! operator", () => {
-        const result = lookaheadOperator()("!", pos);
+        const result = lookaheadOperator("!", pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val).toBe("!");
@@ -83,12 +83,12 @@ describe("lookahead operators", () => {
       });
 
       it("should fail on other characters", () => {
-        const result = lookaheadOperator()("*", pos);
+        const result = lookaheadOperator("*", pos);
         expect(result.success).toBe(false);
       });
 
       it("should fail on empty input", () => {
-        const result = lookaheadOperator()("", pos);
+        const result = lookaheadOperator("", pos);
         expect(result.success).toBe(false);
       });
     });

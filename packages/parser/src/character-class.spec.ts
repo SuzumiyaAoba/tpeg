@@ -6,7 +6,7 @@ import { describe, expect, it } from "bun:test";
 import { characterClass } from "./character-class";
 
 describe("characterClass", () => {
-  const parser = characterClass();
+  const parser = characterClass;
   const pos = { offset: 0, line: 1, column: 1 };
 
   describe("any character dot", () => {

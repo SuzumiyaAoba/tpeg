@@ -8,7 +8,7 @@ import { stringLiteral } from "./string-literal";
 const pos = { offset: 0, line: 1, column: 1 };
 
 describe("stringLiteral", () => {
-  const parser = stringLiteral();
+  const parser = stringLiteral;
 
   describe("double-quoted strings", () => {
     it("should parse simple double-quoted strings", () => {

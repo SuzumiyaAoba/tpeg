@@ -168,7 +168,7 @@ describe("Label Advanced Tests", () => {
 
   describe("label validation edge cases", () => {
     test("various valid label identifiers", () => {
-      const parser = withOptionalLabel(stringLiteral());
+      const parser = withOptionalLabel(stringLiteral);
 
       // Valid cases
       const validLabels = [
@@ -194,7 +194,7 @@ describe("Label Advanced Tests", () => {
     });
 
     test("invalid label identifiers", () => {
-      const parser = withOptionalLabel(stringLiteral());
+      const parser = withOptionalLabel(stringLiteral);
 
       // These should fail to parse as labeled expressions
       const invalidLabels = [
@@ -213,7 +213,7 @@ describe("Label Advanced Tests", () => {
     });
 
     test("empty and minimal labels", () => {
-      const parser = withOptionalLabel(stringLiteral());
+      const parser = withOptionalLabel(stringLiteral);
 
       // Single character labels
       const result1 = parser('a:"test"', createPosition());
@@ -261,7 +261,7 @@ describe("Label Advanced Tests", () => {
     });
 
     test("long label names", () => {
-      const parser = withOptionalLabel(stringLiteral());
+      const parser = withOptionalLabel(stringLiteral);
       const longLabel = "thisIsAVeryLongLabelNameThatShouldStillWorkCorrectly";
       const input = `${longLabel}:"test"`;
 
