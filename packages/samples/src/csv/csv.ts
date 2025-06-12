@@ -26,7 +26,7 @@ import {
 const escapedQuote = map(literal('""'), () => '"');
 
 // Character that is not a quote
-const normalChar = map(seq(not(literal('"')), any()), ([_, c]) => c);
+const normalChar = map(seq(not(literal('"')), any), ([_, c]) => c);
 
 // Content inside quotes
 const quotedContent = map(

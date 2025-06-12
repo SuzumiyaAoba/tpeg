@@ -249,7 +249,7 @@ export const Expression: Parser<ExpressionNode> = map(
  * AST-based calculator grammar
  */
 export const CalculatorGrammar = map(
-  seq(_, Expression, _, not(any())),
+  seq(_, Expression, _, not(any)),
   ([, result]) => result,
 );
 
@@ -345,7 +345,7 @@ export const DirectExpression: Parser<number> = map(
  * Direct calculation grammar
  */
 export const DirectCalculatorGrammar = map(
-  seq(_, DirectExpression, _, not(any())),
+  seq(_, DirectExpression, _, not(any)),
   ([, result]) => result,
 );
 

@@ -46,10 +46,10 @@ const trueParser = map(literal("true"), () => true);
 const falseParser = map(literal("false"), () => false);
 
 // Parse string values
-const stringParser = map(quotedString(), (s) => s);
+const stringParser = map(quotedString, (s) => s);
 
 // Parse number values
-const numberParser = map(number(), (n) => n);
+const numberParser = map(number, (n) => n);
 
 // Parse comma-separated values (empty array if empty)
 const commaSeparatedValues = (

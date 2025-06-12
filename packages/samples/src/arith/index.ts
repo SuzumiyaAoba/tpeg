@@ -11,7 +11,7 @@ import {
   star,
 } from "tpeg-core";
 
-export const EOF = not(any());
+export const EOF = not(any);
 
 /**
  * ```txt
