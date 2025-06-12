@@ -24,6 +24,7 @@ import {
   seq,
   zeroOrMore,
 } from "tpeg-core";
+import { recursive } from 'tpeg-combinator';
 import { characterClass } from "./character-class";
 import { identifier } from "./identifier";
 import { withOptionalLabel } from "./label";
@@ -54,12 +55,8 @@ const basicSyntax = (): Parser<BasicSyntaxNode> => {
   return choice(stringLiteral(), characterClass(), identifier());
 };
 
-// Create recursive parser for expressions
-let expressionParser: Parser<Expression>;
-
-const setExpressionParser = (parser: Parser<Expression>) => {
-  expressionParser = parser;
-};
+// Create recursive parser for expressions using the recursive combinator
+const [expressionParser, setExpressionParser] = recursive<Expression>();
 
 /**
  * Parses a primary expression (basic syntax or grouped expression).

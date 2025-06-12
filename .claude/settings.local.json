@@ -26,7 +26,8 @@
       "Bash(ls:*)",
       "Bash(find:*)",
       "Bash(bun run lint:*)",
-      "Bash(bun run:*)"
+      "Bash(bun run:*)",
+      "Bash(rg:*)"
     ],
     "deny": []
   }
