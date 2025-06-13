@@ -28,7 +28,9 @@
       "Bash(bun run lint:*)",
       "Bash(bun run:*)",
       "Bash(rg:*)",
-      "Bash(gh pr create:*)"
+      "Bash(gh pr create:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)"
     ],
     "deny": []
   }
