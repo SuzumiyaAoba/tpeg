@@ -6,7 +6,7 @@ import { describe, expect, it } from "bun:test";
 import { basicSyntax } from "./index";
 
 describe("basicSyntax", () => {
-  const parser = basicSyntax();
+  const parser = basicSyntax;
   const pos = { offset: 0, line: 1, column: 1 };
 
   describe("string literals", () => {

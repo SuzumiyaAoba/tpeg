@@ -182,8 +182,8 @@ describe("reportParseError", () => {
     const input = "xyz";
     const result = parse(lit("abc"))(input);
 
-    // Use spyOn to spy on console.error
-    const spy = spyOn(console, "error");
+    // Use spyOn to spy on console.error before calling the function
+    const spy = spyOn(console, "error").mockImplementation(() => {});
 
     reportParseError(result, input);
 
@@ -198,7 +198,7 @@ describe("reportParseError", () => {
     const result = parse(lit("abc"))(input);
 
     // Use spyOn to spy on console.error
-    const spy = spyOn(console, "error");
+    const spy = spyOn(console, "error").mockImplementation(() => {});
 
     reportParseError(result, input);
 
@@ -212,7 +212,7 @@ describe("reportParseError", () => {
     const result = parse(lit("abc"))(input);
 
     // Use spyOn to spy on console.error
-    const spy = spyOn(console, "error");
+    const spy = spyOn(console, "error").mockImplementation(() => {});
 
     reportParseError(result, input, { colorize: false });
 
