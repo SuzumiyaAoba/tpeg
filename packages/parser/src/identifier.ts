@@ -13,17 +13,18 @@ import type { Identifier } from "./types";
  * Parses the first character of an identifier.
  * Must be a letter or underscore.
  */
-const identStart = (): Parser<string> => {
-  return charClass(["a", "z"], ["A", "Z"], "_");
-};
+const identStart: Parser<string> = charClass(["a", "z"], ["A", "Z"], "_");
 
 /**
  * Parses continuation characters of an identifier.
  * Can be letters, digits, or underscores.
  */
-const identCont = (): Parser<string> => {
-  return charClass(["a", "z"], ["A", "Z"], ["0", "9"], "_");
-};
+const identCont: Parser<string> = charClass(
+  ["a", "z"],
+  ["A", "Z"],
+  ["0", "9"],
+  "_",
+);
 
 /**
  * Parses a complete identifier.
@@ -44,15 +45,13 @@ const identCont = (): Parser<string> => {
  * // result3.success === true, result3.val.name === "rule123"
  * ```
  */
-export const identifier = (): Parser<Identifier> => {
-  return map(
-    seq(
-      identStart(),
-      map(zeroOrMore(identCont()), (chars) => chars.join("")),
-    ),
-    ([first, rest]) => ({
-      type: "Identifier" as const,
-      name: first + rest,
-    }),
-  );
-};
+export const identifier: Parser<Identifier> = map(
+  seq(
+    identStart,
+    map(zeroOrMore(identCont), (chars) => chars.join("")),
+  ),
+  ([first, rest]) => ({
+    type: "Identifier" as const,
+    name: first + rest,
+  }),
+);

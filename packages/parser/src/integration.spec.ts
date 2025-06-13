@@ -14,7 +14,7 @@ describe("Phase 1.2 Integration Tests", () => {
   describe("tpegExpression parser", () => {
     it("should parse complex grammar expressions", () => {
       // Test a realistic grammar rule like: ("+" / "-") [0-9]+ "." [0-9]*
-      const result = tpegExpression()('("+" / "-") [0-9] "." [0-9]', pos);
+      const result = tpegExpression('("+" / "-") [0-9] "." [0-9]', pos);
       expect(result.success).toBe(true);
 
       if (result.success) {
@@ -42,7 +42,7 @@ describe("Phase 1.2 Integration Tests", () => {
 
     it("should handle deeply nested expressions", () => {
       // Test: (("a" / "b") ("c" / "d")) / "e"
-      const result = tpegExpression()('(("a" / "b") ("c" / "d")) / "e"', pos);
+      const result = tpegExpression('(("a" / "b") ("c" / "d")) / "e"', pos);
       expect(result.success).toBe(true);
 
       if (result.success) {
@@ -61,7 +61,7 @@ describe("Phase 1.2 Integration Tests", () => {
 
     it("should correctly handle operator precedence", () => {
       // Test: "a" "b" / "c" "d" (should parse as ("a" "b") / ("c" "d"))
-      const result = tpegExpression()('"a" "b" / "c" "d"', pos);
+      const result = tpegExpression('"a" "b" / "c" "d"', pos);
       expect(result.success).toBe(true);
 
       if (result.success) {
@@ -78,7 +78,7 @@ describe("Phase 1.2 Integration Tests", () => {
 
     it("should parse identifier references in complex expressions", () => {
       // Test: number / (letter identifier)
-      const result = tpegExpression()("number / (letter identifier)", pos);
+      const result = tpegExpression("number / (letter identifier)", pos);
       expect(result.success).toBe(true);
 
       if (result.success) {
@@ -103,7 +103,7 @@ describe("Phase 1.2 Integration Tests", () => {
 
     it("should work with real PEG grammar patterns", () => {
       // Test: [a-zA-Z_] [a-zA-Z0-9_]*
-      const result = tpegExpression()("[a-zA-Z_] [a-zA-Z0-9_]", pos);
+      const result = tpegExpression("[a-zA-Z_] [a-zA-Z0-9_]", pos);
       expect(result.success).toBe(true);
 
       if (result.success) {
@@ -119,7 +119,7 @@ describe("Phase 1.2 Integration Tests", () => {
     it("should handle mixed whitespace correctly", () => {
       // Test with various whitespace: "hello"   /\n  \t"world"
       const input = '"hello"   /\n  \t"world"';
-      const result = tpegExpression()(input, pos);
+      const result = tpegExpression(input, pos);
       expect(result.success).toBe(true);
 
       if (result.success) {
@@ -135,7 +135,7 @@ describe("Phase 1.2 Integration Tests", () => {
 
   describe("error handling", () => {
     it("should provide meaningful errors for malformed expressions", () => {
-      const result = tpegExpression()("(unclosed group", pos);
+      const result = tpegExpression("(unclosed group", pos);
       expect(result.success).toBe(false);
 
       if (!result.success) {
@@ -144,7 +144,7 @@ describe("Phase 1.2 Integration Tests", () => {
     });
 
     it("should handle empty groups gracefully", () => {
-      const result = tpegExpression()("()", pos);
+      const result = tpegExpression("()", pos);
       expect(result.success).toBe(false);
     });
   });
@@ -159,7 +159,7 @@ describe("Phase 1.2 Integration Tests", () => {
       ];
 
       for (const test of tests) {
-        const result = tpegExpression()(test.input, pos);
+        const result = tpegExpression(test.input, pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe(test.expectedType);

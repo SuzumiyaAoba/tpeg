@@ -33,7 +33,7 @@ export const anyChar =
  * @returns Parser<string> A parser that succeeds if any character is present at the current position, or fails at end of input.
  * @see anyChar
  */
-export const any = () => anyChar("any");
+export const any = anyChar("any");
 
 /**
  * Checks if a string can be processed by the optimized string parsing path.

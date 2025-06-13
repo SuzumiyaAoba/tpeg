@@ -29,70 +29,52 @@ import type { Expression, Optional, Plus, Quantified, Star } from "./types";
  * Parses a star repetition operator: expr*
  * Zero or more repetitions of the given expression.
  */
-export const starOperator = (): Parser<string> => {
-  return literal("*");
-};
+export const starOperator: Parser<string> = literal("*");
 
 /**
  * Parses a plus repetition operator: expr+
  * One or more repetitions of the given expression.
  */
-export const plusOperator = (): Parser<string> => {
-  return literal("+");
-};
+export const plusOperator: Parser<string> = literal("+");
 
 /**
  * Parses an optional operator: expr?
  * Zero or one occurrence of the given expression.
  */
-export const optionalOperator = (): Parser<string> => {
-  return literal("?");
-};
+export const optionalOperator: Parser<string> = literal("?");
 
 /**
  * Parses a quantified repetition operator: expr{n}, expr{n,m}, expr{n,}
  * Supports exact count, range, and minimum repetitions.
  */
-export const quantifiedOperator = (): Parser<{ min: number; max?: number }> => {
-  // Parse a positive integer
-  const positiveInt = (): Parser<number> => {
-    return map(oneOrMore(charClass(["0", "9"])), (digits) =>
-      Number.parseInt(digits.join(""), 10),
+export const quantifiedOperator: Parser<{ min: number; max?: number }> =
+  (() => {
+    // Parse a positive integer
+    const positiveInt: Parser<number> = map(
+      oneOrMore(charClass(["0", "9"])),
+      (digits) => Number.parseInt(digits.join(""), 10),
     );
-  };
 
-  // Parse {n} - exactly n times
-  const exactCount = (): Parser<{ min: number; max?: number }> => {
-    return map(
-      seq(literal("{"), positiveInt(), literal("}")),
+    // Parse {n} - exactly n times
+    const exactCount: Parser<{ min: number; max?: number }> = map(
+      seq(literal("{"), positiveInt, literal("}")),
       ([_, count, __]) => ({ min: count, max: count }),
     );
-  };
 
-  // Parse {n,} - n or more times
-  const minCount = (): Parser<{ min: number; max?: number }> => {
-    return map(
-      seq(literal("{"), positiveInt(), literal(","), literal("}")),
+    // Parse {n,} - n or more times
+    const minCount: Parser<{ min: number; max?: number }> = map(
+      seq(literal("{"), positiveInt, literal(","), literal("}")),
       ([_, min, __, ___]) => ({ min, max: undefined }),
     );
-  };
 
-  // Parse {n,m} - n to m times
-  const rangeCount = (): Parser<{ min: number; max?: number }> => {
-    return map(
-      seq(
-        literal("{"),
-        positiveInt(),
-        literal(","),
-        positiveInt(),
-        literal("}"),
-      ),
+    // Parse {n,m} - n to m times
+    const rangeCount: Parser<{ min: number; max?: number }> = map(
+      seq(literal("{"), positiveInt, literal(","), positiveInt, literal("}")),
       ([_, min, __, max, ___]) => ({ min, max }),
     );
-  };
 
-  return choice(rangeCount(), minCount(), exactCount());
-};
+    return choice(rangeCount, minCount, exactCount);
+  })();
 
 /**
  * Applies a repetition operator to a base expression.
@@ -136,16 +118,9 @@ export const applyRepetition = (
  * Parses any repetition operator.
  * Returns the operator information for later application.
  */
-export const repetitionOperator = (): Parser<
+export const repetitionOperator: Parser<
   string | { min: number; max?: number }
-> => {
-  return choice(
-    starOperator(),
-    plusOperator(),
-    optionalOperator(),
-    quantifiedOperator(),
-  );
-};
+> = choice(starOperator, plusOperator, optionalOperator, quantifiedOperator);
 
 /**
  * Parses a postfix expression with optional repetition operators.
@@ -158,7 +133,7 @@ export const parseRepetition = (
     seq(
       // The base expression is already parsed
       // Just parse any following repetition operators
-      optional(repetitionOperator()),
+      optional(repetitionOperator),
     ),
     ([repetitionOp]) => {
       // repetitionOp is either [operator] or [] from optional parser

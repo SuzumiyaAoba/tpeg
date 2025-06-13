@@ -44,19 +44,21 @@ import type { BasicSyntaxNode, Expression } from "./types";
  *
  * @example
  * ```typescript
- * const result1 = basicSyntax()('"hello"', { offset: 0, line: 1, column: 1 });
+ * const result1 = basicSyntax('"hello"', { offset: 0, line: 1, column: 1 });
  * // result1.success === true, result1.val.type === "StringLiteral"
  *
- * const result2 = basicSyntax()('[a-z]', { offset: 0, line: 1, column: 1 });
+ * const result2 = basicSyntax('[a-z]', { offset: 0, line: 1, column: 1 });
  * // result2.success === true, result2.val.type === "CharacterClass"
  *
- * const result3 = basicSyntax()('identifier', { offset: 0, line: 1, column: 1 });
+ * const result3 = basicSyntax('identifier', { offset: 0, line: 1, column: 1 });
  * // result3.success === true, result3.val.type === "Identifier"
  * ```
  */
-export const basicSyntax = (): Parser<BasicSyntaxNode> => {
-  return coreChoice(stringLiteral(), characterClass(), identifier());
-};
+export const basicSyntax: Parser<BasicSyntaxNode> = coreChoice(
+  stringLiteral,
+  characterClass,
+  identifier,
+);
 
 /**
  * Combined parser for all TPEG expression elements including composition operators.
@@ -67,18 +69,16 @@ export const basicSyntax = (): Parser<BasicSyntaxNode> => {
  * @example
  * ```typescript
  * // Parse basic syntax
- * const result1 = tpegExpression()('"hello"', { offset: 0, line: 1, column: 1 });
+ * const result1 = tpegExpression('"hello"', { offset: 0, line: 1, column: 1 });
  *
  * // Parse sequence
- * const result2 = tpegExpression()('"hello" " " "world"', { offset: 0, line: 1, column: 1 });
+ * const result2 = tpegExpression('"hello" " " "world"', { offset: 0, line: 1, column: 1 });
  *
  * // Parse choice
- * const result3 = tpegExpression()('"true" / "false"', { offset: 0, line: 1, column: 1 });
+ * const result3 = tpegExpression('"true" / "false"', { offset: 0, line: 1, column: 1 });
  *
  * // Parse group with complex precedence
- * const result4 = tpegExpression()('("a" / "b") "c"', { offset: 0, line: 1, column: 1 });
+ * const result4 = tpegExpression('("a" / "b") "c"', { offset: 0, line: 1, column: 1 });
  * ```
  */
-export const tpegExpression = (): Parser<Expression> => {
-  return expression();
-};
+export const tpegExpression = expression();

@@ -7,7 +7,7 @@ describe("any", () => {
   it("should parse any single character", () => {
     const input = "a";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = any()(input, pos);
+    const result = any(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toBe("a");
@@ -18,7 +18,7 @@ describe("any", () => {
   it("should parse newline character", () => {
     const input = "\n";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = any()(input, pos);
+    const result = any(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toBe("\n");
@@ -29,7 +29,7 @@ describe("any", () => {
   it("should return error for empty input", () => {
     const input = "";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = any()(input, pos);
+    const result = any(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toBe("Unexpected EOI");
@@ -40,7 +40,7 @@ describe("any", () => {
   it("should return error for out of bound", () => {
     const input = "a";
     const pos: Pos = { offset: 1, column: 1, line: 1 };
-    const result = any()(input, pos);
+    const result = any(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toBe("Unexpected EOI");

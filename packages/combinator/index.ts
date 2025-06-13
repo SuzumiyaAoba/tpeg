@@ -424,7 +424,7 @@ export const withDetailedError = <T>(
  *
  * @returns Parser<never> A parser that succeeds at end of input, or fails otherwise.
  */
-export const EOF = not(any());
+export const EOF = not(any);
 
 /**
  * Parser that matches any newline sequence.
@@ -462,7 +462,7 @@ export const token = <T>(parser: Parser<T>): Parser<T> =>
  *
  * @returns Parser<string> A parser that returns the content of the string without quotes
  */
-export const quotedString = (): Parser<string> => {
+export const quotedString: Parser<string> = (() => {
   const escapeSeq = map(seq(literal("\\"), anyChar()), ([_, char]) => {
     switch (char) {
       case "n":
@@ -500,14 +500,14 @@ export const quotedString = (): Parser<string> => {
     ),
     "Expected valid quoted string",
   );
-};
+})();
 
 /**
  * Parser for matching a string with single quotes.
  *
  * @returns Parser<string> A parser that returns the content of the string without quotes
  */
-export const singleQuotedString = (): Parser<string> => {
+export const singleQuotedString: Parser<string> = (() => {
   const escapeSeq = map(seq(literal("\\"), anyChar()), ([_, char]) => {
     switch (char) {
       case "n":
@@ -543,23 +543,24 @@ export const singleQuotedString = (): Parser<string> => {
     seq(literal("'"), zeroOrMore(stringChar), literal("'")),
     ([_, chars]) => chars.join(""),
   );
-};
+})();
 
 /**
  * Parser for matching a string with either single or double quotes.
  *
  * @returns Parser<string> A parser that returns the content of the string without quotes
  */
-export const anyQuotedString = (): Parser<string> => {
-  return choice(quotedString(), singleQuotedString());
-};
+export const anyQuotedString: Parser<string> = choice(
+  quotedString,
+  singleQuotedString,
+);
 
 /**
  * Parser for matching a JavaScript/JSON-style number.
  *
  * @returns Parser<number> A parser that returns the parsed number
  */
-export const number = (): Parser<number> => {
+export const number: Parser<number> = (() => {
   const digits = map(oneOrMore(charClass(["0", "9"])), (chars) =>
     chars.join(""),
   );
@@ -583,24 +584,19 @@ export const number = (): Parser<number> => {
       return Number(numStr);
     },
   );
-};
+})();
 
 /**
  * Parse an integer number.
  *
  * @returns Parser<number> A parser that returns the parsed integer
  */
-export const int = (): Parser<number> => {
-  return map(
-    seq(optional(literal("-")), oneOrMore(charClass(["0", "9"]))),
-    ([sign, digits]) => {
-      return Number.parseInt(
-        (sign.length > 0 ? "-" : "") + digits.join(""),
-        10,
-      );
-    },
-  );
-};
+export const int: Parser<number> = map(
+  seq(optional(literal("-")), oneOrMore(charClass(["0", "9"]))),
+  ([sign, digits]) => {
+    return Number.parseInt((sign.length > 0 ? "-" : "") + digits.join(""), 10);
+  },
+);
 
 /**
  * Creates a debugging parser that logs information about the parsing process.
@@ -781,66 +777,62 @@ export const regexGroups = (
  *
  * @returns Parser<string> A parser that matches [a-zA-Z]
  */
-export const letter = (): Parser<string> => {
-  return charClass(["a", "z"], ["A", "Z"]);
-};
+export const letter: Parser<string> = charClass(["a", "z"], ["A", "Z"]);
 
 /**
  * Parser for matching digits.
  *
  * @returns Parser<string> A parser that matches [0-9]
  */
-export const digit = (): Parser<string> => {
-  return charClass(["0", "9"]);
-};
+export const digit: Parser<string> = charClass(["0", "9"]);
 
 /**
  * Parser for matching alphanumeric characters.
  *
  * @returns Parser<string> A parser that matches [a-zA-Z0-9]
  */
-export const alphaNum = (): Parser<string> => {
-  return charClass(["a", "z"], ["A", "Z"], ["0", "9"]);
-};
+export const alphaNum: Parser<string> = charClass(
+  ["a", "z"],
+  ["A", "Z"],
+  ["0", "9"],
+);
 
 /**
  * Parser for matching identifiers (starts with letter/underscore, followed by alphanumeric/underscore).
  *
  * @returns Parser<string> A parser that matches valid identifiers
  */
-export const identifier = (): Parser<string> => {
-  const firstChar = choice(letter(), literal("_"));
-  const restChars = zeroOrMore(choice(alphaNum(), literal("_")));
+export const identifier: Parser<string> = (() => {
+  const firstChar = choice(letter, literal("_"));
+  const restChars = zeroOrMore(choice(alphaNum, literal("_")));
 
   return map(
     seq(firstChar, restChars),
     ([first, rest]) => first + rest.join(""),
   );
-};
+})();
 
 /**
  * Parser that succeeds only at the beginning of a line.
  *
  * @returns Parser<never> A parser that succeeds at the start of a line
  */
-export const startOfLine = (): Parser<never> => {
-  return (input: string, pos: Pos) => {
-    if (pos.column === 1) {
-      return {
-        success: true,
-        val: null as never,
-        current: pos,
-        next: pos,
-      };
-    }
-
+export const startOfLine: Parser<never> = (input: string, pos: Pos) => {
+  if (pos.column === 1) {
     return {
-      success: false,
-      error: {
-        message: "Expected start of line",
-        pos,
-      },
+      success: true,
+      val: null as never,
+      current: pos,
+      next: pos,
     };
+  }
+
+  return {
+    success: false,
+    error: {
+      message: "Expected start of line",
+      pos,
+    },
   };
 };
 
@@ -849,35 +841,33 @@ export const startOfLine = (): Parser<never> => {
  *
  * @returns Parser<never> A parser that succeeds at the end of a line
  */
-export const endOfLine = (): Parser<never> => {
-  return (input: string, pos: Pos) => {
-    // At end of input
-    if (pos.offset >= input.length) {
-      return {
-        success: true,
-        val: null as never,
-        current: pos,
-        next: pos,
-      };
-    }
-
-    // Check if current position is at newline
-    const char = input[pos.offset];
-    if (char === "\n" || char === "\r") {
-      return {
-        success: true,
-        val: null as never,
-        current: pos,
-        next: pos,
-      };
-    }
-
+export const endOfLine: Parser<never> = (input: string, pos: Pos) => {
+  // At end of input
+  if (pos.offset >= input.length) {
     return {
-      success: false,
-      error: {
-        message: "Expected end of line",
-        pos,
-      },
+      success: true,
+      val: null as never,
+      current: pos,
+      next: pos,
     };
+  }
+
+  // Check if current position is at newline
+  const char = input[pos.offset];
+  if (char === "\n" || char === "\r") {
+    return {
+      success: true,
+      val: null as never,
+      current: pos,
+      next: pos,
+    };
+  }
+
+  return {
+    success: false,
+    error: {
+      message: "Expected end of line",
+      pos,
+    },
   };
 };

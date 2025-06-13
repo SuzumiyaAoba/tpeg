@@ -213,7 +213,7 @@ describe("tpeg-combinator additional tests", () => {
 
   describe("quotedString", () => {
     it("should parse a simple quoted string", () => {
-      const parser = quotedString();
+      const parser = quotedString;
       const result = parse(parser)('"hello"');
 
       expect(result.success).toBe(true);
@@ -224,7 +224,7 @@ describe("tpeg-combinator additional tests", () => {
     });
 
     it("should handle escape sequences", () => {
-      const parser = quotedString();
+      const parser = quotedString;
       const result = parse(parser)('"hello\\nworld\\t\\"quote\\""');
 
       expect(result.success).toBe(true);
@@ -235,7 +235,7 @@ describe("tpeg-combinator additional tests", () => {
     });
 
     it("should fail if not properly closed", () => {
-      const parser = quotedString();
+      const parser = quotedString;
       const result = parse(parser)('"unclosed');
 
       expect(result.success).toBe(false);
@@ -244,7 +244,7 @@ describe("tpeg-combinator additional tests", () => {
 
   describe("number", () => {
     it("should parse integers", () => {
-      const parser = number();
+      const parser = number;
       const result = parse(parser)("123");
 
       expect(result.success).toBe(true);
@@ -255,7 +255,7 @@ describe("tpeg-combinator additional tests", () => {
     });
 
     it("should parse floats", () => {
-      const parser = number();
+      const parser = number;
       const result = parse(parser)("123.456");
 
       expect(result.success).toBe(true);
@@ -266,7 +266,7 @@ describe("tpeg-combinator additional tests", () => {
     });
 
     it("should parse negative numbers", () => {
-      const parser = number();
+      const parser = number;
       const result = parse(parser)("-123.456");
 
       expect(result.success).toBe(true);
@@ -277,7 +277,7 @@ describe("tpeg-combinator additional tests", () => {
     });
 
     it("should parse scientific notation", () => {
-      const parser = number();
+      const parser = number;
       const result = parse(parser)("1.23e2");
 
       expect(result.success).toBe(true);
@@ -288,7 +288,7 @@ describe("tpeg-combinator additional tests", () => {
     });
 
     it("should fail on invalid numbers", () => {
-      const parser = number();
+      const parser = number;
       const result = parse(parser)("not-a-number");
 
       expect(result.success).toBe(false);
@@ -297,7 +297,7 @@ describe("tpeg-combinator additional tests", () => {
 
   describe("int", () => {
     it("should parse integers", () => {
-      const parser = int();
+      const parser = int;
       const result = parse(parser)("123");
 
       expect(result.success).toBe(true);
@@ -308,7 +308,7 @@ describe("tpeg-combinator additional tests", () => {
     });
 
     it("should parse negative integers", () => {
-      const parser = int();
+      const parser = int;
       const result = parse(parser)("-123");
 
       expect(result.success).toBe(true);
@@ -319,7 +319,7 @@ describe("tpeg-combinator additional tests", () => {
     });
 
     it("should only parse the integer part of a float", () => {
-      const parser = int();
+      const parser = int;
       const result = parse(parser)("123.456");
 
       expect(result.success).toBe(true);
@@ -330,7 +330,7 @@ describe("tpeg-combinator additional tests", () => {
     });
 
     it("should fail on invalid integers", () => {
-      const parser = int();
+      const parser = int;
       const result = parse(parser)("not-an-int");
 
       expect(result.success).toBe(false);
@@ -572,7 +572,7 @@ describe("Additional coverage tests", () => {
 
   describe("int vs number", () => {
     it("should parse integer with int()", () => {
-      const parser = int();
+      const parser = int;
       const result = parser("123", { offset: 0, line: 1, column: 1 });
 
       expect(isSuccess(result)).toBe(true);
@@ -582,7 +582,7 @@ describe("Additional coverage tests", () => {
     });
 
     it("should parse integer with scientific notation using number()", () => {
-      const parser = number();
+      const parser = number;
       const result = parser("1.23e2", { offset: 0, line: 1, column: 1 });
 
       expect(isSuccess(result)).toBe(true);
@@ -592,7 +592,7 @@ describe("Additional coverage tests", () => {
     });
 
     it("should parse float with int() but only return the integer part", () => {
-      const parser = int();
+      const parser = int;
       const result = parser("123.45", { offset: 0, line: 1, column: 1 });
 
       expect(isSuccess(result)).toBe(true);
@@ -972,7 +972,7 @@ it("should test sepBy with complex patterns", () => {
 describe("Basic character parsers", () => {
   describe("letter", () => {
     it("should match lowercase letters", () => {
-      const parser = letter();
+      const parser = letter;
       const result = parse(parser)("abc");
       expect(result.success).toBe(true);
       if (result.success) {
@@ -982,7 +982,7 @@ describe("Basic character parsers", () => {
     });
 
     it("should match uppercase letters", () => {
-      const parser = letter();
+      const parser = letter;
       const result = parse(parser)("ABC");
       expect(result.success).toBe(true);
       if (result.success) {
@@ -992,7 +992,7 @@ describe("Basic character parsers", () => {
     });
 
     it("should fail on non-letters", () => {
-      const parser = letter();
+      const parser = letter;
       const result = parse(parser)("123");
       expect(result.success).toBe(false);
     });
@@ -1000,7 +1000,7 @@ describe("Basic character parsers", () => {
 
   describe("digit", () => {
     it("should match digits", () => {
-      const parser = digit();
+      const parser = digit;
       const result = parse(parser)("123");
       expect(result.success).toBe(true);
       if (result.success) {
@@ -1010,7 +1010,7 @@ describe("Basic character parsers", () => {
     });
 
     it("should fail on non-digits", () => {
-      const parser = digit();
+      const parser = digit;
       const result = parse(parser)("abc");
       expect(result.success).toBe(false);
     });
@@ -1018,7 +1018,7 @@ describe("Basic character parsers", () => {
 
   describe("alphaNum", () => {
     it("should match letters", () => {
-      const parser = alphaNum();
+      const parser = alphaNum;
       const result = parse(parser)("abc");
       expect(result.success).toBe(true);
       if (result.success) {
@@ -1027,7 +1027,7 @@ describe("Basic character parsers", () => {
     });
 
     it("should match digits", () => {
-      const parser = alphaNum();
+      const parser = alphaNum;
       const result = parse(parser)("123");
       expect(result.success).toBe(true);
       if (result.success) {
@@ -1036,7 +1036,7 @@ describe("Basic character parsers", () => {
     });
 
     it("should fail on special characters", () => {
-      const parser = alphaNum();
+      const parser = alphaNum;
       const result = parse(parser)("!@#");
       expect(result.success).toBe(false);
     });
@@ -1044,7 +1044,7 @@ describe("Basic character parsers", () => {
 
   describe("identifier", () => {
     it("should match simple identifiers", () => {
-      const parser = identifier();
+      const parser = identifier;
       const result = parse(parser)("hello");
       expect(result.success).toBe(true);
       if (result.success) {
@@ -1053,7 +1053,7 @@ describe("Basic character parsers", () => {
     });
 
     it("should match identifiers with underscores", () => {
-      const parser = identifier();
+      const parser = identifier;
       const result = parse(parser)("_hello_world");
       expect(result.success).toBe(true);
       if (result.success) {
@@ -1062,7 +1062,7 @@ describe("Basic character parsers", () => {
     });
 
     it("should match identifiers with numbers", () => {
-      const parser = identifier();
+      const parser = identifier;
       const result = parse(parser)("hello123");
       expect(result.success).toBe(true);
       if (result.success) {
@@ -1071,7 +1071,7 @@ describe("Basic character parsers", () => {
     });
 
     it("should fail on identifiers starting with numbers", () => {
-      const parser = identifier();
+      const parser = identifier;
       const result = parse(parser)("123hello");
       expect(result.success).toBe(false);
     });
@@ -1081,13 +1081,13 @@ describe("Basic character parsers", () => {
 describe("Line position parsers", () => {
   describe("startOfLine", () => {
     it("should succeed at line start", () => {
-      const parser = startOfLine();
+      const parser = startOfLine;
       const result = parser("hello", { offset: 0, line: 1, column: 1 });
       expect(result.success).toBe(true);
     });
 
     it("should fail when not at line start", () => {
-      const parser = startOfLine();
+      const parser = startOfLine;
       const result = parser("hello", { offset: 2, line: 1, column: 3 });
       expect(result.success).toBe(false);
       if (!result.success) {
@@ -1098,25 +1098,25 @@ describe("Line position parsers", () => {
 
   describe("endOfLine", () => {
     it("should succeed at end of input", () => {
-      const parser = endOfLine();
+      const parser = endOfLine;
       const result = parser("hello", { offset: 5, line: 1, column: 6 });
       expect(result.success).toBe(true);
     });
 
     it("should succeed at newline character", () => {
-      const parser = endOfLine();
+      const parser = endOfLine;
       const result = parser("hello\nworld", { offset: 5, line: 1, column: 6 });
       expect(result.success).toBe(true);
     });
 
     it("should succeed at carriage return", () => {
-      const parser = endOfLine();
+      const parser = endOfLine;
       const result = parser("hello\rworld", { offset: 5, line: 1, column: 6 });
       expect(result.success).toBe(true);
     });
 
     it("should fail when not at end of line", () => {
-      const parser = endOfLine();
+      const parser = endOfLine;
       const result = parser("hello", { offset: 2, line: 1, column: 3 });
       expect(result.success).toBe(false);
       if (!result.success) {

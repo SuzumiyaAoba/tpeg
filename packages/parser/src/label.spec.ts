@@ -42,7 +42,7 @@ describe("createLabeledExpression", () => {
 
 describe("labeledExpression", () => {
   test("parses simple labeled string literal", () => {
-    const parser = labeledExpression(() => stringLiteral());
+    const parser = labeledExpression(() => stringLiteral);
     const result = parser('name:"hello"', createPosition());
 
     expect(result.success).toBe(true);
@@ -61,7 +61,7 @@ describe("labeledExpression", () => {
   });
 
   test("parses labeled character class", () => {
-    const parser = labeledExpression(() => characterClass());
+    const parser = labeledExpression(() => characterClass);
     const result = parser("digits:[0-9]", createPosition());
 
     expect(result.success).toBe(true);
@@ -85,7 +85,7 @@ describe("labeledExpression", () => {
   });
 
   test("parses labeled identifier reference", () => {
-    const parser = labeledExpression(() => identifier());
+    const parser = labeledExpression(() => identifier);
     const result = parser("left:expression", createPosition());
 
     expect(result.success).toBe(true);
@@ -103,7 +103,7 @@ describe("labeledExpression", () => {
   });
 
   test("parses complex label names", () => {
-    const parser = labeledExpression(() => stringLiteral());
+    const parser = labeledExpression(() => stringLiteral);
 
     // Underscore in label
     const result1 = parser('first_name:"John"', createPosition());
@@ -128,7 +128,7 @@ describe("labeledExpression", () => {
   });
 
   test("handles whitespace around colon", () => {
-    const parser = labeledExpression(() => stringLiteral());
+    const parser = labeledExpression(() => stringLiteral);
 
     // No spaces (should work)
     const result1 = parser('name:"hello"', createPosition());
@@ -143,7 +143,7 @@ describe("labeledExpression", () => {
   });
 
   test("fails when label is invalid", () => {
-    const parser = labeledExpression(() => stringLiteral());
+    const parser = labeledExpression(() => stringLiteral);
 
     // Label starting with number
     const result1 = parser('1name:"hello"', createPosition());
@@ -159,14 +159,14 @@ describe("labeledExpression", () => {
   });
 
   test("fails when colon is missing", () => {
-    const parser = labeledExpression(() => stringLiteral());
+    const parser = labeledExpression(() => stringLiteral);
     const result = parser('name"hello"', createPosition());
 
     expect(result.success).toBe(false);
   });
 
   test("fails when expression is invalid", () => {
-    const parser = labeledExpression(() => stringLiteral());
+    const parser = labeledExpression(() => stringLiteral);
     const result = parser("name:[invalid]", createPosition());
 
     expect(result.success).toBe(false);
@@ -175,7 +175,7 @@ describe("labeledExpression", () => {
 
 describe("withOptionalLabel", () => {
   test("parses labeled expression when label is present", () => {
-    const parser = withOptionalLabel(stringLiteral());
+    const parser = withOptionalLabel(stringLiteral);
     const result = parser('name:"hello"', createPosition());
 
     expect(result.success).toBe(true);
@@ -192,7 +192,7 @@ describe("withOptionalLabel", () => {
   });
 
   test("parses unlabeled expression when no label is present", () => {
-    const parser = withOptionalLabel(stringLiteral());
+    const parser = withOptionalLabel(stringLiteral);
     const result = parser('"hello"', createPosition());
 
     expect(result.success).toBe(true);
@@ -207,7 +207,7 @@ describe("withOptionalLabel", () => {
 
   test("prefers labeled over unlabeled when both could match", () => {
     // This test ensures that the choice prioritizes labeled expressions
-    const parser = withOptionalLabel(identifier());
+    const parser = withOptionalLabel(identifier);
     const result = parser("name:value", createPosition());
 
     expect(result.success).toBe(true);
@@ -223,7 +223,7 @@ describe("withOptionalLabel", () => {
   });
 
   test("falls back to unlabeled when label parsing fails", () => {
-    const parser = withOptionalLabel(stringLiteral());
+    const parser = withOptionalLabel(stringLiteral);
     const result = parser('"no_label"', createPosition());
 
     expect(result.success).toBe(true);
@@ -233,7 +233,7 @@ describe("withOptionalLabel", () => {
   });
 
   test("handles complex expressions", () => {
-    const parser = withOptionalLabel(characterClass());
+    const parser = withOptionalLabel(characterClass);
 
     // Labeled character class
     const result1 = parser("chars:[a-zA-Z]", createPosition());
@@ -254,7 +254,7 @@ describe("withOptionalLabel", () => {
 describe("label precedence and associativity", () => {
   test("labels have correct precedence in expression hierarchy", () => {
     // Labels should bind more tightly than sequences but less than atoms
-    const parser = withOptionalLabel(stringLiteral());
+    const parser = withOptionalLabel(stringLiteral);
     const result = parser('name:"hello"', createPosition());
 
     expect(result.success).toBe(true);

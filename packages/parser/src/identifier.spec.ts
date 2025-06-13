@@ -6,7 +6,7 @@ import { describe, expect, it } from "bun:test";
 import { identifier } from "./identifier";
 
 describe("identifier", () => {
-  const parser = identifier();
+  const parser = identifier;
   const pos = { offset: 0, line: 1, column: 1 };
 
   describe("valid identifiers", () => {

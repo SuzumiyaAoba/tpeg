@@ -21,7 +21,7 @@ import { octalDigitsToChar } from "./utils";
  * EndOfFile <- !.
  * ```
  */
-export const EndOfFile = not(any());
+export const EndOfFile = not(any);
 
 /**
  * ```txt
@@ -44,7 +44,7 @@ export const Space = choice(lit(" "), lit("\r"), EndOfLine);
  */
 export const Comment = seq(
   lit("#"),
-  map(many(map(seq(not(EndOfLine), any()), ($) => $[1])), ($) => $.join("")),
+  map(many(map(seq(not(EndOfLine), any), ($) => $[1])), ($) => $.join("")),
   EndOfLine,
 );
 
@@ -162,7 +162,7 @@ export const Char = choice(
   map(seq(lit("\\"), charClass(["0", "7"]), opt(charClass(["0", "7"]))), ($) =>
     octalDigitsToChar($[1] + ($[2]?.[0] ?? "")),
   ),
-  map(seq(not(lit("\\")), any()), ($) => $[1]),
+  map(seq(not(lit("\\")), any), ($) => $[1]),
 );
 
 /**
