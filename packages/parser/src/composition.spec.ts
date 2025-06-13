@@ -19,7 +19,7 @@ describe("composition operators", () => {
   describe("expression parser", () => {
     describe("basic syntax", () => {
       it("should parse string literals", () => {
-        const result = expression('"hello"', pos);
+        const result = expression()('"hello"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("StringLiteral");
@@ -31,7 +31,7 @@ describe("composition operators", () => {
       });
 
       it("should parse character classes", () => {
-        const result = expression("[a-z]", pos);
+        const result = expression()("[a-z]", pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("CharacterClass");
@@ -39,7 +39,7 @@ describe("composition operators", () => {
       });
 
       it("should parse identifiers", () => {
-        const result = expression("identifier", pos);
+        const result = expression()("identifier", pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Identifier");
@@ -52,7 +52,7 @@ describe("composition operators", () => {
 
     describe("sequence operator", () => {
       it("should parse simple sequences", () => {
-        const result = expression('"hello" "world"', pos);
+        const result = expression()('"hello" "world"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Sequence");
@@ -65,7 +65,7 @@ describe("composition operators", () => {
       });
 
       it("should parse sequences with three elements", () => {
-        const result = expression('"a" "b" "c"', pos);
+        const result = expression()('"a" "b" "c"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Sequence");
@@ -76,7 +76,7 @@ describe("composition operators", () => {
       });
 
       it("should parse sequences with mixed types", () => {
-        const result = expression('"hello" [a-z] identifier', pos);
+        const result = expression()('"hello" [a-z] identifier', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Sequence");
@@ -90,7 +90,7 @@ describe("composition operators", () => {
       });
 
       it("should handle whitespace in sequences", () => {
-        const result = expression('"hello"   "world"', pos);
+        const result = expression()('"hello"   "world"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Sequence");
@@ -98,7 +98,7 @@ describe("composition operators", () => {
       });
 
       it("should not parse single elements as sequences", () => {
-        const result = expression('"hello"', pos);
+        const result = expression()('"hello"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("StringLiteral");
@@ -108,7 +108,7 @@ describe("composition operators", () => {
 
     describe("choice operator", () => {
       it("should parse simple choices", () => {
-        const result = expression('"true" / "false"', pos);
+        const result = expression()('"true" / "false"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Choice");
@@ -121,7 +121,7 @@ describe("composition operators", () => {
       });
 
       it("should parse choices with three alternatives", () => {
-        const result = expression('"a" / "b" / "c"', pos);
+        const result = expression()('"a" / "b" / "c"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Choice");
@@ -132,7 +132,7 @@ describe("composition operators", () => {
       });
 
       it("should parse choices with mixed types", () => {
-        const result = expression('"string" / [0-9] / identifier', pos);
+        const result = expression()('"string" / [0-9] / identifier', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Choice");
@@ -146,7 +146,7 @@ describe("composition operators", () => {
       });
 
       it("should handle whitespace around choice operator", () => {
-        const result = expression('"a" / "b"', pos);
+        const result = expression()('"a" / "b"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Choice");
@@ -154,7 +154,7 @@ describe("composition operators", () => {
       });
 
       it("should handle no whitespace around choice operator", () => {
-        const result = expression('"a"/"b"', pos);
+        const result = expression()('"a"/"b"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Choice");
@@ -164,7 +164,7 @@ describe("composition operators", () => {
 
     describe("group operator", () => {
       it("should parse simple groups", () => {
-        const result = expression('("hello")', pos);
+        const result = expression()('("hello")', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Group");
@@ -175,7 +175,7 @@ describe("composition operators", () => {
       });
 
       it("should parse groups with choices", () => {
-        const result = expression('("a" / "b")', pos);
+        const result = expression()('("a" / "b")', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Group");
@@ -186,7 +186,7 @@ describe("composition operators", () => {
       });
 
       it("should parse groups with sequences", () => {
-        const result = expression('("a" "b")', pos);
+        const result = expression()('("a" "b")', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Group");
@@ -197,7 +197,7 @@ describe("composition operators", () => {
       });
 
       it("should handle whitespace in groups", () => {
-        const result = expression('( "hello" )', pos);
+        const result = expression()('( "hello" )', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Group");
@@ -207,7 +207,7 @@ describe("composition operators", () => {
 
     describe("operator precedence", () => {
       it("should prioritize groups over sequences", () => {
-        const result = expression('("a" / "b") "c"', pos);
+        const result = expression()('("a" / "b") "c"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Sequence");
@@ -220,7 +220,7 @@ describe("composition operators", () => {
       });
 
       it("should prioritize sequences over choices", () => {
-        const result = expression('"a" "b" / "c" "d"', pos);
+        const result = expression()('"a" "b" / "c" "d"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Choice");
@@ -233,7 +233,7 @@ describe("composition operators", () => {
       });
 
       it("should handle complex precedence", () => {
-        const result = expression('("a" / "b") "c" / "d" ("e" / "f")', pos);
+        const result = expression()('("a" / "b") "c" / "d" ("e" / "f")', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Choice");
@@ -250,18 +250,18 @@ describe("composition operators", () => {
 
     describe("error cases", () => {
       it("should fail on unclosed groups", () => {
-        const result = expression('("hello"', pos);
+        const result = expression()('("hello"', pos);
         expect(result.success).toBe(false);
       });
 
       it("should fail on empty groups", () => {
-        const result = expression("()", pos);
+        const result = expression()("()", pos);
         expect(result.success).toBe(false);
       });
 
       it("should parse partial invalid choice syntax", () => {
         // This actually parses as just "a" and leaves the rest unconsumed
-        const result = expression('"a" / / "b"', pos);
+        const result = expression()('"a" / / "b"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("StringLiteral");
@@ -270,7 +270,7 @@ describe("composition operators", () => {
       });
 
       it("should fail on incomplete sequences", () => {
-        const result = expression('"hello" ', pos);
+        const result = expression()('"hello" ', pos);
         expect(result.success).toBe(true); // This should parse as just "hello"
         if (result.success) {
           expect(result.val.type).toBe("StringLiteral");
@@ -282,7 +282,7 @@ describe("composition operators", () => {
   describe("specific operator parsers", () => {
     describe("sequenceOperator", () => {
       it("should parse sequences", () => {
-        const result = sequenceOperator()('"a" "b"', pos);
+        const result = sequenceOperator()()('"a" "b"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Sequence");
@@ -291,7 +291,7 @@ describe("composition operators", () => {
       });
 
       it("should wrap single elements in sequence", () => {
-        const result = sequenceOperator()('"hello"', pos);
+        const result = sequenceOperator()()('"hello"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Sequence");
@@ -302,7 +302,7 @@ describe("composition operators", () => {
 
     describe("choiceOperator", () => {
       it("should parse choices", () => {
-        const result = choiceOperator()('"a" / "b"', pos);
+        const result = choiceOperator()()('"a" / "b"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Choice");
@@ -311,7 +311,7 @@ describe("composition operators", () => {
       });
 
       it("should wrap single elements in choice", () => {
-        const result = choiceOperator()('"hello"', pos);
+        const result = choiceOperator()()('"hello"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Choice");
@@ -322,7 +322,7 @@ describe("composition operators", () => {
 
     describe("groupOperator", () => {
       it("should parse groups", () => {
-        const result = groupOperator()('("hello")', pos);
+        const result = groupOperator()()('("hello")', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Group");
@@ -331,7 +331,7 @@ describe("composition operators", () => {
       });
 
       it("should fail on non-groups", () => {
-        const result = groupOperator()('"hello"', pos);
+        const result = groupOperator()()('"hello"', pos);
         expect(result.success).toBe(false);
       });
     });

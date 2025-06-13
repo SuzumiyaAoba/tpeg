@@ -191,7 +191,7 @@ describe("TPEG Samples Integration Tests", () => {
 
   describe("Combinator Functions Integration", () => {
     it("uses sepBy for comma-separated values", () => {
-      const numberList = sepBy(number(), literal(","));
+      const numberList = sepBy(number, literal(","));
 
       const result = parse(numberList)("1,2,3,4,5");
       expect(result.success).toBe(true);
@@ -201,7 +201,7 @@ describe("TPEG Samples Integration Tests", () => {
     });
 
     it("uses quotedString for string literals", () => {
-      const result = parse(quotedString())(`"hello world"`);
+      const result = parse(quotedString)(`"hello world"`);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe("hello world");
@@ -209,7 +209,7 @@ describe("TPEG Samples Integration Tests", () => {
     });
 
     it("uses token for whitespace handling", () => {
-      const tokenizedNumber = token(number());
+      const tokenizedNumber = token(number);
 
       const result = parse(tokenizedNumber)("  123  ");
       expect(result.success).toBe(true);

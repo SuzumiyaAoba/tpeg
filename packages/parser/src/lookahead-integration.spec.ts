@@ -12,7 +12,7 @@ const pos = { offset: 0, line: 1, column: 1 };
 describe("lookahead-composition integration", () => {
   describe("lookahead with basic syntax", () => {
     it("should parse positive lookahead with string literal", () => {
-      const result = expression('&"hello"', pos);
+      const result = expression()('&"hello"', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("PositiveLookahead");
@@ -26,7 +26,7 @@ describe("lookahead-composition integration", () => {
     });
 
     it("should parse negative lookahead with string literal", () => {
-      const result = expression('!"hello"', pos);
+      const result = expression()('!"hello"', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("NegativeLookahead");
@@ -40,7 +40,7 @@ describe("lookahead-composition integration", () => {
     });
 
     it("should parse positive lookahead with character class", () => {
-      const result = expression("&[a-z]", pos);
+      const result = expression()("&[a-z]", pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("PositiveLookahead");
@@ -51,7 +51,7 @@ describe("lookahead-composition integration", () => {
     });
 
     it("should parse negative lookahead with identifier", () => {
-      const result = expression("!identifier", pos);
+      const result = expression()("!identifier", pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("NegativeLookahead");
@@ -67,7 +67,7 @@ describe("lookahead-composition integration", () => {
 
   describe("lookahead with groups", () => {
     it("should parse positive lookahead with grouped expression", () => {
-      const result = expression('&("a" / "b")', pos);
+      const result = expression()('&("a" / "b")', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("PositiveLookahead");
@@ -81,7 +81,7 @@ describe("lookahead-composition integration", () => {
     });
 
     it("should parse negative lookahead with grouped sequence", () => {
-      const result = expression('!("a" "b")', pos);
+      const result = expression()('!("a" "b")', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("NegativeLookahead");
@@ -99,7 +99,7 @@ describe("lookahead-composition integration", () => {
     it("should parse lookahead followed by repetition with correct precedence", () => {
       // &"hello"* should be parsed as (&"hello")*, not &("hello"*)
       // Lookahead has higher precedence than repetition
-      const result = expression('&"hello"*', pos);
+      const result = expression()('&"hello"*', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Star");
@@ -113,7 +113,7 @@ describe("lookahead-composition integration", () => {
     });
 
     it("should parse lookahead with plus repetition", () => {
-      const result = expression('!"hello"+', pos);
+      const result = expression()('!"hello"+', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Plus");
@@ -127,7 +127,7 @@ describe("lookahead-composition integration", () => {
     });
 
     it("should parse lookahead with optional", () => {
-      const result = expression('&"hello"?', pos);
+      const result = expression()('&"hello"?', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Optional");
@@ -141,7 +141,7 @@ describe("lookahead-composition integration", () => {
     });
 
     it("should parse lookahead with quantified repetition", () => {
-      const result = expression('!"hello"{3}', pos);
+      const result = expression()('!"hello"{3}', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Quantified");
@@ -159,7 +159,7 @@ describe("lookahead-composition integration", () => {
 
   describe("lookahead in sequences", () => {
     it("should parse sequence with lookahead elements", () => {
-      const result = expression('&"start" "middle" !"end"', pos);
+      const result = expression()('&"start" "middle" !"end"', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Sequence");
@@ -173,7 +173,7 @@ describe("lookahead-composition integration", () => {
     });
 
     it("should parse mixed sequence with lookahead and repetition", () => {
-      const result = expression('&"start" "middle"* !"end"', pos);
+      const result = expression()('&"start" "middle"* !"end"', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Sequence");
@@ -189,7 +189,7 @@ describe("lookahead-composition integration", () => {
 
   describe("lookahead in choices", () => {
     it("should parse choice with lookahead alternatives", () => {
-      const result = expression('&"option1" / !"option2"', pos);
+      const result = expression()('&"option1" / !"option2"', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Choice");
@@ -202,7 +202,7 @@ describe("lookahead-composition integration", () => {
     });
 
     it("should parse complex choice with mixed elements", () => {
-      const result = expression('&"test"* / "normal" / !"avoid"+', pos);
+      const result = expression()('&"test"* / "normal" / !"avoid"+', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Choice");
@@ -218,7 +218,7 @@ describe("lookahead-composition integration", () => {
 
   describe("operator precedence with lookahead", () => {
     it("should give lookahead higher precedence than sequence", () => {
-      const result = expression('&"a" "b"', pos);
+      const result = expression()('&"a" "b"', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Sequence");
@@ -231,7 +231,7 @@ describe("lookahead-composition integration", () => {
     });
 
     it("should give lookahead higher precedence than choice", () => {
-      const result = expression('&"a" / "b"', pos);
+      const result = expression()('&"a" / "b"', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Choice");
@@ -245,7 +245,7 @@ describe("lookahead-composition integration", () => {
 
     it("should integrate lookahead with repetition correctly", () => {
       // This tests that &"hello"* is parsed as (&"hello")*, not &("hello"*)
-      const result = expression('&"hello"*', pos);
+      const result = expression()('&"hello"*', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Star");
@@ -258,7 +258,7 @@ describe("lookahead-composition integration", () => {
 
   describe("nested lookahead expressions", () => {
     it("should parse nested lookahead with groups", () => {
-      const result = expression('&(&"inner")', pos);
+      const result = expression()('&(&"inner")', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("PositiveLookahead");
@@ -274,7 +274,7 @@ describe("lookahead-composition integration", () => {
     });
 
     it("should parse mixed nested lookahead", () => {
-      const result = expression('!(!"test")', pos);
+      const result = expression()('!(!"test")', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("NegativeLookahead");

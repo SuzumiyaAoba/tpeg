@@ -51,7 +51,7 @@ export const labeledExpression = (
   expressionParser: () => Parser<Expression>,
 ): Parser<LabeledExpression> => {
   return map(
-    seq(identifier(), literal(":"), expressionParser()),
+    seq(identifier, literal(":"), expressionParser()),
     ([label, _, expression]) => createLabeledExpression(label.name, expression),
   );
 };
@@ -80,7 +80,7 @@ export const withOptionalLabel = <T extends Expression>(
 ): Parser<Expression> => {
   return (input: string, pos) => {
     // First try to parse as a labeled expression
-    const labelResult = identifier()(input, pos);
+    const labelResult = identifier(input, pos);
 
     if (labelResult.success) {
       // Check if there's a colon after the label

@@ -12,7 +12,7 @@ const pos = { offset: 0, line: 1, column: 1 };
 describe("repetition-composition integration", () => {
   describe("repetition with string literals", () => {
     it("should parse string literal with star repetition", () => {
-      const result = expression('"hello"*', pos);
+      const result = expression()('"hello"*', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Star");
@@ -23,7 +23,7 @@ describe("repetition-composition integration", () => {
     });
 
     it("should parse string literal with plus repetition", () => {
-      const result = expression('"hello"+', pos);
+      const result = expression()('"hello"+', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Plus");
@@ -34,7 +34,7 @@ describe("repetition-composition integration", () => {
     });
 
     it("should parse string literal with optional", () => {
-      const result = expression('"hello"?', pos);
+      const result = expression()('"hello"?', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Optional");
@@ -45,7 +45,7 @@ describe("repetition-composition integration", () => {
     });
 
     it("should parse string literal with quantified repetition", () => {
-      const result = expression('"hello"{3}', pos);
+      const result = expression()('"hello"{3}', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Quantified");
@@ -60,7 +60,7 @@ describe("repetition-composition integration", () => {
 
   describe("repetition with groups", () => {
     it("should parse grouped expression with repetition", () => {
-      const result = expression('("a" / "b")+', pos);
+      const result = expression()('("a" / "b")+', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Plus");
@@ -73,7 +73,7 @@ describe("repetition-composition integration", () => {
 
   describe("complex combinations", () => {
     it("should parse sequence with repeated elements", () => {
-      const result = expression('"a"+ "b"*', pos);
+      const result = expression()('"a"+ "b"*', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Sequence");
@@ -86,7 +86,7 @@ describe("repetition-composition integration", () => {
     });
 
     it("should parse choice with repeated alternatives", () => {
-      const result = expression('"a"+ / "b"*', pos);
+      const result = expression()('"a"+ / "b"*', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Choice");
@@ -101,7 +101,7 @@ describe("repetition-composition integration", () => {
 
   describe("operator precedence with repetition", () => {
     it("should prioritize repetition over sequence", () => {
-      const result = expression('"a"+ "b"', pos);
+      const result = expression()('"a"+ "b"', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Sequence");
@@ -114,7 +114,7 @@ describe("repetition-composition integration", () => {
     });
 
     it("should prioritize repetition over choice", () => {
-      const result = expression('"a"+ / "b"', pos);
+      const result = expression()('"a"+ / "b"', pos);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("Choice");

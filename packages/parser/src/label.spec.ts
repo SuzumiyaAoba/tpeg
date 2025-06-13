@@ -85,7 +85,7 @@ describe("labeledExpression", () => {
   });
 
   test("parses labeled identifier reference", () => {
-    const parser = labeledExpression(() => identifier());
+    const parser = labeledExpression(() => identifier);
     const result = parser("left:expression", createPosition());
 
     expect(result.success).toBe(true);
@@ -207,7 +207,7 @@ describe("withOptionalLabel", () => {
 
   test("prefers labeled over unlabeled when both could match", () => {
     // This test ensures that the choice prioritizes labeled expressions
-    const parser = withOptionalLabel(identifier());
+    const parser = withOptionalLabel(identifier);
     const result = parser("name:value", createPosition());
 
     expect(result.success).toBe(true);
