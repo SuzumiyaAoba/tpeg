@@ -64,7 +64,7 @@ export const quantifiedOperator: Parser<{ min: number; max?: number }> =
     // Parse {n,} - n or more times
     const minCount: Parser<{ min: number; max?: number }> = map(
       seq(literal("{"), positiveInt, literal(","), literal("}")),
-      ([_, min, __, ___]) => ({ min, max: undefined }),
+      ([_, min, __, ___]) => ({ min }),
     );
 
     // Parse {n,m} - n to m times
@@ -137,7 +137,7 @@ export const parseRepetition = (
     ),
     ([repetitionOp]) => {
       // repetitionOp is either [operator] or [] from optional parser
-      if (repetitionOp.length > 0) {
+      if (repetitionOp.length > 0 && repetitionOp[0] !== undefined) {
         return applyRepetition(baseExpression, repetitionOp[0]);
       }
       return baseExpression;
@@ -207,10 +207,13 @@ export const quantifiedExpression = (
   min: number,
   max?: number,
 ): Quantified => {
-  return {
+  const result: Quantified = {
     type: "Quantified" as const,
     expression: baseExpression,
     min,
-    max,
   };
+  if (max !== undefined) {
+    result.max = max;
+  }
+  return result;
 };

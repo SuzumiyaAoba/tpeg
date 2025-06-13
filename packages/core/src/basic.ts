@@ -1,4 +1,4 @@
-import type { NonEmptyString, ParseResult, Parser, Pos } from "./types";
+import type { NonEmptyString, ParseError, ParseResult, Parser, Pos } from "./types";
 import { createFailure, getCharAndLength, nextPos } from "./utils";
 
 /**
@@ -79,16 +79,24 @@ const parseSimpleString = <T extends string>(
           column: column + i,
           line,
         };
+        const foundChar = input[offset + i];
+        const expectedChar = str[i];
+        const errorExtra: Partial<Pick<ParseError, 'expected' | 'found' | 'parserName'>> = {};
+        if (expectedChar !== undefined) {
+          errorExtra.expected = expectedChar;
+        }
+        if (foundChar !== undefined) {
+          errorExtra.found = foundChar;
+        }
+        if (parserName !== undefined) {
+          errorExtra.parserName = parserName;
+        }
         return createFailure(
-          `Unexpected character "${input[offset + i]}" at position ${
+          `Unexpected character "${foundChar ?? 'EOF'}" at position ${
             offset + i
-          }, expected "${str[i]}"`,
+          }, expected "${expectedChar ?? 'EOF'}"`,
           errorPos,
-          {
-            expected: str[i],
-            found: input[offset + i],
-            parserName,
-          },
+          errorExtra,
         );
       }
     }
