@@ -119,4 +119,7 @@ const singleQuotedString: Parser<StringLiteral> = map(
  * // result2.success === true, result2.val.value === "world", result2.val.quote === "'"
  * ```
  */
-export const stringLiteral: Parser<StringLiteral> = choice(doubleQuotedString, singleQuotedString);
+export const stringLiteral: Parser<StringLiteral> = choice(
+  doubleQuotedString,
+  singleQuotedString,
+);

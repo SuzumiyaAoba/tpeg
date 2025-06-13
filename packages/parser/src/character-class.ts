@@ -48,10 +48,10 @@ const charClassChar: Parser<string> = choice(
  */
 const charRange: Parser<CharRange> = choice(
   // Character range: a-z
-  map(
-    seq(charClassChar, literal("-"), charClassChar),
-    ([start, _, end]) => ({ start, end }),
-  ),
+  map(seq(charClassChar, literal("-"), charClassChar), ([start, _, end]) => ({
+    start,
+    end,
+  })),
   // Single character
   map(charClassChar, (start) => ({ start })),
 );
@@ -76,7 +76,9 @@ const characterClassBrackets: Parser<CharacterClass> = map(
 /**
  * Parses the any character dot (.).
  */
-const anyCharDot: Parser<AnyChar> = map(literal("."), () => ({ type: "AnyChar" as const }));
+const anyCharDot: Parser<AnyChar> = map(literal("."), () => ({
+  type: "AnyChar" as const,
+}));
 
 /**
  * Parses any valid TPEG character class or any character dot.
@@ -98,4 +100,7 @@ const anyCharDot: Parser<AnyChar> = map(literal("."), () => ({ type: "AnyChar" a
  * // result3.success === true, result3.val.type === "AnyChar"
  * ```
  */
-export const characterClass: Parser<CharacterClass | AnyChar> = choice(characterClassBrackets, anyCharDot);
+export const characterClass: Parser<CharacterClass | AnyChar> = choice(
+  characterClassBrackets,
+  anyCharDot,
+);

@@ -55,7 +55,10 @@ export const createNegativeLookahead = (
  * Parses any lookahead operator.
  * Returns the operator string for later application.
  */
-export const lookaheadOperator: Parser<string> = choice(positiveLookaheadOperator, negativeLookaheadOperator);
+export const lookaheadOperator: Parser<string> = choice(
+  positiveLookaheadOperator,
+  negativeLookaheadOperator,
+);
 
 /**
  * Applies a lookahead operator to a base expression.

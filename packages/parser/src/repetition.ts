@@ -47,38 +47,34 @@ export const optionalOperator: Parser<string> = literal("?");
  * Parses a quantified repetition operator: expr{n}, expr{n,m}, expr{n,}
  * Supports exact count, range, and minimum repetitions.
  */
-export const quantifiedOperator: Parser<{ min: number; max?: number }> = (() => {
-  // Parse a positive integer
-  const positiveInt: Parser<number> = map(oneOrMore(charClass(["0", "9"])), (digits) =>
-    Number.parseInt(digits.join(""), 10),
-  );
+export const quantifiedOperator: Parser<{ min: number; max?: number }> =
+  (() => {
+    // Parse a positive integer
+    const positiveInt: Parser<number> = map(
+      oneOrMore(charClass(["0", "9"])),
+      (digits) => Number.parseInt(digits.join(""), 10),
+    );
 
-  // Parse {n} - exactly n times
-  const exactCount: Parser<{ min: number; max?: number }> = map(
-    seq(literal("{"), positiveInt, literal("}")),
-    ([_, count, __]) => ({ min: count, max: count }),
-  );
+    // Parse {n} - exactly n times
+    const exactCount: Parser<{ min: number; max?: number }> = map(
+      seq(literal("{"), positiveInt, literal("}")),
+      ([_, count, __]) => ({ min: count, max: count }),
+    );
 
-  // Parse {n,} - n or more times
-  const minCount: Parser<{ min: number; max?: number }> = map(
-    seq(literal("{"), positiveInt, literal(","), literal("}")),
-    ([_, min, __, ___]) => ({ min, max: undefined }),
-  );
+    // Parse {n,} - n or more times
+    const minCount: Parser<{ min: number; max?: number }> = map(
+      seq(literal("{"), positiveInt, literal(","), literal("}")),
+      ([_, min, __, ___]) => ({ min, max: undefined }),
+    );
 
-  // Parse {n,m} - n to m times
-  const rangeCount: Parser<{ min: number; max?: number }> = map(
-    seq(
-      literal("{"),
-      positiveInt,
-      literal(","),
-      positiveInt,
-      literal("}"),
-    ),
-    ([_, min, __, max, ___]) => ({ min, max }),
-  );
+    // Parse {n,m} - n to m times
+    const rangeCount: Parser<{ min: number; max?: number }> = map(
+      seq(literal("{"), positiveInt, literal(","), positiveInt, literal("}")),
+      ([_, min, __, max, ___]) => ({ min, max }),
+    );
 
-  return choice(rangeCount, minCount, exactCount);
-})();
+    return choice(rangeCount, minCount, exactCount);
+  })();
 
 /**
  * Applies a repetition operator to a base expression.
@@ -124,12 +120,7 @@ export const applyRepetition = (
  */
 export const repetitionOperator: Parser<
   string | { min: number; max?: number }
-> = choice(
-  starOperator,
-  plusOperator,
-  optionalOperator,
-  quantifiedOperator,
-);
+> = choice(starOperator, plusOperator, optionalOperator, quantifiedOperator);
 
 /**
  * Parses a postfix expression with optional repetition operators.

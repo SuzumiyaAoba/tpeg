@@ -61,7 +61,7 @@ describe("labeledExpression", () => {
   });
 
   test("parses labeled character class", () => {
-    const parser = labeledExpression(() => characterClass());
+    const parser = labeledExpression(() => characterClass);
     const result = parser("digits:[0-9]", createPosition());
 
     expect(result.success).toBe(true);
@@ -233,7 +233,7 @@ describe("withOptionalLabel", () => {
   });
 
   test("handles complex expressions", () => {
-    const parser = withOptionalLabel(characterClass());
+    const parser = withOptionalLabel(characterClass);
 
     // Labeled character class
     const result1 = parser("chars:[a-zA-Z]", createPosition());

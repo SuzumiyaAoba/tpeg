@@ -550,7 +550,10 @@ export const singleQuotedString: Parser<string> = (() => {
  *
  * @returns Parser<string> A parser that returns the content of the string without quotes
  */
-export const anyQuotedString: Parser<string> = choice(quotedString, singleQuotedString);
+export const anyQuotedString: Parser<string> = choice(
+  quotedString,
+  singleQuotedString,
+);
 
 /**
  * Parser for matching a JavaScript/JSON-style number.
@@ -591,10 +594,7 @@ export const number: Parser<number> = (() => {
 export const int: Parser<number> = map(
   seq(optional(literal("-")), oneOrMore(charClass(["0", "9"]))),
   ([sign, digits]) => {
-    return Number.parseInt(
-      (sign.length > 0 ? "-" : "") + digits.join(""),
-      10,
-    );
+    return Number.parseInt((sign.length > 0 ? "-" : "") + digits.join(""), 10);
   },
 );
 
@@ -791,7 +791,11 @@ export const digit: Parser<string> = charClass(["0", "9"]);
  *
  * @returns Parser<string> A parser that matches [a-zA-Z0-9]
  */
-export const alphaNum: Parser<string> = charClass(["a", "z"], ["A", "Z"], ["0", "9"]);
+export const alphaNum: Parser<string> = charClass(
+  ["a", "z"],
+  ["A", "Z"],
+  ["0", "9"],
+);
 
 /**
  * Parser for matching identifiers (starts with letter/underscore, followed by alphanumeric/underscore).

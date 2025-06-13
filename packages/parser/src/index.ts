@@ -54,7 +54,11 @@ import type { BasicSyntaxNode, Expression } from "./types";
  * // result3.success === true, result3.val.type === "Identifier"
  * ```
  */
-export const basicSyntax: Parser<BasicSyntaxNode> = coreChoice(stringLiteral, characterClass, identifier);
+export const basicSyntax: Parser<BasicSyntaxNode> = coreChoice(
+  stringLiteral,
+  characterClass,
+  identifier,
+);
 
 /**
  * Combined parser for all TPEG expression elements including composition operators.

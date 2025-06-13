@@ -19,7 +19,12 @@ const identStart: Parser<string> = charClass(["a", "z"], ["A", "Z"], "_");
  * Parses continuation characters of an identifier.
  * Can be letters, digits, or underscores.
  */
-const identCont: Parser<string> = charClass(["a", "z"], ["A", "Z"], ["0", "9"], "_");
+const identCont: Parser<string> = charClass(
+  ["a", "z"],
+  ["A", "Z"],
+  ["0", "9"],
+  "_",
+);
 
 /**
  * Parses a complete identifier.

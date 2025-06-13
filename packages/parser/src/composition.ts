@@ -13,6 +13,7 @@
  * 6. Choice: expr1 / expr2 / expr3
  */
 
+import { recursive } from "tpeg-combinator";
 import type { Parser } from "tpeg-core";
 import {
   charClass,
@@ -24,7 +25,6 @@ import {
   seq,
   zeroOrMore,
 } from "tpeg-core";
-import { recursive } from 'tpeg-combinator';
 import { characterClass } from "./character-class";
 import { identifier } from "./identifier";
 import { withOptionalLabel } from "./label";
@@ -43,13 +43,20 @@ import type {
  * Parses whitespace and returns nothing.
  * Used for optional whitespace in composition operators.
  */
-const whitespace: Parser<void> = map(zeroOrMore(charClass(" ", "\t", "\n", "\r")), () => undefined);
+const whitespace: Parser<void> = map(
+  zeroOrMore(charClass(" ", "\t", "\n", "\r")),
+  () => undefined,
+);
 
 /**
  * Parses any basic syntax element (string literal, character class, identifier, any char).
  * This is a local version to avoid circular imports.
  */
-const basicSyntax: Parser<BasicSyntaxNode> = choice(stringLiteral, characterClass, identifier);
+const basicSyntax: Parser<BasicSyntaxNode> = choice(
+  stringLiteral,
+  characterClass,
+  identifier,
+);
 
 // Create recursive parser for expressions using the recursive combinator
 const [expressionParser, setExpressionParser] = recursive<Expression>();
@@ -97,11 +104,7 @@ const groupExpression = (): Parser<Group> => {
   return map(
     seq(
       literal("("),
-      seq(
-        whitespace,
-        (input, pos) => expressionParser(input, pos),
-        whitespace,
-      ),
+      seq(whitespace, (input, pos) => expressionParser(input, pos), whitespace),
       literal(")"),
     ),
     ([_, [__, expr, ___], ____]) => ({

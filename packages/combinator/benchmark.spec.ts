@@ -12,11 +12,7 @@ const repeat = (str: string, n: number) => Array(n).fill(str).join("");
 const N = 10000;
 
 // Utility for running and timing a parser N times
-function benchParser(
-  name: string,
-  parser: Parser<string>,
-  input: string,
-) {
+function benchParser(name: string, parser: Parser<string>, input: string) {
   it(`benchmark: ${name} x${N}`, () => {
     const pos = { offset: 0, column: 0, line: 1 };
     console.time(name);

@@ -11,14 +11,7 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
-  "keywords": [
-    "parser",
-    "peg",
-    "tpeg",
-    "grammar",
-    "parsing",
-    "typescript"
-  ],
+  "keywords": ["parser", "peg", "tpeg", "grammar", "parsing", "typescript"],
   "dependencies": {
     "tpeg-core": "workspace:*",
     "tpeg-combinator": "workspace:*"
@@ -33,4 +26,4 @@
     "directory": "packages/parser"
   },
   "license": "MIT"
-} 
+}
