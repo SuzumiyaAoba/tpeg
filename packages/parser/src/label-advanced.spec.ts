@@ -32,7 +32,7 @@ const createPosition = (offset = 0, line = 1, column = 1): Pos => ({
 describe("Label Advanced Tests", () => {
   describe("complex label patterns", () => {
     test("multiple nested labels with different operators", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser('outer:(inner:"hello"+)*', createPosition());
 
       expect(result.success).toBe(true);
@@ -59,7 +59,7 @@ describe("Label Advanced Tests", () => {
     });
 
     test("labels with quantified expressions", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser("digits:[0-9]{3,6}", createPosition());
 
       expect(result.success).toBe(true);
@@ -75,7 +75,7 @@ describe("Label Advanced Tests", () => {
     });
 
     test("labels with lookahead expressions", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser('check:&"hello"', createPosition());
 
       expect(result.success).toBe(true);
@@ -90,7 +90,7 @@ describe("Label Advanced Tests", () => {
     });
 
     test("multiple choice branches with labels", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser(
         'value:(str:"string" / num:[0-9]+ / bool:("true" / "false"))',
         createPosition(),
@@ -117,7 +117,7 @@ describe("Label Advanced Tests", () => {
 
   describe("label whitespace handling", () => {
     test("strict whitespace rules around labels", () => {
-      const parser = expression()();
+      const parser = expression();
 
       // No space before colon (should work)
       const result1 = parser('name:"value"', createPosition());
@@ -145,7 +145,7 @@ describe("Label Advanced Tests", () => {
     });
 
     test("labels in sequences with various whitespace", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser(
         'first:"a"    second:"b"\t\tthird:"c"',
         createPosition(),
@@ -235,7 +235,7 @@ describe("Label Advanced Tests", () => {
 
   describe("label performance and limits", () => {
     test("deeply nested labeled expressions", () => {
-      const parser = expression()();
+      const parser = expression();
       // Create a deeply nested structure
       const deepNesting = 'a:(b:(c:(d:(e:"value"))))';
       const result = parser(deepNesting, createPosition());
@@ -274,7 +274,7 @@ describe("Label Advanced Tests", () => {
     });
 
     test("many sequential labeled expressions", () => {
-      const parser = expression()();
+      const parser = expression();
       const manyLabels = Array.from(
         { length: 10 },
         (_, i) => `label${i}:"value${i}"`,
@@ -298,7 +298,7 @@ describe("Label Advanced Tests", () => {
 
   describe("label interaction with all operators", () => {
     test("labels with all repetition operators", () => {
-      const parser = expression()();
+      const parser = expression();
 
       const testCases = [
         { input: 'star:"a"*', operatorType: "Star" },
@@ -321,7 +321,7 @@ describe("Label Advanced Tests", () => {
     });
 
     test("labels with all lookahead operators", () => {
-      const parser = expression()();
+      const parser = expression();
 
       const testCases = [
         { input: 'positive:&"test"', operatorType: "PositiveLookahead" },
@@ -340,7 +340,7 @@ describe("Label Advanced Tests", () => {
     });
 
     test("labels with all basic syntax elements", () => {
-      const parser = expression()();
+      const parser = expression();
 
       const testCases = [
         { input: 'str:"hello"', syntaxType: "StringLiteral" },
@@ -362,7 +362,7 @@ describe("Label Advanced Tests", () => {
 
   describe("realistic complex grammar patterns", () => {
     test("JSON-like structure with labels", () => {
-      const parser = expression()();
+      const parser = expression();
       const jsonPattern =
         'obj:("{" pairs:(key:"string" ":" value:"value")* "}")';
 
@@ -376,7 +376,7 @@ describe("Label Advanced Tests", () => {
     });
 
     test("function definition pattern with labels", () => {
-      const parser = expression()();
+      const parser = expression();
       const funcPattern =
         'func:(name:identifier "(" params:(param:identifier ("," param:identifier)*)? ")")';
 
@@ -390,7 +390,7 @@ describe("Label Advanced Tests", () => {
     });
 
     test("conditional expression pattern with labels", () => {
-      const parser = expression()();
+      const parser = expression();
       const condPattern =
         'cond:(condition:expression "?" then:expression ":" else:expression)';
 

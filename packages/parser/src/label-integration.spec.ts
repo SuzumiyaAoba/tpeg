@@ -29,7 +29,7 @@ const createPosition = (offset = 0, line = 1, column = 1): Pos => ({
 describe("Label Integration Tests", () => {
   describe("labels with basic syntax", () => {
     test("labeled string literal", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser('name:"hello"', createPosition());
 
       expect(result.success).toBe(true);
@@ -46,7 +46,7 @@ describe("Label Integration Tests", () => {
     });
 
     test("labeled character class", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser("digits:[0-9]", createPosition());
 
       expect(result.success).toBe(true);
@@ -59,7 +59,7 @@ describe("Label Integration Tests", () => {
     });
 
     test("labeled identifier", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser("left:expression", createPosition());
 
       expect(result.success).toBe(true);
@@ -74,7 +74,7 @@ describe("Label Integration Tests", () => {
 
   describe("labels with repetition operators", () => {
     test("labeled star repetition", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser('items:"hello"*', createPosition());
 
       expect(result.success).toBe(true);
@@ -90,7 +90,7 @@ describe("Label Integration Tests", () => {
     });
 
     test("labeled plus repetition", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser("numbers:[0-9]+", createPosition());
 
       expect(result.success).toBe(true);
@@ -106,7 +106,7 @@ describe("Label Integration Tests", () => {
     });
 
     test("labeled optional", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser('sign:"+"?', createPosition());
 
       expect(result.success).toBe(true);
@@ -122,7 +122,7 @@ describe("Label Integration Tests", () => {
     });
 
     test("labeled quantified repetition", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser("hex:[0-9a-f]{2,8}", createPosition());
 
       expect(result.success).toBe(true);
@@ -135,7 +135,7 @@ describe("Label Integration Tests", () => {
     });
 
     test("repetition of labeled expression", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser('(name:"hello")*', createPosition());
 
       expect(result.success).toBe(true);
@@ -155,7 +155,7 @@ describe("Label Integration Tests", () => {
 
   describe("labels with lookahead operators", () => {
     test("labeled positive lookahead", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser('check:&"hello"', createPosition());
 
       expect(result.success).toBe(true);
@@ -171,7 +171,7 @@ describe("Label Integration Tests", () => {
     });
 
     test("labeled negative lookahead", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser("notNumber:![0-9]", createPosition());
 
       expect(result.success).toBe(true);
@@ -184,7 +184,7 @@ describe("Label Integration Tests", () => {
     });
 
     test("lookahead of labeled expression", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser('&(name:"hello")', createPosition());
 
       expect(result.success).toBe(true);
@@ -204,7 +204,7 @@ describe("Label Integration Tests", () => {
 
   describe("labels with composition operators", () => {
     test("labeled sequence elements", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser('left:"hello" right:"world"', createPosition());
 
       expect(result.success).toBe(true);
@@ -224,7 +224,7 @@ describe("Label Integration Tests", () => {
     });
 
     test("mixed labeled and unlabeled in sequence", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser('name:"hello" " " "world"', createPosition());
 
       expect(result.success).toBe(true);
@@ -240,7 +240,7 @@ describe("Label Integration Tests", () => {
     });
 
     test("labeled choice alternatives", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser('str:"hello" / num:[0-9]+', createPosition());
 
       expect(result.success).toBe(true);
@@ -260,7 +260,7 @@ describe("Label Integration Tests", () => {
     });
 
     test("labeled group", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser('expr:("hello" / "world")', createPosition());
 
       expect(result.success).toBe(true);
@@ -278,7 +278,7 @@ describe("Label Integration Tests", () => {
 
   describe("complex operator precedence with labels", () => {
     test("label + repetition + sequence precedence", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser('items:"hello"* "world"', createPosition());
 
       expect(result.success).toBe(true);
@@ -298,7 +298,7 @@ describe("Label Integration Tests", () => {
     });
 
     test("label + lookahead + repetition precedence", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser('check:&"hello"*', createPosition());
 
       expect(result.success).toBe(true);
@@ -315,7 +315,7 @@ describe("Label Integration Tests", () => {
     });
 
     test("grouped label with complex expression", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser('(name:"hello" / value:[0-9]+)*', createPosition());
 
       expect(result.success).toBe(true);
@@ -338,7 +338,7 @@ describe("Label Integration Tests", () => {
 
   describe("realistic grammar patterns with labels", () => {
     test("arithmetic expression with labels", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser(
         'left:[0-9]+ op:"+" right:[0-9]+',
         createPosition(),
@@ -365,7 +365,7 @@ describe("Label Integration Tests", () => {
     });
 
     test("function call pattern with labels", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser(
         'func:identifier "(" args:(expr ("," expr)*)? ")"',
         createPosition(),
@@ -388,7 +388,7 @@ describe("Label Integration Tests", () => {
     });
 
     test("assignment statement with labels", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser(
         'target:identifier "=" value:"hello"',
         createPosition(),
@@ -413,7 +413,7 @@ describe("Label Integration Tests", () => {
 
   describe("edge cases and error conditions", () => {
     test("nested labels create proper AST structure", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser('outer:(inner:"value")', createPosition());
 
       expect(result.success).toBe(true);
@@ -431,7 +431,7 @@ describe("Label Integration Tests", () => {
     });
 
     test("labels work with complex repetition patterns", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser(
         'items:(name:"hello" / count:[0-9]+){2,5}',
         createPosition(),
@@ -446,14 +446,14 @@ describe("Label Integration Tests", () => {
     });
 
     test("empty label should fail gracefully", () => {
-      const parser = expression()();
+      const parser = expression();
       const result = parser(':"value"', createPosition());
 
       expect(result.success).toBe(false);
     });
 
     test("malformed label syntax fails appropriately", () => {
-      const parser = expression()();
+      const parser = expression();
 
       // name"value" is actually valid syntax but parses as just the identifier 'name'
       const result1 = parser('name"value"', createPosition());

@@ -282,7 +282,7 @@ describe("composition operators", () => {
   describe("specific operator parsers", () => {
     describe("sequenceOperator", () => {
       it("should parse sequences", () => {
-        const result = sequenceOperator()()('"a" "b"', pos);
+        const result = sequenceOperator()('"a" "b"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Sequence");
@@ -291,7 +291,7 @@ describe("composition operators", () => {
       });
 
       it("should wrap single elements in sequence", () => {
-        const result = sequenceOperator()()('"hello"', pos);
+        const result = sequenceOperator()('"hello"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Sequence");
@@ -302,7 +302,7 @@ describe("composition operators", () => {
 
     describe("choiceOperator", () => {
       it("should parse choices", () => {
-        const result = choiceOperator()()('"a" / "b"', pos);
+        const result = choiceOperator()('"a" / "b"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Choice");
@@ -311,7 +311,7 @@ describe("composition operators", () => {
       });
 
       it("should wrap single elements in choice", () => {
-        const result = choiceOperator()()('"hello"', pos);
+        const result = choiceOperator()('"hello"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Choice");
@@ -322,7 +322,7 @@ describe("composition operators", () => {
 
     describe("groupOperator", () => {
       it("should parse groups", () => {
-        const result = groupOperator()()('("hello")', pos);
+        const result = groupOperator()('("hello")', pos);
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("Group");
@@ -331,7 +331,7 @@ describe("composition operators", () => {
       });
 
       it("should fail on non-groups", () => {
-        const result = groupOperator()()('"hello"', pos);
+        const result = groupOperator()('"hello"', pos);
         expect(result.success).toBe(false);
       });
     });
