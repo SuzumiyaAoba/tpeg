@@ -25,14 +25,16 @@
     "test:coverage": "bun test --coverage packages/**/*.spec.ts",
     "test:watch": "bun test --watch packages/**/*.spec.ts",
     "typecheck": "bun run typecheck:all",
-    "typecheck:all": "bun run typecheck:core && bun run typecheck:ast && bun run typecheck:combinator",
+    "typecheck:all": "bun run typecheck:core && bun run typecheck:ast && bun run typecheck:combinator && bun run typecheck:parser",
     "typecheck:core": "cd packages/core && bun run typecheck",
     "typecheck:ast": "cd packages/ast && bun run typecheck",
     "typecheck:combinator": "cd packages/combinator && bun run typecheck",
+    "typecheck:parser": "cd packages/parser && bun run typecheck",
     "build": "bun run build:all",
-    "build:all": "bun run build:core && bun run build:ast && bun run build:combinator",
+    "build:all": "bun run build:core && bun run build:ast && bun run build:combinator && bun run build:parser",
     "build:core": "cd packages/core && bun run test && bun run build",
     "build:ast": "cd packages/ast && bun run build",
-    "build:combinator": "cd packages/combinator && bun run build"
+    "build:combinator": "cd packages/combinator && bun run build",
+    "build:parser": "cd packages/parser && bun run build"
   }
 }
