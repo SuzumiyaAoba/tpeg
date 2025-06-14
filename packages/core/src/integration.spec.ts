@@ -21,9 +21,8 @@ describe("Integration tests", () => {
     const newline = alt(literal("\r\n"), literal("\n"), literal("\r"));
 
     // Function to parse a string until a comma, newline, or end of input
-    const cell = map(
-      many(seq(not(alt(literal(","), newline)), any)),
-      (chars) => chars.map(([_, c]) => c).join(""),
+    const cell = map(many(seq(not(alt(literal(","), newline)), any)), (chars) =>
+      chars.map(([_, c]) => c).join(""),
     );
 
     // Function to parse a row

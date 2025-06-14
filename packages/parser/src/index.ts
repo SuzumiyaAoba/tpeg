@@ -21,6 +21,16 @@ export {
   groupOperator,
 } from "./composition";
 
+// Export grammar definition parsers (Phase 1.6)
+export {
+  grammarAnnotation,
+  ruleDefinition,
+  grammarDefinition,
+  quotedString,
+  singleLineComment,
+  documentationComment,
+} from "./grammar";
+
 // Re-export core parsers that might be useful
 export { choice, seq, map, optional, zeroOrMore, oneOrMore } from "tpeg-core";
 

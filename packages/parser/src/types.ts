@@ -181,6 +181,46 @@ export type Expression =
   | LabeledExpression;
 
 /**
+ * Grammar metadata annotation in TPEG grammar AST.
+ * Represents annotations like: @version: "1.0"
+ */
+export interface GrammarAnnotation {
+  type: "GrammarAnnotation";
+  key: string;
+  value: string;
+}
+
+/**
+ * Grammar rule definition in TPEG grammar AST.
+ * Represents rule definitions like: rule_name = pattern
+ */
+export interface RuleDefinition {
+  type: "RuleDefinition";
+  name: string;
+  pattern: Expression;
+  documentation?: string[];
+}
+
+/**
+ * Grammar block in TPEG grammar AST.
+ * Represents complete grammar definitions like: grammar Name { ... }
+ */
+export interface GrammarDefinition {
+  type: "GrammarDefinition";
+  name: string;
+  annotations: GrammarAnnotation[];
+  rules: RuleDefinition[];
+}
+
+/**
+ * Union type for grammar-level nodes.
+ */
+export type GrammarNode =
+  | GrammarDefinition
+  | RuleDefinition
+  | GrammarAnnotation;
+
+/**
  * Token represents a parsed expression with position information.
  */
 export interface Token<T extends Expression = Expression> {
