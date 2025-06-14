@@ -29,6 +29,13 @@ export const sequence =
 
     for (let i = 0; i < parsers.length; i++) {
       const parser = parsers[i];
+      if (!parser) {
+        return createFailure(
+          `Parser at index ${i} is undefined`,
+          pos,
+          { parserName: "sequence" }
+        );
+      }
       const parserResult = parser(input, currentPos);
 
       if (isFailure(parserResult)) {
@@ -96,6 +103,13 @@ export const choice =
 
     for (let i = 0; i < parsers.length; i++) {
       const parser = parsers[i];
+      if (!parser) {
+        return createFailure(
+          `Parser at index ${i} is undefined`,
+          pos,
+          { parserName: "choice" }
+        );
+      }
       const result = parser(input, pos);
 
       if (result.success) {
@@ -131,9 +145,9 @@ export const choice =
     }`;
 
     return createFailure(customMessage, pos, {
-      expected: expected.length > 0 ? expected : undefined,
-      found,
       parserName: "choice",
+      ...(expected.length > 0 && { expected }),
+      ...(found !== undefined && { found }),
     });
   };
 
