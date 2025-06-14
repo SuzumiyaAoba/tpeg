@@ -35,6 +35,6 @@
     "build:core": "cd packages/core && bun run test && bun run build",
     "build:ast": "cd packages/ast && bun run build",
     "build:combinator": "cd packages/combinator && bun run build",
-    "build:parser": "cd packages/parser && bun run build"
+    "build:parser": "cd packages/parser && bun run test && bun run build"
   }
 }

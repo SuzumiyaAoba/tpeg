@@ -79,24 +79,18 @@ const parseSimpleString = <T extends string>(
           column: column + i,
           line,
         };
-        const foundChar = input[offset + i];
-        const expectedChar = str[i];
-        const errorExtra: Partial<Pick<ParseError, 'expected' | 'found' | 'parserName'>> = {};
-        if (expectedChar !== undefined) {
-          errorExtra.expected = expectedChar;
-        }
-        if (foundChar !== undefined) {
-          errorExtra.found = foundChar;
-        }
-        if (parserName !== undefined) {
-          errorExtra.parserName = parserName;
-        }
+        const foundChar = input[offset + i] ?? 'EOF';
+        const expectedChar = str[i] ?? 'EOF';
         return createFailure(
-          `Unexpected character "${foundChar ?? 'EOF'}" at position ${
+          `Unexpected character "${foundChar}" at position ${
             offset + i
-          }, expected "${expectedChar ?? 'EOF'}"`,
+          }, expected "${expectedChar}"`,
           errorPos,
-          errorExtra,
+          {
+            ...(str[i] !== undefined && { expected: str[i] }),
+            ...(input[offset + i] !== undefined && { found: input[offset + i] }),
+            ...(parserName && { parserName }),
+          },
         );
       }
     }

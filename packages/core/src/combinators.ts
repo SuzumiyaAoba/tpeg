@@ -30,7 +30,11 @@ export const sequence =
     for (let i = 0; i < parsers.length; i++) {
       const parser = parsers[i];
       if (!parser) {
-        throw new Error(`Parser at index ${i} is undefined`);
+        return createFailure(
+          `Parser at index ${i} is undefined`,
+          pos,
+          { parserName: "sequence" }
+        );
       }
       const parserResult = parser(input, currentPos);
 
@@ -100,7 +104,11 @@ export const choice =
     for (let i = 0; i < parsers.length; i++) {
       const parser = parsers[i];
       if (!parser) {
-        throw new Error(`Parser at index ${i} is undefined`);
+        return createFailure(
+          `Parser at index ${i} is undefined`,
+          pos,
+          { parserName: "choice" }
+        );
       }
       const result = parser(input, pos);
 
@@ -136,16 +144,11 @@ export const choice =
         : "No expectations provided"
     }`;
 
-    const errorExtra: Partial<Pick<ParseError, 'expected' | 'found' | 'parserName'>> = {
+    return createFailure(customMessage, pos, {
       parserName: "choice",
-    };
-    if (expected.length > 0) {
-      errorExtra.expected = expected;
-    }
-    if (found !== undefined) {
-      errorExtra.found = found;
-    }
-    return createFailure(customMessage, pos, errorExtra);
+      ...(expected.length > 0 && { expected }),
+      ...(found !== undefined && { found }),
+    });
   };
 
 /**
