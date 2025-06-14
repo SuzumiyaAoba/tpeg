@@ -3,10 +3,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { parse } from "tpeg-core";
+import { parse, type Parser } from "tpeg-core";
 
 // Helper function for easier testing
-const testParse = <T>(parser: any, input: string) => parse(parser)(input);
+const testParse = <T>(parser: Parser<T>, input: string) => parse(parser)(input);
 import { 
   grammarAnnotation, 
   ruleDefinition, 

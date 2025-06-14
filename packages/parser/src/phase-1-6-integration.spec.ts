@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { parse } from "tpeg-core";
+import { parse, type Parser } from "tpeg-core";
 import {
   grammarAnnotation,
   ruleDefinition,
@@ -16,7 +16,7 @@ import {
 } from "./index";
 
 // Helper function for easier testing
-const testParse = <T>(parser: any, input: string) => parse(parser)(input);
+const testParse = <T>(parser: Parser<T>, input: string) => parse(parser)(input);
 
 describe("Phase 1.6 Integration Tests", () => {
   describe("exported parsers from index", () => {
@@ -65,7 +65,7 @@ describe("Phase 1.6 Integration Tests", () => {
     });
 
     test("should export grammarDefinition parser for simple cases", () => {
-      const input = `grammar Empty {}`;
+      const input = "grammar Empty {}";
       const result = testParse(grammarDefinition, input);
       expect(result.success).toBe(true);
       if (result.success) {

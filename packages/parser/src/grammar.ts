@@ -41,7 +41,7 @@ export const whitespace: Parser<string> = map(
  */
 export const optionalWhitespace: Parser<string> = map(
   optional(whitespace),
-  (ws) => ws.length > 0 ? ws[0]! : ""
+  (ws) => ws.length > 0 && ws[0] !== undefined ? ws[0] : ""
 );
 
 /**
@@ -133,18 +133,6 @@ export const ruleDefinition: Parser<RuleDefinition> = map(
   } as RuleDefinition)
 );
 
-/**
- * Parse a newline or carriage return + newline
- */
-const newline: Parser<string> = choice(literal("\n"), literal("\r\n"));
-
-/**
- * Parse whitespace including newlines (one or more characters)
- */
-const anyWhitespace: Parser<string> = map(
-  oneOrMore(choice(literal(" "), literal("\t"), literal("\n"), literal("\r"))),
-  (chars) => chars.join("")
-);
 
 /**
  * Parse grammar item (annotation or rule)
