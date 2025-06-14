@@ -215,7 +215,10 @@ export interface GrammarDefinition {
 /**
  * Union type for grammar-level nodes.
  */
-export type GrammarNode = GrammarDefinition | RuleDefinition | GrammarAnnotation;
+export type GrammarNode =
+  | GrammarDefinition
+  | RuleDefinition
+  | GrammarAnnotation;
 
 /**
  * Token represents a parsed expression with position information.

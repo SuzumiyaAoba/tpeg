@@ -28,7 +28,7 @@ export {
   grammarDefinition,
   quotedString,
   singleLineComment,
-  documentationComment
+  documentationComment,
 } from "./grammar";
 
 // Re-export core parsers that might be useful

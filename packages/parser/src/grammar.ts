@@ -1,6 +1,6 @@
 /**
  * Grammar Definition Block parsing implementation for TPEG
- * 
+ *
  * This module implements Phase 1.6 of the TPEG parser:
  * - Grammar metadata annotations (@version, @description, etc.)
  * - Rule definitions (rule_name = pattern)
@@ -16,24 +16,24 @@ import {
   oneOrMore,
   optional,
   seq as sequence,
-  star as zeroOrMore
+  star as zeroOrMore,
 } from "tpeg-core";
-import type { 
-  GrammarDefinition, 
-  GrammarAnnotation, 
-  RuleDefinition, 
-  Expression 
-} from "./types";
+import { expression } from "./composition";
 import { identifier } from "./identifier";
 import { stringLiteral } from "./string-literal";
-import { expression } from "./composition";
+import type {
+  Expression,
+  GrammarAnnotation,
+  GrammarDefinition,
+  RuleDefinition,
+} from "./types";
 
 /**
  * Parse whitespace (spaces, tabs, newlines, carriage returns)
  */
 export const whitespace: Parser<string> = map(
   oneOrMore(choice(literal(" "), literal("\t"), literal("\n"), literal("\r"))),
-  (chars) => chars.join("")
+  (chars) => chars.join(""),
 );
 
 /**
@@ -41,7 +41,7 @@ export const whitespace: Parser<string> = map(
  */
 export const optionalWhitespace: Parser<string> = map(
   optional(whitespace),
-  (ws) => ws.length > 0 && ws[0] !== undefined ? ws[0] : ""
+  (ws) => (ws.length > 0 && ws[0] !== undefined ? ws[0] : ""),
 );
 
 /**
@@ -55,11 +55,11 @@ const nonNewlineChar: Parser<string> = (input: string, pos) => {
   if (!char || char === "\n" || char === "\r") {
     return { success: false, error: { message: "Newline or EOF", pos } };
   }
-  return { 
-    success: true, 
-    val: char, 
+  return {
+    success: true,
+    val: char,
     current: pos,
-    next: { offset: pos.offset + 1, line: pos.line, column: pos.column + 1 }
+    next: { offset: pos.offset + 1, line: pos.line, column: pos.column + 1 },
   };
 };
 
@@ -67,22 +67,16 @@ const nonNewlineChar: Parser<string> = (input: string, pos) => {
  * Parse single-line comments starting with //
  */
 export const singleLineComment: Parser<string> = map(
-  sequence(
-    literal("//"),
-    zeroOrMore(nonNewlineChar)
-  ),
-  ([_, content]) => content.join("").trim()
+  sequence(literal("//"), zeroOrMore(nonNewlineChar)),
+  ([_, content]) => content.join("").trim(),
 );
 
 /**
  * Parse documentation comments starting with ///
  */
 export const documentationComment: Parser<string> = map(
-  sequence(
-    literal("///"),
-    zeroOrMore(nonNewlineChar)
-  ),
-  ([_, content]) => content.join("").trim()
+  sequence(literal("///"), zeroOrMore(nonNewlineChar)),
+  ([_, content]) => content.join("").trim(),
 );
 
 /**
@@ -91,7 +85,7 @@ export const documentationComment: Parser<string> = map(
  */
 export const quotedString: Parser<string> = map(
   stringLiteral,
-  (node) => node.value
+  (node) => node.value,
 );
 
 /**
@@ -105,13 +99,13 @@ export const grammarAnnotation: Parser<GrammarAnnotation> = map(
     optionalWhitespace,
     literal(":"),
     optionalWhitespace,
-    quotedString
+    quotedString,
   ),
   (results) => ({
     type: "GrammarAnnotation" as const,
     key: results[2].name,
-    value: results[6]
-  })
+    value: results[6],
+  }),
 );
 
 /**
@@ -124,22 +118,22 @@ export const ruleDefinition: Parser<RuleDefinition> = map(
     optionalWhitespace,
     literal("="),
     optionalWhitespace,
-    expression()
+    expression(),
   ),
-  (results) => ({
-    type: "RuleDefinition" as const,
-    name: results[1].name,
-    pattern: results[5]
-  } as RuleDefinition)
+  (results) =>
+    ({
+      type: "RuleDefinition" as const,
+      name: results[1].name,
+      pattern: results[5],
+    }) as RuleDefinition,
 );
-
 
 /**
  * Parse grammar item (annotation or rule)
  */
 const grammarItem = choice(
   map(grammarAnnotation, (a) => ({ type: "annotation" as const, value: a })),
-  map(ruleDefinition, (r) => ({ type: "rule" as const, value: r }))
+  map(ruleDefinition, (r) => ({ type: "rule" as const, value: r })),
 );
 
 /**
@@ -154,19 +148,16 @@ export const grammarDefinition: Parser<GrammarDefinition> = map(
     literal("{"),
     optionalWhitespace,
     zeroOrMore(
-      map(
-        sequence(grammarItem, optionalWhitespace),
-        ([item, _]) => item
-      )
+      map(sequence(grammarItem, optionalWhitespace), ([item, _]) => item),
     ),
-    literal("}")
+    literal("}"),
   ),
   (results) => {
     const nameNode = results[2];
     const items = results[6];
     const annotations: GrammarAnnotation[] = [];
     const rules: RuleDefinition[] = [];
-    
+
     for (const item of items) {
       if (item.type === "annotation") {
         annotations.push(item.value);
@@ -174,12 +165,12 @@ export const grammarDefinition: Parser<GrammarDefinition> = map(
         rules.push(item.value);
       }
     }
-    
+
     return {
       type: "GrammarDefinition" as const,
       name: nameNode.name,
       annotations,
-      rules
+      rules,
     };
-  }
+  },
 );

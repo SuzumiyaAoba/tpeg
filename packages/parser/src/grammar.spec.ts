@@ -3,17 +3,17 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { parse, type Parser } from "tpeg-core";
+import { type Parser, parse } from "tpeg-core";
 
 // Helper function for easier testing
 const testParse = <T>(parser: Parser<T>, input: string) => parse(parser)(input);
-import { 
-  grammarAnnotation, 
-  ruleDefinition, 
+import {
+  documentationComment,
+  grammarAnnotation,
   grammarDefinition,
   quotedString,
+  ruleDefinition,
   singleLineComment,
-  documentationComment
 } from "./grammar";
 
 describe("Grammar Definition Block Tests", () => {
@@ -63,7 +63,10 @@ describe("Grammar Definition Block Tests", () => {
 
   describe("documentationComment", () => {
     test("should parse documentation comments", () => {
-      const result = testParse(documentationComment, "/// This is documentation");
+      const result = testParse(
+        documentationComment,
+        "/// This is documentation",
+      );
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe("This is documentation");
@@ -79,19 +82,22 @@ describe("Grammar Definition Block Tests", () => {
         expect(result.val).toEqual({
           type: "GrammarAnnotation",
           key: "version",
-          value: "1.0"
+          value: "1.0",
         });
       }
     });
 
     test("should parse description annotation", () => {
-      const result = testParse(grammarAnnotation, '@description: "A simple grammar"');
+      const result = testParse(
+        grammarAnnotation,
+        '@description: "A simple grammar"',
+      );
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toEqual({
           type: "GrammarAnnotation",
           key: "description",
-          value: "A simple grammar"
+          value: "A simple grammar",
         });
       }
     });
@@ -103,7 +109,7 @@ describe("Grammar Definition Block Tests", () => {
         expect(result.val).toEqual({
           type: "GrammarAnnotation",
           key: "start",
-          value: "expression"
+          value: "expression",
         });
       }
     });
@@ -111,7 +117,7 @@ describe("Grammar Definition Block Tests", () => {
 
   describe("ruleDefinition", () => {
     test("should parse simple rule definition", () => {
-      const result = testParse(ruleDefinition, 'number = [0-9]+');
+      const result = testParse(ruleDefinition, "number = [0-9]+");
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("RuleDefinition");
@@ -122,7 +128,7 @@ describe("Grammar Definition Block Tests", () => {
     });
 
     test("should parse rule with whitespace", () => {
-      const result = testParse(ruleDefinition, '  expression  =  left:term  ');
+      const result = testParse(ruleDefinition, "  expression  =  left:term  ");
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.name).toBe("expression");
@@ -138,7 +144,7 @@ describe("Grammar Definition Block Tests", () => {
         
         expression = [0-9]+
       }`;
-      
+
       const result = testParse(grammarDefinition, input);
       expect(result.success).toBe(true);
       if (result.success) {
@@ -146,19 +152,19 @@ describe("Grammar Definition Block Tests", () => {
         expect(result.val.name).toBe("SimpleCalc");
         expect(result.val.annotations).toHaveLength(2);
         expect(result.val.rules).toHaveLength(1);
-        
+
         expect(result.val.annotations[0]).toEqual({
           type: "GrammarAnnotation",
           key: "version",
-          value: "1.0"
+          value: "1.0",
         });
-        
+
         expect(result.val.annotations[1]).toEqual({
           type: "GrammarAnnotation",
           key: "start",
-          value: "expression"
+          value: "expression",
         });
-        
+
         expect(result.val.rules[0].name).toBe("expression");
       }
     });
@@ -166,7 +172,7 @@ describe("Grammar Definition Block Tests", () => {
     test("should handle empty grammar block", () => {
       const input = `grammar Empty {
       }`;
-      
+
       const result = testParse(grammarDefinition, input);
       expect(result.success).toBe(true);
       if (result.success) {
@@ -180,7 +186,7 @@ describe("Grammar Definition Block Tests", () => {
       const input = `grammar TestGrammar {
         expression = [a-zA-Z]+
       }`;
-      
+
       const result = testParse(grammarDefinition, input);
       expect(result.success).toBe(true);
       if (result.success) {
@@ -197,7 +203,7 @@ describe("Grammar Definition Block Tests", () => {
         expression = number
         number = [0-9]+
       }`;
-      
+
       const result = testParse(grammarDefinition, input);
       expect(result.success).toBe(true);
       if (result.success) {

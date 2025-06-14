@@ -5,14 +5,14 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { parse, type Parser } from "tpeg-core";
+import { type Parser, parse } from "tpeg-core";
 import {
+  documentationComment,
   grammarAnnotation,
-  ruleDefinition,
   grammarDefinition,
   quotedString,
+  ruleDefinition,
   singleLineComment,
-  documentationComment
 } from "./index";
 
 // Helper function for easier testing
@@ -31,7 +31,7 @@ describe("Phase 1.6 Integration Tests", () => {
     });
 
     test("should export ruleDefinition parser", () => {
-      const result = testParse(ruleDefinition, 'number = [0-9]+');
+      const result = testParse(ruleDefinition, "number = [0-9]+");
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.type).toBe("RuleDefinition");
@@ -83,7 +83,7 @@ describe("Phase 1.6 Integration Tests", () => {
         @version: "1.0"
         @description: "Test grammar"
       }`;
-      
+
       const result = testParse(grammarDefinition, input);
       expect(result.success).toBe(true);
       if (result.success) {
@@ -97,7 +97,7 @@ describe("Phase 1.6 Integration Tests", () => {
       const input = `grammar SimpleGrammar {
         expression = [a-zA-Z]+
       }`;
-      
+
       const result = testParse(grammarDefinition, input);
       expect(result.success).toBe(true);
       if (result.success) {
@@ -114,7 +114,7 @@ describe("Phase 1.6 Integration Tests", () => {
         
         @start: "expression"
       }`;
-      
+
       const result = testParse(grammarDefinition, input);
       expect(result.success).toBe(true);
       if (result.success) {
@@ -128,7 +128,7 @@ describe("Phase 1.6 Integration Tests", () => {
     test("should maintain existing TPEG expression parsing", () => {
       // Import the main tpegExpression parser
       const { tpegExpression } = require("./index");
-      
+
       const result = testParse(tpegExpression, '"hello" / "world"');
       expect(result.success).toBe(true);
       if (result.success) {
@@ -138,14 +138,14 @@ describe("Phase 1.6 Integration Tests", () => {
 
     test("should maintain all existing exports", () => {
       const index = require("./index");
-      
+
       // Check that all previous exports still exist
       expect(index.stringLiteral).toBeDefined();
       expect(index.characterClass).toBeDefined();
       expect(index.identifier).toBeDefined();
       expect(index.tpegExpression).toBeDefined();
       expect(index.expression).toBeDefined();
-      
+
       // Check new grammar exports
       expect(index.grammarAnnotation).toBeDefined();
       expect(index.ruleDefinition).toBeDefined();
