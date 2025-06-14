@@ -257,3 +257,220 @@ export interface TokenizeError {
   line: number;
   column: number;
 }
+
+// ============================================================================
+// AST Node Factory Functions
+// ============================================================================
+
+/**
+ * Factory functions for creating AST nodes with proper typing and validation.
+ * These functions provide a consistent API for node creation and eliminate
+ * the need for manual type assertions throughout the codebase.
+ */
+
+/**
+ * Create a StringLiteral AST node
+ * @param value The string content (without quotes)
+ * @param quote The quote character used
+ * @returns StringLiteral node
+ */
+export const createStringLiteral = (value: string, quote: '"' | "'"): StringLiteral => ({
+  type: "StringLiteral",
+  value,
+  quote,
+});
+
+/**
+ * Create a CharacterClass AST node
+ * @param ranges Array of character ranges
+ * @param negated Whether the character class is negated (e.g., [^a-z])
+ * @returns CharacterClass node
+ */
+export const createCharacterClass = (ranges: CharRange[], negated = false): CharacterClass => ({
+  type: "CharacterClass",
+  ranges,
+  negated,
+});
+
+/**
+ * Create a CharRange for use in character classes
+ * @param start Start character
+ * @param end End character (optional for single characters)
+ * @returns CharRange object
+ */
+export const createCharRange = (start: string, end?: string): CharRange => ({
+  start,
+  end,
+});
+
+/**
+ * Create an Identifier AST node
+ * @param name The identifier name
+ * @returns Identifier node
+ */
+export const createIdentifier = (name: string): Identifier => ({
+  type: "Identifier",
+  name,
+});
+
+/**
+ * Create an AnyChar AST node
+ * @returns AnyChar node
+ */
+export const createAnyChar = (): AnyChar => ({
+  type: "AnyChar",
+});
+
+/**
+ * Create a Sequence AST node
+ * @param elements Array of expressions in sequence
+ * @returns Sequence node
+ */
+export const createSequence = (elements: Expression[]): Sequence => ({
+  type: "Sequence",
+  elements,
+});
+
+/**
+ * Create a Choice AST node
+ * @param alternatives Array of alternative expressions
+ * @returns Choice node
+ */
+export const createChoice = (alternatives: Expression[]): Choice => ({
+  type: "Choice",
+  alternatives,
+});
+
+/**
+ * Create a Group AST node
+ * @param expression The expression to group
+ * @returns Group node
+ */
+export const createGroup = (expression: Expression): Group => ({
+  type: "Group",
+  expression,
+});
+
+/**
+ * Create a Star AST node (zero or more repetition)
+ * @param expression The expression to repeat
+ * @returns Star node
+ */
+export const createStar = (expression: Expression): Star => ({
+  type: "Star",
+  expression,
+});
+
+/**
+ * Create a Plus AST node (one or more repetition)
+ * @param expression The expression to repeat
+ * @returns Plus node
+ */
+export const createPlus = (expression: Expression): Plus => ({
+  type: "Plus",
+  expression,
+});
+
+/**
+ * Create an Optional AST node (zero or one occurrence)
+ * @param expression The expression to make optional
+ * @returns Optional node
+ */
+export const createOptional = (expression: Expression): Optional => ({
+  type: "Optional",
+  expression,
+});
+
+/**
+ * Create a Quantified AST node (specific repetition count/range)
+ * @param expression The expression to quantify
+ * @param min Minimum repetitions
+ * @param max Maximum repetitions (undefined for unlimited)
+ * @returns Quantified node
+ */
+export const createQuantified = (expression: Expression, min: number, max?: number): Quantified => ({
+  type: "Quantified",
+  expression,
+  min,
+  max,
+});
+
+/**
+ * Create a PositiveLookahead AST node
+ * @param expression The expression to check
+ * @returns PositiveLookahead node
+ */
+export const createPositiveLookahead = (expression: Expression): PositiveLookahead => ({
+  type: "PositiveLookahead",
+  expression,
+});
+
+/**
+ * Create a NegativeLookahead AST node
+ * @param expression The expression to check against
+ * @returns NegativeLookahead node
+ */
+export const createNegativeLookahead = (expression: Expression): NegativeLookahead => ({
+  type: "NegativeLookahead",
+  expression,
+});
+
+/**
+ * Create a LabeledExpression AST node
+ * @param label The label name
+ * @param expression The expression to label
+ * @returns LabeledExpression node
+ */
+export const createLabeledExpression = (label: string, expression: Expression): LabeledExpression => ({
+  type: "LabeledExpression",
+  label,
+  expression,
+});
+
+/**
+ * Create a GrammarAnnotation AST node
+ * @param key The annotation key (e.g., "version")
+ * @param value The annotation value (e.g., "1.0")
+ * @returns GrammarAnnotation node
+ */
+export const createGrammarAnnotation = (key: string, value: string): GrammarAnnotation => ({
+  type: "GrammarAnnotation",
+  key,
+  value,
+});
+
+/**
+ * Create a RuleDefinition AST node
+ * @param name The rule name
+ * @param pattern The rule pattern
+ * @param documentation Optional documentation lines
+ * @returns RuleDefinition node
+ */
+export const createRuleDefinition = (
+  name: string, 
+  pattern: Expression, 
+  documentation?: string[]
+): RuleDefinition => ({
+  type: "RuleDefinition",
+  name,
+  pattern,
+  documentation,
+});
+
+/**
+ * Create a GrammarDefinition AST node
+ * @param name The grammar name
+ * @param annotations Grammar annotations
+ * @param rules Grammar rules
+ * @returns GrammarDefinition node
+ */
+export const createGrammarDefinition = (
+  name: string,
+  annotations: GrammarAnnotation[] = [],
+  rules: RuleDefinition[] = []
+): GrammarDefinition => ({
+  type: "GrammarDefinition",
+  name,
+  annotations,
+  rules,
+});
