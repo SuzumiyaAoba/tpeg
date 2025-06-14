@@ -107,10 +107,10 @@ export const grammarAnnotation: Parser<GrammarAnnotation> = map(
     optionalWhitespace,
     quotedString
   ),
-  ([_, __, keyNode, ___, ____, _____, value]) => ({
+  (results) => ({
     type: "GrammarAnnotation" as const,
-    key: keyNode.name,
-    value
+    key: results[2].name,
+    value: results[6]
   })
 );
 
@@ -126,10 +126,10 @@ export const ruleDefinition: Parser<RuleDefinition> = map(
     optionalWhitespace,
     expression()
   ),
-  ([_, nameNode, __, ___, ____, pattern]) => ({
+  (results) => ({
     type: "RuleDefinition" as const,
-    name: nameNode.name,
-    pattern
+    name: results[1].name,
+    pattern: results[5]
   } as RuleDefinition)
 );
 
@@ -161,7 +161,9 @@ export const grammarDefinition: Parser<GrammarDefinition> = map(
     ),
     literal("}")
   ),
-  ([_, __, nameNode, ___, ____, _____, items, _______]) => {
+  (results) => {
+    const nameNode = results[2];
+    const items = results[6];
     const annotations: GrammarAnnotation[] = [];
     const rules: RuleDefinition[] = [];
     
