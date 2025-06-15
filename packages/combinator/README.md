@@ -83,7 +83,7 @@ bun run arith "1 + 2 * 3"
 # Show AST structure
 bun run arith --ast "(1 + 2) * 3"
 
-# Run all examples
+#### Run all examples  
 bun run arith:examples
 
 # Interactive REPL
@@ -93,8 +93,7 @@ bun run arith:repl
 ### Basic Example
 
 ```typescript
-import { literal, choice, seq, zeroOrMore } from "tpeg-core";
-import { parse } from "tpeg-core";
+import { literal, choice, seq, zeroOrMore, parse } from "tpeg-core";
 
 // Define a simple parser for "hello" or "world"
 const helloOrWorld = choice(literal("hello"), literal("world"));
@@ -103,7 +102,7 @@ const helloOrWorld = choice(literal("hello"), literal("world"));
 const parser = seq(helloOrWorld, zeroOrMore(seq(literal(" "), helloOrWorld)));
 
 // Parse some text
-const result = parse(parser)("hello world hello");
+const result = parse(parser, "hello world hello");
 console.log(result);
 ```
 

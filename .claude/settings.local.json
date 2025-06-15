@@ -31,7 +31,8 @@
       "Bash(gh pr create:*)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(tsc --noEmit)"
     ],
     "deny": []
   }

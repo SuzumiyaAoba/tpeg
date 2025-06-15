@@ -1,5 +1,5 @@
 import type { NonEmptyArray, ParseFailure, Parser } from "./types";
-import { createFailure, isFailure } from "./utils";
+import { createFailure } from "./utils";
 
 /**
  * Parser for optional content (zero or one occurrence).
