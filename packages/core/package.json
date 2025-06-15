@@ -4,11 +4,18 @@
   "version": "0.1.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": ["dist", "index.ts", "src", "README.md", "package.json"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
     "test": "bun test src/**/*.spec.ts",
     "typecheck": "tsc --noEmit",
-    "build": "bun build --target=node ./index.ts --outdir=./dist"
+    "build": "bun run build:types && bun build --target=node ./index.ts --outdir=./dist",
+    "build:types": "tsc ./index.ts --declaration --outDir ./dist/ --emitDeclarationOnly --skipLibCheck"
   },
   "dependencies": {},
   "devDependencies": {
