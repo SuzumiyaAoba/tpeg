@@ -6,7 +6,7 @@
  */
 
 import type { Parser } from "tpeg-core";
-import { choice, literal, map, oneOrMore, optional, star as zeroOrMore } from "tpeg-core";
+import { choice, literal, map, oneOrMore, optional, seq, star as zeroOrMore } from "tpeg-core";
 
 /**
  * Standard whitespace characters recognized by TPEG
@@ -45,7 +45,7 @@ export const whitespaceVoid: Parser<void> = map(
  */
 export const withLeadingWhitespace = <T>(parser: Parser<T>): Parser<T> => 
   map(
-    [optionalWhitespace, parser] as const,
+    seq(optionalWhitespace, parser),
     ([_, result]) => result,
   );
 
@@ -56,7 +56,7 @@ export const withLeadingWhitespace = <T>(parser: Parser<T>): Parser<T> =>
  */
 export const withTrailingWhitespace = <T>(parser: Parser<T>): Parser<T> =>
   map(
-    [parser, optionalWhitespace] as const,
+    seq(parser, optionalWhitespace),
     ([result, _]) => result,
   );
 

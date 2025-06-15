@@ -72,8 +72,7 @@ export const fail = <T>(message: string): Parser<T> =>
     error: {
       message,
       pos,
-      expected: undefined,
-      found: input[pos.offset],
+      ...(input[pos.offset] && { found: input[pos.offset] }),
     },
   });
 

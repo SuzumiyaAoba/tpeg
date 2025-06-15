@@ -298,10 +298,8 @@ export const createCharacterClass = (ranges: CharRange[], negated = false): Char
  * @param end End character (optional for single characters)
  * @returns CharRange object
  */
-export const createCharRange = (start: string, end?: string): CharRange => ({
-  start,
-  end,
-});
+export const createCharRange = (start: string, end?: string): CharRange => 
+  end ? { start, end } : { start };
 
 /**
  * Create an Identifier AST node
@@ -388,12 +386,17 @@ export const createOptional = (expression: Expression): Optional => ({
  * @param max Maximum repetitions (undefined for unlimited)
  * @returns Quantified node
  */
-export const createQuantified = (expression: Expression, min: number, max?: number): Quantified => ({
-  type: "Quantified",
-  expression,
-  min,
-  max,
-});
+export const createQuantified = (expression: Expression, min: number, max?: number): Quantified => 
+  max !== undefined ? {
+    type: "Quantified",
+    expression,
+    min,
+    max,
+  } : {
+    type: "Quantified",
+    expression,
+    min,
+  };
 
 /**
  * Create a PositiveLookahead AST node
@@ -450,12 +453,17 @@ export const createRuleDefinition = (
   name: string, 
   pattern: Expression, 
   documentation?: string[]
-): RuleDefinition => ({
-  type: "RuleDefinition",
-  name,
-  pattern,
-  documentation,
-});
+): RuleDefinition => 
+  documentation ? {
+    type: "RuleDefinition",
+    name,
+    pattern,
+    documentation,
+  } : {
+    type: "RuleDefinition",
+    name,
+    pattern,
+  };
 
 /**
  * Create a GrammarDefinition AST node

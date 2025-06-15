@@ -6,7 +6,7 @@
  */
 
 import { expect } from "bun:test";
-import type { Parser, ParseResult, Position } from "tpeg-core";
+import type { Parser, ParseResult, Pos as Position } from "tpeg-core";
 import { parse } from "tpeg-core";
 import type { Expression } from "./types";
 
@@ -168,7 +168,7 @@ export const expectASTNode = <T extends Expression>(
   expect(node.type).toBe(expectedType);
   
   for (const [key, value] of Object.entries(additionalChecks)) {
-    expect((node as Record<string, unknown>)[key]).toEqual(value);
+    expect((node as unknown as Record<string, unknown>)[key]).toEqual(value);
   }
 };
 
