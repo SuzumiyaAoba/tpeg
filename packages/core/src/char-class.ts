@@ -54,7 +54,7 @@ const matchesSpec = (
 export const charClass =
   (...charOrRanges: NonEmptyArray<CharClassSpec>): Parser<string> =>
   (input, pos) => {
-    const [char, charLength] = getCharAndLength(input, pos.offset);
+    const [char] = getCharAndLength(input, pos.offset);
     const expected = charOrRanges.map(classToString).join(", ");
 
     if (!char) {

@@ -1,6 +1,5 @@
 import type {
   NonEmptyString,
-  ParseError,
   ParseResult,
   Parser,
   Pos,
@@ -136,7 +135,7 @@ const parseComplexString = <T extends string>(
     const strCharLen = strChar.length;
 
     // Get the character from the input
-    const [inputChar, inputCharLen] = getCharAndLength(
+    const [inputChar] = getCharAndLength(
       input,
       currentPos.offset,
     );

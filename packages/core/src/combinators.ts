@@ -1,4 +1,4 @@
-import type { ParseError, ParseResult, Parser } from "./types";
+import type { ParseError, Parser } from "./types";
 import { createFailure, isFailure } from "./utils";
 
 /**
