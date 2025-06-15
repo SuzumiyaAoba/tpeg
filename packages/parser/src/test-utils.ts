@@ -168,7 +168,7 @@ export const expectASTNode = <T extends Expression>(
   expect(node.type).toBe(expectedType);
   
   for (const [key, value] of Object.entries(additionalChecks)) {
-    expect((node as any)[key]).toEqual(value);
+    expect((node as Record<string, unknown>)[key]).toEqual(value);
   }
 };
 
