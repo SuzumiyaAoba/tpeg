@@ -274,7 +274,10 @@ export interface TokenizeError {
  * @param quote The quote character used
  * @returns StringLiteral node
  */
-export const createStringLiteral = (value: string, quote: '"' | "'"): StringLiteral => ({
+export const createStringLiteral = (
+  value: string,
+  quote: '"' | "'",
+): StringLiteral => ({
   type: "StringLiteral",
   value,
   quote,
@@ -286,7 +289,10 @@ export const createStringLiteral = (value: string, quote: '"' | "'"): StringLite
  * @param negated Whether the character class is negated (e.g., [^a-z])
  * @returns CharacterClass node
  */
-export const createCharacterClass = (ranges: CharRange[], negated = false): CharacterClass => ({
+export const createCharacterClass = (
+  ranges: CharRange[],
+  negated = false,
+): CharacterClass => ({
   type: "CharacterClass",
   ranges,
   negated,
@@ -298,7 +304,7 @@ export const createCharacterClass = (ranges: CharRange[], negated = false): Char
  * @param end End character (optional for single characters)
  * @returns CharRange object
  */
-export const createCharRange = (start: string, end?: string): CharRange => 
+export const createCharRange = (start: string, end?: string): CharRange =>
   end ? { start, end } : { start };
 
 /**
@@ -386,24 +392,32 @@ export const createOptional = (expression: Expression): Optional => ({
  * @param max Maximum repetitions (undefined for unlimited)
  * @returns Quantified node
  */
-export const createQuantified = (expression: Expression, min: number, max?: number): Quantified => 
-  max !== undefined ? {
-    type: "Quantified",
-    expression,
-    min,
-    max,
-  } : {
-    type: "Quantified",
-    expression,
-    min,
-  };
+export const createQuantified = (
+  expression: Expression,
+  min: number,
+  max?: number,
+): Quantified =>
+  max !== undefined
+    ? {
+        type: "Quantified",
+        expression,
+        min,
+        max,
+      }
+    : {
+        type: "Quantified",
+        expression,
+        min,
+      };
 
 /**
  * Create a PositiveLookahead AST node
  * @param expression The expression to check
  * @returns PositiveLookahead node
  */
-export const createPositiveLookahead = (expression: Expression): PositiveLookahead => ({
+export const createPositiveLookahead = (
+  expression: Expression,
+): PositiveLookahead => ({
   type: "PositiveLookahead",
   expression,
 });
@@ -413,7 +427,9 @@ export const createPositiveLookahead = (expression: Expression): PositiveLookahe
  * @param expression The expression to check against
  * @returns NegativeLookahead node
  */
-export const createNegativeLookahead = (expression: Expression): NegativeLookahead => ({
+export const createNegativeLookahead = (
+  expression: Expression,
+): NegativeLookahead => ({
   type: "NegativeLookahead",
   expression,
 });
@@ -424,7 +440,10 @@ export const createNegativeLookahead = (expression: Expression): NegativeLookahe
  * @param expression The expression to label
  * @returns LabeledExpression node
  */
-export const createLabeledExpression = (label: string, expression: Expression): LabeledExpression => ({
+export const createLabeledExpression = (
+  label: string,
+  expression: Expression,
+): LabeledExpression => ({
   type: "LabeledExpression",
   label,
   expression,
@@ -436,7 +455,10 @@ export const createLabeledExpression = (label: string, expression: Expression): 
  * @param value The annotation value (e.g., "1.0")
  * @returns GrammarAnnotation node
  */
-export const createGrammarAnnotation = (key: string, value: string): GrammarAnnotation => ({
+export const createGrammarAnnotation = (
+  key: string,
+  value: string,
+): GrammarAnnotation => ({
   type: "GrammarAnnotation",
   key,
   value,
@@ -450,20 +472,22 @@ export const createGrammarAnnotation = (key: string, value: string): GrammarAnno
  * @returns RuleDefinition node
  */
 export const createRuleDefinition = (
-  name: string, 
-  pattern: Expression, 
-  documentation?: string[]
-): RuleDefinition => 
-  documentation ? {
-    type: "RuleDefinition",
-    name,
-    pattern,
-    documentation,
-  } : {
-    type: "RuleDefinition",
-    name,
-    pattern,
-  };
+  name: string,
+  pattern: Expression,
+  documentation?: string[],
+): RuleDefinition =>
+  documentation
+    ? {
+        type: "RuleDefinition",
+        name,
+        pattern,
+        documentation,
+      }
+    : {
+        type: "RuleDefinition",
+        name,
+        pattern,
+      };
 
 /**
  * Create a GrammarDefinition AST node
@@ -475,7 +499,7 @@ export const createRuleDefinition = (
 export const createGrammarDefinition = (
   name: string,
   annotations: GrammarAnnotation[] = [],
-  rules: RuleDefinition[] = []
+  rules: RuleDefinition[] = [],
 ): GrammarDefinition => ({
   type: "GrammarDefinition",
   name,

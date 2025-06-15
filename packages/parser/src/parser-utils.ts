@@ -1,6 +1,6 @@
 /**
  * Common parser utility functions for TPEG
- * 
+ *
  * This module provides reusable utility functions to handle common parsing patterns
  * and reduce code duplication throughout the parser implementation.
  */
@@ -13,7 +13,7 @@ import type { Parser } from "tpeg-core";
  * @param defaultValue Value to return if array is empty or first element is undefined
  * @returns First element or default value
  */
-export const extractOptional = <T>(optArray: T[], defaultValue: T): T => 
+export const extractOptional = <T>(optArray: T[], defaultValue: T): T =>
   optArray[0] ?? defaultValue;
 
 /**
@@ -24,10 +24,10 @@ export const extractOptional = <T>(optArray: T[], defaultValue: T): T =>
  * @returns Result of applying function or default value
  */
 export const applyOptional = <T, R>(
-  optArray: T[], 
-  applyFn: (value: T) => R, 
-  defaultValue: R
-): R => optArray[0] ? applyFn(optArray[0]) : defaultValue;
+  optArray: T[],
+  applyFn: (value: T) => R,
+  defaultValue: R,
+): R => (optArray[0] ? applyFn(optArray[0]) : defaultValue);
 
 /**
  * Helper function to handle optional parser results that wrap values in arrays
@@ -45,7 +45,10 @@ export const extractOptionalString = (optionalResult: string[]): string =>
  * @param index Index to extract
  * @returns Element at index or undefined
  */
-export const safeArrayAccess = <T>(array: readonly T[], index: number): T | undefined =>
+export const safeArrayAccess = <T>(
+  array: readonly T[],
+  index: number,
+): T | undefined =>
   index >= 0 && index < array.length ? array[index] : undefined;
 
 /**
@@ -53,7 +56,8 @@ export const safeArrayAccess = <T>(array: readonly T[], index: number): T | unde
  * @param defaultValue Value to return on success
  * @returns Parser that always succeeds
  */
-export const succeed = <T>(defaultValue: T): Parser<T> => 
+export const succeed =
+  <T>(defaultValue: T): Parser<T> =>
   () => ({
     success: true,
     val: defaultValue,
@@ -66,7 +70,8 @@ export const succeed = <T>(defaultValue: T): Parser<T> =>
  * @param message Error message
  * @returns Parser that always fails
  */
-export const fail = <T>(message: string): Parser<T> => 
+export const fail =
+  <T>(message: string): Parser<T> =>
   (input, pos) => ({
     success: false,
     error: {

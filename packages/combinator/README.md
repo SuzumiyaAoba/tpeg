@@ -83,7 +83,7 @@ bun run arith "1 + 2 * 3"
 # Show AST structure
 bun run arith --ast "(1 + 2) * 3"
 
-# Run all examples  
+#### Run all examples  
 bun run arith:examples
 
 # Interactive REPL

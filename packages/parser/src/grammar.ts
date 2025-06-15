@@ -17,6 +17,7 @@ import {
   star as zeroOrMore,
 } from "tpeg-core";
 import { expression } from "./composition";
+import { GRAMMAR_KEYWORDS, GRAMMAR_SYMBOLS } from "./constants";
 import { identifier } from "./identifier";
 import { stringLiteral } from "./string-literal";
 import type {
@@ -27,8 +28,8 @@ import type {
 } from "./types";
 import {
   createGrammarAnnotation,
-  createRuleDefinition,
   createGrammarDefinition,
+  createRuleDefinition,
 } from "./types";
 import { optionalWhitespace, whitespace } from "./whitespace-utils";
 
@@ -57,7 +58,10 @@ const nonNewlineChar: Parser<string> = (input: string, pos) => {
  * Extracts and trims the comment content after the // prefix
  */
 export const singleLineComment: Parser<string> = map(
-  sequence(literal("//"), zeroOrMore(nonNewlineChar)),
+  sequence(
+    literal(GRAMMAR_SYMBOLS.SINGLE_LINE_COMMENT),
+    zeroOrMore(nonNewlineChar),
+  ),
   ([_, content]) => content.join("").trim(),
 );
 
@@ -66,7 +70,10 @@ export const singleLineComment: Parser<string> = map(
  * Extracts and trims the documentation content after the /// prefix
  */
 export const documentationComment: Parser<string> = map(
-  sequence(literal("///"), zeroOrMore(nonNewlineChar)),
+  sequence(
+    literal(GRAMMAR_SYMBOLS.DOCUMENTATION_COMMENT),
+    zeroOrMore(nonNewlineChar),
+  ),
   ([_, content]) => content.join("").trim(),
 );
 
@@ -86,10 +93,10 @@ export const quotedString: Parser<string> = map(
 export const grammarAnnotation: Parser<GrammarAnnotation> = map(
   sequence(
     optionalWhitespace,
-    literal("@"),
+    literal(GRAMMAR_SYMBOLS.ANNOTATION_PREFIX),
     identifier,
     optionalWhitespace,
-    literal(":"),
+    literal(GRAMMAR_SYMBOLS.LABEL_SEPARATOR),
     optionalWhitespace,
     quotedString,
   ),
@@ -105,7 +112,7 @@ export const ruleDefinition: Parser<RuleDefinition> = map(
     optionalWhitespace,
     identifier,
     optionalWhitespace,
-    literal("="),
+    literal(GRAMMAR_SYMBOLS.RULE_ASSIGNMENT),
     optionalWhitespace,
     expression(),
   ),
@@ -115,7 +122,7 @@ export const ruleDefinition: Parser<RuleDefinition> = map(
 /**
  * Internal type for discriminating between grammar items during parsing
  */
-type GrammarItemType = 
+type GrammarItemType =
   | { type: "annotation"; value: GrammarAnnotation }
   | { type: "rule"; value: RuleDefinition };
 
@@ -124,8 +131,17 @@ type GrammarItemType =
  * Returns a tagged union for easier processing in the main grammar parser
  */
 const grammarItem: Parser<GrammarItemType> = choice(
-  map(grammarAnnotation, (annotation): GrammarItemType => ({ type: "annotation", value: annotation })),
-  map(ruleDefinition, (rule): GrammarItemType => ({ type: "rule", value: rule })),
+  map(
+    grammarAnnotation,
+    (annotation): GrammarItemType => ({
+      type: "annotation",
+      value: annotation,
+    }),
+  ),
+  map(
+    ruleDefinition,
+    (rule): GrammarItemType => ({ type: "rule", value: rule }),
+  ),
 );
 
 /**
@@ -140,7 +156,9 @@ const grammarItems: Parser<GrammarItemType[]> = zeroOrMore(
  * @param items Array of mixed grammar items
  * @returns Separated annotations and rules arrays
  */
-const separateGrammarItems = (items: GrammarItemType[]): {
+const separateGrammarItems = (
+  items: GrammarItemType[],
+): {
   annotations: GrammarAnnotation[];
   rules: RuleDefinition[];
 } => {
@@ -164,20 +182,20 @@ const separateGrammarItems = (items: GrammarItemType[]): {
  */
 export const grammarDefinition: Parser<GrammarDefinition> = map(
   sequence(
-    literal("grammar"),
+    literal(GRAMMAR_KEYWORDS.GRAMMAR),
     whitespace,
     identifier,
     optionalWhitespace,
-    literal("{"),
+    literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_OPEN),
     optionalWhitespace,
     grammarItems,
-    literal("}"),
+    literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_CLOSE),
   ),
   (results) => {
     const grammarName = results[2].name;
     const items = results[6];
     const { annotations, rules } = separateGrammarItems(items);
-    
+
     return createGrammarDefinition(grammarName, annotations, rules);
   },
 );

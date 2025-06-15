@@ -30,11 +30,9 @@ export const sequence =
     for (let i = 0; i < parsers.length; i++) {
       const parser = parsers[i];
       if (!parser) {
-        return createFailure(
-          `Parser at index ${i} is undefined`,
-          pos,
-          { parserName: "sequence" }
-        );
+        return createFailure(`Parser at index ${i} is undefined`, pos, {
+          parserName: "sequence",
+        });
       }
       const parserResult = parser(input, currentPos);
 
@@ -104,11 +102,9 @@ export const choice =
     for (let i = 0; i < parsers.length; i++) {
       const parser = parsers[i];
       if (!parser) {
-        return createFailure(
-          `Parser at index ${i} is undefined`,
-          pos,
-          { parserName: "choice" }
-        );
+        return createFailure(`Parser at index ${i} is undefined`, pos, {
+          parserName: "choice",
+        });
       }
       const result = parser(input, pos);
 

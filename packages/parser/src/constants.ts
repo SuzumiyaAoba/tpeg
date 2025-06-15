@@ -1,6 +1,6 @@
 /**
  * Constants and string literals used throughout the TPEG parser
- * 
+ *
  * This module centralizes all magic strings, symbols, and constants
  * to ensure consistency and make the codebase easier to maintain.
  */
@@ -12,7 +12,7 @@
 export const AST_NODE_TYPES = {
   // Basic syntax nodes
   STRING_LITERAL: "StringLiteral",
-  CHARACTER_CLASS: "CharacterClass", 
+  CHARACTER_CLASS: "CharacterClass",
   IDENTIFIER: "Identifier",
   ANY_CHAR: "AnyChar",
 
@@ -46,24 +46,24 @@ export const AST_NODE_TYPES = {
 export const GRAMMAR_SYMBOLS = {
   // Choice operator
   CHOICE_OPERATOR: "/",
-  
+
   // Label separator
   LABEL_SEPARATOR: ":",
-  
+
   // Grouping
   GROUP_OPEN: "(",
   GROUP_CLOSE: ")",
-  
+
   // Grammar block delimiters
   GRAMMAR_BLOCK_OPEN: "{",
   GRAMMAR_BLOCK_CLOSE: "}",
-  
+
   // Character class delimiters
   CHAR_CLASS_OPEN: "[",
   CHAR_CLASS_CLOSE: "]",
   CHAR_CLASS_NEGATION: "^",
   CHAR_RANGE_SEPARATOR: "-",
-  
+
   // Repetition operators
   STAR: "*",
   PLUS: "+",
@@ -71,20 +71,20 @@ export const GRAMMAR_SYMBOLS = {
   QUANTIFIER_OPEN: "{",
   QUANTIFIER_CLOSE: "}",
   QUANTIFIER_SEPARATOR: ",",
-  
+
   // Lookahead operators
   POSITIVE_LOOKAHEAD: "&",
   NEGATIVE_LOOKAHEAD: "!",
-  
+
   // Grammar annotation prefix
   ANNOTATION_PREFIX: "@",
-  
+
   // Rule assignment
   RULE_ASSIGNMENT: "=",
-  
+
   // Any character
   ANY_CHAR: ".",
-  
+
   // Comment prefixes
   SINGLE_LINE_COMMENT: "//",
   DOCUMENTATION_COMMENT: "///",
@@ -101,12 +101,7 @@ export const QUOTE_CHARS = {
 /**
  * Whitespace character constants
  */
-export const WHITESPACE_CHARS = {
-  SPACE: " ",
-  TAB: "\t",
-  NEWLINE: "\n",
-  CARRIAGE_RETURN: "\r",
-} as const;
+export const WHITESPACE_CHARS = [" ", "\t", "\n", "\r"] as const;
 
 /**
  * Escape character constants

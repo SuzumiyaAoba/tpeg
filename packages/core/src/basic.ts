@@ -1,4 +1,10 @@
-import type { NonEmptyString, ParseError, ParseResult, Parser, Pos } from "./types";
+import type {
+  NonEmptyString,
+  ParseError,
+  ParseResult,
+  Parser,
+  Pos,
+} from "./types";
 import { createFailure, getCharAndLength, nextPos } from "./utils";
 
 /**
@@ -79,8 +85,8 @@ const parseSimpleString = <T extends string>(
           column: column + i,
           line,
         };
-        const foundChar = input[offset + i] ?? 'EOF';
-        const expectedChar = str[i] ?? 'EOF';
+        const foundChar = input[offset + i] ?? "EOF";
+        const expectedChar = str[i] ?? "EOF";
         return createFailure(
           `Unexpected character "${foundChar}" at position ${
             offset + i
@@ -88,7 +94,9 @@ const parseSimpleString = <T extends string>(
           errorPos,
           {
             ...(str[i] !== undefined && { expected: str[i] }),
-            ...(input[offset + i] !== undefined && { found: input[offset + i] }),
+            ...(input[offset + i] !== undefined && {
+              found: input[offset + i],
+            }),
             ...(parserName && { parserName }),
           },
         );

@@ -1,12 +1,12 @@
 /**
  * Shared test utilities for TPEG parser tests
- * 
+ *
  * This module provides common test setup, helpers, and assertions
  * to reduce duplication across test files and ensure consistent testing patterns.
  */
 
 import { expect } from "bun:test";
-import type { Parser, ParseResult, Pos as Position } from "tpeg-core";
+import type { ParseResult, Parser, Pos as Position } from "tpeg-core";
 import { parse } from "tpeg-core";
 import type { Expression } from "./types";
 
@@ -28,9 +28,9 @@ export const createTestPosition = (): Position => ({
  * @returns Position object
  */
 export const createPositionAt = (
-  offset: number, 
-  line = 1, 
-  column = offset + 1
+  offset: number,
+  line = 1,
+  column = offset + 1,
 ): Position => ({
   offset,
   line,
@@ -43,8 +43,10 @@ export const createPositionAt = (
  * @param input Input string to parse
  * @returns Parse result
  */
-export const testParse = <T>(parser: Parser<T>, input: string): ParseResult<T> =>
-  parse(parser)(input);
+export const testParse = <T>(
+  parser: Parser<T>,
+  input: string,
+): ParseResult<T> => parse(parser)(input);
 
 /**
  * Type guard and assertion helper for successful parse results
@@ -55,7 +57,9 @@ export const testParse = <T>(parser: Parser<T>, input: string): ParseResult<T> =
 export const expectSuccess = <T>(result: ParseResult<T>) => {
   expect(result.success).toBe(true);
   if (!result.success) {
-    throw new Error(`Expected success but got failure: ${result.error.message}`);
+    throw new Error(
+      `Expected success but got failure: ${result.error.message}`,
+    );
   }
   return result;
 };
@@ -69,7 +73,9 @@ export const expectSuccess = <T>(result: ParseResult<T>) => {
 export const expectFailure = <T>(result: ParseResult<T>) => {
   expect(result.success).toBe(false);
   if (result.success) {
-    throw new Error(`Expected failure but got success: ${JSON.stringify(result.val)}`);
+    throw new Error(
+      `Expected failure but got success: ${JSON.stringify(result.val)}`,
+    );
   }
   return result;
 };
@@ -80,7 +86,10 @@ export const expectFailure = <T>(result: ParseResult<T>) => {
  * @param input Input string to parse
  * @returns Success result value
  */
-export const parseAndExpectSuccess = <T>(parser: Parser<T>, input: string): T => {
+export const parseAndExpectSuccess = <T>(
+  parser: Parser<T>,
+  input: string,
+): T => {
   const result = testParse(parser, input);
   const success = expectSuccess(result);
   return success.val;
@@ -92,7 +101,10 @@ export const parseAndExpectSuccess = <T>(parser: Parser<T>, input: string): T =>
  * @param input Input string to parse
  * @returns Failure error message
  */
-export const parseAndExpectFailure = <T>(parser: Parser<T>, input: string): string => {
+export const parseAndExpectFailure = <T>(
+  parser: Parser<T>,
+  input: string,
+): string => {
   const result = testParse(parser, input);
   const failure = expectFailure(result);
   return failure.error.message;
@@ -104,8 +116,8 @@ export const parseAndExpectFailure = <T>(parser: Parser<T>, input: string): stri
  * @param expectedType Expected AST node type
  */
 export const expectExpressionType = (
-  expression: Expression, 
-  expectedType: Expression["type"]
+  expression: Expression,
+  expectedType: Expression["type"],
 ): void => {
   expect(expression.type).toBe(expectedType);
 };
@@ -118,7 +130,7 @@ export const expectExpressionType = (
  */
 export const createSuccessTestCases = <T>(
   parser: Parser<T>,
-  testCases: Array<[string, T]>
+  testCases: Array<[string, T]>,
 ) => {
   return testCases.map(([input, expected]) => ({
     input,
@@ -138,7 +150,7 @@ export const createSuccessTestCases = <T>(
  */
 export const createFailureTestCases = <T>(
   parser: Parser<T>,
-  testCases: Array<[string, string | RegExp]>
+  testCases: Array<[string, string | RegExp]>,
 ) => {
   return testCases.map(([input, expectedErrorPattern]) => ({
     input,
@@ -163,10 +175,10 @@ export const createFailureTestCases = <T>(
 export const expectASTNode = <T extends Expression>(
   node: T,
   expectedType: T["type"],
-  additionalChecks: Partial<T> = {}
+  additionalChecks: Partial<T> = {},
 ): void => {
   expect(node.type).toBe(expectedType);
-  
+
   for (const [key, value] of Object.entries(additionalChecks)) {
     expect((node as unknown as Record<string, unknown>)[key]).toEqual(value);
   }
@@ -179,7 +191,7 @@ export const expectASTNode = <T extends Expression>(
  */
 export const expectPosition = <T>(
   result: ParseResult<T>,
-  expectedNext: Partial<Position>
+  expectedNext: Partial<Position>,
 ): void => {
   if (result.success) {
     if (expectedNext.offset !== undefined) {

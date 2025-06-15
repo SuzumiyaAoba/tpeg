@@ -2,7 +2,6 @@ import type {
   NonEmptyArray,
   ParseFailure,
   ParseResult,
-  ParseSuccess,
   Parser,
   Pos,
 } from "tpeg-core";
