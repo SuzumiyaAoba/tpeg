@@ -21,7 +21,6 @@ import {
   literal,
   map,
   oneOrMore,
-  optional,
   seq,
   zeroOrMore,
 } from "tpeg-core";
