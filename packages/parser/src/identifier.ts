@@ -6,7 +6,7 @@
  */
 
 import type { Parser } from "tpeg-core";
-import { charClass, map, oneOrMore, seq, zeroOrMore } from "tpeg-core";
+import { charClass, map, seq, zeroOrMore } from "tpeg-core";
 import type { Identifier } from "./types";
 
 /**

@@ -44,7 +44,7 @@ import { characterClass } from "./character-class";
 import { expression } from "./composition";
 import { identifier } from "./identifier";
 import { stringLiteral } from "./string-literal";
-import type { BasicSyntaxNode, Expression } from "./types";
+import type { BasicSyntaxNode } from "./types";
 
 /**
  * Combined parser for all basic TPEG syntax elements.

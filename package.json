@@ -4,6 +4,7 @@
   "private": true,
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
+    "@tsconfig/strictest": "^2.0.5",
     "@types/bun": "latest"
   },
   "peerDependencies": {
@@ -32,9 +33,9 @@
     "typecheck:parser": "cd packages/parser && bun run typecheck",
     "build": "bun run build:all",
     "build:all": "bun run build:core && bun run build:ast && bun run build:combinator && bun run build:parser",
-    "build:core": "cd packages/core && bun run test && bun run build",
+    "build:core": "cd packages/core && bun run build",
     "build:ast": "cd packages/ast && bun run build",
     "build:combinator": "cd packages/combinator && bun run build",
-    "build:parser": "cd packages/parser && bun run test && bun run build"
+    "build:parser": "cd packages/parser && bun run build"
   }
 }

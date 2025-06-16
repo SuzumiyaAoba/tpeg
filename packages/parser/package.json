@@ -1,9 +1,17 @@
 {
   "name": "tpeg-parser",
   "version": "0.1.0",
+  "type": "module",
   "description": "TPEG Grammar Parser - implements parsing functionality for TPEG grammar syntax",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": ["dist", "README.md", "package.json"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "test": "bun test",

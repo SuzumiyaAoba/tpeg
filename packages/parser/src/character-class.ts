@@ -14,7 +14,6 @@ import {
   oneOrMore,
   optional,
   seq,
-  zeroOrMore,
 } from "tpeg-core";
 import type { AnyChar, CharRange, CharacterClass } from "./types";
 

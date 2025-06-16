@@ -13,39 +13,28 @@ import {
   choice,
   literal,
   map,
-  oneOrMore,
-  optional,
   seq as sequence,
   star as zeroOrMore,
 } from "tpeg-core";
 import { expression } from "./composition";
+import { GRAMMAR_KEYWORDS, GRAMMAR_SYMBOLS } from "./constants";
 import { identifier } from "./identifier";
 import { stringLiteral } from "./string-literal";
 import type {
-  Expression,
   GrammarAnnotation,
   GrammarDefinition,
   RuleDefinition,
 } from "./types";
-
-/**
- * Parse whitespace (spaces, tabs, newlines, carriage returns)
- */
-export const whitespace: Parser<string> = map(
-  oneOrMore(choice(literal(" "), literal("\t"), literal("\n"), literal("\r"))),
-  (chars) => chars.join(""),
-);
-
-/**
- * Optional whitespace parser
- */
-export const optionalWhitespace: Parser<string> = map(
-  optional(whitespace),
-  (ws) => (ws.length > 0 && ws[0] !== undefined ? ws[0] : ""),
-);
+import {
+  createGrammarAnnotation,
+  createGrammarDefinition,
+  createRuleDefinition,
+} from "./types";
+import { optionalWhitespace, whitespace } from "./whitespace-utils";
 
 /**
  * Parse any character except newline
+ * Uses a simple approach by rejecting newline characters
  */
 const nonNewlineChar: Parser<string> = (input: string, pos) => {
   if (pos.offset >= input.length) {
@@ -65,17 +54,25 @@ const nonNewlineChar: Parser<string> = (input: string, pos) => {
 
 /**
  * Parse single-line comments starting with //
+ * Extracts and trims the comment content after the // prefix
  */
 export const singleLineComment: Parser<string> = map(
-  sequence(literal("//"), zeroOrMore(nonNewlineChar)),
+  sequence(
+    literal(GRAMMAR_SYMBOLS.SINGLE_LINE_COMMENT),
+    zeroOrMore(nonNewlineChar),
+  ),
   ([_, content]) => content.join("").trim(),
 );
 
 /**
  * Parse documentation comments starting with ///
+ * Extracts and trims the documentation content after the /// prefix
  */
 export const documentationComment: Parser<string> = map(
-  sequence(literal("///"), zeroOrMore(nonNewlineChar)),
+  sequence(
+    literal(GRAMMAR_SYMBOLS.DOCUMENTATION_COMMENT),
+    zeroOrMore(nonNewlineChar),
+  ),
   ([_, content]) => content.join("").trim(),
 );
 
@@ -90,87 +87,114 @@ export const quotedString: Parser<string> = map(
 
 /**
  * Parse grammar annotation like @version: "1.0" (with optional leading whitespace)
+ * Returns a GrammarAnnotation AST node with the key and value extracted
  */
 export const grammarAnnotation: Parser<GrammarAnnotation> = map(
   sequence(
     optionalWhitespace,
-    literal("@"),
+    literal(GRAMMAR_SYMBOLS.ANNOTATION_PREFIX),
     identifier,
     optionalWhitespace,
-    literal(":"),
+    literal(GRAMMAR_SYMBOLS.LABEL_SEPARATOR),
     optionalWhitespace,
     quotedString,
   ),
-  (results) => ({
-    type: "GrammarAnnotation" as const,
-    key: results[2].name,
-    value: results[6],
-  }),
+  (results) => createGrammarAnnotation(results[2].name, results[6]),
 );
 
 /**
  * Parse rule definition like rule_name = pattern (with optional leading whitespace)
+ * Returns a RuleDefinition AST node with the rule name and pattern
  */
 export const ruleDefinition: Parser<RuleDefinition> = map(
   sequence(
     optionalWhitespace,
     identifier,
     optionalWhitespace,
-    literal("="),
+    literal(GRAMMAR_SYMBOLS.RULE_ASSIGNMENT),
     optionalWhitespace,
     expression(),
   ),
-  (results) =>
-    ({
-      type: "RuleDefinition" as const,
-      name: results[1].name,
-      pattern: results[5],
-    }) as RuleDefinition,
+  (results) => createRuleDefinition(results[1].name, results[5]),
 );
+
+/**
+ * Internal type for discriminating between grammar items during parsing
+ */
+type GrammarItemType =
+  | { type: "annotation"; value: GrammarAnnotation }
+  | { type: "rule"; value: RuleDefinition };
 
 /**
  * Parse grammar item (annotation or rule)
+ * Returns a tagged union for easier processing in the main grammar parser
  */
-const grammarItem = choice(
-  map(grammarAnnotation, (a) => ({ type: "annotation" as const, value: a })),
-  map(ruleDefinition, (r) => ({ type: "rule" as const, value: r })),
+const grammarItem: Parser<GrammarItemType> = choice(
+  map(
+    grammarAnnotation,
+    (annotation): GrammarItemType => ({
+      type: "annotation",
+      value: annotation,
+    }),
+  ),
+  map(
+    ruleDefinition,
+    (rule): GrammarItemType => ({ type: "rule", value: rule }),
+  ),
 );
 
 /**
+ * Parse a sequence of grammar items separated by optional whitespace
+ */
+const grammarItems: Parser<GrammarItemType[]> = zeroOrMore(
+  map(sequence(grammarItem, optionalWhitespace), ([item, _]) => item),
+);
+
+/**
+ * Separate grammar items into annotations and rules
+ * @param items Array of mixed grammar items
+ * @returns Separated annotations and rules arrays
+ */
+const separateGrammarItems = (
+  items: GrammarItemType[],
+): {
+  annotations: GrammarAnnotation[];
+  rules: RuleDefinition[];
+} => {
+  const annotations: GrammarAnnotation[] = [];
+  const rules: RuleDefinition[] = [];
+
+  for (const item of items) {
+    if (item.type === "annotation") {
+      annotations.push(item.value);
+    } else if (item.type === "rule") {
+      rules.push(item.value);
+    }
+  }
+
+  return { annotations, rules };
+};
+
+/**
  * Parse complete grammar definition block
+ * Format: grammar Name { @annotations... rule_definitions... }
  */
 export const grammarDefinition: Parser<GrammarDefinition> = map(
   sequence(
-    literal("grammar"),
+    literal(GRAMMAR_KEYWORDS.GRAMMAR),
     whitespace,
     identifier,
     optionalWhitespace,
-    literal("{"),
+    literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_OPEN),
     optionalWhitespace,
-    zeroOrMore(
-      map(sequence(grammarItem, optionalWhitespace), ([item, _]) => item),
-    ),
-    literal("}"),
+    grammarItems,
+    literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_CLOSE),
   ),
   (results) => {
-    const nameNode = results[2];
+    const grammarName = results[2].name;
     const items = results[6];
-    const annotations: GrammarAnnotation[] = [];
-    const rules: RuleDefinition[] = [];
+    const { annotations, rules } = separateGrammarItems(items);
 
-    for (const item of items) {
-      if (item.type === "annotation") {
-        annotations.push(item.value);
-      } else if (item.type === "rule") {
-        rules.push(item.value);
-      }
-    }
-
-    return {
-      type: "GrammarDefinition" as const,
-      name: nameNode.name,
-      annotations,
-      rules,
-    };
+    return createGrammarDefinition(grammarName, annotations, rules);
   },
 );
