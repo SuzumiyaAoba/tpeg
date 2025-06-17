@@ -24,7 +24,7 @@ export type Expect<T extends true> = T;
  * type Test = Not<Equal<string, number>>; // OK (expects false)
  * type Test = Not<Equal<string, string>>; // Error (true is NG)
  */
-export type Not<T extends false> = true;
+export type Not<T extends false> = T extends false ? true : never;
 
 /**
  * 2つの型が完全に一致するかをチェックする型

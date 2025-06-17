@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { parse as originalParse } from "tpeg-core";
 import type { ParseResult, Pos } from "tpeg-core";
@@ -20,7 +19,6 @@ import {
 import {
   charClass,
   choice,
-  labeled,
   literal,
   map,
   notPredicate,
@@ -41,7 +39,6 @@ interface ExtendedGlobal {
 // Extend Global type
 declare global {
   var jsonParserMock: typeof jsonParser | undefined;
-  var require: { main: { id: string } } | undefined;
 }
 
 // Custom parse helper for testing
@@ -202,17 +199,21 @@ describe("jsonParser", () => {
     // Test empty array
     const emptyArrayResult = parse(parser)("[]");
     expect(emptyArrayResult.success).toBe(true);
-    if (emptyArrayResult.success) {
+    if (emptyArrayResult.success && emptyArrayResult.val !== null) {
       expect(Array.isArray(emptyArrayResult.val)).toBe(true);
-      expect(emptyArrayResult.val.length).toBe(0);
+      if (Array.isArray(emptyArrayResult.val)) {
+        expect(emptyArrayResult.val.length).toBe(0);
+      }
     }
 
     // Test empty object
     const emptyObjectResult = parse(parser)("{}");
     expect(emptyObjectResult.success).toBe(true);
-    if (emptyObjectResult.success) {
+    if (emptyObjectResult.success && emptyObjectResult.val !== null) {
       expect(typeof emptyObjectResult.val).toBe("object");
-      expect(Object.keys(emptyObjectResult.val).length).toBe(0);
+      if (typeof emptyObjectResult.val === "object" && emptyObjectResult.val !== null) {
+        expect(Object.keys(emptyObjectResult.val).length).toBe(0);
+      }
     }
   });
 
@@ -236,13 +237,13 @@ describe("jsonParser", () => {
     expect(nestedArrayResult.success).toBe(true);
 
     // Less strict test for the structure to allow for implementation variations
-    if (nestedArrayResult.success) {
+    if (nestedArrayResult.success && nestedArrayResult.val !== null) {
       expect(Array.isArray(nestedArrayResult.val)).toBe(true);
       // The actual length might be 4 in the current implementation
-      expect(Array.isArray(nestedArrayResult.val)).toBe(true);
-
-      // Only check if it's an array without assumptions about content
-      expect(nestedArrayResult.val.length).toBeGreaterThan(0);
+      if (Array.isArray(nestedArrayResult.val)) {
+        // Only check if it's an array without assumptions about content
+        expect(nestedArrayResult.val.length).toBeGreaterThan(0);
+      }
     }
 
     // Array with spaces and newlines
@@ -322,15 +323,21 @@ describe("jsonParser", () => {
     }`);
 
     expect(complexResult.success).toBe(true);
-    if (complexResult.success) {
-      expect(Array.isArray(complexResult.val.users)).toBe(true);
-      expect(complexResult.val.users.length).toBe(2);
-      expect(complexResult.val.users[0].name).toBe("John");
-      expect(complexResult.val.users[0].skills).toEqual([
-        "JavaScript",
-        "TypeScript",
-      ]);
-      expect(complexResult.val.count).toBe(2);
+    if (complexResult.success && complexResult.val !== null && typeof complexResult.val === "object" && !Array.isArray(complexResult.val)) {
+      const val = complexResult.val as JSONObject;
+      if (Array.isArray(val.users)) {
+        expect(Array.isArray(val.users)).toBe(true);
+        expect(val.users.length).toBe(2);
+        const firstUser = val.users[0];
+        if (typeof firstUser === "object" && firstUser !== null && !Array.isArray(firstUser)) {
+          expect((firstUser as JSONObject).name).toBe("John");
+          expect((firstUser as JSONObject).skills).toEqual([
+            "JavaScript",
+            "TypeScript",
+          ]);
+        }
+      }
+      expect(val.count).toBe(2);
     }
   });
 

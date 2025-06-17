@@ -1,9 +1,4 @@
-import type {
-  NonEmptyString,
-  ParseResult,
-  Parser,
-  Pos,
-} from "./types";
+import type { NonEmptyString, ParseResult, Parser, Pos } from "./types";
 import { createFailure, getCharAndLength, nextPos } from "./utils";
 
 /**
@@ -135,10 +130,7 @@ const parseComplexString = <T extends string>(
     const strCharLen = strChar.length;
 
     // Get the character from the input
-    const [inputChar] = getCharAndLength(
-      input,
-      currentPos.offset,
-    );
+    const [inputChar] = getCharAndLength(input, currentPos.offset);
 
     if (inputChar === "") {
       return createFailure(

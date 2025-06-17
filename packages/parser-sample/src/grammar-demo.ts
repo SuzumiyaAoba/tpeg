@@ -132,7 +132,7 @@ const grammarExamples = [
 ];
 
 for (const grammar of grammarExamples) {
-  console.log(`📖 Grammar Input:`);
+  console.log("📖 Grammar Input:");
   console.log(grammar);
   console.log();
   
@@ -146,7 +146,7 @@ for (const grammar of grammarExamples) {
     
     // Show annotations
     if (result.val.annotations.length > 0) {
-      console.log(`   📝 Annotations:`);
+      console.log("   📝 Annotations:");
       for (const annotation of result.val.annotations) {
         console.log(`      @${annotation.key}: "${annotation.value}"`);
       }
@@ -154,13 +154,13 @@ for (const grammar of grammarExamples) {
     
     // Show rules
     if (result.val.rules.length > 0) {
-      console.log(`   📋 Rules:`);
+      console.log("   📋 Rules:");
       for (const rule of result.val.rules) {
         console.log(`      ${rule.name} = [${rule.expression.type}]`);
       }
     }
   } else {
-    console.log(`❌ Failed to parse grammar`);
+    console.log("❌ Failed to parse grammar");
     console.log(`   Error: ${result.error?.message || "Parse failed"}`);
     if (result.error?.pos) {
       console.log(`   Position: line ${result.error.pos.line}, column ${result.error.pos.column}`);

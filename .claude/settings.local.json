@@ -32,7 +32,9 @@
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
       "Bash(node:*)",
-      "Bash(tsc --noEmit)"
+      "Bash(tsc --noEmit)",
+      "Bash(gh pr diff:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": []
   }

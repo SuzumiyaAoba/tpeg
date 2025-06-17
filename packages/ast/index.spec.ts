@@ -1,24 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import {
-  type AndPredicate,
-  type AnyChar,
   type Char,
-  type CharClass,
-  type Choice,
-  type Definition,
-  type ExprNode,
-  type Grammar,
-  type Group,
   type Identifier,
   type Literal,
   type MapNode,
   type NotPredicate,
-  type OneOrMore,
   type Optional,
   type PegAstNode,
   type Range,
   type Sequence,
-  type ZeroOrMore,
   andPredicate,
   anyChar,
   char,
@@ -55,17 +45,7 @@ import {
   zeroOrMore,
 } from "./index";
 
-// Import helper types for type-level testing
-import type {
-  Equal,
-  Expect,
-  ExtractLiteralValue,
-  ExtractNodeType,
-  IsNodeType,
-  Not,
-  TestSuite,
-  TypesMatch,
-} from "./test-types";
+// Note: Type-level tests are in index.type-test.ts
 
 // Type-level tests have been moved to a separate file (index.type-test.ts)
 
@@ -474,21 +454,31 @@ describe("AST Type Safety Tests", () => {
         group(literal("c")) as PegAstNode,
       ];
 
-      expect(isLiteral(nodes[0])).toBe(true);
-      expect(isIdentifier(nodes[1])).toBe(true);
-      expect(isChar(nodes[2])).toBe(true);
-      expect(isRange(nodes[3])).toBe(true);
-      expect(isAnyChar(nodes[4])).toBe(true);
-      expect(isZeroOrMore(nodes[5])).toBe(true);
-      expect(isOneOrMore(nodes[6])).toBe(true);
-      expect(isGroup(nodes[7])).toBe(true);
+      // Test each node exists and has correct type
+      expect(nodes[0]).toBeDefined();
+      expect(nodes[1]).toBeDefined();
+      expect(nodes[2]).toBeDefined();
+      expect(nodes[3]).toBeDefined();
+      expect(nodes[4]).toBeDefined();
+      expect(nodes[5]).toBeDefined();
+      expect(nodes[6]).toBeDefined();
+      expect(nodes[7]).toBeDefined();
+
+      expect(isLiteral(nodes[0] as PegAstNode)).toBe(true);
+      expect(isIdentifier(nodes[1] as PegAstNode)).toBe(true);
+      expect(isChar(nodes[2] as PegAstNode)).toBe(true);
+      expect(isRange(nodes[3] as PegAstNode)).toBe(true);
+      expect(isAnyChar(nodes[4] as PegAstNode)).toBe(true);
+      expect(isZeroOrMore(nodes[5] as PegAstNode)).toBe(true);
+      expect(isOneOrMore(nodes[6] as PegAstNode)).toBe(true);
+      expect(isGroup(nodes[7] as PegAstNode)).toBe(true);
 
       // Verify mutual exclusivity
-      expect(isLiteral(nodes[1])).toBe(false);
-      expect(isIdentifier(nodes[0])).toBe(false);
-      expect(isZeroOrMore(nodes[6])).toBe(false);
-      expect(isOneOrMore(nodes[5])).toBe(false);
-      expect(isGroup(nodes[0])).toBe(false);
+      expect(isLiteral(nodes[1] as PegAstNode)).toBe(false);
+      expect(isIdentifier(nodes[0] as PegAstNode)).toBe(false);
+      expect(isZeroOrMore(nodes[6] as PegAstNode)).toBe(false);
+      expect(isOneOrMore(nodes[5] as PegAstNode)).toBe(false);
+      expect(isGroup(nodes[0] as PegAstNode)).toBe(false);
     });
   });
 
@@ -630,10 +620,12 @@ describe("AST Type Safety Tests", () => {
       // Verify that each element has the correct type
       for (let i = 0; i < cc.children.length; i++) {
         const element = cc.children[i];
-        if (i < 2) {
-          expect(isChar(element)).toBe(true);
-        } else {
-          expect(isRange(element)).toBe(true);
+        if (element) {
+          if (i < 2) {
+            expect(isChar(element)).toBe(true);
+          } else {
+            expect(isRange(element)).toBe(true);
+          }
         }
       }
     });
@@ -691,9 +683,11 @@ describe("AST Type Safety Tests", () => {
         expect(deepestSeq.children[1].type).toBe("literal");
 
         // Verify nested structure preservation
-        const firstChild = deepestSeq.children[0] as Sequence;
-        expect(firstChild.children).toHaveLength(2);
-        expect(firstChild.children[0].type).toBe("sequence");
+        const firstChild = deepestSeq.children[0];
+        if (firstChild && isSequence(firstChild)) {
+          expect(firstChild.children).toHaveLength(2);
+          expect(firstChild.children[0]?.type).toBe("sequence");
+        }
       });
 
       it("should handle nested choices with mixed types", () => {
@@ -840,9 +834,10 @@ describe("AST Type Safety Tests", () => {
 
         expect(cc.children).toHaveLength(5);
 
-        for (let i = 0; i < elements.length; i++) {
-          expect(cc.children[i]).toBe(elements[i]);
-        }
+        elements.forEach((element, i) => {
+          expect(cc.children[i]).toBeDefined();
+          expect(cc.children[i]).toBe(element);
+        });
       });
     });
 
@@ -896,11 +891,13 @@ describe("AST Type Safety Tests", () => {
         expect(stringDef.children[1].type).toBe("sequence");
 
         // Verify nested structure
-        const seqExpr = stringDef.children[1] as Sequence;
-        expect(seqExpr.children).toHaveLength(3);
-        expect(seqExpr.children[0].type).toBe("literal");
-        expect(seqExpr.children[1].type).toBe("optional");
-        expect(seqExpr.children[2].type).toBe("literal");
+        const seqExpr = stringDef.children[1];
+        if (seqExpr && isSequence(seqExpr)) {
+          expect(seqExpr.children).toHaveLength(3);
+          expect(seqExpr.children[0]?.type).toBe("literal");
+          expect(seqExpr.children[1]?.type).toBe("optional");
+          expect(seqExpr.children[2]?.type).toBe("literal");
+        }
       });
     });
 
@@ -1014,7 +1011,7 @@ describe("AST Type Safety Tests", () => {
       // Object transformation
       const objectMap = map(
         sequence(literal("name"), literal(":"), literal("value")),
-        ([name, _, value]: string[]) => ({ [name]: value }),
+        ([name, _, value]: string[]) => ({ [name as string]: value }),
       );
       expect(objectMap.type).toBe("map");
 

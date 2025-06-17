@@ -20,29 +20,16 @@ export {
 export { parse } from "tpeg-core";
 
 // Demo functions for programmatic use
-export const runBasicDemo = async () => {
+// Helper function to run demo scripts
+const runDemo = async (script: string) => {
   const { spawn } = await import("bun");
-  const proc = spawn(["bun", "run", "src/basic-demo.ts"], {
-    cwd: import.meta.dir + "/..",
+  const proc = spawn(["bun", "run", script], {
+    cwd: `${import.meta.dir}/..`,
     stdio: ["inherit", "inherit", "inherit"],
   });
   return proc.exited;
 };
 
-export const runGrammarDemo = async () => {
-  const { spawn } = await import("bun");
-  const proc = spawn(["bun", "run", "src/grammar-demo.ts"], {
-    cwd: import.meta.dir + "/..",
-    stdio: ["inherit", "inherit", "inherit"],
-  });
-  return proc.exited;
-};
-
-export const runCompleteDemo = async () => {
-  const { spawn } = await import("bun");
-  const proc = spawn(["bun", "run", "src/demo.ts"], {
-    cwd: import.meta.dir + "/..",
-    stdio: ["inherit", "inherit", "inherit"],
-  });
-  return proc.exited;
-};
+export const runBasicDemo = () => runDemo("src/basic-demo.ts");
+export const runGrammarDemo = () => runDemo("src/grammar-demo.ts");
+export const runCompleteDemo = () => runDemo("src/demo.ts");

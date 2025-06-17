@@ -1,6 +1,6 @@
 # TPEG Parser Sample
 
-A comprehensive demonstration of TPEG (TypeScript Parsing Expression Grammar) parser capabilities. This package showcases all implemented features including basic syntax parsing, expression composition, and advanced grammar definition blocks.
+A comprehensive demonstration of TPEG (TypeScript Parsing Expression Grammar) parser capabilities. This package showcases all implemented features, including basic syntax parsing, expression composition, and advanced grammar definition blocks.
 
 ## 🎯 What's Demonstrated
 
@@ -116,7 +116,7 @@ const result = parse(grammarDefinition, grammarSource);
 
 ## 📦 Package Structure
 
-```
+```text
 packages/parser-sample/
 ├── src/
 │   ├── demo.ts           # Complete feature demonstration
