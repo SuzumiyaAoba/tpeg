@@ -72,3 +72,20 @@ export const withTrailingWhitespace = <T>(parser: Parser<T>): Parser<T> =>
  */
 export const withSurroundingWhitespace = <T>(parser: Parser<T>): Parser<T> =>
   withLeadingWhitespace(withTrailingWhitespace(parser));
+
+/**
+ * Parse line-oriented whitespace including newlines for grammar blocks
+ * This handles whitespace, newlines, and comments between grammar items
+ */
+export const grammarBlockWhitespace: Parser<string> = map(
+  zeroOrMore(
+    choice(
+      literal(" "),
+      literal("\t"),
+      literal("\n"),
+      literal("\r"),
+      literal("\r\n"),
+    ),
+  ),
+  (chars) => chars.join(""),
+);

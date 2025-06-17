@@ -30,7 +30,11 @@ import {
   createGrammarDefinition,
   createRuleDefinition,
 } from "./types";
-import { optionalWhitespace, whitespace } from "./whitespace-utils";
+import {
+  grammarBlockWhitespace,
+  optionalWhitespace,
+  whitespace,
+} from "./whitespace-utils";
 
 /**
  * Parse any character except newline
