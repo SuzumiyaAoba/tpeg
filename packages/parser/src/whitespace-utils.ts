@@ -80,11 +80,11 @@ export const withSurroundingWhitespace = <T>(parser: Parser<T>): Parser<T> =>
 export const grammarBlockWhitespace: Parser<string> = map(
   zeroOrMore(
     choice(
-      literal(" "),
-      literal("\t"),
-      literal("\n"),
-      literal("\r"),
       literal("\r\n"),
+      literal("\r"),
+      literal("\n"),
+      literal("\t"),
+      literal(" "),
     ),
   ),
   (chars) => chars.join(""),
