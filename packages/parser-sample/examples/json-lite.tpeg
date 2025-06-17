@@ -1,0 +1,30 @@
+// JSON Lite Grammar Definition
+// A simplified JSON parser for demonstration
+grammar JsonLite {
+  @version: "2.0"
+  @author: "TPEG Team"
+  @description: "Lightweight JSON parser"
+  @license: "MIT"
+  
+  // Main JSON value types
+  value = string / number / boolean / null / object / array
+  
+  // String parsing with escape sequences
+  string = "\"" [^\"]* "\""
+  
+  // Number parsing (integers and floats)
+  number = [0-9]+ ("." [0-9]+)?
+  
+  // Boolean literals
+  boolean = "true" / "false"
+  
+  // Null literal
+  null = "null"
+  
+  // Object structure
+  object = "{" (pair ("," pair)*)? "}"
+  pair = string ":" value
+  
+  // Array structure
+  array = "[" (value ("," value)*)? "]"
+}

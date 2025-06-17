@@ -1,0 +1,38 @@
+# JSON Lite Input Examples
+# Sample JSON data to test the JSON grammar
+
+## Simple Values
+"hello"
+42
+3.14
+true
+false
+null
+
+## Objects
+{}
+{"name": "John"}
+{"age": 25, "active": true}
+{"user": "alice", "score": 98.5, "verified": false}
+
+## Arrays
+[]
+[1, 2, 3]
+["a", "b", "c"]
+[true, false, null]
+
+## Nested Structures
+{"data": [1, 2, 3]}
+[{"id": 1}, {"id": 2}]
+{"users": [{"name": "John", "age": 25}, {"name": "Jane", "age": 30}]}
+
+## Complex Example
+{
+  "name": "Example API",
+  "version": "1.0",
+  "endpoints": [
+    {"path": "/users", "method": "GET"},
+    {"path": "/posts", "method": "POST"}
+  ],
+  "active": true
+}

@@ -1,0 +1,31 @@
+# Basic Parsing Samples
+# This file contains examples for basic syntax demonstration
+
+## String Literals
+"hello world"
+'single quotes'
+"with\nescapes"
+"with\ttab"
+"emoji: 🎉"
+"Unicode: 日本語"
+
+## Character Classes
+[a-z]
+[A-Z0-9]
+[abc]
+[a-zA-Z_]
+[0-9a-f]
+
+## Identifiers
+variable
+myVar123
+_private
+CamelCase
+snake_case
+
+## Expressions
+"hello" " " "world"
+"true" / "false"
+("yes" / "no")
+("hello" / "hi") " " [A-Z][a-z]*
+"start" (" " [a-z]+)* "end"

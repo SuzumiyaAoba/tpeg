@@ -32,4 +32,5 @@ const runDemo = async (script: string) => {
 
 export const runBasicDemo = () => runDemo("src/basic-demo.ts");
 export const runGrammarDemo = () => runDemo("src/grammar-demo.ts");
+export const runFileDemo = () => runDemo("src/file-demo.ts");
 export const runCompleteDemo = () => runDemo("src/demo.ts");

@@ -50,6 +50,13 @@ Showcases Phase 1.6 grammar definition features:
 - Comment parsing
 - Real-world grammar examples
 
+### 4. File-Based Demo (`bun run demo:files`)
+Demonstrates file-based parsing workflows:
+- Loading grammar definitions from .tpeg files
+- Reading input samples from text files
+- Real-world parsing scenarios
+- Structured input processing
+
 ## 🔧 Example Usage
 
 ### Basic Parsing

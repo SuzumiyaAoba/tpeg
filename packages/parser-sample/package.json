@@ -13,6 +13,7 @@
   },
   "files": [
     "dist",
+    "examples",
     "README.md"
   ],
   "scripts": {
@@ -20,6 +21,7 @@
     "demo": "bun run src/demo.ts",
     "demo:basic": "bun run src/basic-demo.ts",
     "demo:grammar": "bun run src/grammar-demo.ts",
+    "demo:files": "bun run src/file-demo.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
