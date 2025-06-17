@@ -75,7 +75,7 @@ export const withSurroundingWhitespace = <T>(parser: Parser<T>): Parser<T> =>
 
 /**
  * Parse line-oriented whitespace including newlines for grammar blocks
- * This handles whitespace, newlines, and comments between grammar items
+ * This handles whitespace and newlines between grammar items
  */
 export const grammarBlockWhitespace: Parser<string> = map(
   zeroOrMore(

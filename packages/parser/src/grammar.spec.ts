@@ -197,27 +197,8 @@ describe("Grammar Definition Block Tests", () => {
       }
     });
 
-    test.skip("should parse multiple rules with newlines (Phase 1.6 - work in progress)", () => {
-      // Test with explicit newlines between rules
-      const input = `grammar MultiRule {
-  expression = number
-  number = [0-9]+
-}`;
+    test.todo("should parse multiple rules with newlines (Phase 1.6 - work in progress)");
 
-      const result = testParse(grammarDefinition, input);
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.val.name).toBe("MultiRule");
-        expect(result.val.rules).toHaveLength(2);
-        expect(result.val.rules[0].name).toBe("expression");
-        expect(result.val.rules[1].name).toBe("number");
-      }
-    });
-
-    test.skip("debug: try simple two rules (Phase 1.6 - work in progress)", () => {
-      const input = "grammar Test { a=b c=d }";
-      const result = testParse(grammarDefinition, input);
-      expect(result.success).toBe(true);
-    });
+    test.todo("debug: try simple two rules (Phase 1.6 - work in progress)");
   });
 });
