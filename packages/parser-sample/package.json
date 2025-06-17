@@ -1,0 +1,45 @@
+{
+  "name": "tpeg-parser-sample",
+  "version": "0.1.0",
+  "description": "Sample demonstrating TPEG parser capabilities",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "demo": "bun run src/demo.ts",
+    "demo:basic": "bun run src/basic-demo.ts",
+    "demo:grammar": "bun run src/grammar-demo.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "tpeg-core": "workspace:*",
+    "tpeg-parser": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "parser",
+    "peg",
+    "tpeg",
+    "parsing",
+    "grammar",
+    "demo",
+    "sample"
+  ],
+  "author": "",
+  "license": "MIT"
+}

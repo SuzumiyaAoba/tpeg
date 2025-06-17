@@ -6,7 +6,6 @@
  * Note: Template literals (`template`) are planned for future extension
  */
 
-// import { between } from "tpeg-combinator"; // Not currently used
 import type { Parser } from "tpeg-core";
 import {
   anyChar,
