@@ -6,9 +6,8 @@
  * providing a more realistic demonstration of TPEG parser usage.
  */
 
-import { readFileSync } from "fs";
-import { join } from "path";
-import type { Parser } from "tpeg-core";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   grammarDefinition,
   stringLiteral,
@@ -72,7 +71,7 @@ const demoGrammarFile = (filename: string) => {
     if (grammar.rules.length > 0) {
       console.log("   📋 Rules:");
       for (const rule of grammar.rules) {
-        console.log(`      ${rule.name} = [${rule.expression.type}]`);
+        console.log(`      ${rule.name} = [${rule.pattern.type}]`);
       }
     }
   } else {
@@ -134,7 +133,7 @@ const demoBasicSyntaxFile = (filename: string) => {
 // Helper function to parse structured input file sections
 const parseStructuredInputs = (content: string): Record<string, string[]> => {
   const sections: Record<string, string[]> = {};
-  let currentSection = "";
+  let currentSection: string | undefined;
   
   for (const line of content.split("\n")) {
     const trimmed = line.trim();
@@ -143,7 +142,10 @@ const parseStructuredInputs = (content: string): Record<string, string[]> => {
       currentSection = trimmed.substring(3);
       sections[currentSection] = [];
     } else if (trimmed && !trimmed.startsWith("#") && currentSection) {
-      sections[currentSection].push(trimmed);
+      const sectionArray = sections[currentSection];
+      if (sectionArray) {
+        sectionArray.push(trimmed);
+      }
     }
   }
   

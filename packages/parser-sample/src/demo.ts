@@ -6,7 +6,6 @@
  * It combines basic parsing capabilities with advanced grammar definition features.
  */
 
-import type { Parser } from "tpeg-core";
 import {
   basicSyntax,
   grammarDefinition,
@@ -95,7 +94,7 @@ if (grammarResult.success) {
   
   console.log("📋 Rules:");
   for (const rule of grammar.rules) {
-    console.log(`   ${rule.name} = [${rule.expression.type}]`);
+    console.log(`   ${rule.name} = [${rule.pattern.type}]`);
   }
   console.log();
 } else {

@@ -34,7 +34,8 @@
       "Bash(node:*)",
       "Bash(tsc --noEmit)",
       "Bash(gh pr diff:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(gh pr comment:*)"
     ],
     "deny": []
   }

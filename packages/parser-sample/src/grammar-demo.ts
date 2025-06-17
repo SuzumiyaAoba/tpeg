@@ -156,7 +156,7 @@ for (const grammar of grammarExamples) {
     if (result.val.rules.length > 0) {
       console.log("   📋 Rules:");
       for (const rule of result.val.rules) {
-        console.log(`      ${rule.name} = [${rule.expression.type}]`);
+        console.log(`      ${rule.name} = [${rule.pattern.type}]`);
       }
     }
   } else {
