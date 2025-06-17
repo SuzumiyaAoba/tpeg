@@ -215,7 +215,7 @@ describe("Grammar Definition Block Tests", () => {
     });
 
     test.skip("debug: try simple two rules (Phase 1.6 - work in progress)", () => {
-      const input = `grammar Test { a=b c=d }`;
+      const input = "grammar Test { a=b c=d }";
       const result = testParse(grammarDefinition, input);
       expect(result.success).toBe(true);
     });
