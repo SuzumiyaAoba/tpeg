@@ -31,7 +31,6 @@ import {
   createRuleDefinition,
 } from "./types";
 import {
-  grammarBlockWhitespace,
   optionalWhitespace,
   whitespace,
 } from "./whitespace-utils";

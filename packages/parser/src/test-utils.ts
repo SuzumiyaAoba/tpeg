@@ -6,7 +6,7 @@
  */
 
 import { expect } from "bun:test";
-import type { ParseResult, Parser, Pos as Position } from "tpeg-core";
+import type { ParseResult, ParseSuccess, ParseFailure, Parser, Pos as Position } from "tpeg-core";
 import { parse } from "tpeg-core";
 import type { Expression } from "./types";
 
@@ -61,7 +61,7 @@ export const expectSuccess = <T>(result: ParseResult<T>) => {
       `Expected success but got failure: ${result.error.message}`,
     );
   }
-  return result;
+  return result as ParseSuccess<T>;
 };
 
 /**
@@ -77,7 +77,7 @@ export const expectFailure = <T>(result: ParseResult<T>) => {
       `Expected failure but got success: ${JSON.stringify(result.val)}`,
     );
   }
-  return result;
+  return result as ParseFailure;
 };
 
 /**
