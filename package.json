@@ -32,10 +32,15 @@
     "typecheck:combinator": "cd packages/combinator && bun run typecheck",
     "typecheck:parser": "cd packages/parser && bun run typecheck",
     "build": "bun run build:all",
-    "build:all": "bun run build:core && bun run build:ast && bun run build:combinator && bun run build:parser",
+    "build:all": "bun run build:core && bun run build:ast && bun run build:combinator && bun run build:parser && bun run build:parser-sample",
     "build:core": "cd packages/core && bun run build",
     "build:ast": "cd packages/ast && bun run build",
     "build:combinator": "cd packages/combinator && bun run build",
-    "build:parser": "cd packages/parser && bun run build"
+    "build:parser": "cd packages/parser && bun run build",
+    "build:parser-sample": "cd packages/parser-sample && bun run build",
+    "demo": "cd packages/parser-sample && bun run demo",
+    "demo:basic": "cd packages/parser-sample && bun run demo:basic",
+    "demo:grammar": "cd packages/parser-sample && bun run demo:grammar",
+    "demo:files": "cd packages/parser-sample && bun run demo:files"
   }
 }

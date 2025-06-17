@@ -81,18 +81,5 @@ export const fail =
     },
   });
 
-/**
- * Type guard to check if a value is a non-empty array
- * @param value Value to check
- * @returns True if value is a non-empty array
- */
-export const isNonEmptyArray = <T>(value: T[]): value is [T, ...T[]] =>
-  Array.isArray(value) && value.length > 0;
-
-/**
- * Type guard to check if a value is an empty array
- * @param value Value to check
- * @returns True if value is an empty array
- */
-export const isEmptyArray = <T>(value: T[]): value is [] =>
-  Array.isArray(value) && value.length === 0;
+// Array utilities are now imported from tpeg-core
+export { isEmptyArray, isNonEmptyArray } from "tpeg-core";

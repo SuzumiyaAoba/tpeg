@@ -1,0 +1,5 @@
+grammar Minimal {
+  @version: "1.0"
+  @description: "Minimal grammar example"
+  @author: "TPEG Demo"
+}

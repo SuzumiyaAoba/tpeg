@@ -1,0 +1,19 @@
+// Calculator Grammar Definition
+// A comprehensive arithmetic calculator with operator precedence
+grammar Calculator {
+  @version: "1.2.0"
+  @description: "A simple arithmetic calculator grammar"
+  @author: "TPEG Parser Demo"
+  @license: "MIT"
+  
+  // Main expression rule with operator precedence
+  expression = term (("+" / "-") term)*
+  term = factor (("*" / "/") factor)*
+  factor = number / "(" expression ")"
+  
+  // Number parsing with optional decimal point
+  number = [0-9]+ ("." [0-9]+)?
+  
+  // Whitespace handling
+  whitespace = [ \t\n\r]*
+}

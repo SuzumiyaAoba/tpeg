@@ -1,0 +1,12 @@
+grammar Calculator {
+  @version: "1.2.0"
+  @description: "A simple arithmetic calculator grammar"
+  @author: "TPEG Parser Demo"
+  @license: "MIT"
+  
+  expression = term (("+" / "-") term)*
+  term = factor (("*" / "/") factor)*
+  factor = number / "(" expression ")"
+  number = [0-9]+ ("." [0-9]+)?
+  whitespace = [ \t\n\r]*
+}

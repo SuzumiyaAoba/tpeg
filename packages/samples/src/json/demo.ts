@@ -189,7 +189,6 @@ const demoErrorCases = () => {
       );
     } catch (error) {
       console.log(`✅ Correctly failed: ${json}`);
-      // console.log(`   Error: ${error.message}`);
     }
     console.log();
   }

@@ -2,7 +2,6 @@ import type {
   AndPredicate,
   Char,
   CharClass,
-  CharClassElement,
   Choice,
   Definition,
   ExprNode,
