@@ -36,6 +36,23 @@ import {
 } from "./whitespace-utils";
 
 /**
+ * Parse line-oriented whitespace including newlines for grammar blocks
+ * This handles whitespace, newlines, and comments between grammar items
+ */
+const grammarBlockWhitespace: Parser<string> = map(
+  zeroOrMore(
+    choice(
+      literal(" "),
+      literal("\t"),
+      literal("\r\n"),
+      literal("\n"),
+      literal("\r"),
+    ),
+  ),
+  (chars) => chars.join(""),
+);
+
+/**
  * Parse any character except newline
  * Uses a simple approach by rejecting newline characters
  */
@@ -149,8 +166,14 @@ const grammarItem: Parser<GrammarItemType> = choice(
 /**
  * Parse a sequence of grammar items separated by optional whitespace
  */
-const grammarItems: Parser<GrammarItemType[]> = zeroOrMore(
-  map(sequence(grammarItem, optionalWhitespace), ([item, _]) => item),
+const grammarItems: Parser<GrammarItemType[]> = map(
+  sequence(
+    grammarBlockWhitespace,
+    zeroOrMore(
+      map(sequence(grammarItem, grammarBlockWhitespace), ([item, _]) => item),
+    ),
+  ),
+  ([_, items]) => items,
 );
 
 /**
@@ -189,13 +212,13 @@ export const grammarDefinition: Parser<GrammarDefinition> = map(
     identifier,
     optionalWhitespace,
     literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_OPEN),
-    optionalWhitespace,
     grammarItems,
+    grammarBlockWhitespace,
     literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_CLOSE),
   ),
   (results) => {
     const grammarName = results[2].name;
-    const items = results[6];
+    const items = results[5];
     const { annotations, rules } = separateGrammarItems(items);
 
     return createGrammarDefinition(grammarName, annotations, rules);
