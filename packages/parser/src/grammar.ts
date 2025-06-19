@@ -150,8 +150,14 @@ const grammarItem: Parser<GrammarItemType> = choice(
 /**
  * Parse a sequence of grammar items separated by optional whitespace
  */
-const grammarItems: Parser<GrammarItemType[]> = zeroOrMore(
-  map(sequence(grammarItem, optionalWhitespace), ([item, _]) => item),
+const grammarItems: Parser<GrammarItemType[]> = map(
+  sequence(
+    grammarBlockWhitespace,
+    zeroOrMore(
+      map(sequence(grammarItem, grammarBlockWhitespace), ([item, _]) => item),
+    ),
+  ),
+  ([_, items]) => items,
 );
 
 /**
@@ -190,13 +196,13 @@ export const grammarDefinition: Parser<GrammarDefinition> = map(
     identifier,
     optionalWhitespace,
     literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_OPEN),
-    optionalWhitespace,
     grammarItems,
+    grammarBlockWhitespace,
     literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_CLOSE),
   ),
   (results) => {
     const grammarName = results[2].name;
-    const items = results[6];
+    const items = results[5];
     const { annotations, rules } = separateGrammarItems(items);
 
     return createGrammarDefinition(grammarName, annotations, rules);
