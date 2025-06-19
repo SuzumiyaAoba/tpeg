@@ -44,9 +44,9 @@ const grammarBlockWhitespace: Parser<string> = map(
     choice(
       literal(" "),
       literal("\t"),
+      literal("\r\n"),
       literal("\n"),
       literal("\r"),
-      literal("\r\n"),
     ),
   ),
   (chars) => chars.join(""),
