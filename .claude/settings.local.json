@@ -35,7 +35,8 @@
       "Bash(tsc --noEmit)",
       "Bash(gh pr diff:*)",
       "Bash(npx tsc:*)",
-      "Bash(gh pr comment:*)"
+      "Bash(gh pr comment:*)",
+      "Bash(tsc)"
     ],
     "deny": []
   }

@@ -31,10 +31,26 @@ import {
   createRuleDefinition,
 } from "./types";
 import {
-  grammarBlockWhitespace,
   optionalWhitespace,
   whitespace,
 } from "./whitespace-utils";
+
+/**
+ * Parse line-oriented whitespace including newlines for grammar blocks
+ * This handles whitespace, newlines, and comments between grammar items
+ */
+const grammarBlockWhitespace: Parser<string> = map(
+  zeroOrMore(
+    choice(
+      literal(" "),
+      literal("\t"),
+      literal("\n"),
+      literal("\r"),
+      literal("\r\n"),
+    ),
+  ),
+  (chars) => chars.join(""),
+);
 
 /**
  * Parse any character except newline
