@@ -22,6 +22,7 @@
     "demo:basic": "bun run src/basic-demo.ts",
     "demo:grammar": "bun run src/grammar-demo.ts",
     "demo:files": "bun run src/file-demo.ts",
+    "demo:generator": "bun run src/generator-demo.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

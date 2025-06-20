@@ -31,6 +31,14 @@ export {
   documentationComment,
 } from "./grammar";
 
+// Export code generation system
+export {
+  TPEGCodeGenerator,
+  generateTypeScriptParser,
+  type CodeGenOptions,
+  type GeneratedCode,
+} from "./codegen";
+
 // Re-export core parsers that might be useful
 export { choice, seq, map, optional, zeroOrMore, oneOrMore } from "tpeg-core";
 
