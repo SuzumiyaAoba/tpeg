@@ -1,0 +1,12 @@
+grammar Log {
+  @version: "1.0"
+  @description: "Application log file parser with timestamps and levels"
+  @author: "TPEG Parser"
+  @license: "MIT"
+  
+  log = logEntry
+  logEntry = timestamp " " level " " message
+  timestamp = [0-9]
+  level = "ERROR" / "WARN" / "INFO" / "DEBUG" / "TRACE"
+  message = [a-zA-Z0-9]
+}

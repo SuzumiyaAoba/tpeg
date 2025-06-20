@@ -1,0 +1,20 @@
+# CSV Test Samples
+# Simple CSV
+name,age,city
+John,25,New York
+Jane,30,San Francisco
+
+# CSV with quoted fields
+"Last, First",Age,"City, State"
+"Doe, John",25,"New York, NY"
+"Smith, Jane",30,"San Francisco, CA"
+
+# CSV with escaped quotes
+name,description
+Product1,"High-quality ""premium"" item"
+Product2,"Standard item with, comma"
+
+# CSV without headers
+apple,red,sweet
+banana,yellow,soft
+orange,orange,citrus

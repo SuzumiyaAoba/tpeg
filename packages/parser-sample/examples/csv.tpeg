@@ -1,0 +1,13 @@
+grammar CSV {
+  @version: "1.0"
+  @description: "CSV parser with quoted fields and escape sequences"
+  @author: "TPEG Parser"
+  @license: "MIT"
+  
+  csv = row
+  row = field ("," field)*
+  field = quotedField / unquotedField
+  quotedField = "\"" [a-zA-Z0-9] "\""
+  unquotedField = [a-zA-Z0-9]
+  newline = "\n"
+}

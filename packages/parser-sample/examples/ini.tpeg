@@ -1,0 +1,14 @@
+grammar INI {
+  @version: "1.0"
+  @description: "INI configuration file parser"
+  @author: "TPEG Parser"
+  @license: "MIT"
+  
+  ini = section / property / comment
+  section = "[" sectionName "]"
+  sectionName = [a-zA-Z0-9]
+  property = key "=" value
+  key = [a-zA-Z0-9]
+  value = [a-zA-Z0-9]
+  comment = ";" [a-zA-Z0-9]
+}

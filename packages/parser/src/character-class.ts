@@ -19,11 +19,32 @@ import type { AnyChar, CharRange, CharacterClass } from "./types";
 
 /**
  * Parses a single character within a character class.
- * Handles escape sequences for special characters.
+ * Handles escape sequences for special characters and standard escape sequences.
  */
 const charClassChar: Parser<string> = choice(
+  // Standard escape sequences
+  map(seq(literal("\\"), charClass("t", "n", "r", "b", "f", "v", "0")), ([_, char]) => {
+    switch (char) {
+      case "t":
+        return "\t";
+      case "n":
+        return "\n";
+      case "r":
+        return "\r";
+      case "b":
+        return "\b";
+      case "f":
+        return "\f";
+      case "v":
+        return "\v";
+      case "0":
+        return "\0";
+      default:
+        return char;
+    }
+  }),
   // Escape sequences for special characters in character classes
-  map(seq(literal("\\"), charClass("]", "\\", "^", "-")), ([_, char]) => {
+  map(seq(literal("\\"), charClass("]", "\\", "^", "-", '"', "'")), ([_, char]) => {
     switch (char) {
       case "]":
         return "]";
@@ -33,6 +54,10 @@ const charClassChar: Parser<string> = choice(
         return "^";
       case "-":
         return "-";
+      case '"':
+        return '"';
+      case "'":
+        return "'";
       default:
         return char;
     }
