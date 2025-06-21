@@ -1,14 +1,9 @@
-// Simple Identifier Grammar
-// Demonstrates basic syntax parsing
 grammar Identifier {
   @version: "1.0"
   @description: "Basic identifier parsing grammar"
   @author: "TPEG Parser"
   
-  // Main identifier rule
-  identifier = [a-zA-Z_][a-zA-Z0-9_]*
-  
-  // Character classes demonstration
+  identifier = letter
   letter = [a-zA-Z]
   digit = [0-9]
   underscore = "_"

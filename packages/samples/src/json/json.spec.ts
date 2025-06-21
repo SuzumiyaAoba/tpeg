@@ -211,7 +211,10 @@ describe("jsonParser", () => {
     expect(emptyObjectResult.success).toBe(true);
     if (emptyObjectResult.success && emptyObjectResult.val !== null) {
       expect(typeof emptyObjectResult.val).toBe("object");
-      if (typeof emptyObjectResult.val === "object" && emptyObjectResult.val !== null) {
+      if (
+        typeof emptyObjectResult.val === "object" &&
+        emptyObjectResult.val !== null
+      ) {
         expect(Object.keys(emptyObjectResult.val).length).toBe(0);
       }
     }
@@ -323,13 +326,22 @@ describe("jsonParser", () => {
     }`);
 
     expect(complexResult.success).toBe(true);
-    if (complexResult.success && complexResult.val !== null && typeof complexResult.val === "object" && !Array.isArray(complexResult.val)) {
+    if (
+      complexResult.success &&
+      complexResult.val !== null &&
+      typeof complexResult.val === "object" &&
+      !Array.isArray(complexResult.val)
+    ) {
       const val = complexResult.val as JSONObject;
       if (Array.isArray(val.users)) {
         expect(Array.isArray(val.users)).toBe(true);
         expect(val.users.length).toBe(2);
         const firstUser = val.users[0];
-        if (typeof firstUser === "object" && firstUser !== null && !Array.isArray(firstUser)) {
+        if (
+          typeof firstUser === "object" &&
+          firstUser !== null &&
+          !Array.isArray(firstUser)
+        ) {
           expect((firstUser as JSONObject).name).toBe("John");
           expect((firstUser as JSONObject).skills).toEqual([
             "JavaScript",

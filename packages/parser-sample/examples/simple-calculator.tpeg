@@ -4,9 +4,9 @@ grammar Calculator {
   @author: "TPEG Parser Demo"
   @license: "MIT"
   
-  expression = term (("+" / "-") term)*
-  term = factor (("*" / "/") factor)*
+  expression = term
+  term = factor
   factor = number / "(" expression ")"
-  number = [0-9]+ ("." [0-9]+)?
-  whitespace = [ \t\n\r]*
+  number = [0-9]
+  whitespace = [ \t\n\r]
 }

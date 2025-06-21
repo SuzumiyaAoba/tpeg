@@ -1,0 +1,13 @@
+# Email Address Test Samples
+# Valid email addresses
+user@example.com
+john.doe@company.org
+admin@sub.domain.net
+test_email@gmail.com
+user123@test-site.co.uk
+
+# Invalid email addresses (for negative testing)
+# @missing-local.com
+# user@
+# user@@double.com
+# user@.invalid

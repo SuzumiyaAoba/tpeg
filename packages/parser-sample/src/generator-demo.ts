@@ -1,14 +1,14 @@
 #!/usr/bin/env bun
 /**
  * TPEG Parser Generation Demo
- * 
+ *
  * Demonstrates the parser generation system by:
  * 1. Parsing a TPEG grammar from text
  * 2. Generating TypeScript parser code
  * 3. Showing the generated output
  */
 
-import { grammarDefinition, generateTypeScriptParser } from "tpeg-parser";
+import { generateTypeScriptParser, grammarDefinition } from "tpeg-parser";
 
 console.log("🏗️  TPEG Parser Generation Demo\n");
 
@@ -23,7 +23,7 @@ const grammarText = `grammar Calculator {
 
 console.log("📝 Input Grammar:");
 console.log(grammarText);
-console.log("\n" + "=".repeat(60) + "\n");
+console.log(`\n${"=".repeat(60)}\n`);
 
 // Parse the grammar
 console.log("🔍 Parsing Grammar...");
@@ -33,7 +33,9 @@ const parseResult = grammarDefinition(grammarText, pos);
 if (!parseResult.success) {
   console.error("❌ Failed to parse grammar:");
   console.error(`   Error: ${parseResult.error?.message}`);
-  console.error(`   Position: line ${parseResult.error?.pos.line}, column ${parseResult.error?.pos.column}`);
+  console.error(
+    `   Position: line ${parseResult.error?.pos.line}, column ${parseResult.error?.pos.column}`,
+  );
   process.exit(1);
 }
 
@@ -51,7 +53,7 @@ for (const rule of grammar.rules) {
   console.log(`   ${rule.name} = [${rule.pattern.type}]`);
 }
 
-console.log("\n" + "=".repeat(60) + "\n");
+console.log(`\n${"=".repeat(60)}\n`);
 
 // Generate TypeScript parser code
 console.log("⚙️  Generating TypeScript Parser...");
@@ -75,18 +77,21 @@ try {
   for (const exportName of generated.exports) {
     console.log(`   • calc_${exportName}`);
   }
-
 } catch (error) {
   console.error("❌ Code generation failed:");
-  console.error(`   Error: ${error instanceof Error ? error.message : String(error)}`);
+  console.error(
+    `   Error: ${error instanceof Error ? error.message : String(error)}`,
+  );
   process.exit(1);
 }
 
 console.log("\n🎉 Demo completed successfully!");
-console.log("💡 The generated code can be saved to a .ts file and used as a parser library.");
+console.log(
+  "💡 The generated code can be saved to a .ts file and used as a parser library.",
+);
 
 // Example usage demonstration
-console.log("\n" + "=".repeat(60) + "\n");
+console.log(`\n${"=".repeat(60)}\n`);
 console.log("📖 Example Usage of Generated Parser:");
 console.log(`
 // Save the generated code to calculator-parser.ts

@@ -22,7 +22,8 @@
   "keywords": ["parser", "peg", "tpeg", "grammar", "parsing", "typescript"],
   "dependencies": {
     "tpeg-core": "workspace:*",
-    "tpeg-combinator": "workspace:*"
+    "tpeg-combinator": "workspace:*",
+    "eta": "^3.4.0"
   },
   "devDependencies": {
     "@types/bun": "latest",

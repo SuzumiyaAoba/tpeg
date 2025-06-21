@@ -39,6 +39,36 @@ export {
   type GeneratedCode,
 } from "./codegen";
 
+// Export optimized code generation system
+export {
+  OptimizedTPEGCodeGenerator,
+  generateOptimizedTypeScriptParser,
+  type OptimizedCodeGenOptions,
+  type OptimizedGeneratedCode,
+} from "./codegen-optimized";
+
+// Export Eta template-based code generation system
+export {
+  EtaTPEGCodeGenerator,
+  generateEtaTypeScriptParser,
+  type EtaCodeGenOptions,
+  type EtaGeneratedCode,
+  type RuleTemplateData,
+  type ParserTemplateData,
+} from "./eta-codegen";
+
+// Export performance utilities
+export {
+  hashString,
+  stringInterner,
+  createCharClassLookup,
+  PositionTracker,
+  analyzeExpressionComplexity,
+  analyzeGrammarPerformance,
+  PerformanceMonitor,
+  globalPerformanceMonitor,
+} from "./performance-utils";
+
 // Re-export core parsers that might be useful
 export { choice, seq, map, optional, zeroOrMore, oneOrMore } from "tpeg-core";
 

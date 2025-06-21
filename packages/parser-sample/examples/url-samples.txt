@@ -1,0 +1,21 @@
+# URL Test Samples
+# Basic URLs
+http://example.com
+https://www.google.com
+http://localhost:8080
+https://api.github.com/repos
+
+# URLs with paths
+http://example.com/path/to/resource
+https://site.com/api/v1/users/123
+
+# URLs with query parameters
+http://search.com/results?q=test&page=1
+https://api.com/endpoint?format=json&limit=10
+
+# URLs with fragments
+http://docs.com/page#section1
+https://example.com/article#introduction
+
+# Complex URLs
+https://api.example.com:443/v2/users?active=true&limit=50#results

@@ -1,0 +1,6 @@
+grammar Working {
+  @version: "1.0"
+  @description: "A grammar that should work"
+  
+  hello = "world"
+}

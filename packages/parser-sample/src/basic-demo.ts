@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * TPEG Parser Basic Demo
- * 
+ *
  * This demo showcases the basic parsing capabilities of the TPEG parser,
  * including string literals, character classes, identifiers, and composition operators.
  */
@@ -18,17 +18,13 @@ import {
 console.log("🎯 TPEG Parser Basic Demo\n");
 
 // Helper function to demonstrate parsing
-const demoParser = <T>(
-  name: string,
-  parser: Parser<T>,
-  inputs: string[],
-) => {
+const demoParser = <T>(name: string, parser: Parser<T>, inputs: string[]) => {
   console.log(`=== ${name} ===`);
-  
+
   for (const input of inputs) {
     const pos = { offset: 0, line: 1, column: 1 };
     const result = parser(input, pos);
-    
+
     if (result.success) {
       console.log(`✅ "${input}" → ${JSON.stringify(result.val, null, 2)}`);
     } else {
@@ -45,8 +41,8 @@ demoParser("String Literals", stringLiteral, [
   '"with\\nescapes"',
   '"with\\ttab"',
   '"emoji: 🎉"',
-  '"incomplete',  // Error case
-  'not a string',  // Error case
+  '"incomplete', // Error case
+  "not a string", // Error case
 ]);
 
 // Demo 2: Character Classes
@@ -56,8 +52,8 @@ demoParser("Character Classes", characterClass, [
   "[abc]",
   "[a-zA-Z_]",
   "[0-9a-f]",
-  "[",  // Error case
-  "not-a-class",  // Error case
+  "[", // Error case
+  "not-a-class", // Error case
 ]);
 
 // Demo 3: Identifiers
@@ -67,8 +63,8 @@ demoParser("Identifiers", identifier, [
   "_private",
   "CamelCase",
   "snake_case",
-  "123invalid",  // Error case
-  "with-dash",   // Error case
+  "123invalid", // Error case
+  "with-dash", // Error case
 ]);
 
 // Demo 4: Basic Syntax (combines all basic elements)
@@ -87,17 +83,17 @@ console.log("=== Expression Composition ===");
 const compositionExamples = [
   // Sequence
   '"hello" " " "world"',
-  
+
   // Choice
   '"true" / "false"',
-  
+
   // Group
   '("yes" / "no")',
-  
+
   // Complex expressions
   '("hello" / "hi") " " [A-Z][a-z]*',
   '"start" (" " [a-z]+)* "end"',
-  
+
   // Nested choices and sequences
   '("a" "b") / ("c" "d")',
 ];
@@ -105,7 +101,7 @@ const compositionExamples = [
 for (const expr of compositionExamples) {
   const pos = { offset: 0, line: 1, column: 1 };
   const result = tpegExpression(expr, pos);
-  
+
   if (result.success) {
     console.log(`✅ Expression: ${expr}`);
     console.log(`   Result: ${JSON.stringify(result.val, null, 2)}`);
@@ -117,4 +113,6 @@ for (const expr of compositionExamples) {
 }
 
 console.log("🎉 Basic demo completed!");
-console.log("💡 Try running: bun run demo:grammar to see grammar definition features");
+console.log(
+  "💡 Try running: bun run demo:grammar to see grammar definition features",
+);
