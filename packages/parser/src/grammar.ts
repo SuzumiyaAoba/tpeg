@@ -21,6 +21,7 @@ import { GRAMMAR_KEYWORDS, GRAMMAR_SYMBOLS } from "./constants";
 import { identifier } from "./identifier";
 import { stringLiteral } from "./string-literal";
 import type {
+  Expression,
   GrammarAnnotation,
   GrammarDefinition,
   RuleDefinition,
