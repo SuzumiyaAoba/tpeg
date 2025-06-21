@@ -1,6 +1,6 @@
 /**
  * Optimized TPEG Code Generation System
- * 
+ *
  * High-performance version of the code generator with:
  * - String interning and caching
  * - Optimized AST traversal
@@ -9,30 +9,30 @@
  */
 
 import type {
+  CharacterClass,
+  Choice,
   Expression,
   GrammarDefinition,
-  RuleDefinition,
-  StringLiteral,
-  CharacterClass,
-  Identifier,
-  Sequence,
-  Choice,
   Group,
-  Star,
-  Plus,
-  Optional,
-  Quantified,
-  PositiveLookahead,
-  NegativeLookahead,
+  Identifier,
   LabeledExpression,
+  NegativeLookahead,
+  Optional,
+  Plus,
+  PositiveLookahead,
+  Quantified,
+  RuleDefinition,
+  Sequence,
+  Star,
+  StringLiteral,
 } from "./types";
 
 import {
-  stringInterner,
   analyzeExpressionComplexity,
   analyzeGrammarPerformance,
+  createCharClassLookup,
   globalPerformanceMonitor,
-  createCharClassLookup
+  stringInterner,
 } from "./performance-utils";
 
 /**
@@ -67,7 +67,7 @@ export interface OptimizedGeneratedCode {
   exports: string[];
   /** Performance analysis */
   performance: {
-    estimatedComplexity: 'low' | 'medium' | 'high';
+    estimatedComplexity: "low" | "medium" | "high";
     optimizationSuggestions: string[];
     generationTime: number;
   };
@@ -78,18 +78,18 @@ export interface OptimizedGeneratedCode {
  */
 class CodeTemplateCache {
   private templates = new Map<string, string>();
-  
+
   get(key: string, generator: () => string): string {
     const cached = this.templates.get(key);
     if (cached !== undefined) {
       return cached;
     }
-    
+
     const code = generator();
     this.templates.set(key, code);
     return code;
   }
-  
+
   clear(): void {
     this.templates.clear();
   }
@@ -102,7 +102,7 @@ export class OptimizedTPEGCodeGenerator {
   private options: Required<OptimizedCodeGenOptions>;
   private ruleNames: Set<string> = new Set();
   private templateCache = new CodeTemplateCache();
-  
+
   constructor(options: OptimizedCodeGenOptions = { language: "typescript" }) {
     this.options = {
       language: options.language,
@@ -119,8 +119,8 @@ export class OptimizedTPEGCodeGenerator {
    * Generate optimized TypeScript parser code from a TPEG grammar
    */
   generateGrammar(grammar: GrammarDefinition): OptimizedGeneratedCode {
-    globalPerformanceMonitor.start('grammar-generation');
-    
+    globalPerformanceMonitor.start("grammar-generation");
+
     const performanceAnalysis = analyzeGrammarPerformance(grammar);
     const imports: string[] = [];
     const exports: string[] = [];
@@ -128,7 +128,9 @@ export class OptimizedTPEGCodeGenerator {
 
     // Add optimized imports based on usage analysis
     if (this.options.includeImports) {
-      imports.push(...this.generateOptimizedImports(grammar, performanceAnalysis));
+      imports.push(
+        ...this.generateOptimizedImports(grammar, performanceAnalysis),
+      );
     }
 
     // Collect all rule names first for reference resolution
@@ -150,24 +152,24 @@ export class OptimizedTPEGCodeGenerator {
 
     // Efficiently combine all parts
     const codeBuilder = [];
-    
+
     if (this.options.includeImports && imports.length > 0) {
-      codeBuilder.push(imports.join('\n'), '\n');
+      codeBuilder.push(imports.join("\n"), "\n");
     }
-    
-    codeBuilder.push(parts.join('\n\n'));
-    
-    const generationTime = globalPerformanceMonitor.end('grammar-generation');
+
+    codeBuilder.push(parts.join("\n\n"));
+
+    const generationTime = globalPerformanceMonitor.end("grammar-generation");
 
     return {
-      code: codeBuilder.join(''),
+      code: codeBuilder.join(""),
       imports,
       exports,
       performance: {
         estimatedComplexity: performanceAnalysis.estimatedParseComplexity,
         optimizationSuggestions: performanceAnalysis.optimizationSuggestions,
-        generationTime
-      }
+        generationTime,
+      },
     };
   }
 
@@ -176,38 +178,44 @@ export class OptimizedTPEGCodeGenerator {
    */
   private generateOptimizedImports(
     grammar: GrammarDefinition,
-    analysis: ReturnType<typeof analyzeGrammarPerformance>
+    analysis: ReturnType<typeof analyzeGrammarPerformance>,
   ): string[] {
     const imports = [];
-    
+
     // Core imports
     imports.push('import type { Parser } from "tpeg-core";');
-    
+
     // Analyze which combinators are actually needed
     const usedCombinators = new Set<string>();
-    usedCombinators.add('literal'); // Always needed for string literals
-    
+    usedCombinators.add("literal"); // Always needed for string literals
+
     for (const rule of grammar.rules) {
       this.collectUsedCombinators(rule.pattern, usedCombinators);
     }
-    
+
     // Add performance imports if needed
-    if (this.options.enableMemoization && analysis.estimatedParseComplexity !== 'low') {
-      usedCombinators.add('memoize');
+    if (
+      this.options.enableMemoization &&
+      analysis.estimatedParseComplexity !== "low"
+    ) {
+      usedCombinators.add("memoize");
       imports.push('import { memoize } from "tpeg-combinator";');
     }
-    
+
     // Generate optimized combinator import
     const combinators = Array.from(usedCombinators).sort();
-    imports.push(`import { ${combinators.join(', ')} } from "tpeg-core";`);
-    
+    imports.push(`import { ${combinators.join(", ")} } from "tpeg-core";`);
+
     return imports;
   }
 
   /**
    * Collect all combinators used in an expression
    */
-  private collectUsedCombinators(expr: Expression, combinators: Set<string>): void {
+  private collectUsedCombinators(
+    expr: Expression,
+    combinators: Set<string>,
+  ): void {
     switch (expr.type) {
       case "CharacterClass":
         combinators.add("charClass");
@@ -261,34 +269,38 @@ export class OptimizedTPEGCodeGenerator {
    */
   private generateOptimizedRule(
     rule: RuleDefinition,
-    analysis: ReturnType<typeof analyzeGrammarPerformance>
+    analysis: ReturnType<typeof analyzeGrammarPerformance>,
   ): string {
     const complexity = analysis.ruleComplexity.get(rule.name);
-    const shouldMemoize = this.options.enableMemoization && 
-                         complexity && 
-                         (complexity.estimatedComplexity === 'high' || complexity.hasRecursion);
-    
+    const shouldMemoize =
+      this.options.enableMemoization &&
+      complexity &&
+      (complexity.estimatedComplexity === "high" || complexity.hasRecursion);
+
     let parserCode = this.generateOptimizedExpression(rule.pattern);
-    
+
     // Add memoization for complex rules
     if (shouldMemoize) {
       parserCode = `memoize(${parserCode})`;
     }
-    
+
     const name = stringInterner.intern(this.options.namePrefix + rule.name);
-    
+
     // Use template caching for common patterns
     const templateKey = `rule-${this.options.includeTypes}-${shouldMemoize}`;
-    return this.templateCache.get(templateKey, () => {
-      if (this.options.includeTypes) {
-        return shouldMemoize 
-          ? `export const ${name}: Parser<any> = memoize(PLACEHOLDER);`
-          : `export const ${name}: Parser<any> = PLACEHOLDER;`;
-      }
-      return shouldMemoize 
-        ? `export const ${name} = memoize(PLACEHOLDER);`
-        : `export const ${name} = PLACEHOLDER;`;
-    }).replace('PLACEHOLDER', parserCode).replace(`${name}:`, `${name}:`);
+    return this.templateCache
+      .get(templateKey, () => {
+        if (this.options.includeTypes) {
+          return shouldMemoize
+            ? `export const ${name}: Parser<any> = memoize(PLACEHOLDER);`
+            : `export const ${name}: Parser<any> = PLACEHOLDER;`;
+        }
+        return shouldMemoize
+          ? `export const ${name} = memoize(PLACEHOLDER);`
+          : `export const ${name} = PLACEHOLDER;`;
+      })
+      .replace("PLACEHOLDER", parserCode)
+      .replace(`${name}:`, `${name}:`);
   }
 
   /**
@@ -297,7 +309,7 @@ export class OptimizedTPEGCodeGenerator {
   private generateOptimizedExpression(expr: Expression): string {
     // Use object identity for caching when possible
     const cacheKey = `expr-${expr.type}-${JSON.stringify(expr)}`;
-    
+
     return this.templateCache.get(cacheKey, () => {
       switch (expr.type) {
         case "StringLiteral":
@@ -329,7 +341,9 @@ export class OptimizedTPEGCodeGenerator {
         case "LabeledExpression":
           return this.generateLabeledExpression(expr as LabeledExpression);
         default:
-          throw new Error(`Unsupported expression type: ${(expr as { type: string }).type}`);
+          throw new Error(
+            `Unsupported expression type: ${(expr as { type: string }).type}`,
+          );
       }
     });
   }
@@ -342,30 +356,32 @@ export class OptimizedTPEGCodeGenerator {
   private generateOptimizedCharacterClass(expr: CharacterClass): string {
     // Use lookup table optimization for common character classes
     if (this.options.optimize) {
-      const ranges = expr.ranges.map(range => ({
+      const ranges = expr.ranges.map((range) => ({
         start: range.start,
-        end: range.end || undefined
+        end: range.end || undefined,
       }));
-      
+
       createCharClassLookup(ranges);
-      const isSimpleAscii = ranges.every(r => 
-        r.start.charCodeAt(0) < 128 && 
-        (!r.end || r.end.charCodeAt(0) < 128)
+      const isSimpleAscii = ranges.every(
+        (r) =>
+          r.start.charCodeAt(0) < 128 && (!r.end || r.end.charCodeAt(0) < 128),
       );
-      
+
       if (isSimpleAscii && !expr.negated) {
         // Generate optimized ASCII character class
-        const charCodes = ranges.map(r => {
-          if (r.end) {
-            return `{ from: "${r.start}", to: "${r.end}" }`;
-          }
-          return `"${r.start}"`;
-        }).join(", ");
-        
+        const charCodes = ranges
+          .map((r) => {
+            if (r.end) {
+              return `{ from: "${r.start}", to: "${r.end}" }`;
+            }
+            return `"${r.start}"`;
+          })
+          .join(", ");
+
         return `charClass([${charCodes}])`;
       }
     }
-    
+
     // Fallback to standard generation
     const ranges = expr.ranges
       .map((range) => {
@@ -390,64 +406,70 @@ export class OptimizedTPEGCodeGenerator {
 
   private generateOptimizedSequence(expr: Sequence): string {
     if (expr.elements.length === 0) {
-      return 'sequence()';
+      return "sequence()";
     }
-    
+
     if (expr.elements.length === 1) {
       const element = expr.elements[0];
       if (element) {
         return this.generateOptimizedExpression(element);
       }
     }
-    
+
     // Optimize common sequence patterns
-    const elements = expr.elements.map(el => this.generateOptimizedExpression(el));
+    const elements = expr.elements.map((el) =>
+      this.generateOptimizedExpression(el),
+    );
     return `sequence(${elements.join(", ")})`;
   }
 
   private generateOptimizedChoice(expr: Choice): string {
     if (expr.alternatives.length === 0) {
-      return 'choice()';
+      return "choice()";
     }
-    
+
     if (expr.alternatives.length === 1) {
       const alternative = expr.alternatives[0];
       if (alternative) {
         return this.generateOptimizedExpression(alternative);
       }
     }
-    
+
     // Sort alternatives by complexity for better performance (simple first)
     if (this.options.optimize) {
-      const alternatives = expr.alternatives.map(alt => ({
+      const alternatives = expr.alternatives.map((alt) => ({
         expr: alt,
         code: this.generateOptimizedExpression(alt),
-        complexity: analyzeExpressionComplexity(alt)
+        complexity: analyzeExpressionComplexity(alt),
       }));
-      
-      alternatives.sort((a, b) => a.complexity.nodeCount - b.complexity.nodeCount);
-      return `choice(${alternatives.map(a => a.code).join(", ")})`;
+
+      alternatives.sort(
+        (a, b) => a.complexity.nodeCount - b.complexity.nodeCount,
+      );
+      return `choice(${alternatives.map((a) => a.code).join(", ")})`;
     }
-    
-    const alternatives = expr.alternatives.map(alt => this.generateOptimizedExpression(alt));
+
+    const alternatives = expr.alternatives.map((alt) =>
+      this.generateOptimizedExpression(alt),
+    );
     return `choice(${alternatives.join(", ")})`;
   }
 
   private generateQuantified(expr: Quantified): string {
     const inner = this.generateOptimizedExpression(expr.expression);
-    
+
     if (expr.max === undefined) {
       if (expr.min === 0) return `zeroOrMore(${inner})`;
       if (expr.min === 1) return `oneOrMore(${inner})`;
       return `/* TODO: implement {${expr.min},} */ oneOrMore(${inner})`;
     }
-    
+
     if (expr.min === expr.max) {
       if (expr.min === 0) return "/* never matches */ choice()";
       if (expr.min === 1) return inner;
       return `/* TODO: implement {${expr.min}} */ ${inner}`;
     }
-    
+
     return `/* TODO: implement {${expr.min},${expr.max}} */ optional(${inner})`;
   }
 

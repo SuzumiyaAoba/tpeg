@@ -158,7 +158,9 @@ export class TPEGCodeGenerator {
       case "LabeledExpression":
         return this.generateLabeledExpression(expr as LabeledExpression);
       default:
-        throw new Error(`Unsupported expression type: ${(expr as { type: string }).type}`);
+        throw new Error(
+          `Unsupported expression type: ${(expr as { type: string }).type}`,
+        );
     }
   }
 
