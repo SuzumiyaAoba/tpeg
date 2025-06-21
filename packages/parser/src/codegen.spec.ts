@@ -5,106 +5,165 @@
 import { describe, expect, test } from "bun:test";
 import { TPEGCodeGenerator, generateTypeScriptParser } from "./codegen";
 import {
-  createGrammarDefinition,
-  createRuleDefinition,
-  createStringLiteral,
-  createCharacterClass,
-  createIdentifier,
   createAnyChar,
-  createSequence,
-  createChoice,
-  createGroup,
-  createStar,
-  createPlus,
-  createOptional,
-  createPositiveLookahead,
-  createNegativeLookahead,
-  createLabeledExpression,
   createCharRange,
+  createCharacterClass,
+  createChoice,
+  createGrammarDefinition,
+  createGroup,
+  createIdentifier,
+  createLabeledExpression,
+  createNegativeLookahead,
+  createOptional,
+  createPlus,
+  createPositiveLookahead,
+  createRuleDefinition,
+  createSequence,
+  createStar,
+  createStringLiteral,
 } from "./types";
 
 describe("TPEG Code Generation", () => {
   describe("TPEGCodeGenerator", () => {
     test("should generate basic string literal parser", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("hello", createStringLiteral("hello")),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition("hello", createStringLiteral("hello"))],
+      );
 
       const generator = new TPEGCodeGenerator();
       const result = generator.generateGrammar(grammar);
 
-      expect(result.code).toContain('export const hello: Parser<any> = literal("hello");');
+      expect(result.code).toContain(
+        'export const hello: Parser<any> = literal("hello");',
+      );
       expect(result.exports).toEqual(["hello"]);
     });
 
     test("should generate character class parser", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("letter", createCharacterClass([
-          createCharRange("a"), // single character
-          createCharRange("c", "z"), // range
-        ], false)),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "letter",
+            createCharacterClass(
+              [
+                createCharRange("a"), // single character
+                createCharRange("c", "z"), // range
+              ],
+              false,
+            ),
+          ),
+        ],
+      );
 
       const generator = new TPEGCodeGenerator();
       const result = generator.generateGrammar(grammar);
 
-      expect(result.code).toContain('charClass(');
+      expect(result.code).toContain("charClass(");
       expect(result.exports).toEqual(["letter"]);
     });
 
     test("should generate sequence parser", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("greeting", createSequence([
-          createStringLiteral("hello"),
-          createStringLiteral(" "),
-          createStringLiteral("world"),
-        ])),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "greeting",
+            createSequence([
+              createStringLiteral("hello"),
+              createStringLiteral(" "),
+              createStringLiteral("world"),
+            ]),
+          ),
+        ],
+      );
 
       const generator = new TPEGCodeGenerator();
       const result = generator.generateGrammar(grammar);
 
-      expect(result.code).toContain('sequence(literal("hello"), literal(" "), literal("world"))');
+      expect(result.code).toContain(
+        'sequence(literal("hello"), literal(" "), literal("world"))',
+      );
     });
 
     test("should generate choice parser", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("bool", createChoice([
-          createStringLiteral("true"),
-          createStringLiteral("false"),
-        ])),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "bool",
+            createChoice([
+              createStringLiteral("true"),
+              createStringLiteral("false"),
+            ]),
+          ),
+        ],
+      );
 
       const generator = new TPEGCodeGenerator();
       const result = generator.generateGrammar(grammar);
 
-      expect(result.code).toContain('choice(literal("true"), literal("false"))');
+      expect(result.code).toContain(
+        'choice(literal("true"), literal("false"))',
+      );
     });
 
     test("should generate repetition parsers", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("letters", createStar(createCharacterClass([
-          createCharRange("a", "z"),
-        ], false))),
-        createRuleDefinition("digits", createPlus(createCharacterClass([
-          createCharRange("0", "9"),
-        ], false))),
-        createRuleDefinition("optionalSpace", createOptional(createStringLiteral(" "))),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "letters",
+            createStar(
+              createCharacterClass([createCharRange("a", "z")], false),
+            ),
+          ),
+          createRuleDefinition(
+            "digits",
+            createPlus(
+              createCharacterClass([createCharRange("0", "9")], false),
+            ),
+          ),
+          createRuleDefinition(
+            "optionalSpace",
+            createOptional(createStringLiteral(" ")),
+          ),
+        ],
+      );
 
       const generator = new TPEGCodeGenerator();
       const result = generator.generateGrammar(grammar);
 
-      expect(result.code).toContain('zeroOrMore(charClass({ from: "a", to: "z" }))');
-      expect(result.code).toContain('oneOrMore(charClass({ from: "0", to: "9" }))');
+      expect(result.code).toContain(
+        'zeroOrMore(charClass({ from: "a", to: "z" }))',
+      );
+      expect(result.code).toContain(
+        'oneOrMore(charClass({ from: "0", to: "9" }))',
+      );
       expect(result.code).toContain('optional(literal(" "))');
     });
 
     test("should generate lookahead parsers", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("positiveCheck", createPositiveLookahead(createStringLiteral("test"))),
-        createRuleDefinition("negativeCheck", createNegativeLookahead(createStringLiteral("test"))),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "positiveCheck",
+            createPositiveLookahead(createStringLiteral("test")),
+          ),
+          createRuleDefinition(
+            "negativeCheck",
+            createNegativeLookahead(createStringLiteral("test")),
+          ),
+        ],
+      );
 
       const generator = new TPEGCodeGenerator();
       const result = generator.generateGrammar(grammar);
@@ -114,12 +173,16 @@ describe("TPEG Code Generation", () => {
     });
 
     test("should handle labeled expressions", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("namedValue", createLabeledExpression(
-          "value",
-          createStringLiteral("test")
-        )),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "namedValue",
+            createLabeledExpression("value", createStringLiteral("test")),
+          ),
+        ],
+      );
 
       const generator = new TPEGCodeGenerator();
       const result = generator.generateGrammar(grammar);
@@ -128,15 +191,25 @@ describe("TPEG Code Generation", () => {
     });
 
     test("should handle rule references", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("number", createPlus(createCharacterClass([
-          createCharRange("0", "9"),
-        ], false))),
-        createRuleDefinition("expression", createChoice([
-          createIdentifier("number"),
-          createStringLiteral("null"),
-        ])),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "number",
+            createPlus(
+              createCharacterClass([createCharRange("0", "9")], false),
+            ),
+          ),
+          createRuleDefinition(
+            "expression",
+            createChoice([
+              createIdentifier("number"),
+              createStringLiteral("null"),
+            ]),
+          ),
+        ],
+      );
 
       const generator = new TPEGCodeGenerator();
       const result = generator.generateGrammar(grammar);
@@ -146,23 +219,42 @@ describe("TPEG Code Generation", () => {
     });
 
     test("should handle complex nested expressions", () => {
-      const grammar = createGrammarDefinition("Calculator", [], [
-        createRuleDefinition("factor", createChoice([
-          createPlus(createCharacterClass([createCharRange("0", "9")], false)),
-          createGroup(createSequence([
-            createStringLiteral("("),
-            createIdentifier("expression"),
-            createStringLiteral(")"),
-          ])),
-        ])),
-        createRuleDefinition("expression", createSequence([
-          createIdentifier("factor"),
-          createStar(createSequence([
-            createChoice([createStringLiteral("+"), createStringLiteral("-")]),
-            createIdentifier("factor"),
-          ])),
-        ])),
-      ]);
+      const grammar = createGrammarDefinition(
+        "Calculator",
+        [],
+        [
+          createRuleDefinition(
+            "factor",
+            createChoice([
+              createPlus(
+                createCharacterClass([createCharRange("0", "9")], false),
+              ),
+              createGroup(
+                createSequence([
+                  createStringLiteral("("),
+                  createIdentifier("expression"),
+                  createStringLiteral(")"),
+                ]),
+              ),
+            ]),
+          ),
+          createRuleDefinition(
+            "expression",
+            createSequence([
+              createIdentifier("factor"),
+              createStar(
+                createSequence([
+                  createChoice([
+                    createStringLiteral("+"),
+                    createStringLiteral("-"),
+                  ]),
+                  createIdentifier("factor"),
+                ]),
+              ),
+            ]),
+          ),
+        ],
+      );
 
       const generator = new TPEGCodeGenerator();
       const result = generator.generateGrammar(grammar);
@@ -176,82 +268,101 @@ describe("TPEG Code Generation", () => {
     });
 
     test("should include imports when enabled", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("test", createStringLiteral("test")),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition("test", createStringLiteral("test"))],
+      );
 
-      const generator = new TPEGCodeGenerator({ 
+      const generator = new TPEGCodeGenerator({
         language: "typescript",
-        includeImports: true 
+        includeImports: true,
       });
       const result = generator.generateGrammar(grammar);
 
       expect(result.code).toContain('import type { Parser } from "tpeg-core"');
-      expect(result.code).toContain('import { literal,');
+      expect(result.code).toContain("import { literal,");
     });
 
     test("should exclude imports when disabled", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("test", createStringLiteral("test")),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition("test", createStringLiteral("test"))],
+      );
 
-      const generator = new TPEGCodeGenerator({ 
+      const generator = new TPEGCodeGenerator({
         language: "typescript",
-        includeImports: false 
+        includeImports: false,
       });
       const result = generator.generateGrammar(grammar);
 
-      expect(result.code).not.toContain('import');
+      expect(result.code).not.toContain("import");
     });
 
     test("should use name prefix when provided", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("test", createStringLiteral("test")),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition("test", createStringLiteral("test"))],
+      );
 
-      const generator = new TPEGCodeGenerator({ 
+      const generator = new TPEGCodeGenerator({
         language: "typescript",
-        namePrefix: "my_" 
+        namePrefix: "my_",
       });
       const result = generator.generateGrammar(grammar);
 
-      expect(result.code).toContain('export const my_test:');
+      expect(result.code).toContain("export const my_test:");
     });
   });
 
   describe("generateTypeScriptParser", () => {
     test("should work as convenience function", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("hello", createStringLiteral("hello")),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition("hello", createStringLiteral("hello"))],
+      );
 
       const result = generateTypeScriptParser(grammar);
 
-      expect(result.code).toContain('export const hello: Parser<any> = literal("hello");');
+      expect(result.code).toContain(
+        'export const hello: Parser<any> = literal("hello");',
+      );
       expect(result.imports.length).toBeGreaterThan(0);
       expect(result.exports).toEqual(["hello"]);
     });
 
     test("should accept options", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("test", createStringLiteral("test")),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition("test", createStringLiteral("test"))],
+      );
 
       const result = generateTypeScriptParser(grammar, {
         namePrefix: "prefix_",
         includeTypes: false,
       });
 
-      expect(result.code).toContain('export const prefix_test =');
-      expect(result.code).not.toContain('Parser<any>');
+      expect(result.code).toContain("export const prefix_test =");
+      expect(result.code).not.toContain("Parser<any>");
     });
   });
 
   describe("escape handling", () => {
     test("should properly escape string literals", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("escaped", createStringLiteral('quotes"and\\backslashes')),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "escaped",
+            createStringLiteral('quotes"and\\backslashes'),
+          ),
+        ],
+      );
 
       const generator = new TPEGCodeGenerator();
       const result = generator.generateGrammar(grammar);

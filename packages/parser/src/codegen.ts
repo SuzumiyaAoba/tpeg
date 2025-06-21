@@ -1,28 +1,28 @@
 /**
  * TPEG Code Generation System
- * 
+ *
  * Generates TypeScript parsers from TPEG grammar AST nodes.
  * This is a basic implementation supporting core TPEG features.
  */
 
 import type {
-  Expression,
-  StringLiteral,
-  CharacterClass,
-  Identifier,
   AnyChar,
-  Sequence,
+  CharacterClass,
   Choice,
-  Group,
-  Star,
-  Plus,
-  Optional,
-  Quantified,
-  PositiveLookahead,
-  NegativeLookahead,
-  LabeledExpression,
-  RuleDefinition,
+  Expression,
   GrammarDefinition,
+  Group,
+  Identifier,
+  LabeledExpression,
+  NegativeLookahead,
+  Optional,
+  Plus,
+  PositiveLookahead,
+  Quantified,
+  RuleDefinition,
+  Sequence,
+  Star,
+  StringLiteral,
 } from "./types";
 
 /**
@@ -77,8 +77,10 @@ export class TPEGCodeGenerator {
 
     // Add standard imports
     if (this.options.includeImports) {
-      imports.push("import type { Parser } from \"tpeg-core\";");
-      imports.push("import { literal, charClass, choice, sequence, map, zeroOrMore, oneOrMore, optional, andPredicate, notPredicate } from \"tpeg-core\";");
+      imports.push('import type { Parser } from "tpeg-core";');
+      imports.push(
+        'import { literal, charClass, choice, sequence, map, zeroOrMore, oneOrMore, optional, andPredicate, notPredicate } from "tpeg-core";',
+      );
     }
 
     // Collect all rule names first
@@ -95,9 +97,9 @@ export class TPEGCodeGenerator {
 
     // Combine all parts
     let code = "";
-    
+
     if (this.options.includeImports && imports.length > 0) {
-      code += imports.join("\n") + "\n\n";
+      code += `${imports.join("\n")}\n\n`;
     }
 
     code += parts.join("\n\n");
@@ -115,12 +117,11 @@ export class TPEGCodeGenerator {
   private generateRule(rule: RuleDefinition): string {
     const parserCode = this.generateExpression(rule.pattern);
     const name = this.options.namePrefix + rule.name;
-    
+
     if (this.options.includeTypes) {
       return `export const ${name}: Parser<any> = ${parserCode};`;
-    } else {
-      return `export const ${name} = ${parserCode};`;
     }
+    return `export const ${name} = ${parserCode};`;
   }
 
   /**
@@ -157,7 +158,7 @@ export class TPEGCodeGenerator {
       case "LabeledExpression":
         return this.generateLabeledExpression(expr as LabeledExpression);
       default:
-        throw new Error(`Unsupported expression type: ${(expr as any).type}`);
+        throw new Error(`Unsupported expression type: ${(expr as { type: string }).type}`);
     }
   }
 
@@ -167,18 +168,19 @@ export class TPEGCodeGenerator {
   }
 
   private generateCharacterClass(expr: CharacterClass): string {
-    const ranges = expr.ranges.map(range => {
-      if (range.end) {
-        // Range like a-z
-        return `{ from: "${range.start}", to: "${range.end}" }`;
-      } else {
+    const ranges = expr.ranges
+      .map((range) => {
+        if (range.end) {
+          // Range like a-z
+          return `{ from: "${range.start}", to: "${range.end}" }`;
+        }
         // Single character
         return `"${range.start}"`;
-      }
-    }).join(", ");
-    
+      })
+      .join(", ");
+
     const negated = expr.negated ? ", true" : "";
-    
+
     return `charClass(${ranges}${negated})`;
   }
 
@@ -186,10 +188,9 @@ export class TPEGCodeGenerator {
     // For rule references, we need to handle potential recursion
     if (this.ruleNames.has(expr.name)) {
       return `${this.options.namePrefix}${expr.name}`;
-    } else {
-      // External reference - might need special handling
-      return `${expr.name}`;
     }
+    // External reference - might need special handling
+    return `${expr.name}`;
   }
 
   private generateAnyChar(_expr: AnyChar): string {
@@ -197,12 +198,16 @@ export class TPEGCodeGenerator {
   }
 
   private generateSequence(expr: Sequence): string {
-    const elements = expr.elements.map(el => this.generateExpression(el)).join(", ");
+    const elements = expr.elements
+      .map((el) => this.generateExpression(el))
+      .join(", ");
     return `sequence(${elements})`;
   }
 
   private generateChoice(expr: Choice): string {
-    const alternatives = expr.alternatives.map(alt => this.generateExpression(alt)).join(", ");
+    const alternatives = expr.alternatives
+      .map((alt) => this.generateExpression(alt))
+      .join(", ");
     return `choice(${alternatives})`;
   }
 
@@ -232,26 +237,26 @@ export class TPEGCodeGenerator {
       // {n,} - at least n
       if (expr.min === 0) {
         return `zeroOrMore(${inner})`;
-      } else if (expr.min === 1) {
-        return `oneOrMore(${inner})`;
-      } else {
-        // TODO: Implement exact quantification
-        return `/* TODO: implement {${expr.min},} */ oneOrMore(${inner})`;
       }
-    } else if (expr.min === expr.max) {
+      if (expr.min === 1) {
+        return `oneOrMore(${inner})`;
+      }
+      // TODO: Implement exact quantification
+      return `/* TODO: implement {${expr.min},} */ oneOrMore(${inner})`;
+    }
+    if (expr.min === expr.max) {
       // {n} - exactly n
       if (expr.min === 0) {
-        return `/* never matches */ choice()`;
-      } else if (expr.min === 1) {
-        return inner;
-      } else {
-        // TODO: Implement exact repetition
-        return `/* TODO: implement {${expr.min}} */ ${inner}`;
+        return "/* never matches */ choice()";
       }
-    } else {
-      // {n,m} - between n and m
-      return `/* TODO: implement {${expr.min},${expr.max}} */ optional(${inner})`;
+      if (expr.min === 1) {
+        return inner;
+      }
+      // TODO: Implement exact repetition
+      return `/* TODO: implement {${expr.min}} */ ${inner}`;
     }
+    // {n,m} - between n and m
+    return `/* TODO: implement {${expr.min},${expr.max}} */ optional(${inner})`;
   }
 
   private generatePositiveLookahead(expr: PositiveLookahead): string {
@@ -277,11 +282,11 @@ export class TPEGCodeGenerator {
  */
 export function generateTypeScriptParser(
   grammar: GrammarDefinition,
-  options?: Partial<CodeGenOptions>
+  options?: Partial<CodeGenOptions>,
 ): GeneratedCode {
-  const generator = new TPEGCodeGenerator({ 
+  const generator = new TPEGCodeGenerator({
     language: "typescript",
-    ...options 
+    ...options,
   });
   return generator.generateGrammar(grammar);
 }

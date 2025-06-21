@@ -30,40 +30,39 @@ import {
   createGrammarDefinition,
   createRuleDefinition,
 } from "./types";
-import {
-  optionalWhitespace,
-  whitespace,
-} from "./whitespace-utils";
-
+import { optionalWhitespace, whitespace } from "./whitespace-utils";
 
 /**
  * Bounded expression parser for grammar rules
  * This parser stops at newlines or the next rule definition to prevent consuming the next rule
  */
-const grammarRuleExpression: Parser<any> = (input: string, pos) => {
+const grammarRuleExpression: Parser<Expression> = (input: string, pos) => {
   // Find the end of the current rule expression
   // Look for newlines or the next rule definition pattern (identifier followed by =)
   let endPos = pos.offset;
   let foundEnd = false;
-  
+
   while (endPos < input.length && !foundEnd) {
     const char = input[endPos];
-    
+
     // Stop at newlines
-    if (char === '\n' || char === '\r') {
+    if (char === "\n" || char === "\r") {
       foundEnd = true;
       break;
     }
-    
+
     // Look ahead to see if we're at the start of a new rule definition
     // A rule definition starts with: whitespace* identifier whitespace* "="
-    if (char === ' ' || char === '\t') {
+    if (char === " " || char === "\t") {
       // Skip whitespace and look for identifier pattern
       let checkPos = endPos;
-      while (checkPos < input.length && (input[checkPos] === ' ' || input[checkPos] === '\t')) {
+      while (
+        checkPos < input.length &&
+        (input[checkPos] === " " || input[checkPos] === "\t")
+      ) {
         checkPos++;
       }
-      
+
       // Check if we have an identifier followed by =
       if (checkPos < input.length) {
         // Look for identifier pattern: [a-zA-Z_][a-zA-Z0-9_]*
@@ -78,14 +77,17 @@ const grammarRuleExpression: Parser<any> = (input: string, pos) => {
               break;
             }
           }
-          
+
           // Skip whitespace after identifier
-          while (checkPos < input.length && (input[checkPos] === ' ' || input[checkPos] === '\t')) {
+          while (
+            checkPos < input.length &&
+            (input[checkPos] === " " || input[checkPos] === "\t")
+          ) {
             checkPos++;
           }
-          
+
           // Check if we have an = sign
-          if (checkPos < input.length && input[checkPos] === '=') {
+          if (checkPos < input.length && input[checkPos] === "=") {
             // We found the start of the next rule, stop here
             foundEnd = true;
             break;
@@ -93,16 +95,20 @@ const grammarRuleExpression: Parser<any> = (input: string, pos) => {
         }
       }
     }
-    
+
     endPos++;
   }
-  
+
   // Create a substring that only includes the current rule expression
   const ruleContent = input.slice(pos.offset, endPos);
-  
+
   // Parse the expression within this bounded content
-  const result = expression()(ruleContent, { offset: 0, line: pos.line, column: pos.column });
-  
+  const result = expression()(ruleContent, {
+    offset: 0,
+    line: pos.line,
+    column: pos.column,
+  });
+
   if (result.success) {
     // Adjust the position back to the original input context
     return {
@@ -112,22 +118,21 @@ const grammarRuleExpression: Parser<any> = (input: string, pos) => {
       next: {
         offset: pos.offset + result.next.offset,
         line: pos.line,
-        column: pos.column + result.next.offset
-      }
-    };
-  } else {
-    return {
-      success: false,
-      error: {
-        message: result.error.message,
-        pos: {
-          offset: pos.offset + result.error.pos.offset,
-          line: pos.line,
-          column: pos.column + result.error.pos.offset
-        }
-      }
+        column: pos.column + result.next.offset,
+      },
     };
   }
+  return {
+    success: false,
+    error: {
+      message: result.error.message,
+      pos: {
+        offset: pos.offset + result.error.pos.offset,
+        line: pos.line,
+        column: pos.column + result.error.pos.offset,
+      },
+    },
+  };
 };
 
 /**
@@ -314,13 +319,13 @@ const separateGrammarItems = (
  */
 const leadingContentItem: Parser<void> = map(
   choice(
-    singleLineComment,        // Consumes // + content + implicit newline handling
-    documentationComment,     // Consumes /// + content + implicit newline handling
-    literal("\n"),           // Consumes newline
-    literal("\r\n"),         // Consumes CRLF
-    literal("\r"),           // Consumes CR
-    literal(" "),            // Consumes space
-    literal("\t"),           // Consumes tab
+    singleLineComment, // Consumes // + content + implicit newline handling
+    documentationComment, // Consumes /// + content + implicit newline handling
+    literal("\n"), // Consumes newline
+    literal("\r\n"), // Consumes CRLF
+    literal("\r"), // Consumes CR
+    literal(" "), // Consumes space
+    literal("\t"), // Consumes tab
   ),
   () => undefined,
 );

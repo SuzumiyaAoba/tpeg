@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * TPEG Grammar Definition Demo (Phase 1.6)
- * 
+ *
  * This demo showcases the grammar definition features implemented in Phase 1.6,
  * including annotations, rule definitions, and complete grammar blocks.
  */
@@ -19,17 +19,13 @@ import {
 console.log("📚 TPEG Grammar Definition Demo (Phase 1.6)\n");
 
 // Helper function to demonstrate parsing
-const demoParser = <T>(
-  name: string,
-  parser: Parser<T>,
-  inputs: string[],
-) => {
+const demoParser = <T>(name: string, parser: Parser<T>, inputs: string[]) => {
   console.log(`=== ${name} ===`);
-  
+
   for (const input of inputs) {
     const pos = { offset: 0, line: 1, column: 1 };
     const result = parser(input, pos);
-    
+
     if (result.success) {
       console.log(`✅ Input: ${input}`);
       console.log(`   Result: ${JSON.stringify(result.val, null, 2)}`);
@@ -74,8 +70,8 @@ demoParser("Grammar Annotations", grammarAnnotation, [
 
 // Demo 4: Rule Definitions
 demoParser("Rule Definitions", ruleDefinition, [
-  'number = [0-9]+',
-  'identifier = [a-zA-Z_][a-zA-Z0-9_]*',
+  "number = [0-9]+",
+  "identifier = [a-zA-Z_][a-zA-Z0-9_]*",
   'expression = term ("+" term)*',
   '  indented_rule = "value"',
   'string_literal = "\\"" [^\\"]* "\\""',
@@ -94,7 +90,7 @@ const grammarExamples = [
     number = [0-9]+
     expression = number ("+" number)*
   }`,
-  
+
   // More complex grammar
   `grammar JsonLite {
     @version: "2.0"
@@ -107,7 +103,7 @@ const grammarExamples = [
     boolean = "true" / "false"
     null = "null"
   }`,
-  
+
   // Grammar with various annotation types
   `grammar Advanced {
     @version: "3.1.4"
@@ -135,15 +131,15 @@ for (const grammar of grammarExamples) {
   console.log("📖 Grammar Input:");
   console.log(grammar);
   console.log();
-  
+
   const pos = { offset: 0, line: 1, column: 1 };
   const result = grammarDefinition(grammar, pos);
-  
+
   if (result.success) {
     console.log(`✅ Successfully parsed grammar: ${result.val.name}`);
     console.log(`   Annotations: ${result.val.annotations.length}`);
     console.log(`   Rules: ${result.val.rules.length}`);
-    
+
     // Show annotations
     if (result.val.annotations.length > 0) {
       console.log("   📝 Annotations:");
@@ -151,7 +147,7 @@ for (const grammar of grammarExamples) {
         console.log(`      @${annotation.key}: "${annotation.value}"`);
       }
     }
-    
+
     // Show rules
     if (result.val.rules.length > 0) {
       console.log("   📋 Rules:");
@@ -163,10 +159,12 @@ for (const grammar of grammarExamples) {
     console.log("❌ Failed to parse grammar");
     console.log(`   Error: ${result.error?.message || "Parse failed"}`);
     if (result.error?.pos) {
-      console.log(`   Position: line ${result.error.pos.line}, column ${result.error.pos.column}`);
+      console.log(
+        `   Position: line ${result.error.pos.line}, column ${result.error.pos.column}`,
+      );
     }
   }
-  
+
   console.log();
   console.log("---");
   console.log();
@@ -176,6 +174,6 @@ console.log("🎉 Grammar definition demo completed!");
 console.log("💡 All Phase 1.6 features demonstrated:");
 console.log("   ✅ Grammar annotations (@version, @description, etc.)");
 console.log("   ✅ Rule definitions with complex expressions");
-console.log("   ✅ Complete grammar blocks with metadata"); 
+console.log("   ✅ Complete grammar blocks with metadata");
 console.log("   ✅ Comment parsing (// and ///)");
 console.log("   ✅ Whitespace handling and formatting");

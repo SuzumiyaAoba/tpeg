@@ -1,6 +1,6 @@
 /**
  * TPEG Parser Sample - Main Export
- * 
+ *
  * This package demonstrates all implemented TPEG parser capabilities.
  * Use the demo scripts to see the parser in action.
  */

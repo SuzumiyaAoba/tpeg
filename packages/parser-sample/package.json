@@ -11,11 +11,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "examples",
-    "README.md"
-  ],
+  "files": ["dist", "examples", "README.md"],
   "scripts": {
     "build": "tsc",
     "demo": "bun run src/demo.ts",
@@ -35,15 +31,7 @@
     "@types/bun": "latest",
     "typescript": "^5.0.0"
   },
-  "keywords": [
-    "parser",
-    "peg",
-    "tpeg",
-    "parsing",
-    "grammar",
-    "demo",
-    "sample"
-  ],
+  "keywords": ["parser", "peg", "tpeg", "parsing", "grammar", "demo", "sample"],
   "author": "",
   "license": "MIT"
 }

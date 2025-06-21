@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * TPEG Parser Complete Demo
- * 
+ *
  * This is the main demo that showcases all implemented TPEG parser features.
  * It combines basic parsing capabilities with advanced grammar definition features.
  */
@@ -29,8 +29,16 @@ console.log("========================");
 
 const syntaxExamples = [
   { name: "String Literal", input: '"hello world"', parser: stringLiteral },
-  { name: "Expression Sequence", input: '"start" " " [a-z]+ "end"', parser: tpegExpression },
-  { name: "Expression Choice", input: '"yes" / "no" / "maybe"', parser: tpegExpression },
+  {
+    name: "Expression Sequence",
+    input: '"start" " " [a-z]+ "end"',
+    parser: tpegExpression,
+  },
+  {
+    name: "Expression Choice",
+    input: '"yes" / "no" / "maybe"',
+    parser: tpegExpression,
+  },
   { name: "Basic Syntax", input: "myIdentifier", parser: basicSyntax },
 ];
 
@@ -39,9 +47,11 @@ for (const example of syntaxExamples) {
   const result = example.parser(example.input, pos);
   const status = result.success ? "✅" : "❌";
   console.log(`${status} ${example.name}: ${example.input}`);
-  
+
   if (result.success) {
-    console.log(`   → ${JSON.stringify(result.val.type || result.val, null, 0)}`);
+    console.log(
+      `   → ${JSON.stringify(result.val.type || result.val, null, 0)}`,
+    );
   } else {
     console.log(`   → Error: ${result.error?.message || "Parse failed"}`);
   }
@@ -79,19 +89,19 @@ const grammarResult = grammarDefinition(calculatorGrammar, pos);
 
 if (grammarResult.success) {
   const grammar = grammarResult.val;
-  
+
   console.log("✅ Successfully parsed grammar!");
   console.log(`📝 Grammar Name: ${grammar.name}`);
   console.log(`📊 Annotations: ${grammar.annotations.length}`);
   console.log(`📋 Rules: ${grammar.rules.length}`);
   console.log();
-  
+
   console.log("📝 Annotations:");
   for (const annotation of grammar.annotations) {
     console.log(`   @${annotation.key}: "${annotation.value}"`);
   }
   console.log();
-  
+
   console.log("📋 Rules:");
   for (const rule of grammar.rules) {
     console.log(`   ${rule.name} = [${rule.pattern.type}]`);
@@ -133,7 +143,9 @@ console.log("📚 Usage Instructions:");
 console.log("   • Run 'bun run demo:basic' for basic parsing features");
 console.log("   • Run 'bun run demo:grammar' for grammar definition features");
 console.log("   • Run 'bun run demo' for this complete overview");
-console.log("   • See packages/samples/ for JSON, CSV, and arithmetic examples");
+console.log(
+  "   • See packages/samples/ for JSON, CSV, and arithmetic examples",
+);
 console.log();
 
 console.log("🎉 TPEG Parser Demo Complete!");
