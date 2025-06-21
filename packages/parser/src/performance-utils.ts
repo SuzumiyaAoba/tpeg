@@ -72,8 +72,9 @@ const charClassCache = new Map<string, boolean[]>();
 export function createCharClassLookup(ranges: Array<{ start: string; end?: string | undefined }>): boolean[] {
   const key = JSON.stringify(ranges);
   
-  if (charClassCache.has(key)) {
-    return charClassCache.get(key)!;
+  const cached = charClassCache.get(key);
+  if (cached !== undefined) {
+    return cached;
   }
   
   const lookup = new Array(256).fill(false);
@@ -147,44 +148,44 @@ export class PositionTracker {
       this.lastColumn = column;
       
       return { line, column };
-    } else {
-      // Incremental calculation for small inputs
-      if (offset >= this.lastOffset) {
-        // Forward scan
-        let line = this.lastLine;
-        let column = this.lastColumn;
-        
-        for (let i = this.lastOffset; i < offset; i++) {
-          if (this.input[i] === '\n') {
-            line++;
-            column = 1;
-          } else {
-            column++;
-          }
+    }
+    
+    // Incremental calculation for small inputs
+    if (offset >= this.lastOffset) {
+      // Forward scan
+      let line = this.lastLine;
+      let column = this.lastColumn;
+      
+      for (let i = this.lastOffset; i < offset; i++) {
+        if (this.input[i] === '\n') {
+          line++;
+          column = 1;
+        } else {
+          column++;
         }
-        
-        this.lastOffset = offset;
-        this.lastLine = line;
-        this.lastColumn = column;
-        
-        return { line, column };
+      }
+      
+      this.lastOffset = offset;
+      this.lastLine = line;
+      this.lastColumn = column;
+      
+      return { line, column };
+    }
+    
+    // Backward scan (less common, fallback to simple calculation)
+    let line = 1;
+    let column = 1;
+    
+    for (let i = 0; i < offset; i++) {
+      if (this.input[i] === '\n') {
+        line++;
+        column = 1;
       } else {
-        // Backward scan (less common, fallback to simple calculation)
-        let line = 1;
-        let column = 1;
-        
-        for (let i = 0; i < offset; i++) {
-          if (this.input[i] === '\n') {
-            line++;
-            column = 1;
-          } else {
-            column++;
-          }
-        }
-        
-        return { line, column };
+        column++;
       }
     }
+    
+    return { line, column };
   }
 }
 
@@ -297,7 +298,10 @@ export function analyzeGrammarPerformance(grammar: GrammarDefinition): {
   const ruleDependencies = new Map<string, Set<string>>();
   for (const rule of grammar.rules) {
     ruleDependencies.set(rule.name, new Set());
-    collectRuleDependencies(rule.pattern, ruleDependencies.get(rule.name)!);
+    const dependencies = ruleDependencies.get(rule.name);
+    if (dependencies) {
+      collectRuleDependencies(rule.pattern, dependencies);
+    }
   }
   
   // Detect cycles (potential left recursion)

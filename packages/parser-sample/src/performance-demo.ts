@@ -65,7 +65,7 @@ if (analysis.optimizationSuggestions.length > 0) {
 console.log(`\n${"=".repeat(60)}\n`);
 
 // Performance comparison function
-function benchmark(name: string, operation: () => void, iterations: number = 1000): {
+function benchmark(name: string, operation: () => void, iterations = 1000): {
   name: string;
   iterations: number;
   totalTime: number;
@@ -180,7 +180,7 @@ console.log(`\n${"=".repeat(60)}\n`);
 // Memory usage comparison
 console.log("💾 Memory Usage Analysis...");
 
-function measureMemory(operation: () => void, iterations: number = 100): number {
+function measureMemory(operation: () => void, iterations = 100): number {
   if (global.gc) global.gc();
   
   const before = process.memoryUsage().heapUsed;

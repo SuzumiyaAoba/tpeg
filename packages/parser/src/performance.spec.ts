@@ -38,7 +38,7 @@ interface BenchmarkResult {
 function benchmark(
   name: string,
   operation: () => void,
-  iterations: number = 10000
+  iterations = 10000
 ): BenchmarkResult {
   // Warm-up phase
   for (let i = 0; i < Math.min(100, iterations / 10); i++) {
@@ -281,7 +281,7 @@ describe("TPEG Parser Performance Benchmarks", () => {
       const firstResult = results[0];
       const lastResult = results[results.length - 1];
       const scalingFactor = firstResult.opsPerSec / lastResult.opsPerSec;
-      const expectedMaxScaling = Math.pow(sizes[sizes.length - 1] / sizes[0], 1.5); // Allow for slightly worse than linear
+      const expectedMaxScaling = (sizes[sizes.length - 1] / sizes[0]) ** 1.5; // Allow for slightly worse than linear
       
       console.log(`Scaling factor: ${scalingFactor.toFixed(2)}x (should be < ${expectedMaxScaling.toFixed(2)}x)`);
       expect(scalingFactor).toBeLessThan(expectedMaxScaling);
@@ -289,7 +289,7 @@ describe("TPEG Parser Performance Benchmarks", () => {
 
     it("should handle deeply nested expressions efficiently", () => {
       // Create deeply nested expression: ((((a))))
-      let nestedExpr: any = createStringLiteral("a");
+      let nestedExpr: Expression = createStringLiteral("a");
       const depth = 50;
       
       for (let i = 0; i < depth; i++) {
@@ -356,7 +356,7 @@ describe("TPEG Parser Performance Benchmarks", () => {
         ws = [ \\t]*
       }`;
       
-      let parseResult: any;
+      let parseResult: ReturnType<typeof grammarDefinition>;
       const parseTime = benchmark(
         "Calculator Parse",
         () => {

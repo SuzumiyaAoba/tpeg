@@ -80,8 +80,9 @@ class CodeTemplateCache {
   private templates = new Map<string, string>();
   
   get(key: string, generator: () => string): string {
-    if (this.templates.has(key)) {
-      return this.templates.get(key)!;
+    const cached = this.templates.get(key);
+    if (cached !== undefined) {
+      return cached;
     }
     
     const code = generator();
