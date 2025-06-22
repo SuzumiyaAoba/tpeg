@@ -46,7 +46,7 @@ export const takeUntil =
       }
 
       // Get the character at current position
-      const [char, len] = getCharAndLength(input, currentPos.offset);
+      const [char, _len] = getCharAndLength(input, currentPos.offset);
       if (!char) break;
 
       // Consume the character
@@ -396,16 +396,19 @@ export const withDetailedError = <T>(
 
       const before = input.substring(start, pos.offset);
       const after = input.substring(pos.offset, end);
+      // Mark as used for future context features
+      void before;
+      void after;
 
       // First character at error position
-      const found = pos.offset < input.length ? input[pos.offset] : "EOF";
+      const found = pos.offset < input.length ? (input[pos.offset] ?? "EOF") : "EOF";
 
       enhancedError.found = found;
-      enhancedError.message =
-        enhancedError.message ||
-        `${parserName}: Expected ${
+      if (!enhancedError.message) {
+        enhancedError.message = `${parserName}: Expected ${
           enhancedError.expected || "valid input"
         } but found '${found}'`;
+      }
 
       return {
         success: false,
@@ -698,7 +701,7 @@ export const regex = (
       let newPos = { ...pos };
       for (let i = 0; i < matchedText.length; i++) {
         const char = matchedText[i];
-        newPos = nextPos(char, newPos);
+        newPos = nextPos(char ?? "", newPos);
       }
 
       return {
@@ -749,7 +752,7 @@ export const regexGroups = (
       let newPos = { ...pos };
       for (let i = 0; i < matchedText.length; i++) {
         const char = matchedText[i];
-        newPos = nextPos(char, newPos);
+        newPos = nextPos(char ?? "", newPos);
       }
 
       // Return all groups (match[0] is the full match, match[1...n] are capture groups)
@@ -817,7 +820,7 @@ export const identifier: Parser<string> = (() => {
  *
  * @returns Parser<never> A parser that succeeds at the start of a line
  */
-export const startOfLine: Parser<never> = (input: string, pos: Pos) => {
+export const startOfLine: Parser<never> = (_input: string, pos: Pos) => {
   if (pos.column === 1) {
     return {
       success: true,

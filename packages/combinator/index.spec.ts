@@ -1,22 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import type {
-  NonEmptyArray,
-  ParseFailure,
-  ParseResult,
-  ParseSuccess,
-  Parser,
-  Pos,
-} from "tpeg-core";
+import type { Parser } from "tpeg-core";
 import {
-  any,
-  anyChar,
   charClass,
   choice,
-  isFailure,
   isSuccess,
   literal,
   map,
-  not,
   oneOrMore,
   parse,
   seq,
@@ -25,27 +14,19 @@ import {
 import {
   EOF,
   alphaNum,
-  anyQuotedString,
   between,
-  commaSeparated,
-  commaSeparated1,
-  debug,
   digit,
   endOfLine,
   identifier,
   int,
   labeled,
-  labeledWithContext,
   letter,
   memoize,
   number,
   quotedString,
   recursive,
-  regex,
-  regexGroups,
   sepBy,
   sepBy1,
-  singleQuotedString,
   startOfLine,
   takeUntil,
   token,
@@ -427,19 +408,6 @@ describe("tpeg-combinator additional tests", () => {
   });
 });
 
-// Create custom parser that returns empty string
-const emptyStringParser: Parser<string> = (
-  input: string,
-  pos: { offset: number; line: number; column: number },
-) => {
-  return {
-    success: true as const,
-    val: "",
-    current: pos,
-    next: pos,
-  };
-};
-
 // Additional tests from additional.spec.ts
 describe("Additional coverage tests", () => {
   describe("EOF", () => {
@@ -653,7 +621,7 @@ describe("safeguards against infinite loops", () => {
   it("should detect and prevent infinite loops in repetition parsers", () => {
     // Parser that could cause infinite loops
     // Parser that always succeeds without consuming input
-    const problematicParser: Parser<string> = (input, pos) => ({
+    const problematicParser: Parser<string> = (_input, pos) => ({
       success: true,
       val: "problematic",
       current: pos,
@@ -710,11 +678,6 @@ describe("safeguards against infinite loops", () => {
   });
 
   it("should handle nested structures", () => {
-    // Create a specific test case that produces exactly "(x)"
-    const xParser = literal("x");
-    const openParen = literal("(");
-    const closeParen = literal(")");
-
     // Simple parser that handles a very specific test case
     const bracketParser: Parser<string> = (input, pos) => {
       // Check for the exact input pattern
@@ -865,20 +828,20 @@ it("should test memoize function properly", () => {
 
   // Call twice at the same position
   const pos = { offset: 0, line: 1, column: 1 };
-  const firstCall = memoizedParser("abc", pos);
+  memoizedParser("abc", pos);
   expect(callCount).toBe(1);
 
-  const secondCall = memoizedParser("abc", pos);
+  memoizedParser("abc", pos);
   expect(callCount).toBe(1); // Should not increase as result should be memoized
 
   // Different position should increase the call count
-  const thirdCall = memoizedParser("abc", { offset: 1, line: 1, column: 2 });
+  memoizedParser("abc", { offset: 1, line: 1, column: 2 });
   expect(callCount).toBe(2);
 });
 
 describe("withPosition edge cases", () => {
   it("should handle failure cases in withPosition", () => {
-    const failingParser: Parser<string> = (input, pos) => ({
+    const failingParser: Parser<string> = (_input, pos) => ({
       success: false,
       error: { message: "Custom error", pos },
     });
@@ -897,7 +860,7 @@ describe("withPosition edge cases", () => {
   });
 
   it("should handle unusual position changes", () => {
-    const jumpingParser: Parser<string> = (input, pos) => ({
+    const jumpingParser: Parser<string> = (_input, pos) => ({
       success: true,
       val: "jumped",
       current: pos,
@@ -1187,7 +1150,7 @@ describe("Enhanced error reporting", () => {
     });
 
     it("should preserve existing error messages", () => {
-      const customErrorParser: Parser<string> = (input, pos) => ({
+      const customErrorParser: Parser<string> = (_input, pos) => ({
         success: false,
         error: { message: "Custom message", pos },
       });

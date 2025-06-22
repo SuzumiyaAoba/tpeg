@@ -21,6 +21,7 @@ import { GRAMMAR_KEYWORDS, GRAMMAR_SYMBOLS } from "./constants";
 import { identifier } from "./identifier";
 import { stringLiteral } from "./string-literal";
 import type {
+  Expression,
   GrammarAnnotation,
   GrammarDefinition,
   RuleDefinition,
@@ -30,10 +31,110 @@ import {
   createGrammarDefinition,
   createRuleDefinition,
 } from "./types";
-import {
-  optionalWhitespace,
-  whitespace,
-} from "./whitespace-utils";
+import { optionalWhitespace, whitespace } from "./whitespace-utils";
+
+/**
+ * Bounded expression parser for grammar rules
+ * This parser stops at newlines or the next rule definition to prevent consuming the next rule
+ */
+const grammarRuleExpression: Parser<Expression> = (input: string, pos) => {
+  // Find the end of the current rule expression
+  // Look for newlines or the next rule definition pattern (identifier followed by =)
+  let endPos = pos.offset;
+  let foundEnd = false;
+
+  while (endPos < input.length && !foundEnd) {
+    const char = input[endPos];
+
+    // Stop at newlines
+    if (char === "\n" || char === "\r") {
+      foundEnd = true;
+      break;
+    }
+
+    // Look ahead to see if we're at the start of a new rule definition
+    // A rule definition starts with: whitespace* identifier whitespace* "="
+    if (char === " " || char === "\t") {
+      // Skip whitespace and look for identifier pattern
+      let checkPos = endPos;
+      while (
+        checkPos < input.length &&
+        (input[checkPos] === " " || input[checkPos] === "\t")
+      ) {
+        checkPos++;
+      }
+
+      // Check if we have an identifier followed by =
+      if (checkPos < input.length) {
+        // Look for identifier pattern: [a-zA-Z_][a-zA-Z0-9_]*
+        const currentChar = input[checkPos];
+        if (currentChar && /[a-zA-Z_]/.test(currentChar)) {
+          checkPos++;
+          while (checkPos < input.length) {
+            const nextChar = input[checkPos];
+            if (nextChar && /[a-zA-Z0-9_]/.test(nextChar)) {
+              checkPos++;
+            } else {
+              break;
+            }
+          }
+
+          // Skip whitespace after identifier
+          while (
+            checkPos < input.length &&
+            (input[checkPos] === " " || input[checkPos] === "\t")
+          ) {
+            checkPos++;
+          }
+
+          // Check if we have an = sign
+          if (checkPos < input.length && input[checkPos] === "=") {
+            // We found the start of the next rule, stop here
+            foundEnd = true;
+            break;
+          }
+        }
+      }
+    }
+
+    endPos++;
+  }
+
+  // Create a substring that only includes the current rule expression
+  const ruleContent = input.slice(pos.offset, endPos);
+
+  // Parse the expression within this bounded content
+  const result = expression()(ruleContent, {
+    offset: 0,
+    line: pos.line,
+    column: pos.column,
+  });
+
+  if (result.success) {
+    // Adjust the position back to the original input context
+    return {
+      success: true,
+      val: result.val,
+      current: pos,
+      next: {
+        offset: pos.offset + result.next.offset,
+        line: pos.line,
+        column: pos.column + result.next.offset,
+      },
+    };
+  }
+  return {
+    success: false,
+    error: {
+      message: result.error.message,
+      pos: {
+        offset: pos.offset + result.error.pos.offset,
+        line: pos.line,
+        column: pos.column + result.error.pos.offset,
+      },
+    },
+  };
+};
 
 /**
  * Parse line-oriented whitespace including newlines for grammar blocks
@@ -125,6 +226,7 @@ export const grammarAnnotation: Parser<GrammarAnnotation> = map(
 /**
  * Parse rule definition like rule_name = pattern (with optional leading whitespace)
  * Returns a RuleDefinition AST node with the rule name and pattern
+ * Uses bounded expression parser to prevent consuming newlines
  */
 export const ruleDefinition: Parser<RuleDefinition> = map(
   sequence(
@@ -133,7 +235,7 @@ export const ruleDefinition: Parser<RuleDefinition> = map(
     optionalWhitespace,
     literal(GRAMMAR_SYMBOLS.RULE_ASSIGNMENT),
     optionalWhitespace,
-    expression(),
+    grammarRuleExpression,
   ),
   (results) => createRuleDefinition(results[1].name, results[5]),
 );
@@ -143,10 +245,11 @@ export const ruleDefinition: Parser<RuleDefinition> = map(
  */
 type GrammarItemType =
   | { type: "annotation"; value: GrammarAnnotation }
-  | { type: "rule"; value: RuleDefinition };
+  | { type: "rule"; value: RuleDefinition }
+  | { type: "comment"; value: string };
 
 /**
- * Parse grammar item (annotation or rule)
+ * Parse grammar item (annotation, rule, or comment)
  * Returns a tagged union for easier processing in the main grammar parser
  */
 const grammarItem: Parser<GrammarItemType> = choice(
@@ -160,6 +263,14 @@ const grammarItem: Parser<GrammarItemType> = choice(
   map(
     ruleDefinition,
     (rule): GrammarItemType => ({ type: "rule", value: rule }),
+  ),
+  map(
+    singleLineComment,
+    (comment): GrammarItemType => ({ type: "comment", value: comment }),
+  ),
+  map(
+    documentationComment,
+    (comment): GrammarItemType => ({ type: "comment", value: comment }),
   ),
 );
 
@@ -178,6 +289,7 @@ const grammarItems: Parser<GrammarItemType[]> = map(
 
 /**
  * Separate grammar items into annotations and rules
+ * Comments are ignored as they don't contribute to the AST
  * @param items Array of mixed grammar items
  * @returns Separated annotations and rules arrays
  */
@@ -196,17 +308,45 @@ const separateGrammarItems = (
     } else if (item.type === "rule") {
       rules.push(item.value);
     }
+    // Comments are ignored - they don't contribute to the grammar structure
   }
 
   return { annotations, rules };
 };
 
 /**
- * Parse complete grammar definition block
- * Format: grammar Name { @annotations... rule_definitions... }
+ * Parse one unit of leading content (comment or whitespace line)
+ * Each choice must consume at least one character to avoid infinite loops
+ */
+const leadingContentItem: Parser<void> = map(
+  choice(
+    singleLineComment, // Consumes // + content + implicit newline handling
+    documentationComment, // Consumes /// + content + implicit newline handling
+    literal("\n"), // Consumes newline
+    literal("\r\n"), // Consumes CRLF
+    literal("\r"), // Consumes CR
+    literal(" "), // Consumes space
+    literal("\t"), // Consumes tab
+  ),
+  () => undefined,
+);
+
+/**
+ * Parse leading comments and whitespace before grammar definition
+ * This handles comments and whitespace that appear before the grammar keyword
+ */
+const leadingContent: Parser<void> = map(
+  zeroOrMore(leadingContentItem),
+  () => undefined,
+);
+
+/**
+ * Parse complete grammar definition block with optional leading comments
+ * Format: [comments...] grammar Name { @annotations... rule_definitions... }
  */
 export const grammarDefinition: Parser<GrammarDefinition> = map(
   sequence(
+    leadingContent,
     literal(GRAMMAR_KEYWORDS.GRAMMAR),
     whitespace,
     identifier,
@@ -217,8 +357,8 @@ export const grammarDefinition: Parser<GrammarDefinition> = map(
     literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_CLOSE),
   ),
   (results) => {
-    const grammarName = results[2].name;
-    const items = results[5];
+    const grammarName = results[3].name;
+    const items = results[6];
     const { annotations, rules } = separateGrammarItems(items);
 
     return createGrammarDefinition(grammarName, annotations, rules);

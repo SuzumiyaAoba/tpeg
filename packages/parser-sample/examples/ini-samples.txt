@@ -1,0 +1,21 @@
+# INI File Test Samples
+[database]
+host=localhost
+port=5432
+username=admin
+password=secret123
+
+[application]
+name=MyApp
+version=1.2.3
+debug=true
+
+; Comment with semicolon
+[logging]
+level=INFO
+file=/var/log/app.log
+
+# Comment with hash
+[cache]
+enabled=true
+ttl=3600

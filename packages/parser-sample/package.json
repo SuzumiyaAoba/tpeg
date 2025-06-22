@@ -11,11 +11,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "examples",
-    "README.md"
-  ],
+  "files": ["dist", "examples", "README.md"],
   "scripts": {
     "build": "tsc",
     "demo": "bun run src/demo.ts",
@@ -23,6 +19,8 @@
     "demo:grammar": "bun run src/grammar-demo.ts",
     "demo:files": "bun run src/file-demo.ts",
     "demo:generator": "bun run src/generator-demo.ts",
+    "demo:performance": "bun run src/performance-demo.ts",
+    "validate": "bun run src/grammar-validation.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
@@ -34,15 +32,7 @@
     "@types/bun": "latest",
     "typescript": "^5.0.0"
   },
-  "keywords": [
-    "parser",
-    "peg",
-    "tpeg",
-    "parsing",
-    "grammar",
-    "demo",
-    "sample"
-  ],
+  "keywords": ["parser", "peg", "tpeg", "parsing", "grammar", "demo", "sample"],
   "author": "",
   "license": "MIT"
 }

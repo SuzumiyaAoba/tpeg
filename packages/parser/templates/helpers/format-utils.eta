@@ -1,0 +1,40 @@
+<%
+// Helper functions for formatting
+function escapeString(str) {
+  return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function formatType(type) {
+  if (!type || type === 'any') return 'any';
+  return type;
+}
+
+function formatImplementation(impl) {
+  return impl.trim();
+}
+
+function generateComment(complexity) {
+  if (!complexity) return '';
+  
+  const comments = [];
+  if (complexity.estimatedComplexity === 'high') {
+    comments.push('High complexity rule - memoization recommended');
+  }
+  if (complexity.hasRecursion) {
+    comments.push('Contains recursion');
+  }
+  if (complexity.depth > 10) {
+    comments.push(`Deep nesting (${complexity.depth} levels)`);
+  }
+  
+  return comments.join(', ');
+}
+
+// Export helper functions to template context
+it.helpers = {
+  escapeString,
+  formatType,
+  formatImplementation,
+  generateComment
+};
+%>

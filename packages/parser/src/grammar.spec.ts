@@ -197,8 +197,63 @@ describe("Grammar Definition Block Tests", () => {
       }
     });
 
-    test.todo("should parse multiple rules with newlines (Phase 1.6 - work in progress)");
+    test("should parse multiple rules with newlines", () => {
+      const input = `grammar MultiRule {
+        @version: "1.0"
+        @start: "expression"
+        
+        expression = term (("+" / "-") term)*
+        term = factor (("*" / "/") factor)*
+        factor = number / "(" expression ")"
+        number = [0-9]+ ("." [0-9]+)?
+      }`;
 
-    test.todo("debug: try simple two rules (Phase 1.6 - work in progress)");
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.type).toBe("GrammarDefinition");
+        expect(result.val.name).toBe("MultiRule");
+        expect(result.val.annotations).toHaveLength(2);
+        expect(result.val.rules).toHaveLength(4);
+
+        // Check rule names
+        const ruleNames = result.val.rules.map((rule) => rule.name);
+        expect(ruleNames).toEqual(["expression", "term", "factor", "number"]);
+
+        // Verify each rule has proper structure
+        expect(result.val.rules[0].name).toBe("expression");
+        expect(result.val.rules[0].pattern.type).toBe("Sequence");
+
+        expect(result.val.rules[1].name).toBe("term");
+        expect(result.val.rules[1].pattern.type).toBe("Sequence");
+
+        expect(result.val.rules[2].name).toBe("factor");
+        expect(result.val.rules[2].pattern.type).toBe("Choice");
+
+        expect(result.val.rules[3].name).toBe("number");
+        expect(result.val.rules[3].pattern.type).toBe("Sequence");
+      }
+    });
+
+    test("should parse simple two rules", () => {
+      const input = `grammar Simple {
+        rule1 = "hello"
+        rule2 = "world"
+      }`;
+
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.name).toBe("Simple");
+        expect(result.val.annotations).toHaveLength(0);
+        expect(result.val.rules).toHaveLength(2);
+
+        expect(result.val.rules[0].name).toBe("rule1");
+        expect(result.val.rules[0].pattern.type).toBe("StringLiteral");
+
+        expect(result.val.rules[1].name).toBe("rule2");
+        expect(result.val.rules[1].pattern.type).toBe("StringLiteral");
+      }
+    });
   });
 });

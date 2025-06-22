@@ -1,0 +1,535 @@
+/**
+ * Eta Template Engine Based Code Generator for TPEG
+ *
+ * High-performance code generation using external template files
+ * with complete type safety and predictable output.
+ */
+
+import { join } from "node:path";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { Eta } from "eta";
+import {
+  type analyzeExpressionComplexity,
+  analyzeGrammarPerformance,
+  globalPerformanceMonitor,
+} from "./performance-utils";
+import type {
+  CharacterClass,
+  Choice,
+  Expression,
+  GrammarDefinition,
+  Group,
+  Identifier,
+  LabeledExpression,
+  NegativeLookahead,
+  Optional,
+  Plus,
+  PositiveLookahead,
+  Quantified,
+  RuleDefinition,
+  Sequence,
+  Star,
+  StringLiteral,
+} from "./types";
+
+/**
+ * Template data interface for rules
+ */
+export interface RuleTemplateData {
+  namePrefix: string;
+  name: string;
+  type: string;
+  implementation: string;
+  memoized: boolean;
+  includeTypes: boolean;
+  comment?: string | undefined;
+  complexity?: ReturnType<typeof analyzeExpressionComplexity> | undefined;
+}
+
+/**
+ * Template data interface for complete parser file
+ */
+export interface ParserTemplateData {
+  imports: string[];
+  performanceImports?: string[];
+  rules: RuleTemplateData[];
+  header?: string;
+  footer?: string;
+  options: EtaCodeGenOptions;
+}
+
+/**
+ * Code generation options for Eta-based generator
+ */
+export interface EtaCodeGenOptions {
+  /** Target language (currently only TypeScript) */
+  language: "typescript";
+  /** Generated parser name prefix */
+  namePrefix?: string;
+  /** Include runtime imports */
+  includeImports?: boolean;
+  /** Generate with type annotations */
+  includeTypes?: boolean;
+  /** Enable performance optimizations */
+  optimize?: boolean;
+  /** Enable memoization for complex expressions */
+  enableMemoization?: boolean;
+  /** Include performance monitoring code */
+  includeMonitoring?: boolean;
+  /** Custom template directory */
+  templatesDir?: string;
+  /** Enable template caching */
+  cache?: boolean;
+  /** Debug mode */
+  debug?: boolean;
+}
+
+/**
+ * Generated code result with metadata
+ */
+export interface EtaGeneratedCode {
+  /** Generated TypeScript code */
+  code: string;
+  /** Required imports */
+  imports: string[];
+  /** Export declarations */
+  exports: string[];
+  /** Performance analysis */
+  performance: {
+    estimatedComplexity: "low" | "medium" | "high";
+    optimizationSuggestions: string[];
+    generationTime: number;
+    templateEngine: "eta";
+  };
+}
+
+/**
+ * Eta-based TPEG code generator
+ */
+export class EtaTPEGCodeGenerator {
+  private eta: Eta;
+  private options: Required<EtaCodeGenOptions>;
+  private ruleNames: Set<string> = new Set();
+
+  constructor(options: EtaCodeGenOptions = { language: "typescript" }) {
+    // Get the directory of the current module
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    const defaultTemplatesDir = join(__dirname, "../templates");
+
+    this.options = {
+      language: options.language,
+      namePrefix: options.namePrefix ?? "",
+      includeImports: options.includeImports ?? true,
+      includeTypes: options.includeTypes ?? true,
+      optimize: options.optimize ?? true,
+      enableMemoization: options.enableMemoization ?? true,
+      includeMonitoring: options.includeMonitoring ?? false,
+      templatesDir: options.templatesDir ?? defaultTemplatesDir,
+      cache: options.cache ?? true,
+      debug: options.debug ?? false,
+    };
+
+    this.eta = new Eta({
+      views: this.options.templatesDir,
+      cache: this.options.cache,
+      debug: this.options.debug,
+      autoEscape: false,
+      useWith: true,
+    });
+  }
+
+  /**
+   * Generate TypeScript parser code from TPEG grammar
+   */
+  async generateGrammar(grammar: GrammarDefinition): Promise<EtaGeneratedCode> {
+    globalPerformanceMonitor.start("eta-grammar-generation");
+
+    const performanceAnalysis = analyzeGrammarPerformance(grammar);
+
+    // Collect all rule names for reference resolution
+    for (const rule of grammar.rules) {
+      this.ruleNames.add(rule.name);
+    }
+
+    const imports = this.generateImports(grammar, performanceAnalysis);
+    const exports: string[] = [];
+    const rules: RuleTemplateData[] = [];
+
+    // Generate template data for each rule
+    for (const rule of grammar.rules) {
+      const complexity = performanceAnalysis.ruleComplexity.get(rule.name);
+      const ruleData: RuleTemplateData = {
+        namePrefix: this.options.namePrefix,
+        name: rule.name,
+        type: this.inferRuleType(rule),
+        implementation: this.generateRuleImplementation(rule),
+        memoized: this.shouldMemoize(rule, complexity),
+        includeTypes: this.options.includeTypes,
+        comment: this.generateRuleComment(complexity) || undefined,
+        complexity: complexity || undefined,
+      };
+
+      rules.push(ruleData);
+      exports.push(this.options.namePrefix + rule.name);
+    }
+
+    const templateData: ParserTemplateData = {
+      imports,
+      rules,
+      options: this.options,
+    };
+
+    // Add performance imports for optimized template
+    if (this.options.optimize) {
+      templateData.performanceImports =
+        this.generatePerformanceImports(performanceAnalysis);
+      templateData.header = this.generateHeader(grammar);
+      templateData.footer = this.generateFooter();
+    }
+
+    // Generate code using appropriate template
+    const templateName = this.options.optimize
+      ? "optimized/parser-file"
+      : "base/parser-file";
+    const code = await this.eta.renderAsync(templateName, templateData);
+
+    const generationTime = globalPerformanceMonitor.end(
+      "eta-grammar-generation",
+    );
+
+    return {
+      code,
+      imports,
+      exports,
+      performance: {
+        estimatedComplexity: performanceAnalysis.estimatedParseComplexity,
+        optimizationSuggestions: performanceAnalysis.optimizationSuggestions,
+        generationTime,
+        templateEngine: "eta",
+      },
+    };
+  }
+
+  /**
+   * Generate imports based on grammar analysis
+   */
+  private generateImports(
+    grammar: GrammarDefinition,
+    analysis: ReturnType<typeof analyzeGrammarPerformance>,
+  ): string[] {
+    const imports = [];
+
+    if (this.options.includeImports) {
+      // Core imports
+      imports.push('import type { Parser } from "tpeg-core";');
+
+      // Analyze which combinators are actually needed
+      const usedCombinators = new Set<string>();
+      usedCombinators.add("literal"); // Always needed for string literals
+
+      for (const rule of grammar.rules) {
+        this.collectUsedCombinators(rule.pattern, usedCombinators);
+      }
+
+      // Add memoization import if needed
+      if (
+        this.options.enableMemoization &&
+        analysis.estimatedParseComplexity !== "low"
+      ) {
+        usedCombinators.add("memoize");
+      }
+
+      // Generate combinator import
+      const combinators = Array.from(usedCombinators).sort();
+      imports.push(`import { ${combinators.join(", ")} } from "tpeg-core";`);
+    }
+
+    return imports;
+  }
+
+  /**
+   * Generate performance-specific imports
+   */
+  private generatePerformanceImports(
+    _analysis: ReturnType<typeof analyzeGrammarPerformance>,
+  ): string[] {
+    const imports = [];
+
+    if (this.options.includeMonitoring) {
+      imports.push(
+        'import { globalPerformanceMonitor } from "./performance-utils";',
+      );
+    }
+
+    return imports;
+  }
+
+  /**
+   * Collect all combinators used in an expression
+   */
+  private collectUsedCombinators(
+    expr: Expression,
+    combinators: Set<string>,
+  ): void {
+    switch (expr.type) {
+      case "CharacterClass":
+        combinators.add("charClass");
+        break;
+      case "Sequence":
+        combinators.add("sequence");
+        for (const element of expr.elements) {
+          this.collectUsedCombinators(element, combinators);
+        }
+        break;
+      case "Choice":
+        combinators.add("choice");
+        for (const alternative of expr.alternatives) {
+          this.collectUsedCombinators(alternative, combinators);
+        }
+        break;
+      case "Star":
+        combinators.add("zeroOrMore");
+        this.collectUsedCombinators(expr.expression, combinators);
+        break;
+      case "Plus":
+        combinators.add("oneOrMore");
+        this.collectUsedCombinators(expr.expression, combinators);
+        break;
+      case "Optional":
+        combinators.add("optional");
+        this.collectUsedCombinators(expr.expression, combinators);
+        break;
+      case "PositiveLookahead":
+        combinators.add("andPredicate");
+        this.collectUsedCombinators(expr.expression, combinators);
+        break;
+      case "NegativeLookahead":
+        combinators.add("notPredicate");
+        this.collectUsedCombinators(expr.expression, combinators);
+        break;
+      case "Group":
+      case "LabeledExpression":
+        this.collectUsedCombinators(expr.expression, combinators);
+        break;
+      case "Quantified":
+        combinators.add("sequence"); // Often used in quantification implementation
+        this.collectUsedCombinators(expr.expression, combinators);
+        break;
+    }
+  }
+
+  /**
+   * Generate implementation code for a rule
+   */
+  private generateRuleImplementation(rule: RuleDefinition): string {
+    return this.generateExpressionCode(rule.pattern);
+  }
+
+  /**
+   * Generate code for any expression type
+   */
+  private generateExpressionCode(expr: Expression): string {
+    switch (expr.type) {
+      case "StringLiteral":
+        return this.generateStringLiteral(expr as StringLiteral);
+      case "CharacterClass":
+        return this.generateCharacterClass(expr as CharacterClass);
+      case "Identifier":
+        return this.generateIdentifier(expr as Identifier);
+      case "AnyChar":
+        return "anyChar";
+      case "Sequence":
+        return this.generateSequence(expr as Sequence);
+      case "Choice":
+        return this.generateChoice(expr as Choice);
+      case "Group":
+        return this.generateExpressionCode((expr as Group).expression);
+      case "Star":
+        return `zeroOrMore(${this.generateExpressionCode((expr as Star).expression)})`;
+      case "Plus":
+        return `oneOrMore(${this.generateExpressionCode((expr as Plus).expression)})`;
+      case "Optional":
+        return `optional(${this.generateExpressionCode((expr as Optional).expression)})`;
+      case "Quantified":
+        return this.generateQuantified(expr as Quantified);
+      case "PositiveLookahead":
+        return `andPredicate(${this.generateExpressionCode((expr as PositiveLookahead).expression)})`;
+      case "NegativeLookahead":
+        return `notPredicate(${this.generateExpressionCode((expr as NegativeLookahead).expression)})`;
+      case "LabeledExpression":
+        return this.generateLabeledExpression(expr as LabeledExpression);
+      default:
+        throw new Error(
+          `Unsupported expression type: ${(expr as { type: string }).type}`,
+        );
+    }
+  }
+
+  private generateStringLiteral(expr: StringLiteral): string {
+    const escaped = expr.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    return `literal("${escaped}")`;
+  }
+
+  private generateCharacterClass(expr: CharacterClass): string {
+    const ranges = expr.ranges
+      .map((range) => {
+        if (range.end) {
+          return `{ from: "${range.start}", to: "${range.end}" }`;
+        }
+        return `"${range.start}"`;
+      })
+      .join(", ");
+
+    const negated = expr.negated ? ", true" : "";
+    return `charClass([${ranges}]${negated})`;
+  }
+
+  private generateIdentifier(expr: Identifier): string {
+    const name = expr.name;
+    if (this.ruleNames.has(name)) {
+      return this.options.namePrefix + name;
+    }
+    return name;
+  }
+
+  private generateSequence(expr: Sequence): string {
+    if (expr.elements.length === 0) {
+      return "sequence()";
+    }
+
+    if (expr.elements.length === 1) {
+      const element = expr.elements[0];
+      if (element) {
+        return this.generateExpressionCode(element);
+      }
+    }
+
+    const elements = expr.elements.map((el) => this.generateExpressionCode(el));
+    return `sequence(${elements.join(", ")})`;
+  }
+
+  private generateChoice(expr: Choice): string {
+    if (expr.alternatives.length === 0) {
+      return "choice()";
+    }
+
+    if (expr.alternatives.length === 1) {
+      const alternative = expr.alternatives[0];
+      if (alternative) {
+        return this.generateExpressionCode(alternative);
+      }
+    }
+
+    const alternatives = expr.alternatives.map((alt) =>
+      this.generateExpressionCode(alt),
+    );
+    return `choice(${alternatives.join(", ")})`;
+  }
+
+  private generateQuantified(expr: Quantified): string {
+    const inner = this.generateExpressionCode(expr.expression);
+
+    if (expr.max === undefined) {
+      if (expr.min === 0) return `zeroOrMore(${inner})`;
+      if (expr.min === 1) return `oneOrMore(${inner})`;
+      return `/* TODO: implement {${expr.min},} */ oneOrMore(${inner})`;
+    }
+
+    if (expr.min === expr.max) {
+      if (expr.min === 0) return "/* never matches */ choice()";
+      if (expr.min === 1) return inner;
+      return `/* TODO: implement {${expr.min}} */ ${inner}`;
+    }
+
+    return `/* TODO: implement {${expr.min},${expr.max}} */ optional(${inner})`;
+  }
+
+  private generateLabeledExpression(expr: LabeledExpression): string {
+    const inner = this.generateExpressionCode(expr.expression);
+    return `/* label: ${expr.label} */ ${inner}`;
+  }
+
+  /**
+   * Infer TypeScript type for a rule
+   */
+  private inferRuleType(_rule: RuleDefinition): string {
+    // For now, return 'any' - this could be enhanced with actual type inference
+    return "any";
+  }
+
+  /**
+   * Determine if a rule should be memoized
+   */
+  private shouldMemoize(
+    _rule: RuleDefinition,
+    complexity?: ReturnType<typeof analyzeExpressionComplexity>,
+  ): boolean {
+    if (!this.options.enableMemoization || !complexity) {
+      return false;
+    }
+
+    return complexity.estimatedComplexity === "high" || complexity.hasRecursion;
+  }
+
+  /**
+   * Generate comment for a rule based on complexity
+   */
+  private generateRuleComment(
+    complexity?: ReturnType<typeof analyzeExpressionComplexity>,
+  ): string | undefined {
+    if (!complexity) return undefined;
+
+    const comments = [];
+    if (complexity.estimatedComplexity === "high") {
+      comments.push("High complexity rule");
+    }
+    if (complexity.hasRecursion) {
+      comments.push("contains recursion");
+    }
+    if (complexity.depth > 10) {
+      comments.push(`deep nesting (${complexity.depth} levels)`);
+    }
+
+    return comments.length > 0 ? comments.join(", ") : undefined;
+  }
+
+  /**
+   * Generate file header
+   */
+  private generateHeader(grammar: GrammarDefinition): string {
+    return `/**
+ * Generated TPEG Parser: ${grammar.name}
+ * 
+ * This file was automatically generated from a TPEG grammar.
+ * Do not edit this file directly - regenerate from the grammar instead.
+ */`;
+  }
+
+  /**
+   * Generate file footer
+   */
+  private generateFooter(): string {
+    if (this.options.includeMonitoring) {
+      return `
+// Performance monitoring exports
+export { globalPerformanceMonitor };`;
+    }
+    return "";
+  }
+}
+
+/**
+ * Convenience function to generate TypeScript parser code using Eta templates
+ */
+export async function generateEtaTypeScriptParser(
+  grammar: GrammarDefinition,
+  options?: Partial<EtaCodeGenOptions>,
+): Promise<EtaGeneratedCode> {
+  const generator = new EtaTPEGCodeGenerator({
+    language: "typescript",
+    ...options,
+  });
+  return generator.generateGrammar(grammar);
+}

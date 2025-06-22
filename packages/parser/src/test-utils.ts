@@ -6,7 +6,13 @@
  */
 
 import { expect } from "bun:test";
-import type { ParseResult, ParseSuccess, ParseFailure, Parser, Pos as Position } from "tpeg-core";
+import type {
+  ParseFailure,
+  ParseResult,
+  ParseSuccess,
+  Parser,
+  Pos as Position,
+} from "tpeg-core";
 import { parse } from "tpeg-core";
 import type { Expression } from "./types";
 

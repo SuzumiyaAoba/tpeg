@@ -1,0 +1,14 @@
+grammar URL {
+  @version: "1.1"
+  @description: "HTTP/HTTPS URL parser with components"
+  @author: "TPEG Parser"
+  @license: "MIT"
+  
+  url = scheme "://" host
+  scheme = "http" / "https"
+  host = [a-zA-Z0-9]
+  port = [0-9]
+  path = [a-zA-Z0-9]
+  query = [a-zA-Z0-9]
+  fragment = [a-zA-Z0-9]
+}

@@ -1,0 +1,13 @@
+# Log File Test Samples
+# ISO timestamp format
+2024-01-15T10:30:45Z INFO Application started successfully
+2024-01-15T10:30:46.123Z DEBUG Loading configuration file
+2024-01-15T10:30:47+09:00 WARN Configuration file not found, using defaults
+2024-01-15T10:30:48Z ERROR Failed to connect to database
+
+# Common timestamp format
+2024/01/15 10:30:45 INFO User login successful
+2024/01/15 10:30:46 DEBUG Processing request ID: 12345
+2024/01/15 10:30:47 WARN Rate limit exceeded for user
+2024/01/15 10:30:48 ERROR Internal server error occurred
+2024/01/15 10:30:49 TRACE Function xyz() called with params

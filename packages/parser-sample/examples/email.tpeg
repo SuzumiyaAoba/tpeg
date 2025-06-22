@@ -1,0 +1,13 @@
+grammar Email {
+  @version: "1.0"
+  @description: "Email address parser with basic validation"
+  @author: "TPEG Parser Demo"
+  @license: "MIT"
+  
+  email = localPart "@" domain
+  localPart = [a-zA-Z0-9]
+  domain = [a-zA-Z0-9]
+  alphaNum = [a-zA-Z0-9]
+  alpha = [a-zA-Z]
+  digit = [0-9]
+}

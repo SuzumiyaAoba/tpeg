@@ -7,8 +7,6 @@ const SURROGATE = "𝄞"; // U+1D11E
 const ASCII = "a";
 const LONG_UNICODE = "a😊b𝄞c";
 
-const repeat = (str: string, n: number) => Array(n).fill(str).join("");
-
 const N = 10000;
 
 // Utility for running and timing a parser N times
