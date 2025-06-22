@@ -1,5 +1,0 @@
-<% if (it.includeTypes) { %>
-export const <%= it.namePrefix %><%= it.name %>: Parser<<%~ it.type %>> = <%= it.implementation %>;
-<% } else { %>
-export const <%= it.namePrefix %><%= it.name %> = <%= it.implementation %>;
-<% } %>

@@ -1,8 +1,0 @@
-<% if (it.includeTypes) { %>
-export const <%= it.namePrefix %><%= it.name %>: Parser<<%~ it.type %>> = <% if (it.memoized) { %>memoize(<% } %><%= it.implementation %><% if (it.memoized) { %>)<% } %>;
-<% } else { %>
-export const <%= it.namePrefix %><%= it.name %> = <% if (it.memoized) { %>memoize(<% } %><%= it.implementation %><% if (it.memoized) { %>)<% } %>;
-<% } %>
-<% if (it.comment) { %>
-// <%= it.comment %>
-<% } %>

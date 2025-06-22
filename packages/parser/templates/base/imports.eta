@@ -1,6 +1,0 @@
-<% if (it.imports && it.imports.length > 0) { %>
-<% it.imports.forEach(function(imp) { %>
-<%= imp %>
-<% }) %>
-
-<% } %>
