@@ -243,7 +243,7 @@ export class TypeInferenceEngine {
           isArray: false,
           baseType: "unknown",
           imports: [],
-          documentation: `Unknown expression type: ${expression.type}`,
+          documentation: `Unknown expression type: ${(expression as { type: string }).type}`,
         };
     }
 

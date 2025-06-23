@@ -144,11 +144,11 @@ export class TypeIntegrationEngine {
     const traverse = (expr: Expression): void => {
       if (expr.type === "Identifier") {
         dependencies.add(expr.name);
-      } else if (expr.elements) {
+      } else if (expr.type === "Sequence") {
         expr.elements.forEach(traverse);
-      } else if (expr.alternatives) {
+      } else if (expr.type === "Choice") {
         expr.alternatives.forEach(traverse);
-      } else if (expr.expression) {
+      } else if ("expression" in expr && expr.expression) {
         traverse(expr.expression);
       }
     };
