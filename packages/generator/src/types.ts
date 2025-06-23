@@ -83,6 +83,22 @@ export interface LabeledExpression extends Expression {
   expression: Expression;
 }
 
+// Union type for all specific expression types
+export type SpecificExpression = 
+  | StringLiteral 
+  | CharacterClass 
+  | Identifier 
+  | Sequence 
+  | Choice 
+  | Group 
+  | Star 
+  | Plus 
+  | Optional 
+  | Quantified 
+  | PositiveLookahead 
+  | NegativeLookahead 
+  | LabeledExpression;
+
 export interface RuleDefinition {
   type: 'RuleDefinition';
   name: string;
@@ -92,7 +108,7 @@ export interface RuleDefinition {
 export interface GrammarDefinition {
   type: 'GrammarDefinition';
   name: string;
-  annotations: any[];
+  annotations: unknown[];
   rules: RuleDefinition[];
 }
 

@@ -202,43 +202,45 @@ export class EtaTPEGCodeGenerator {
         break;
       case 'Sequence':
         combinators.add('sequence');
-        for (const element of (expr as any).elements) {
+        for (const element of (expr as Sequence).elements) {
           this.collectUsedCombinators(element, combinators);
         }
         break;
       case 'Choice':
         combinators.add('choice');
-        for (const alternative of (expr as any).alternatives) {
+        for (const alternative of (expr as Choice).alternatives) {
           this.collectUsedCombinators(alternative, combinators);
         }
         break;
       case 'Star':
         combinators.add('zeroOrMore');
-        this.collectUsedCombinators((expr as any).expression, combinators);
+        this.collectUsedCombinators((expr as Star).expression, combinators);
         break;
       case 'Plus':
         combinators.add('oneOrMore');
-        this.collectUsedCombinators((expr as any).expression, combinators);
+        this.collectUsedCombinators((expr as Plus).expression, combinators);
         break;
       case 'Optional':
         combinators.add('optional');
-        this.collectUsedCombinators((expr as any).expression, combinators);
+        this.collectUsedCombinators((expr as Optional).expression, combinators);
         break;
       case 'PositiveLookahead':
         combinators.add('andPredicate');
-        this.collectUsedCombinators((expr as any).expression, combinators);
+        this.collectUsedCombinators((expr as PositiveLookahead).expression, combinators);
         break;
       case 'NegativeLookahead':
         combinators.add('notPredicate');
-        this.collectUsedCombinators((expr as any).expression, combinators);
+        this.collectUsedCombinators((expr as NegativeLookahead).expression, combinators);
         break;
       case 'Group':
+        this.collectUsedCombinators((expr as Group).expression, combinators);
+        break;
       case 'LabeledExpression':
-        this.collectUsedCombinators((expr as any).expression, combinators);
+        this.collectUsedCombinators((expr as LabeledExpression).expression, combinators);
         break;
       case 'Quantified':
         combinators.add('sequence'); // Often used in quantification implementation
-        this.collectUsedCombinators((expr as any).expression, combinators);
+        this.collectUsedCombinators((expr as Quantified).expression, combinators);
         break;
     }
   }

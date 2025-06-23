@@ -9,6 +9,16 @@ import type {
   GrammarDefinition,
   ExpressionComplexity,
   GrammarPerformance,
+  Sequence,
+  Choice,
+  Star,
+  Plus,
+  Optional,
+  Group,
+  LabeledExpression,
+  Quantified,
+  PositiveLookahead,
+  NegativeLookahead,
 } from './types';
 
 /**
@@ -51,30 +61,38 @@ export function analyzeExpressionComplexity(expr: Expression): ExpressionComplex
 
     switch (expression.type) {
       case 'Sequence':
-        for (const element of (expression as any).elements) {
+        for (const element of (expression as Sequence).elements) {
           analyze(element, currentDepth + 1);
         }
         break;
       case 'Choice':
-        for (const alternative of (expression as any).alternatives) {
+        for (const alternative of (expression as Choice).alternatives) {
           analyze(alternative, currentDepth + 1);
         }
         break;
       case 'Star':
+        analyze((expression as Star).expression, currentDepth + 1);
+        break;
       case 'Plus':
+        analyze((expression as Plus).expression, currentDepth + 1);
+        break;
       case 'Optional':
-        analyze((expression as any).expression, currentDepth + 1);
+        analyze((expression as Optional).expression, currentDepth + 1);
         break;
       case 'Group':
+        analyze((expression as Group).expression, currentDepth + 1);
+        break;
       case 'LabeledExpression':
-        analyze((expression as any).expression, currentDepth + 1);
+        analyze((expression as LabeledExpression).expression, currentDepth + 1);
         break;
       case 'Quantified':
-        analyze((expression as any).expression, currentDepth + 1);
+        analyze((expression as Quantified).expression, currentDepth + 1);
         break;
       case 'PositiveLookahead':
+        analyze((expression as PositiveLookahead).expression, currentDepth + 1);
+        break;
       case 'NegativeLookahead':
-        analyze((expression as any).expression, currentDepth + 1);
+        analyze((expression as NegativeLookahead).expression, currentDepth + 1);
         break;
       case 'Identifier':
         // Note: Recursive reference detection would require rule context

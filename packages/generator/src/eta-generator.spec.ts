@@ -6,10 +6,10 @@ import { describe, it, expect } from 'bun:test';
 import { EtaTPEGCodeGenerator, generateEtaTypeScriptParser } from './eta-generator';
 
 // Import test utilities from core
-import type { GrammarDefinition, RuleDefinition } from './types';
+import type { GrammarDefinition, RuleDefinition, Expression } from './types';
 
 // Simple test helper functions
-function createGrammarDefinition(name: string, annotations: any[], rules: RuleDefinition[]): GrammarDefinition {
+function createGrammarDefinition(name: string, annotations: unknown[], rules: RuleDefinition[]): GrammarDefinition {
   return {
     type: 'GrammarDefinition',
     name,
@@ -18,7 +18,7 @@ function createGrammarDefinition(name: string, annotations: any[], rules: RuleDe
   };
 }
 
-function createRuleDefinition(name: string, pattern: any): RuleDefinition {
+function createRuleDefinition(name: string, pattern: Expression): RuleDefinition {
   return {
     type: 'RuleDefinition',
     name,
@@ -33,7 +33,7 @@ function createStringLiteral(value: string) {
   };
 }
 
-function createCharacterClass(ranges: any[], negated: boolean) {
+function createCharacterClass(ranges: Array<{ start: string; end?: string }>, negated: boolean) {
   return {
     type: 'CharacterClass',
     ranges,
@@ -45,35 +45,35 @@ function createCharRange(start: string, end: string) {
   return { start, end };
 }
 
-function createSequence(elements: any[]) {
+function createSequence(elements: Expression[]) {
   return {
     type: 'Sequence',
     elements,
   };
 }
 
-function createChoice(alternatives: any[]) {
+function createChoice(alternatives: Expression[]) {
   return {
     type: 'Choice',
     alternatives,
   };
 }
 
-function createStar(expression: any) {
+function createStar(expression: Expression) {
   return {
     type: 'Star',
     expression,
   };
 }
 
-function createPlus(expression: any) {
+function createPlus(expression: Expression) {
   return {
     type: 'Plus',
     expression,
   };
 }
 
-function createOptional(expression: any) {
+function createOptional(expression: Expression) {
   return {
     type: 'Optional',
     expression,
