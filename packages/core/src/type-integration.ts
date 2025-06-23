@@ -5,7 +5,7 @@
  * enhanced type-safe parser generation capabilities.
  */
 
-import type { GrammarDefinition, RuleDefinition } from "../../parser/src/types";
+import type { GrammarDefinition, RuleDefinition, Expression } from "../../parser/src/types";
 import { TypeInferenceEngine, type GrammarTypeInference, type InferredType } from "./type-inference";
 
 /**
@@ -141,7 +141,7 @@ export class TypeIntegrationEngine {
   private analyzeDependencies(rule: RuleDefinition): string[] {
     const dependencies = new Set<string>();
     
-    const traverse = (expr: any): void => {
+    const traverse = (expr: Expression): void => {
       if (expr.type === "Identifier") {
         dependencies.add(expr.name);
       } else if (expr.elements) {
@@ -176,15 +176,15 @@ export class TypeIntegrationEngine {
       const inferredType = rule.inferredType;
       
       if (this.options.includeDocumentation && inferredType.documentation) {
-        typeDefinitions.push(`  /**`);
+        typeDefinitions.push("  /**");
         typeDefinitions.push(`   * ${inferredType.documentation}`);
         if (rule.dependencies.length > 0) {
           typeDefinitions.push(`   * Dependencies: ${rule.dependencies.join(", ")}`);
         }
         if (rule.hasCircularDependency) {
-          typeDefinitions.push(`   * Note: This rule has circular dependencies`);
+          typeDefinitions.push("   * Note: This rule has circular dependencies");
         }
-        typeDefinitions.push(`   */`);
+        typeDefinitions.push("   */");
       }
 
       const ruleName = this.pascalCase(rule.name);
@@ -199,12 +199,12 @@ export class TypeIntegrationEngine {
 
     // Generate result type union
     const resultTypes = typedRules.map(rule => `${this.pascalCase(rule.name)}Result`);
-    typeDefinitions.push(`  /** Union of all parser result types */`);
+    typeDefinitions.push("  /** Union of all parser result types */");
     typeDefinitions.push(`  export type ParserResult = ${resultTypes.join(" | ")};`);
 
     // Close namespace if specified
     if (this.options.typeNamespace) {
-      typeDefinitions.push(`}`);
+      typeDefinitions.push("}");
     }
 
     return typeDefinitions.join("\n");
@@ -227,16 +227,16 @@ export class TypeIntegrationEngine {
     } else if (inferredType.baseType === "string") {
       guardImplementation = `return typeof value === "string";`;
     } else if (inferredType.isArray) {
-      guardImplementation = `return Array.isArray(value);`;
+      guardImplementation = "return Array.isArray(value);";
     } else {
-      guardImplementation = `return value !== undefined;`;
+      guardImplementation = "return value !== undefined;";
     }
 
     return [
       `  /** Type guard for ${typeName} */`,
       `  export function ${guardName}(value: unknown): value is ${typeName} {`,
       `    ${guardImplementation}`,
-      `  }`,
+      "  }",
     ].join("\n");
   }
 
@@ -248,11 +248,15 @@ export class TypeIntegrationEngine {
     
     // Add imports from each rule type
     for (const inferredType of Array.from(typeInference.ruleTypes.values())) {
-      inferredType.imports.forEach(imp => imports.add(imp));
+      for (const imp of inferredType.imports) {
+        imports.add(imp);
+      }
     }
     
     // Add any additional imports from type inference
-    typeInference.imports.forEach(imp => imports.add(imp));
+    for (const imp of typeInference.imports) {
+      imports.add(imp);
+    }
     
     return Array.from(imports);
   }
@@ -306,12 +310,12 @@ export class TypeIntegrationEngine {
       const resultType = `${this.pascalCase(rule.name)}Result`;
       
       if (this.options.includeDocumentation) {
-        interfaceLines.push(`  /**`);
+        interfaceLines.push("  /**");
         interfaceLines.push(`   * Parse ${rule.name}: ${rule.inferredType.documentation}`);
         if (rule.hasCircularDependency) {
-          interfaceLines.push(`   * @warning This rule has circular dependencies`);
+          interfaceLines.push("   * @warning This rule has circular dependencies");
         }
-        interfaceLines.push(`   */`);
+        interfaceLines.push("   */");
       }
       
       interfaceLines.push(`  ${rule.name}(input: string): ParseResult<${resultType}>;`);

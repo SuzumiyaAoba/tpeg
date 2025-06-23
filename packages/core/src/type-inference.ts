@@ -5,7 +5,25 @@
  * It analyzes TPEG expressions and generates TypeScript type information for better type safety.
  */
 
-import type { Expression, GrammarDefinition, RuleDefinition } from "../../parser/src/types";
+import type { 
+  Expression, 
+  GrammarDefinition, 
+  RuleDefinition,
+  StringLiteral,
+  CharacterClass,
+  Identifier,
+  AnyChar,
+  Sequence,
+  Choice,
+  Group,
+  Star,
+  Plus,
+  Optional,
+  Quantified,
+  PositiveLookahead,
+  NegativeLookahead,
+  LabeledExpression
+} from "../../parser/src/types";
 
 /**
  * Represents an inferred TypeScript type for a parser result
@@ -169,7 +187,10 @@ export class TypeInferenceEngine {
     
     // Check cache first
     if (this.context.typeCache.has(cacheKey)) {
-      return this.context.typeCache.get(cacheKey)!;
+      const cached = this.context.typeCache.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
     }
 
     let inferredType: InferredType;
@@ -222,7 +243,7 @@ export class TypeInferenceEngine {
           isArray: false,
           baseType: "unknown",
           imports: [],
-          documentation: `Unknown expression type: ${(expression as any).type}`,
+          documentation: `Unknown expression type: ${expression.type}`,
         };
     }
 
@@ -231,7 +252,7 @@ export class TypeInferenceEngine {
     return inferredType;
   }
 
-  private inferStringLiteralType(expression: any): InferredType {
+  private inferStringLiteralType(expression: StringLiteral): InferredType {
     // Escape quotes in the type string
     const escapedValue = expression.value.replace(/"/g, '\\"');
     return {
@@ -244,7 +265,7 @@ export class TypeInferenceEngine {
     };
   }
 
-  private inferCharacterClassType(expression: any): InferredType {
+  private inferCharacterClassType(expression: CharacterClass): InferredType {
     return {
       typeString: "string",
       nullable: false,
@@ -255,7 +276,7 @@ export class TypeInferenceEngine {
     };
   }
 
-  private inferIdentifierType(expression: any): InferredType {
+  private inferIdentifierType(expression: Identifier): InferredType {
     const ruleName = expression.name;
     
     // Check for circular dependency
@@ -287,7 +308,7 @@ export class TypeInferenceEngine {
     };
   }
 
-  private inferAnyCharType(expression: any): InferredType {
+  private inferAnyCharType(expression: AnyChar): InferredType {
     return {
       typeString: "string",
       nullable: false,
@@ -298,7 +319,7 @@ export class TypeInferenceEngine {
     };
   }
 
-  private inferSequenceType(expression: any): InferredType {
+  private inferSequenceType(expression: Sequence): InferredType {
     if (!this.options.inferObjectTypes) {
       return {
         typeString: "string",
@@ -327,7 +348,7 @@ export class TypeInferenceEngine {
     };
   }
 
-  private inferChoiceType(expression: any): InferredType {
+  private inferChoiceType(expression: Choice): InferredType {
     if (!this.options.inferUnionTypes) {
       return {
         typeString: "string",
@@ -360,11 +381,11 @@ export class TypeInferenceEngine {
     };
   }
 
-  private inferGroupType(expression: any): InferredType {
+  private inferGroupType(expression: Group): InferredType {
     return this.inferExpressionType(expression.expression);
   }
 
-  private inferStarType(expression: any): InferredType {
+  private inferStarType(expression: Star): InferredType {
     const innerType = this.inferExpressionType(expression.expression);
     
     if (!this.options.inferArrayTypes) {
@@ -392,7 +413,7 @@ export class TypeInferenceEngine {
     };
   }
 
-  private inferPlusType(expression: any): InferredType {
+  private inferPlusType(expression: Plus): InferredType {
     const innerType = this.inferExpressionType(expression.expression);
     
     if (!this.options.inferArrayTypes) {
@@ -420,7 +441,7 @@ export class TypeInferenceEngine {
     };
   }
 
-  private inferOptionalType(expression: any): InferredType {
+  private inferOptionalType(expression: Optional): InferredType {
     const innerType = this.inferExpressionType(expression.expression);
     
     // Handle parentheses for complex types
@@ -437,7 +458,7 @@ export class TypeInferenceEngine {
     };
   }
 
-  private inferQuantifiedType(expression: any): InferredType {
+  private inferQuantifiedType(expression: Quantified): InferredType {
     const innerType = this.inferExpressionType(expression.expression);
     
     if (!this.options.inferArrayTypes || expression.min === 1 && expression.max === 1) {
@@ -457,7 +478,7 @@ export class TypeInferenceEngine {
     };
   }
 
-  private inferLookaheadType(expression: any): InferredType {
+  private inferLookaheadType(expression: PositiveLookahead | NegativeLookahead): InferredType {
     // Lookaheads don't consume input and don't contribute to the result
     return {
       typeString: "void",
@@ -469,7 +490,7 @@ export class TypeInferenceEngine {
     };
   }
 
-  private inferLabeledExpressionType(expression: any): InferredType {
+  private inferLabeledExpressionType(expression: LabeledExpression): InferredType {
     // For labeled expressions, we infer the type of the inner expression
     const innerType = this.inferExpressionType(expression.expression);
     
