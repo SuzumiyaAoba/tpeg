@@ -47,15 +47,7 @@ export {
   type OptimizedGeneratedCode,
 } from "./codegen-optimized";
 
-// Export Eta template-based code generation system
-export {
-  EtaTPEGCodeGenerator,
-  generateEtaTypeScriptParser,
-  type EtaCodeGenOptions,
-  type EtaGeneratedCode,
-  type RuleTemplateData,
-  type ParserTemplateData,
-} from "./eta-codegen";
+// NOTE: Eta template-based code generation moved to tpeg-generator package
 
 // Export performance utilities
 export {
