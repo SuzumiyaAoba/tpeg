@@ -265,7 +265,7 @@ export class TypeInferenceEngine {
     };
   }
 
-  private inferCharacterClassType(expression: CharacterClass): InferredType {
+  private inferCharacterClassType(_expression: CharacterClass): InferredType {
     return {
       typeString: "string",
       nullable: false,
@@ -308,7 +308,7 @@ export class TypeInferenceEngine {
     };
   }
 
-  private inferAnyCharType(expression: AnyChar): InferredType {
+  private inferAnyCharType(_expression: AnyChar): InferredType {
     return {
       typeString: "string",
       nullable: false,
@@ -478,7 +478,7 @@ export class TypeInferenceEngine {
     };
   }
 
-  private inferLookaheadType(expression: PositiveLookahead | NegativeLookahead): InferredType {
+  private inferLookaheadType(_expression: PositiveLookahead | NegativeLookahead): InferredType {
     // Lookaheads don't consume input and don't contribute to the result
     return {
       typeString: "void",

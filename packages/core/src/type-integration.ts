@@ -49,7 +49,7 @@ export interface TypeIntegrationOptions {
   /** Whether to generate type guards for the inferred types */
   generateTypeGuards: boolean;
   /** Namespace for generated types */
-  typeNamespace?: string;
+  typeNamespace?: string | undefined;
 }
 
 /**
@@ -60,7 +60,6 @@ export const DEFAULT_TYPE_INTEGRATION_OPTIONS: TypeIntegrationOptions = {
   includeDocumentation: true,
   customTypeMappings: new Map(),
   generateTypeGuards: false,
-  typeNamespace: undefined,
 };
 
 /**
@@ -161,7 +160,7 @@ export class TypeIntegrationEngine {
    * Generate TypeScript type definitions for the grammar
    */
   private generateTypeDefinitions(
-    typeInference: GrammarTypeInference,
+    _typeInference: GrammarTypeInference,
     typedRules: TypedRuleDefinition[]
   ): string {
     const typeDefinitions: string[] = [];
