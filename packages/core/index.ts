@@ -25,5 +25,11 @@ export * from "./src/transform";
 // Error handling
 export * from "./src/error";
 
+// Type inference system
+export * from "./src/type-inference";
+
+// Type integration system
+export * from "./src/type-integration";
+
 // Test utilities (optional export for testing)
 export * from "./src/test-utils";
