@@ -230,8 +230,8 @@ export class TypeInferenceEngine {
       case "LabeledExpression":
         inferredType = this.inferLabeledExpressionType(expression);
         break;
-      default:
-        const unknownType = 'type' in expression ? (expression as any).type : 'unknown';
+      default: {
+        const unknownType = 'type' in expression ? (expression as { type: string }).type : 'unknown';
         inferredType = {
           typeString: "unknown",
           nullable: false,
@@ -240,6 +240,7 @@ export class TypeInferenceEngine {
           imports: [],
           documentation: `Unknown expression type: ${unknownType}`,
         };
+      }
     }
 
     // Cache the result
