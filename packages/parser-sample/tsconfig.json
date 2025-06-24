@@ -3,7 +3,7 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
-    "moduleResolution": "bundler",
+    "moduleResolution": "node",
     "noEmit": false,
     "strict": true,
     "skipLibCheck": true,

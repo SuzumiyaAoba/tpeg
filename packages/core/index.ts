@@ -1,6 +1,9 @@
 // Types
 export * from "./src/types";
 
+// Grammar types (shared with parser)
+export * from "./src/grammar-types";
+
 // Utilities
 export * from "./src/utils";
 
@@ -24,6 +27,12 @@ export * from "./src/transform";
 
 // Error handling
 export * from "./src/error";
+
+// Type inference system
+export * from "./src/type-inference";
+
+// Type integration system
+export * from "./src/type-integration";
 
 // Test utilities (optional export for testing)
 export * from "./src/test-utils";
