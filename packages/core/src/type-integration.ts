@@ -141,14 +141,31 @@ export class TypeIntegrationEngine {
     const dependencies = new Set<string>();
     
     const traverse = (expr: Expression): void => {
-      if (expr.type === "Identifier") {
-        dependencies.add(expr.name);
-      } else if (expr.type === "Sequence") {
-        expr.elements.forEach(traverse);
-      } else if (expr.type === "Choice") {
-        expr.alternatives.forEach(traverse);
-      } else if ("expression" in expr && expr.expression) {
-        traverse(expr.expression);
+      switch (expr.type) {
+        case "Identifier":
+          dependencies.add(expr.name);
+          break;
+        case "Sequence":
+          expr.elements.forEach(traverse);
+          break;
+        case "Choice":
+          expr.alternatives.forEach(traverse);
+          break;
+        case "Group":
+        case "Star":
+        case "Plus":
+        case "Optional":
+        case "Quantified":
+        case "PositiveLookahead":
+        case "NegativeLookahead":
+        case "LabeledExpression":
+          traverse(expr.expression);
+          break;
+        case "StringLiteral":
+        case "CharacterClass":
+        case "AnyChar":
+          // These types have no sub-expressions, so no dependencies
+          break;
       }
     };
 
@@ -228,6 +245,7 @@ export class TypeIntegrationEngine {
     } else if (inferredType.isArray) {
       guardImplementation = "return Array.isArray(value);";
     } else {
+      // TODO: Enhance type guard for union and tuple types
       guardImplementation = "return value !== undefined;";
     }
 

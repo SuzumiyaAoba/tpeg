@@ -302,6 +302,7 @@ describe("TypeInferenceEngine", () => {
 
       const result = engine.inferGrammarTypes(grammar);
 
+      // Note: Complex escaping needed here - \\\" in TypeScript becomes \\\\\" in JavaScript test strings  
       expect(result.ruleTypes.get("string")?.typeString).toBe('["\\"", string[], "\\""]');
       expect(result.ruleTypes.get("number")?.typeString).toBe("string[]");
       expect(result.ruleTypes.get("value")?.typeString).toBe('([\"\\\"\", string[], \"\\\"\"]) | (string[])');

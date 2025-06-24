@@ -95,12 +95,8 @@ export const DEFAULT_TYPE_INFERENCE_OPTIONS: TypeInferenceOptions = {
 export interface GrammarTypeInference {
   /** Inferred types for each rule */
   ruleTypes: Map<string, InferredType>;
-  /** Type definitions that need to be generated */
-  typeDefinitions: string[];
   /** Import statements needed */
   imports: string[];
-  /** Type aliases for complex types */
-  typeAliases: Map<string, string>;
   /** Circular dependencies detected */
   circularDependencies: string[][];
 }
@@ -137,9 +133,7 @@ export class TypeInferenceEngine {
 
     const result: GrammarTypeInference = {
       ruleTypes: new Map(),
-      typeDefinitions: [],
       imports: [],
-      typeAliases: new Map(),
       circularDependencies: [],
     };
 
@@ -237,13 +231,14 @@ export class TypeInferenceEngine {
         inferredType = this.inferLabeledExpressionType(expression);
         break;
       default:
+        const unknownType = 'type' in expression ? (expression as any).type : 'unknown';
         inferredType = {
           typeString: "unknown",
           nullable: false,
           isArray: false,
           baseType: "unknown",
           imports: [],
-          documentation: `Unknown expression type: ${(expression as { type: string }).type}`,
+          documentation: `Unknown expression type: ${unknownType}`,
         };
     }
 
