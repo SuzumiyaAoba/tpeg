@@ -23,7 +23,7 @@ import type {
   PositiveLookahead,
   NegativeLookahead,
   LabeledExpression
-} from "../../parser/src/types";
+} from "./grammar-types";
 
 /**
  * Represents an inferred TypeScript type for a parser result

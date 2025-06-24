@@ -9,7 +9,7 @@ import {
   type TypeIntegrationOptions,
   type TypedGrammarDefinition,
 } from "./type-integration";
-import type { GrammarDefinition } from "../../parser/src/types";
+import type { GrammarDefinition } from "./grammar-types";
 import {
   createGrammarDefinition,
   createRuleDefinition,
@@ -22,7 +22,7 @@ import {
   createOptional,
   createStar,
   createPlus,
-} from "../../parser/src/types";
+} from "./grammar-types";
 
 describe("TypeIntegrationEngine", () => {
   let engine: TypeIntegrationEngine;

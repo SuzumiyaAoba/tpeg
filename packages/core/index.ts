@@ -1,6 +1,9 @@
 // Types
 export * from "./src/types";
 
+// Grammar types (shared with parser)
+export * from "./src/grammar-types";
+
 // Utilities
 export * from "./src/utils";
 

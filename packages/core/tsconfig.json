@@ -6,8 +6,8 @@
     "moduleResolution": "node",
     "declaration": true,
     "outDir": "dist",
-    "rootDir": ".",
+    "rootDir": "./src",
     "skipLibCheck": true
   },
-  "include": ["index.ts", "dist", "package.json"]
+  "include": ["src/**/*"]
 }

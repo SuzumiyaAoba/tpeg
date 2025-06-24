@@ -21,7 +21,7 @@ import type {
   Optional,
   Star,
   Plus,
-} from "../../parser/src/types";
+} from "./grammar-types";
 import {
   createGrammarDefinition,
   createRuleDefinition,
@@ -35,7 +35,7 @@ import {
   createStar,
   createPlus,
   createAnyChar,
-} from "../../parser/src/types";
+} from "./grammar-types";
 
 describe("TypeInferenceEngine", () => {
   let engine: TypeInferenceEngine;

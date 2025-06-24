@@ -5,7 +5,7 @@
  * enhanced type-safe parser generation capabilities.
  */
 
-import type { GrammarDefinition, RuleDefinition, Expression } from "../../parser/src/types";
+import type { GrammarDefinition, RuleDefinition, Expression } from "./grammar-types";
 import { TypeInferenceEngine, type GrammarTypeInference, type InferredType } from "./type-inference";
 
 /**
