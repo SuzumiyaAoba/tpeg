@@ -8,9 +8,11 @@ TPEG is a TypeScript library for building parsers using Parsing Expression Gramm
 
 - **tpeg-core**: Core PEG parsing types and utilities
 - **tpeg-combinator**: Parser combinators built on tpeg-core  
-- **tpeg-ast**: Abstract Syntax Tree building and manipulation tools
-- **tpeg-parser**: TPEG grammar parser implementation (Phase 1.1)
-- **tpeg-samples**: Example parsers (JSON, CSV, arithmetic, PEG grammar)
+- **tpeg-ast**: Abstract Syntax Tree building and manipulation tools (using unist ecosystem)
+- **tpeg-parser**: TPEG grammar parser implementation 
+- **tpeg-generator**: Code generation system with template-based output using Eta templates
+- **tpeg-parser-sample**: Comprehensive demo samples showcasing parser capabilities
+- **tpeg-samples**: Legacy example parsers (JSON, CSV, arithmetic, PEG grammar)
 
 ## Development Commands
 
@@ -23,6 +25,9 @@ bun run build
 bun run build:core
 bun run build:ast  
 bun run build:combinator
+bun run build:parser
+bun run build:generator
+bun run build:parser-sample
 ```
 
 ### Testing
@@ -51,15 +56,21 @@ bun run fix
 bun run typecheck
 ```
 
-### Sample Parsers
+### Demo and Sample Parsers
 ```bash
-# Try arithmetic calculator
+# Parser sample demos (comprehensive)
+bun run demo              # Full demo
+bun run demo:basic        # Basic parsing demo
+bun run demo:grammar      # Grammar validation demo  
+bun run demo:files        # File parsing demo
+
+# Legacy sample parsers
 cd packages/samples
 bun run arith "1 + 2 * 3"
 bun run arith --ast "(1 + 2) * 3"
 bun run arith:repl
 
-# Run other samples
+# Run other legacy samples
 bun run json
 bun run csv
 bun run peg
@@ -78,25 +89,37 @@ The parsing system follows a functional approach with these key concepts:
 ```
 tpeg-core (no dependencies)
     ├── tpeg-combinator (depends on tpeg-core)
-    ├── tpeg-ast (depends on unist ecosystem)
-    └── tpeg-samples (depends on tpeg-core, tpeg-combinator)
+    ├── tpeg-ast (depends on unist ecosystem: @types/unist, unist-builder)
+    ├── tpeg-parser (depends on tpeg-core, tpeg-combinator)
+    ├── tpeg-generator (depends on tpeg-core, eta templates)
+    ├── tpeg-parser-sample (depends on tpeg-core, tpeg-parser)
+    └── tpeg-samples (depends on tpeg-core, tpeg-combinator) [legacy]
 ```
 
 ### Current Development Phase
-The project has completed Phase 1.1 with major parser combinator refactoring. Recent achievements:
-- Successfully refactored parser combinators from function-based to direct const declarations
-- Implemented complete TPEG syntax parser for grammar definitions including labeled expressions
-- All 683 tests passing with 100% CI success rate
-- Key files: `packages/parser/src/`: TPEG grammar parser implementation
+The project has completed Phase 3.1 with parser generation system implementation. Recent achievements:
+- **Phase 3.1 Complete**: Implemented comprehensive parser generation system with type inference
+- **Code Generation**: Added tpeg-generator package with Eta template-based code generation
+- **Type Inference System**: Advanced type inference for parser combinators and generated code
+- **Parser Sample Framework**: Comprehensive demo system in tpeg-parser-sample package
+- **Monorepo Structure**: 7 packages with ~192 TypeScript files and 40 test files
+- **Full Test Coverage**: All tests passing with comprehensive integration testing
+- Key files: 
+  - `packages/generator/src/`: Code generation implementation
+  - `packages/parser-sample/src/`: Demo and validation systems
+  - `packages/parser/src/`: TPEG grammar parser implementation
 - Grammar specification: `docs/peg-grammar.md`
 
 ### Testing Strategy
-- Comprehensive test suite with 683 tests across 34 files
+- Comprehensive test suite with 40 test files across 7 packages (~192 TypeScript files total)
 - Unit tests for individual parsers and utilities (*.spec.ts)
 - Integration tests for parser combinations and advanced features
+- Type inference system integration tests
+- Code generation and template system tests
 - Sample parser implementation tests (JSON, CSV, arithmetic)
 - Performance benchmarks in tpeg-combinator
-- Achieved >95% test coverage across all packages
+- Grammar validation and error handling tests
+- Achieved comprehensive test coverage across all packages
 
 ## Code Style and Development Guidelines
 
@@ -143,31 +166,43 @@ The project has completed Phase 1.1 with major parser combinator refactoring. Re
 - Use feature branches with descriptive names
 - Add AI assistance signature to PRs: `*This Pull Request was created with assistance from Claude 4 Sonnet*`
 
-## Recent Major Changes (2025-06-13)
+## Recent Major Changes (2025-07-01)
 
-### Parser Combinator Refactoring
-A comprehensive refactoring was completed to improve parser performance and code readability:
+### Phase 3.1: Parser Generation System (Latest)
+Major milestone with comprehensive parser generation capabilities:
 
-#### Changes Made
-- **Function to Const Migration**: Converted 42 parser definitions from `() => Parser<...>` to direct `const` declarations
-- **Files Affected**:
-  - `packages/core/src/basic.ts`: Core parsers like `any`, `anyChar`, `literal`
-  - `packages/combinator/index.ts`: Major combinators like `letter`, `digit`, `whitespace`, `identifier`
-  - `packages/parser/src/`: All parser files updated to new pattern
-  - Multiple test files updated to remove function calls
+#### Key Additions
+- **tpeg-generator Package**: Complete code generation system using Eta templates
+  - Template-based parser generation with optimized and base variants
+  - Performance utilities and type-safe code generation
+  - Supports both memoized and optimized parser output patterns
 
-#### Benefits Achieved
-- **Performance**: Eliminated unnecessary function wrappers
-- **Readability**: Cleaner, more direct parser definitions
-- **Maintainability**: Reduced cognitive overhead and potential for bugs
-- **Test Coverage**: Maintained 100% functionality with 683/683 tests passing
+- **tpeg-parser-sample Package**: Comprehensive demonstration framework
+  - Grammar validation and parsing demonstrations
+  - File-based parser examples with TPEG grammar files
+  - Performance benchmarking and generator integration demos
 
-#### Breaking Changes
-- Parser imports now use direct constants instead of function calls
-- Example: `any()` → `any`, `letter()` → `letter`, `digit()` → `digit`
-- Exception: Complex parsers with circular dependencies remain functions (e.g., `expression()`)
+- **Type Inference System**: Advanced type inference for parser combinators
+  - Intelligent type narrowing and inference for generated parsers
+  - Integration with existing parser combinator architecture
+  - Comprehensive test coverage for type inference scenarios
 
-#### Migration Guide
+#### Enhanced Package Structure
+- **7 Total Packages**: Core, combinator, AST, parser, generator, parser-sample, samples (legacy)
+- **~192 TypeScript Files**: Substantial codebase growth with robust architecture
+- **40 Test Files**: Comprehensive testing across all packages and integration points
+- **Eta Template System**: Professional-grade code generation with template inheritance
+
+#### Recent Improvements
+- Resolved all Biome linting errors across the monorepo
+- Fixed TypeScript module resolution issues in monorepo configuration
+- Enhanced build system with individual package build targets
+- Comprehensive demo system showcasing parser capabilities
+
+### Previous Phase 1.1: Parser Combinator Refactoring
+Earlier foundational work that established current architecture:
+
+#### Migration Guide (Still Relevant)
 ```typescript
 // Before (deprecated)
 import { letter } from 'tpeg-combinator';
@@ -178,8 +213,6 @@ import { letter } from 'tpeg-combinator';
 const parser = letter;
 ```
 
-#### CI/Testing Improvements
-- Fixed console.error mocking in test suites
-- Resolved unhandled errors between tests
-- All 683 tests passing with 0 failures and 0 errors
-- CI pipeline fully green and stable
+#### Breaking Changes
+- Parser imports now use direct constants instead of function calls
+- Exception: Complex parsers with circular dependencies remain functions (e.g., `expression()`)
