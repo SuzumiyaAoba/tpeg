@@ -2,16 +2,15 @@ import { describe, expect, it } from "bun:test";
 import { any, literal } from "./basic";
 import { charClass } from "./char-class";
 import { choice as alt, seq } from "./combinators";
-import { formatParseError, reportParseError } from "./error";
+import { formatParseError } from "./error";
 import { not } from "./lookahead";
-import { zeroOrMore as many, oneOrMore as many1, optional } from "./repetition";
+import { zeroOrMore as many, oneOrMore as many1 } from "./repetition";
 import { map } from "./transform";
 import { parse } from "./utils";
 
 // Character class definitions
 const digit = () => charClass(["0", "9"]);
 const letter = () => charClass(["a", "z"], ["A", "Z"]);
-const whitespace = () => charClass(" ", "\t", "\n", "\r");
 
 // Integration tests
 describe("Integration tests", () => {

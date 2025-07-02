@@ -10,7 +10,6 @@ import {
   positive,
 } from "./lookahead";
 import { createPos } from "./test-utils";
-import type { Pos } from "./types";
 
 describe("andPredicate", () => {
   it("should succeed if the parser succeeds", () => {

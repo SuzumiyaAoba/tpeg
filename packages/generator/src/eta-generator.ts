@@ -238,10 +238,25 @@ export class EtaTPEGCodeGenerator {
       case 'LabeledExpression':
         this.collectUsedCombinators((expr as LabeledExpression).expression, combinators);
         break;
-      case 'Quantified':
-        combinators.add('sequence'); // Often used in quantification implementation
-        this.collectUsedCombinators((expr as Quantified).expression, combinators);
+      case 'Quantified': {
+        const quantifiedExpr = expr as Quantified;
+        // Add combinator based on what the quantified expression will generate
+        if (quantifiedExpr.max === undefined) {
+          if (quantifiedExpr.min === 0) combinators.add('zeroOrMore');
+          else if (quantifiedExpr.min === 1) combinators.add('oneOrMore');
+          else combinators.add('quantified');
+        } else if (quantifiedExpr.min === quantifiedExpr.max) {
+          if (quantifiedExpr.min !== 1) combinators.add('quantified');
+        } else {
+          if (quantifiedExpr.min === 0 && quantifiedExpr.max === 1) {
+            combinators.add('optional');
+          } else {
+            combinators.add('quantified');
+          }
+        }
+        this.collectUsedCombinators(quantifiedExpr.expression, combinators);
         break;
+      }
     }
   }
 
@@ -352,19 +367,25 @@ export class EtaTPEGCodeGenerator {
   private generateQuantified(expr: Quantified): string {
     const inner = this.generateExpressionCode(expr.expression);
 
+    // Special cases that map to existing combinators
     if (expr.max === undefined) {
       if (expr.min === 0) return `zeroOrMore(${inner})`;
       if (expr.min === 1) return `oneOrMore(${inner})`;
-      return `/* TODO: implement {${expr.min},} */ oneOrMore(${inner})`;
+      return `quantified(${inner}, ${expr.min})`;
     }
 
     if (expr.min === expr.max) {
-      if (expr.min === 0) return '/* never matches */ choice()';
+      if (expr.min === 0) return `quantified(${inner}, 0, 0)`; // {0,0} - always returns empty array
       if (expr.min === 1) return inner;
-      return `/* TODO: implement {${expr.min}} */ ${inner}`;
+      return `quantified(${inner}, ${expr.min}, ${expr.max})`;
     }
 
-    return `/* TODO: implement {${expr.min},${expr.max}} */ optional(${inner})`;
+    // Range case {min,max}
+    if (expr.min === 0 && expr.max === 1) {
+      return `optional(${inner})`;
+    }
+
+    return `quantified(${inner}, ${expr.min}, ${expr.max})`;
   }
 
   private generateLabeledExpression(expr: LabeledExpression): string {

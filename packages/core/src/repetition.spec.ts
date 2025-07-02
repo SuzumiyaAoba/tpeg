@@ -2,11 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { literal as lit } from "./basic";
 import { charClass } from "./char-class";
 import { seq } from "./combinators";
-import { oneOrMore, opt, optional, plus, star, zeroOrMore } from "./repetition";
+import { oneOrMore, opt, optional, plus, quantified, star, zeroOrMore } from "./repetition";
 import type {
-  ParseFailure,
-  ParseResult,
-  ParseSuccess,
   Parser,
   Pos,
 } from "./types";
@@ -124,7 +121,7 @@ describe("repetition edge cases", () => {
   // Test for infinite loop detection
   it("should detect infinite loops in zeroOrMore", () => {
     // Parser that always returns the same position
-    const infiniteParser: Parser<string> = (input, pos) => ({
+    const infiniteParser: Parser<string> = (_input, pos) => ({
       success: true,
       val: "",
       current: pos,
@@ -142,7 +139,7 @@ describe("repetition edge cases", () => {
 
   it("should detect infinite loops in oneOrMore", () => {
     // Parser that always returns the same position
-    const infiniteParser: Parser<string> = (input, pos) => ({
+    const infiniteParser: Parser<string> = (_input, pos) => ({
       success: true,
       val: "",
       current: pos,
@@ -378,6 +375,192 @@ describe("repetition edge cases", () => {
       // zeroOrMore matches as much as possible
       expect(resultZeroOrMore2.val).toEqual(["a", "a", "a"]);
       expect(resultZeroOrMore2.next.offset).toBe(3);
+    }
+  });
+});
+
+describe("quantified", () => {
+  it("should parse exactly n times", () => {
+    const parser = quantified(lit("a"), 3, 3);
+    const result = parser("aaa", { offset: 0, line: 1, column: 1 });
+    expect(isSuccess(result)).toBe(true);
+    if (isSuccess(result)) {
+      expect(result.val).toEqual(["a", "a", "a"]);
+      expect(result.next.offset).toBe(3);
+    }
+  });
+
+  it("should parse range {n,m}", () => {
+    const parser = quantified(lit("a"), 2, 4);
+    
+    // Test minimum case
+    const result1 = parser("aa", { offset: 0, line: 1, column: 1 });
+    expect(isSuccess(result1)).toBe(true);
+    if (isSuccess(result1)) {
+      expect(result1.val).toEqual(["a", "a"]);
+    }
+
+    // Test middle case
+    const result2 = parser("aaa", { offset: 0, line: 1, column: 1 });
+    expect(isSuccess(result2)).toBe(true);
+    if (isSuccess(result2)) {
+      expect(result2.val).toEqual(["a", "a", "a"]);
+    }
+
+    // Test maximum case
+    const result3 = parser("aaaa", { offset: 0, line: 1, column: 1 });
+    expect(isSuccess(result3)).toBe(true);
+    if (isSuccess(result3)) {
+      expect(result3.val).toEqual(["a", "a", "a", "a"]);
+    }
+
+    // Test beyond maximum (should stop at max)
+    const result4 = parser("aaaaa", { offset: 0, line: 1, column: 1 });
+    expect(isSuccess(result4)).toBe(true);
+    if (isSuccess(result4)) {
+      expect(result4.val).toEqual(["a", "a", "a", "a"]);
+      expect(result4.next.offset).toBe(4); // Should not consume the 5th 'a'
+    }
+  });
+
+  it("should parse minimum {n,} (unbounded)", () => {
+    const parser = quantified(lit("a"), 2);
+    
+    // Test minimum case
+    const result1 = parser("aa", { offset: 0, line: 1, column: 1 });
+    expect(isSuccess(result1)).toBe(true);
+    if (isSuccess(result1)) {
+      expect(result1.val).toEqual(["a", "a"]);
+    }
+
+    // Test many repetitions
+    const result2 = parser("aaaaaa", { offset: 0, line: 1, column: 1 });
+    expect(isSuccess(result2)).toBe(true);
+    if (isSuccess(result2)) {
+      expect(result2.val).toEqual(["a", "a", "a", "a", "a", "a"]);
+    }
+  });
+
+  it("should handle zero minimum {0,n}", () => {
+    const parser = quantified(lit("a"), 0, 3);
+    
+    // Test no matches
+    const result1 = parser("b", { offset: 0, line: 1, column: 1 });
+    expect(isSuccess(result1)).toBe(true);
+    if (isSuccess(result1)) {
+      expect(result1.val).toEqual([]);
+    }
+
+    // Test some matches
+    const result2 = parser("aa", { offset: 0, line: 1, column: 1 });
+    expect(isSuccess(result2)).toBe(true);
+    if (isSuccess(result2)) {
+      expect(result2.val).toEqual(["a", "a"]);
+    }
+  });
+
+  it("should fail if minimum not met", () => {
+    const parser = quantified(lit("a"), 3, 5);
+    
+    // Test insufficient matches
+    const result1 = parser("aa", { offset: 0, line: 1, column: 1 });
+    expect(isFailure(result1)).toBe(true);
+    if (isFailure(result1)) {
+      // Should fail when trying to parse 3rd "a" but only 2 available
+      expect(result1.error.message).toContain("end of input");
+      expect(result1.error.parserName).toBe("quantified");
+    }
+
+    // Test no matches
+    const result2 = parser("b", { offset: 0, line: 1, column: 1 });
+    expect(isFailure(result2)).toBe(true);
+    if (isFailure(result2)) {
+      // Should fail when trying to parse 1st "a" but got "b"
+      expect(result2.error.message).toContain("Unexpected character \"b\"");
+      expect(result2.error.parserName).toBe("quantified");
+    }
+  });
+
+  it("should validate parameters", () => {
+    // Test negative minimum
+    const parser1 = quantified(lit("a"), -1, 3);
+    const result1 = parser1("a", { offset: 0, line: 1, column: 1 });
+    expect(isFailure(result1)).toBe(true);
+    if (isFailure(result1)) {
+      expect(result1.error.message).toContain("minimum (-1) cannot be negative");
+    }
+
+    // Test max < min
+    const parser2 = quantified(lit("a"), 5, 3);
+    const result2 = parser2("a", { offset: 0, line: 1, column: 1 });
+    expect(isFailure(result2)).toBe(true);
+    if (isFailure(result2)) {
+      expect(result2.error.message).toContain("maximum (3) cannot be less than minimum (5)");
+    }
+  });
+
+  it("should detect infinite loops", () => {
+    // Parser that always succeeds but consumes no input
+    const infiniteParser: Parser<string> = (_input, pos) => ({
+      success: true,
+      val: "",
+      current: pos,
+      next: pos, // Does not advance position
+    });
+
+    const parser = quantified(infiniteParser, 1, 3);
+    const result = parser("test", { offset: 0, line: 1, column: 1 });
+
+    expect(isFailure(result)).toBe(true);
+    if (isFailure(result)) {
+      expect(result.error.message).toContain("Infinite loop detected");
+    }
+  });
+
+  it("should be equivalent to existing parsers for special cases", () => {
+    // {0,} should be equivalent to zeroOrMore
+    const quantifiedParser = quantified(lit("a"), 0);
+    const zeroOrMoreParser = zeroOrMore(lit("a"));
+    
+    const input = "aaab";
+    const pos = { offset: 0, line: 1, column: 1 };
+    
+    const result1 = quantifiedParser(input, pos);
+    const result2 = zeroOrMoreParser(input, pos);
+    
+    expect(isSuccess(result1)).toBe(true);
+    expect(isSuccess(result2)).toBe(true);
+    if (isSuccess(result1) && isSuccess(result2)) {
+      expect(result1.val).toEqual(result2.val);
+      expect(result1.next.offset).toBe(result2.next.offset);
+    }
+
+    // {1,} should be equivalent to oneOrMore
+    const quantifiedParser2 = quantified(lit("a"), 1);
+    const oneOrMoreParser = oneOrMore(lit("a"));
+    
+    const result3 = quantifiedParser2(input, pos);
+    const result4 = oneOrMoreParser(input, pos);
+    
+    expect(isSuccess(result3)).toBe(true);
+    expect(isSuccess(result4)).toBe(true);
+    if (isSuccess(result3) && isSuccess(result4)) {
+      expect(result3.val).toEqual(result4.val);
+      expect(result3.next.offset).toBe(result4.next.offset);
+    }
+
+    // {0,1} should be equivalent to optional
+    const quantifiedParser3 = quantified(lit("a"), 0, 1);
+    const optionalParser = optional(lit("a"));
+    
+    const result5 = quantifiedParser3(input, pos);
+    const result6 = optionalParser(input, pos);
+    
+    expect(isSuccess(result5)).toBe(true);
+    expect(isSuccess(result6)).toBe(true);
+    if (isSuccess(result5) && isSuccess(result6)) {
+      expect(result5.val).toEqual(result6.val);
+      expect(result5.next.offset).toBe(result6.next.offset);
     }
   });
 });
