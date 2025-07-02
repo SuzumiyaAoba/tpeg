@@ -306,10 +306,10 @@ describe("TypeIntegrationEngine", () => {
         "export interface ParserGrammarParser {",
       );
       expect(parserInterface).toContain(
-        "identifier(input: string): { success: boolean; value?: IdentifierResult; error?: string; position: number };",
+        "identifier(input: string): ParseResult<IdentifierResult>;",
       );
       expect(parserInterface).toContain(
-        "number(input: string): { success: boolean; value?: NumberResult; error?: string; position: number };",
+        "number(input: string): ParseResult<NumberResult>;",
       );
       expect(parserInterface).toContain("}");
     });

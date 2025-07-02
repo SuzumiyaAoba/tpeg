@@ -279,7 +279,6 @@ export class TypeInferenceEngine {
         const inferredType = this.inferExpressionType(rule.pattern);
         result.ruleTypes.set(rule.name, inferredType);
         result.stats.typesInferred++;
-
         // Add any new imports
         result.imports.push(...inferredType.imports);
       } catch (error) {
@@ -313,6 +312,20 @@ export class TypeInferenceEngine {
               documentation: `Type inference failed: ${error.message}`,
             });
           }
+        } else if (
+          error instanceof Error &&
+          error.message.includes("Circular dependency")
+        ) {
+          result.circularDependencies.push([...this.context.ruleStack]);
+          // Use a placeholder type for circular dependencies
+          result.ruleTypes.set(rule.name, {
+            typeString: "unknown",
+            nullable: false,
+            isArray: false,
+            baseType: "unknown",
+            imports: [],
+            documentation: `Circular dependency detected in rule ${rule.name}`,
+          });
         } else {
           throw error;
         }
