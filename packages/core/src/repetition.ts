@@ -216,6 +216,23 @@ export const quantified =
     let currentPos = pos;
     let count = 0;
 
+    // Helper function to create infinite loop error
+    const createInfiniteLoopError = (position: typeof pos, repetitionInfo: string) => {
+      return createFailure(
+        `Infinite loop detected in quantified: Parser succeeded but consumed no input at position ${position.offset}`,
+        position,
+        {
+          parserName: "quantified",
+          context: [
+            "Parser matched but did not consume any input",
+            `Input: "${input.slice(position.offset, position.offset + 10)}${input.length > position.offset + 10 ? "..." : ""}"`,
+            `Position: line ${position.line}, column ${position.column}`,
+            repetitionInfo,
+          ],
+        },
+      );
+    };
+
     // Parse exactly min times first (required)
     for (let i = 0; i < min; i++) {
       const result = parser(input, currentPos);
@@ -241,19 +258,7 @@ export const quantified =
 
       // Check for infinite loop (position doesn't advance)
       if (result.next.offset === currentPos.offset) {
-        return createFailure(
-          `Infinite loop detected in quantified: Parser succeeded but consumed no input at position ${currentPos.offset}`,
-          currentPos,
-          {
-            parserName: "quantified",
-            context: [
-              "Parser matched but did not consume any input",
-              `Input: "${input.slice(currentPos.offset, currentPos.offset + 10)}${input.length > currentPos.offset + 10 ? "..." : ""}"`,
-              `Position: line ${currentPos.line}, column ${currentPos.column}`,
-              `Repetition: ${i + 1}/${min} (required)`,
-            ],
-          },
-        );
+        return createInfiniteLoopError(currentPos, `Repetition: ${i + 1}/${min} (required)`);
       }
 
       results.push(result.val);
@@ -272,19 +277,7 @@ export const quantified =
 
       // Check for infinite loop (position doesn't advance)
       if (result.next.offset === currentPos.offset) {
-        return createFailure(
-          `Infinite loop detected in quantified: Parser succeeded but consumed no input at position ${currentPos.offset}`,
-          currentPos,
-          {
-            parserName: "quantified",
-            context: [
-              "Parser matched but did not consume any input",
-              `Input: "${input.slice(currentPos.offset, currentPos.offset + 10)}${input.length > currentPos.offset + 10 ? "..." : ""}"`,
-              `Position: line ${currentPos.line}, column ${currentPos.column}`,
-              `Repetition: ${i + 1} (optional)`,
-            ],
-          },
-        );
+        return createInfiniteLoopError(currentPos, `Repetition: ${i + 1} (optional)`);
       }
 
       results.push(result.val);

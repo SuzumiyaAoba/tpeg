@@ -11,7 +11,6 @@ import { parse } from "./utils";
 // Character class definitions
 const digit = () => charClass(["0", "9"]);
 const letter = () => charClass(["a", "z"], ["A", "Z"]);
-// const whitespace = () => charClass(" ", "\t", "\n", "\r");
 
 // Integration tests
 describe("Integration tests", () => {
