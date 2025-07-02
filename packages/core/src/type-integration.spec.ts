@@ -5,7 +5,6 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import {
   TypeIntegrationEngine,
-  DEFAULT_TYPE_INTEGRATION_OPTIONS,
   type TypeIntegrationOptions,
   type TypedGrammarDefinition,
 } from "./type-integration";

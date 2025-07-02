@@ -80,6 +80,15 @@ function createOptional(expression: Expression) {
   };
 }
 
+function createQuantified(expression: Expression, min: number, max?: number) {
+  return {
+    type: 'Quantified',
+    expression,
+    min,
+    max,
+  };
+}
+
 function createIdentifier(name: string) {
   return {
     type: 'Identifier',
@@ -199,6 +208,22 @@ describe('EtaTPEGCodeGenerator', () => {
       expect(result.code).toContain('zeroOrMore(literal("a"))');
       expect(result.code).toContain('oneOrMore(literal("b"))');
       expect(result.code).toContain('optional(literal("c"))');
+    });
+
+    it('should generate quantified expressions', async () => {
+      const grammar = createGrammarDefinition('TestGrammar', [], [
+        createRuleDefinition('exactly3', createQuantified(createStringLiteral('a'), 3, 3)),
+        createRuleDefinition('range2to5', createQuantified(createStringLiteral('b'), 2, 5)),
+        createRuleDefinition('minimum3', createQuantified(createStringLiteral('c'), 3)),
+        createRuleDefinition('zero0', createQuantified(createStringLiteral('d'), 0, 0)),
+      ]);
+
+      const result = await generateEtaTypeScriptParser(grammar);
+
+      expect(result.code).toContain('quantified(literal("a"), 3, 3)');
+      expect(result.code).toContain('quantified(literal("b"), 2, 5)');
+      expect(result.code).toContain('quantified(literal("c"), 3)');
+      expect(result.code).toContain('quantified(literal("d"), 0, 0)');
     });
   });
 

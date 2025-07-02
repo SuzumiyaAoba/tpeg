@@ -1,7 +1,7 @@
 import { describe, expect, it, spyOn } from "bun:test";
 import { lit } from "./basic";
 import { formatParseError, formatParseResult, reportParseError } from "./error";
-import type { ParseError, ParseResult, Pos } from "./types";
+import type { ParseError, ParseResult } from "./types";
 import { parse } from "./utils";
 
 describe("formatParseError", () => {
@@ -188,7 +188,7 @@ describe("reportParseError", () => {
     reportParseError(result, input);
 
     expect(spy).toHaveBeenCalled();
-    expect(spy.mock.calls[0][0]).toContain("Parse error");
+    expect(spy.mock.calls[0]?.[0]).toContain("Parse error");
 
     spy.mockRestore();
   });
@@ -217,7 +217,7 @@ describe("reportParseError", () => {
     reportParseError(result, input, { colorize: false });
 
     expect(spy).toHaveBeenCalled();
-    const errorMessage = spy.mock.calls[0][0];
+    const errorMessage = spy.mock.calls[0]?.[0];
     expect(errorMessage).not.toContain("\x1b[31m"); // No ANSI color codes
 
     spy.mockRestore();

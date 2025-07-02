@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { literal } from "./basic";
-import type { ParseResult, ParseSuccess } from "./types";
+import type { ParseSuccess } from "./types";
 import {
   createFailure,
   getCharAndLength,

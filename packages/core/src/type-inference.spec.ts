@@ -5,22 +5,10 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import {
   TypeInferenceEngine,
-  DEFAULT_TYPE_INFERENCE_OPTIONS,
   type TypeInferenceOptions,
-  type GrammarTypeInference,
 } from "./type-inference";
 import type {
   GrammarDefinition,
-  RuleDefinition,
-  Expression,
-  StringLiteral,
-  CharacterClass,
-  Identifier,
-  Sequence,
-  Choice,
-  Optional,
-  Star,
-  Plus,
 } from "./grammar-types";
 import {
   createGrammarDefinition,

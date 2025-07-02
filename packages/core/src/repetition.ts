@@ -183,3 +183,119 @@ export const oneOrMore =
  * @see oneOrMore
  */
 export const plus = oneOrMore;
+
+/**
+ * Parser for quantified repetition (exactly n times, n to m times, or n or more times).
+ *
+ * @template T Type of the parse result value
+ * @param parser Target parser
+ * @param min Minimum number of repetitions (inclusive)
+ * @param max Maximum number of repetitions (inclusive, undefined for unbounded)
+ * @returns Parser<T[]> A parser that returns an array of parsed values with the specified count.
+ */
+export const quantified =
+  <T>(parser: Parser<T>, min: number, max?: number): Parser<T[]> =>
+  (input: string, pos) => {
+    if (min < 0) {
+      return createFailure(
+        `Invalid quantified range: minimum (${min}) cannot be negative`,
+        pos,
+        { parserName: "quantified" },
+      );
+    }
+
+    if (max !== undefined && max < min) {
+      return createFailure(
+        `Invalid quantified range: maximum (${max}) cannot be less than minimum (${min})`,
+        pos,
+        { parserName: "quantified" },
+      );
+    }
+
+    const results: T[] = [];
+    let currentPos = pos;
+    let count = 0;
+
+    // Parse exactly min times first (required)
+    for (let i = 0; i < min; i++) {
+      const result = parser(input, currentPos);
+      if (!result.success) {
+        return createFailure(
+          `quantified parser failed at required repetition ${i + 1}/${min}`,
+          currentPos,
+          {
+            ...result.error,
+            parserName: "quantified",
+            context: [
+              `in quantified{${min},${max || ""}}`,
+              `failed at required repetition ${i + 1}/${min}`,
+              ...(result.error.context
+                ? Array.isArray(result.error.context)
+                  ? result.error.context
+                  : [result.error.context]
+                : []),
+            ],
+          },
+        );
+      }
+
+      // Check for infinite loop (position doesn't advance)
+      if (result.next.offset === currentPos.offset) {
+        return createFailure(
+          `Infinite loop detected in quantified: Parser succeeded but consumed no input at position ${currentPos.offset}`,
+          currentPos,
+          {
+            parserName: "quantified",
+            context: [
+              "Parser matched but did not consume any input",
+              `Input: "${input.slice(currentPos.offset, currentPos.offset + 10)}${input.length > currentPos.offset + 10 ? "..." : ""}"`,
+              `Position: line ${currentPos.line}, column ${currentPos.column}`,
+              `Repetition: ${i + 1}/${min} (required)`,
+            ],
+          },
+        );
+      }
+
+      results.push(result.val);
+      currentPos = result.next;
+      count++;
+    }
+
+    // Parse additional times up to max (optional)
+    const effectiveMax = max ?? Number.MAX_SAFE_INTEGER;
+    for (let i = count; i < effectiveMax; i++) {
+      const result = parser(input, currentPos);
+      if (!result.success) {
+        // Optional repetitions can fail - just break
+        break;
+      }
+
+      // Check for infinite loop (position doesn't advance)
+      if (result.next.offset === currentPos.offset) {
+        return createFailure(
+          `Infinite loop detected in quantified: Parser succeeded but consumed no input at position ${currentPos.offset}`,
+          currentPos,
+          {
+            parserName: "quantified",
+            context: [
+              "Parser matched but did not consume any input",
+              `Input: "${input.slice(currentPos.offset, currentPos.offset + 10)}${input.length > currentPos.offset + 10 ? "..." : ""}"`,
+              `Position: line ${currentPos.line}, column ${currentPos.column}`,
+              `Repetition: ${i + 1} (optional)`,
+            ],
+          },
+        );
+      }
+
+      results.push(result.val);
+      currentPos = result.next;
+      count++;
+    }
+
+    return {
+      success: true,
+      val: results,
+      current: pos,
+      next: currentPos,
+    };
+  };
