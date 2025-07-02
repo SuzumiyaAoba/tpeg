@@ -238,7 +238,7 @@ export class EtaTPEGCodeGenerator {
       case 'LabeledExpression':
         this.collectUsedCombinators((expr as LabeledExpression).expression, combinators);
         break;
-      case 'Quantified':
+      case 'Quantified': {
         const quantifiedExpr = expr as Quantified;
         // Add combinator based on what the quantified expression will generate
         if (quantifiedExpr.max === undefined) {
@@ -256,6 +256,7 @@ export class EtaTPEGCodeGenerator {
         }
         this.collectUsedCombinators(quantifiedExpr.expression, combinators);
         break;
+      }
     }
   }
 
