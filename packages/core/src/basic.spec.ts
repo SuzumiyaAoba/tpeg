@@ -3,558 +3,767 @@ import { any, anyChar, lit, literal } from "./basic";
 import type { Pos } from "./types";
 import { parse } from "./utils";
 
-describe("any", () => {
-  it("should parse any single character", () => {
-    const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = any(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("a");
-      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
-    }
+/**
+ * Helper function to create a position object for cleaner test setup
+ */
+const createPos = (offset = 0, column = 0, line = 1): Pos => ({
+  offset,
+  column,
+  line,
+});
+
+/**
+ * Helper function to create expected next position for ASCII characters
+ */
+const nextAsciiPos = (
+  current: Pos,
+  length: number,
+  hasNewline = false,
+): Pos => {
+  if (hasNewline) {
+    return {
+      offset: current.offset + length,
+      column: 0,
+      line: current.line + 1,
+    };
+  }
+  return {
+    offset: current.offset + length,
+    column: current.column + length,
+    line: current.line,
+  };
+};
+
+describe("anyChar parser", () => {
+  describe("Basic character parsing", () => {
+    it("should parse ASCII characters correctly", () => {
+      // Purpose: Test basic ASCII character parsing functionality
+      const result = anyChar()("a", createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("a");
+        expect(result.next).toEqual(nextAsciiPos(createPos(), 1));
+      }
+    });
+
+    it("should parse numeric characters correctly", () => {
+      // Purpose: Verify parsing of digit characters
+      const result = anyChar()("7", createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("7");
+      }
+    });
+
+    it("should parse symbol characters correctly", () => {
+      // Purpose: Test parsing of special characters commonly used in programming
+      const symbols = ["!", "@", "#", "$", "%", "^", "&", "*", "(", ")"];
+
+      for (const symbol of symbols) {
+        const result = anyChar()(symbol, createPos());
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.val).toBe(symbol);
+        }
+      }
+    });
   });
 
-  it("should parse newline character", () => {
-    const input = "\n";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = any(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("\n");
-      expect(result.next).toEqual({ offset: 1, column: 0, line: 2 });
-    }
+  describe("Unicode character handling", () => {
+    it("should parse Japanese characters (hiragana) correctly", () => {
+      // Purpose: Verify multibyte character processing
+      const result = anyChar()("あ", createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("あ");
+        expect(result.next).toEqual({
+          offset: 1,
+          column: 1,
+          line: 1,
+        });
+      }
+    });
+
+    it("should parse emoji (surrogate pairs) correctly", () => {
+      // Purpose: Verify proper handling of surrogate pair characters
+      const emoji = "🙂";
+      const result = anyChar()(emoji, createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe(emoji);
+        // Emoji uses 2 UTF-16 code units but is treated as 1 character
+        expect(result.next).toEqual({
+          offset: 2, // 2 bytes in UTF-16 encoding
+          column: 1, // 1 character for display
+          line: 1,
+        });
+      }
+    });
+
+    it("should parse complex Unicode characters (musical symbols) correctly", () => {
+      // Purpose: Verify handling of special characters using surrogate pairs
+      const musicalSymbol = "𝄞"; // Musical G clef (U+1D11E)
+      const result = anyChar()(musicalSymbol, createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe(musicalSymbol);
+        expect(result.next).toEqual({
+          offset: 2, // Surrogate pair requires 2 bytes
+          column: 1, // 1 character for display
+          line: 1,
+        });
+      }
+    });
   });
 
-  it("should return error for empty input", () => {
-    const input = "";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = any(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toBe("Unexpected EOI");
-      expect(result.error.pos).toEqual(pos);
-    }
+  describe("Newline character handling", () => {
+    it("should parse newline characters and update line numbers correctly", () => {
+      // Purpose: Verify position tracking with newline characters
+      const result = anyChar()("\n", createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("\n");
+        expect(result.next).toEqual({
+          offset: 1,
+          column: 0, // Reset to column 0 after newline
+          line: 2, // Increment line number
+        });
+      }
+    });
+
+    it("should parse tab characters correctly", () => {
+      // Purpose: Verify tab character processing
+      const result = anyChar()("\t", createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("\t");
+        expect(result.next).toEqual(nextAsciiPos(createPos(), 1));
+      }
+    });
+
+    it("should parse carriage return characters correctly", () => {
+      // Purpose: Verify processing of Windows-style line ending components
+      const result = anyChar()("\r", createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("\r");
+      }
+    });
   });
 
-  it("should return error for out of bound", () => {
-    const input = "a";
-    const pos: Pos = { offset: 1, column: 1, line: 1 };
-    const result = any(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toBe("Unexpected EOI");
-      expect(result.error.pos).toEqual(pos);
-    }
+  describe("Error cases", () => {
+    it("should return error for empty input", () => {
+      // Purpose: Verify proper EOI error generation
+      const result = anyChar()("", createPos());
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toBe("Unexpected EOI");
+        expect(result.error.expected).toBe("any character");
+        expect(result.error.found).toBe("end of input");
+        expect(result.error.parserName).toBe("anyChar");
+        expect(result.error.pos).toEqual(createPos());
+      }
+    });
+
+    it("should return error for out-of-bounds position", () => {
+      // Purpose: Verify boundary error handling
+      const result = anyChar()("a", createPos(1, 1, 1));
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toBe("Unexpected EOI");
+      }
+    });
+
+    it("should customize error messages with custom parser name", () => {
+      // Purpose: Verify debugging functionality with custom parser names
+      const customName = "custom character parser";
+      const result = anyChar(customName)("", createPos());
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.parserName).toBe(customName);
+      }
+    });
+  });
+
+  describe("any function (anyChar alias)", () => {
+    it("should behave identically to anyChar", () => {
+      // Purpose: Verify alias function behavior
+      const input = "x";
+      const pos = createPos();
+
+      const anyResult = any(input, pos);
+      const anyCharResult = anyChar("any")(input, pos);
+
+      expect(anyResult).toEqual(anyCharResult);
+    });
   });
 });
 
-describe("anyChar", () => {
-  it("should parse any single character", () => {
-    const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = anyChar()(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("a");
-      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
-    }
+describe("literal parser", () => {
+  describe("Basic string parsing", () => {
+    it("should parse simple ASCII strings", () => {
+      // Purpose: Verify basic string matching functionality
+      const parser = literal("hello");
+      const result = parser("hello world", createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("hello");
+        expect(result.next).toEqual(nextAsciiPos(createPos(), 5));
+      }
+    });
+
+    it("should parse programming keywords", () => {
+      // Purpose: Test real-world programming language usage examples
+      const keywords = ["function", "const", "let", "var", "if", "else"];
+
+      for (const keyword of keywords) {
+        const parser = literal(keyword);
+        const result = parser(`${keyword} something`, createPos());
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.val).toBe(keyword);
+        }
+      }
+    });
+
+    it("should parse symbols and operators", () => {
+      // Purpose: Test programming language operator parsing
+      const operators = ["==", "!=", "<=", ">=", "&&", "||", "++", "--"];
+
+      for (const op of operators) {
+        const parser = literal(op);
+        const result = parser(`${op} rest`, createPos());
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.val).toBe(op);
+        }
+      }
+    });
   });
 
-  it("should parse Unicode characters correctly", () => {
-    const input = "🙂";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = anyChar()(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("🙂");
-      expect(result.next).toEqual({ offset: 2, column: 1, line: 1 });
-    }
+  describe("Unicode string processing", () => {
+    it("should parse Japanese strings correctly", () => {
+      // Purpose: Verify multibyte string processing
+      const parser = literal("こんにちは");
+      const result = parser("こんにちは世界", createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("こんにちは");
+        expect(result.next).toEqual({
+          offset: 5, // 5 characters
+          column: 5,
+          line: 1,
+        });
+      }
+    });
+
+    it("should parse strings containing emoji", () => {
+      // Purpose: Handle modern text with emoji characters
+      const parser = literal("🙂👍🎉");
+      const result = parser("🙂👍🎉!!!", createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("🙂👍🎉");
+        expect(result.next).toEqual({
+          offset: 6, // Each emoji is 2 bytes
+          column: 3, // 3 characters for display
+          line: 1,
+        });
+      }
+    });
+
+    it("should parse mixed ASCII and Unicode strings", () => {
+      // Purpose: Handle mixed text common in web applications
+      const parser = literal("Hello 🌍 World");
+      const result = parser("Hello 🌍 World!", createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("Hello 🌍 World");
+        expect(result.next).toEqual({
+          offset: 14, // 6(Hello ) + 2(🌍) + 6( World)
+          column: 13, // 13 characters for display
+          line: 1,
+        });
+      }
+    });
   });
 
-  it("should parse surrogate pair characters correctly", () => {
-    const input = "𝄞"; // Musical G clef (U+1D11E)
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = anyChar()(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("𝄞");
-      expect(result.next).toEqual({ offset: 2, column: 1, line: 1 });
-    }
+  describe("Newline and whitespace handling", () => {
+    it("should parse strings with newlines and update line numbers correctly", () => {
+      // Purpose: Verify position tracking in multiline strings
+      const parser = literal("line1\nline2");
+      const result = parser("line1\nline2\nline3", createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("line1\nline2");
+        expect(result.next).toEqual({
+          offset: 11,
+          column: 5, // Length of "line2"
+          line: 2,
+        });
+      }
+    });
+
+    it("should parse strings with multiple newlines", () => {
+      // Purpose: Handle complex newline patterns
+      const parser = literal("a\n\nb");
+      const result = parser("a\n\nb more", createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("a\n\nb");
+        expect(result.next).toEqual({
+          offset: 4,
+          column: 1, // Position after "b"
+          line: 3, // Line 3 due to 2 newlines
+        });
+      }
+    });
+
+    it("should parse strings with tabs and spaces", () => {
+      // Purpose: Handle indented code parsing
+      const parser = literal("function\t()");
+      const result = parser("function\t() {", createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("function\t()");
+        expect(result.next).toEqual(nextAsciiPos(createPos(), 11));
+      }
+    });
+
+    it("should parse Windows-style line endings (CRLF)", () => {
+      // Purpose: Verify cross-platform compatibility
+      const parser = literal("line1\r\nline2");
+      const result = parser("line1\r\nline2\r\n", createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("line1\r\nline2");
+        expect(result.next).toEqual({
+          offset: 12,
+          column: 5,
+          line: 2,
+        });
+      }
+    });
   });
 
-  it("should parse newline character and update position correctly", () => {
-    const input = "\n";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = anyChar()(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("\n");
-      expect(result.next).toEqual({ offset: 1, column: 0, line: 2 });
-    }
+  describe("Position tracking accuracy", () => {
+    it("should handle parsing from non-zero offset correctly", () => {
+      // Purpose: Verify position tracking in streaming parsing scenarios
+      const parser = literal("test");
+      const result = parser("prefix_test_suffix", createPos(7, 7, 1));
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("test");
+        expect(result.next).toEqual({
+          offset: 11,
+          column: 11,
+          line: 1,
+        });
+      }
+    });
+
+    it("should track positions correctly in multiline parsing", () => {
+      // Purpose: Verify position management in complex document parsing
+      const parser = literal("target");
+      const input = "line1\nline2\ntarget here";
+      const startPos = createPos(12, 0, 3); // Start position of "target"
+
+      const result = parser(input, startPos);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("target");
+        expect(result.next).toEqual({
+          offset: 18,
+          column: 6,
+          line: 3,
+        });
+      }
+    });
   });
 
-  it("should parse tab and other whitespace characters", () => {
-    const input = "\t";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = anyChar()(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("\t");
-      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
-    }
+  describe("Error cases and detailed error reporting", () => {
+    it("should report error at first mismatched character", () => {
+      // Purpose: Verify detailed error position reporting
+      const parser = literal("expected");
+      const result = parser("expeXted", createPos());
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toContain("Unexpected character");
+        expect(result.error.pos).toEqual({
+          offset: 4, // Position of 'X'
+          column: 4,
+          line: 1,
+        });
+        expect(result.error.expected).toBe("c");
+        expect(result.error.found).toBe("X");
+      }
+    });
+
+    it("should report error correctly for insufficient input", () => {
+      // Purpose: Verify proper EOI error reporting
+      const parser = literal("complete");
+      const result = parser("comp", createPos());
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toContain(
+          'Expected "complete" but got end of input',
+        );
+        expect(result.error.expected).toBe("complete");
+        expect(result.error.found).toBe("end of input");
+      }
+    });
+
+    it("should report Unicode character mismatches correctly", () => {
+      // Purpose: Verify Unicode character error reporting
+      const parser = literal("こんにちは");
+      const result = parser("こんばんは", createPos());
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toContain("Unexpected character");
+        expect(result.error.pos).toEqual({
+          offset: 2, // Position of "ば"
+          column: 2,
+          line: 1,
+        });
+      }
+    });
+
+    it("should report emoji character mismatches correctly", () => {
+      // Purpose: Verify emoji character error reporting
+      const parser = literal("🙂👍");
+      const result = parser("🙂😭", createPos());
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toContain("Unexpected character");
+        expect(result.error.pos).toEqual({
+          offset: 2, // Position of second emoji
+          column: 1, // Second character for display
+          line: 1,
+        });
+      }
+    });
+
+    it("should customize errors with custom parser name", () => {
+      // Purpose: Verify custom error messaging for debugging
+      const parser = literal("keyword", "keyword parser");
+      const result = parser("other", createPos());
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.parserName).toBe("keyword parser");
+      }
+    });
   });
 
-  it("should return error for empty input", () => {
-    const input = "";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = anyChar()(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toBe("Unexpected EOI");
-      expect(result.error.pos).toEqual(pos);
-      expect(result.error.expected).toBe("any character");
-      expect(result.error.found).toBe("end of input");
-      expect(result.error.parserName).toBe("anyChar");
-    }
+  describe("Performance and edge cases", () => {
+    it("should parse long strings efficiently", () => {
+      // Purpose: Performance test (verify optimized path)
+      const longString = "a".repeat(1000);
+      const parser = literal(longString);
+      const result = parser(`${longString}extra`, createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe(longString);
+        expect(result.next.offset).toBe(1000);
+      }
+    });
+
+    it("should correctly distinguish Unicode normalization differences", () => {
+      // Purpose: Verify Unicode normalization handling
+      const composed = "é"; // Single code point U+00E9
+      const decomposed = "e\u0301"; // e + combining mark U+0065 + U+0301
+
+      const composedParser = literal(composed);
+      const decomposedParser = literal(decomposed);
+
+      // Verify different representations are treated as distinct
+      expect(composedParser(composed, createPos()).success).toBe(true);
+      expect(decomposedParser(decomposed, createPos()).success).toBe(true);
+      expect(composedParser(decomposed, createPos()).success).toBe(false);
+      expect(decomposedParser(composed, createPos()).success).toBe(false);
+    });
+
+    it("should handle maximum Unicode code points", () => {
+      // Purpose: Test Unicode range boundary values
+      const maxCodePoint = String.fromCodePoint(0x10ffff);
+      const parser = literal(maxCodePoint);
+      const result = parser(maxCodePoint, createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe(maxCodePoint);
+      }
+    });
   });
 
-  it("should return error for out of bound", () => {
-    const input = "a";
-    const pos: Pos = { offset: 1, column: 1, line: 1 };
-    const result = anyChar()(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toBe("Unexpected EOI");
-      expect(result.error.pos).toEqual(pos);
-    }
-  });
+  describe("lit function (literal alias)", () => {
+    it("should behave identically to literal", () => {
+      // Purpose: Verify alias function behavior
+      const str = "test";
+      const input = "test input";
+      const pos = createPos();
 
-  it("should use custom parser name in error messages", () => {
-    const input = "";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = anyChar("customAnyChar")(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.parserName).toBe("customAnyChar");
-    }
-  });
-});
+      const litResult = lit(str)(input, pos);
+      const literalResult = literal(str)(input, pos);
 
-describe("literal", () => {
-  it("should parse a simple string", () => {
-    const input = "abc";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = literal("abc")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("abc");
-      expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
-    }
-  });
+      expect(litResult).toEqual(literalResult);
+    });
 
-  it("should parse Unicode strings correctly", () => {
-    const input = "こんにちは";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = literal("こんにちは")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("こんにちは");
-      expect(result.next).toEqual({ offset: 5, column: 5, line: 1 });
-    }
-  });
+    it("should work as a concise shorthand", () => {
+      // Purpose: Verify code brevity benefits
+      const parser = lit("if");
+      const result = parser("if (condition)", createPos());
 
-  it("should parse emoji strings correctly", () => {
-    const input = "🙂👍🎉";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = literal("🙂👍🎉")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("🙂👍🎉");
-      expect(result.next).toEqual({ offset: 6, column: 3, line: 1 });
-    }
-  });
-
-  it("should parse strings with newlines correctly", () => {
-    const input = "hello\nworld";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = literal("hello\nworld")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("hello\nworld");
-      expect(result.next).toEqual({ offset: 11, column: 5, line: 2 });
-    }
-  });
-
-  it("should parse strings with tabs and spaces", () => {
-    const input = "hello\tworld test";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = literal("hello\tworld test")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("hello\tworld test");
-      expect(result.next).toEqual({ offset: 16, column: 16, line: 1 });
-    }
-  });
-
-  it("should handle mixed ASCII and Unicode characters", () => {
-    const input = "Hello 🌍 World";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = literal("Hello 🌍 World")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("Hello 🌍 World");
-      expect(result.next).toEqual({ offset: 14, column: 13, line: 1 });
-    }
-  });
-
-  it("should return error if string does not match", () => {
-    const input = "abd";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = literal("abc")(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toContain("Unexpected character");
-      expect(result.error.pos).toEqual({ offset: 2, column: 2, line: 1 });
-      expect(result.error.expected).toBe("c");
-      expect(result.error.found).toBe("d");
-      expect(result.error.parserName).toBe("literal");
-    }
-  });
-
-  it("should return error for insufficient input", () => {
-    const input = "ab";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = literal("abc")(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toContain(
-        'Expected "abc" but got end of input',
-      );
-      expect(result.error.pos).toEqual(pos);
-      expect(result.error.expected).toBe("abc");
-      expect(result.error.found).toBe("end of input");
-    }
-  });
-
-  it("should return error when Unicode string doesn't match", () => {
-    const input = "こんばんは";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = literal("こんにちは")(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toContain("Unexpected character");
-      expect(result.error.pos).toEqual({ offset: 2, column: 2, line: 1 });
-    }
-  });
-
-  it("should return error when emoji string doesn't match", () => {
-    const input = "🙂😭🎉";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = literal("🙂👍🎉")(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toContain("Unexpected character");
-      expect(result.error.pos).toEqual({ offset: 2, column: 1, line: 1 });
-    }
-  });
-
-  it("should use custom parser name in error messages", () => {
-    const input = "xyz";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = literal("abc", "customLiteral")(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.parserName).toBe("customLiteral");
-    }
-  });
-
-  it("should handle position correctly when parsing starts at non-zero offset", () => {
-    const input = "prefixabc";
-    const pos: Pos = { offset: 6, column: 6, line: 1 };
-    const result = literal("abc")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("abc");
-      expect(result.next).toEqual({ offset: 9, column: 9, line: 1 });
-    }
-  });
-
-  it("should handle position correctly with multiline parsing", () => {
-    const input = "line1\nline2\nabc";
-    const pos: Pos = { offset: 12, column: 0, line: 3 };
-    const result = literal("abc")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("abc");
-      expect(result.next).toEqual({ offset: 15, column: 3, line: 3 });
-    }
-  });
-});
-
-describe("string", () => {
-  it("should parse a string", () => {
-    const input = "abc";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = lit("abc")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("abc");
-      expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
-    }
-  });
-
-  it("should return error if string does not match", () => {
-    const input = "abd";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = lit("abc")(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toContain("Unexpected character");
-      expect(result.error.pos).toEqual({ offset: 2, column: 2, line: 1 });
-    }
-  });
-
-  it("should handle newline in string", () => {
-    const input = "a\nb";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = lit("a\nb")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("a\nb");
-      expect(result.next).toEqual({ offset: 3, column: 1, line: 2 });
-    }
-  });
-
-  it("should handle surrogate pairs correctly", () => {
-    // 𝄞 (musical G clef) is a surrogate pair (U+1D11E) represented as \uD834\uDD1E
-    const input = "𝄞abc";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = lit("𝄞abc")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("𝄞abc");
-      // 𝄞 is a surrogate pair (2 code units) + 3 characters
-      expect(result.next).toEqual({ offset: 5, column: 4, line: 1 });
-    }
-  });
-
-  it("should correctly parse emoji characters", () => {
-    // 🙂 is a surrogate pair (U+1F642)
-    const input = "🙂🙂";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = lit("🙂🙂")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("🙂🙂");
-      // Each emoji is 2 code units, so 4 in total
-      expect(result.next).toEqual({ offset: 4, column: 2, line: 1 });
-    }
-  });
-
-  it("should handle mixed normal and surrogate pair characters", () => {
-    const input = "a🙂b";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = lit("a🙂b")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("a🙂b");
-      // 1 (a) + 2 (🙂) + 1 (b) = 4 code units
-      expect(result.next).toEqual({ offset: 4, column: 3, line: 1 });
-    }
-  });
-
-  it("should fail correctly on partial emoji mismatch", () => {
-    const input = "a🙃b"; // Different emoji (upside-down smile)
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = lit("a🙂b")(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toContain("Unexpected character");
-      expect(result.error.pos).toEqual({ offset: 1, column: 1, line: 1 });
-    }
-  });
-
-  it("should handle very long strings", () => {
-    const longString = "a".repeat(1000);
-    const input = longString;
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = lit(longString)(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe(longString);
-      expect(result.next).toEqual({ offset: 1000, column: 1000, line: 1 });
-    }
-  });
-
-  it("should handle control characters", () => {
-    const input = "a\r\n\tb";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = lit("a\r\n\tb")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("a\r\n\tb");
-      expect(result.next).toEqual({ offset: 5, column: 2, line: 2 });
-    }
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("if");
+      }
+    });
   });
 });
 
-describe("anyChar()", () => {
-  it("should parse any single character", () => {
-    const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = anyChar()(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("a");
-      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
-    }
+describe("parse utility function", () => {
+  describe("Basic usage", () => {
+    it("should execute parser and return result", () => {
+      // Purpose: Verify basic parse function operation
+      const parser = lit("hello");
+      const result = parse(parser)("hello world");
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("hello");
+      }
+    });
+
+    it("should work with anyChar parser for single characters", () => {
+      // Purpose: Verify anyChar and parse combination
+      const result = parse(anyChar())("x");
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("x");
+      }
+    });
+
+    it("should handle Unicode characters correctly", () => {
+      // Purpose: Verify Unicode support
+      const result = parse(anyChar())("🎌");
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("🎌");
+      }
+    });
+  });
+
+  describe("Error handling", () => {
+    it("should return error when parser fails", () => {
+      // Purpose: Verify error propagation
+      const parser = lit("expected");
+      const result = parse(parser)("actual");
+
+      expect(result.success).toBe(false);
+    });
+
+    it("should handle EOI errors with anyChar", () => {
+      // Purpose: Verify EOI error handling
+      const result = parse(anyChar())("");
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toBe("Unexpected EOI");
+      }
+    });
+
+    it("should preserve error information from nested parsers", () => {
+      // Purpose: Verify error information propagation
+      const parser = literal("test", "test parser");
+      const result = parse(parser)("fail");
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.parserName).toBe("test parser");
+      }
+    });
   });
 });
 
-describe("literal(str)", () => {
-  it("should parse a string", () => {
-    const input = "abc";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = literal("abc")(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("abc");
-      expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
-    }
-  });
-});
+describe("Real-world usage examples and scenario tests", () => {
+  describe("Programming language syntax elements", () => {
+    it("should parse JavaScript function declaration start", () => {
+      // Real-world example: Function declaration parsing
+      const functionKeyword = lit("function");
+      const space = lit(" ");
+      const identifier = lit("myFunction");
 
-describe("parse", () => {
-  it("should parse input with the given parser", () => {
-    const input = "abc";
-    const result = parse(lit("abc"))(input);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("abc");
-    }
-  });
+      const input = "function myFunction() {}";
+      let pos = createPos();
 
-  it("should return error if parser fails", () => {
-    const input = "abd";
-    const result = parse(lit("abc"))(input);
-    expect(result.success).toBe(false);
-  });
+      const funcResult = functionKeyword(input, pos);
+      expect(funcResult.success).toBe(true);
+      if (funcResult.success) {
+        pos = funcResult.next;
+      }
 
-  it("should work with anyChar parser", () => {
-    const input = "x";
-    const result = parse(anyChar())(input);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("x");
-    }
-  });
+      const spaceResult = space(input, pos);
+      expect(spaceResult.success).toBe(true);
+      if (spaceResult.success) {
+        pos = spaceResult.next;
+      }
 
-  it("should work with Unicode input", () => {
-    const input = "🎌";
-    const result = parse(anyChar())(input);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("🎌");
-    }
-  });
+      const identResult = identifier(input, pos);
+      expect(identResult.success).toBe(true);
+      if (identResult.success) {
+        expect(identResult.val).toBe("myFunction");
+      }
+    });
 
-  it("should return error for empty input with anyChar", () => {
-    const input = "";
-    const result = parse(anyChar())(input);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.message).toBe("Unexpected EOI");
-    }
+    it("should parse string literals", () => {
+      // Real-world example: String literal parsing
+      const quote = lit('"');
+      const content = lit("Hello, World!");
+
+      const input = '"Hello, World!"';
+      let pos = createPos();
+
+      const openQuote = quote(input, pos);
+      expect(openQuote.success).toBe(true);
+      if (openQuote.success) {
+        pos = openQuote.next;
+      }
+
+      const contentResult = content(input, pos);
+      expect(contentResult.success).toBe(true);
+      if (contentResult.success) {
+        expect(contentResult.val).toBe("Hello, World!");
+      }
+    });
   });
 
-  it("should preserve error information from nested parsers", () => {
-    const input = "xyz";
-    const result = parse(literal("abc", "testParser"))(input);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.parserName).toBe("testParser");
-    }
-  });
-});
+  describe("Data format parsing", () => {
+    it("should parse CSV headers", () => {
+      // Real-world example: CSV file header parsing
+      const name = lit("name");
+      const comma = lit(",");
+      const age = lit("age");
+      const email = lit("email");
 
-describe("Edge cases and performance", () => {
-  it("should handle empty string literal parsing", () => {
-    // Note: This test might not be valid depending on NonEmptyString type constraint
-    // but we test the edge case behavior if it's allowed
-    const input = "test";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+      const input = "name,age,email";
+      let pos = createPos();
 
-    // Test successful case where empty string should match at any position
-    // This behavior depends on implementation details
-  });
+      const nameResult = name(input, pos);
+      expect(nameResult.success).toBe(true);
+      if (nameResult.success) pos = nameResult.next;
 
-  it("should handle parsing at end of input boundary", () => {
-    const input = "abc";
-    const pos: Pos = { offset: 3, column: 3, line: 1 };
-    const result = anyChar()(input, pos);
-    expect(result.success).toBe(false);
-  });
+      const comma1Result = comma(input, pos);
+      expect(comma1Result.success).toBe(true);
+      if (comma1Result.success) pos = comma1Result.next;
 
-  it("should handle complex Unicode normalization scenarios", () => {
-    // Test with composed vs decomposed Unicode characters
-    const composed = "é"; // Single code point U+00E9
-    const decomposed = "e\u0301"; // e + combining acute accent U+0065 + U+0301
+      const ageResult = age(input, pos);
+      expect(ageResult.success).toBe(true);
+      if (ageResult.success) pos = ageResult.next;
 
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+      const comma2Result = comma(input, pos);
+      expect(comma2Result.success).toBe(true);
+      if (comma2Result.success) pos = comma2Result.next;
 
-    const result1 = literal(composed)(composed, pos);
-    const result2 = literal(decomposed)(decomposed, pos);
+      const emailResult = email(input, pos);
+      expect(emailResult.success).toBe(true);
+    });
 
-    expect(result1.success).toBe(true);
-    expect(result2.success).toBe(true);
+    it("should parse configuration files", () => {
+      // Real-world example: Configuration file parsing
+      const key = lit("database");
+      const equals = lit("=");
+      const value = lit("localhost:5432");
 
-    // They should not match each other due to different normalization
-    const result3 = literal(composed)(decomposed, pos);
-    const result4 = literal(decomposed)(composed, pos);
+      const input = "database=localhost:5432";
+      let pos = createPos();
 
-    expect(result3.success).toBe(false);
-    expect(result4.success).toBe(false);
-  });
+      const keyResult = key(input, pos);
+      expect(keyResult.success).toBe(true);
+      if (keyResult.success) pos = keyResult.next;
 
-  it("should handle maximum Unicode code points", () => {
-    // Test with characters at the edge of Unicode range
-    const maxCodePoint = String.fromCodePoint(0x10ffff); // Maximum valid Unicode code point
-    const input = maxCodePoint;
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+      const equalsResult = equals(input, pos);
+      expect(equalsResult.success).toBe(true);
+      if (equalsResult.success) pos = equalsResult.next;
 
-    const result = anyChar()(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe(maxCodePoint);
-    }
+      const valueResult = value(input, pos);
+      expect(valueResult.success).toBe(true);
+      if (valueResult.success) {
+        expect(valueResult.val).toBe("localhost:5432");
+      }
+    });
   });
 
-  it("should handle multiple consecutive newlines correctly", () => {
-    const input = "\n\n\n";
-    let pos: Pos = { offset: 0, column: 0, line: 1 };
+  describe("Internationalization support tests", () => {
+    it("should parse multilingual keywords", () => {
+      // Real-world example: Multilingual programming language support
+      const keywords = {
+        english: lit("function"),
+        japanese: lit("関数"),
+        korean: lit("함수"),
+        chinese: lit("函数"),
+      };
 
-    // Parse first newline
-    const result1 = anyChar()(input, pos);
-    expect(result1.success).toBe(true);
-    if (result1.success) {
-      expect(result1.next).toEqual({ offset: 1, column: 0, line: 2 });
-      pos = result1.next;
-    }
+      expect(keywords.english("function test", createPos()).success).toBe(true);
+      expect(keywords.japanese("関数 テスト", createPos()).success).toBe(true);
+      expect(keywords.korean("함수 테스트", createPos()).success).toBe(true);
+      expect(keywords.chinese("函数 测试", createPos()).success).toBe(true);
+    });
 
-    // Parse second newline
-    const result2 = anyChar()(input, pos);
-    expect(result2.success).toBe(true);
-    if (result2.success) {
-      expect(result2.next).toEqual({ offset: 2, column: 0, line: 3 });
-      pos = result2.next;
-    }
+    it("should parse social media posts with emoji", () => {
+      // Real-world example: Modern text processing
+      const greeting = lit("Hello");
+      const space = lit(" ");
+      const emoji = lit("👋");
+      const world = lit("🌍");
 
-    // Parse third newline
-    const result3 = anyChar()(input, pos);
-    expect(result3.success).toBe(true);
-    if (result3.success) {
-      expect(result3.next).toEqual({ offset: 3, column: 0, line: 4 });
-    }
+      const input = "Hello 👋🌍";
+      let pos = createPos();
+
+      const greetingResult = greeting(input, pos);
+      expect(greetingResult.success).toBe(true);
+      if (greetingResult.success) pos = greetingResult.next;
+
+      const spaceResult = space(input, pos);
+      expect(spaceResult.success).toBe(true);
+      if (spaceResult.success) pos = spaceResult.next;
+
+      const emojiResult = emoji(input, pos);
+      expect(emojiResult.success).toBe(true);
+      if (emojiResult.success) pos = emojiResult.next;
+
+      const worldResult = world(input, pos);
+      expect(worldResult.success).toBe(true);
+    });
   });
 });
