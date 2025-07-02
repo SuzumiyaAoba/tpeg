@@ -237,19 +237,20 @@ export const quantified =
     for (let i = 0; i < min; i++) {
       const result = parser(input, currentPos);
       if (!result.success) {
+        const failure = result as ParseFailure;
         return createFailure(
           `quantified parser failed at required repetition ${i + 1}/${min}`,
           currentPos,
           {
-            ...result.error,
+            ...failure.error,
             parserName: "quantified",
             context: [
               `in quantified{${min},${max || ""}}`,
               `failed at required repetition ${i + 1}/${min}`,
-              ...(result.error.context
-                ? Array.isArray(result.error.context)
-                  ? result.error.context
-                  : [result.error.context]
+              ...(failure.error.context
+                ? Array.isArray(failure.error.context)
+                  ? failure.error.context
+                  : [failure.error.context]
                 : []),
             ],
           },
