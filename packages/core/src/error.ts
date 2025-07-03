@@ -454,7 +454,7 @@ const normalizeExpected = (
       .filter((item): item is string => item !== undefined);
 
     // Remove duplicates while preserving order
-    const uniqueItems = [...new Set(validItems)];
+    const uniqueItems = Array.from(new Set(validItems));
     return uniqueItems.length > 0 ? uniqueItems.join(", ") : undefined;
   }
 
