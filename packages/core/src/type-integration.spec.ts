@@ -251,8 +251,8 @@ describe("TypeIntegrationEngine", () => {
       const parserInterface = engine.generateParserInterface(typedGrammar);
 
       expect(parserInterface).toContain("export interface ParserGrammarParser {");
-      expect(parserInterface).toContain("identifier(input: string): ParseResult<IdentifierResult>;");
-      expect(parserInterface).toContain("number(input: string): ParseResult<NumberResult>;");
+      expect(parserInterface).toContain("identifier(input: string): { success: boolean; value?: IdentifierResult; error?: string; position: number };");
+      expect(parserInterface).toContain("number(input: string): { success: boolean; value?: NumberResult; error?: string; position: number };");
       expect(parserInterface).toContain("}");
     });
 

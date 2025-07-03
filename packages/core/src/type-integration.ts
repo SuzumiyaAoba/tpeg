@@ -335,7 +335,7 @@ export class TypeIntegrationEngine {
         interfaceLines.push("   */");
       }
       
-      interfaceLines.push(`  ${rule.name}(input: string): ParseResult<${resultType}>;`);
+      interfaceLines.push(`  ${rule.name}(input: string): { success: boolean; value?: ${resultType}; error?: string; position: number };`);
     }
     
     interfaceLines.push("}");
