@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 import { lit } from "./basic";
 import {
   choice,
-  maybe,
   reject,
   seq,
   sequence,
@@ -88,30 +87,6 @@ describe("sequence", () => {
     if (result.success) {
       expect(result.val).toEqual(["a", "b", "c"]);
       expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
-    }
-  });
-});
-
-describe("maybe", () => {
-  it("should return the parsed value if parser succeeds", () => {
-    const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = maybe(lit("a"))(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBe("a");
-      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
-    }
-  });
-
-  it("should return null if parser fails", () => {
-    const input = "b";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const result = maybe(lit("a"))(input, pos);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.val).toBeNull();
-      expect(result.next).toEqual(pos); // Position should not advance
     }
   });
 });

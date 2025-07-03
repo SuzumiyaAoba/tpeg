@@ -148,32 +148,6 @@ export const choice =
   };
 
 /**
- * Parser that makes a parser optional, returning the value or null.
- * Different from repetition.ts optional which returns [T] | [].
- *
- * @template T Type of the parser result
- * @param parser The parser to make optional
- * @returns Parser that always succeeds, returning T | null
- */
-export const maybe =
-  <T>(parser: Parser<T>): Parser<T | null> =>
-  (input: string, pos) => {
-    const result = parser(input, pos);
-
-    if (result.success) {
-      return result;
-    }
-
-    // Return null if parser fails, but don't advance position
-    return {
-      success: true,
-      val: null,
-      current: pos,
-      next: pos,
-    };
-  };
-
-/**
  * Parser that tries to parse with the given parser and returns a default value if it fails.
  *
  * @template T Type of the parser result
