@@ -9,12 +9,12 @@ import {
   notPredicate,
   positive,
 } from "./lookahead";
-import { createPos } from "./test-utils";
+import { createTestPos } from "./test-utils";
 
 describe("andPredicate", () => {
   it("should succeed if the parser succeeds", () => {
     const input = "abc";
-    const pos = createPos(0);
+    const pos = createTestPos(0);
     const result = andPredicate(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
@@ -26,7 +26,7 @@ describe("andPredicate", () => {
 
   it("should fail if the parser fails", () => {
     const input = "bcd";
-    const pos = createPos(0);
+    const pos = createTestPos(0);
     const result = andPredicate(lit("a"))(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -41,7 +41,7 @@ describe("andPredicate", () => {
 
   it("should work at different positions in the input", () => {
     const input = "xyzabc";
-    const pos = createPos(3);
+    const pos = createTestPos(3);
     const result = andPredicate(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
@@ -51,21 +51,21 @@ describe("andPredicate", () => {
 
   it("should handle empty input gracefully", () => {
     const input = "";
-    const pos = createPos(0);
+    const pos = createTestPos(0);
     const result = andPredicate(lit("a"))(input, pos);
     expect(result.success).toBe(false);
   });
 
   it("should handle end of input", () => {
     const input = "a";
-    const pos = createPos(1); // at end of input
+    const pos = createTestPos(1); // at end of input
     const result = andPredicate(lit("b"))(input, pos);
     expect(result.success).toBe(false);
   });
 
   it("should preserve error context from nested parsers", () => {
     const input = "bcd";
-    const pos = createPos(0);
+    const pos = createTestPos(0);
     const result = andPredicate(lit("a"))(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -79,7 +79,7 @@ describe("andPredicate", () => {
 describe("notPredicate", () => {
   it("should succeed if the parser fails", () => {
     const input = "bcd";
-    const pos = createPos(0);
+    const pos = createTestPos(0);
     const result = notPredicate(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
@@ -91,7 +91,7 @@ describe("notPredicate", () => {
 
   it("should fail if the parser succeeds", () => {
     const input = "abc";
-    const pos = createPos(0);
+    const pos = createTestPos(0);
     const result = notPredicate(lit("a"))(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -108,7 +108,7 @@ describe("notPredicate", () => {
 
   it("should work at different positions in the input", () => {
     const input = "xyzdef";
-    const pos = createPos(3);
+    const pos = createTestPos(3);
     const result = notPredicate(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
@@ -118,14 +118,14 @@ describe("notPredicate", () => {
 
   it("should handle empty input gracefully", () => {
     const input = "";
-    const pos = createPos(0);
+    const pos = createTestPos(0);
     const result = notPredicate(lit("a"))(input, pos);
     expect(result.success).toBe(true); // fails to match "a", so notPredicate succeeds
   });
 
   it("should handle end of input", () => {
     const input = "a";
-    const pos = createPos(1); // at end of input
+    const pos = createTestPos(1); // at end of input
     const result = notPredicate(lit("b"))(input, pos);
     expect(result.success).toBe(true); // fails to match "b", so notPredicate succeeds
   });
@@ -135,7 +135,7 @@ describe("Aliases", () => {
   describe("and", () => {
     it("should be an alias for andPredicate", () => {
       const input = "abc";
-      const pos = createPos(0);
+      const pos = createTestPos(0);
       const result = and(lit("a"))(input, pos);
       expect(result.success).toBe(true);
       if (result.success) {
@@ -146,7 +146,7 @@ describe("Aliases", () => {
 
     it("should behave identically to andPredicate", () => {
       const input = "xyz";
-      const pos = createPos(0);
+      const pos = createTestPos(0);
       const andResult = and(lit("a"))(input, pos);
       const andPredicateResult = andPredicate(lit("a"))(input, pos);
       expect(andResult).toEqual(andPredicateResult);
@@ -156,7 +156,7 @@ describe("Aliases", () => {
   describe("positive", () => {
     it("should be an alias for andPredicate", () => {
       const input = "abc";
-      const pos = createPos(0);
+      const pos = createTestPos(0);
       const result = positive(lit("a"))(input, pos);
       expect(result.success).toBe(true);
     });
@@ -165,7 +165,7 @@ describe("Aliases", () => {
   describe("assert", () => {
     it("should be an alias for andPredicate", () => {
       const input = "abc";
-      const pos = createPos(0);
+      const pos = createTestPos(0);
       const result = assert(lit("a"))(input, pos);
       expect(result.success).toBe(true);
     });
@@ -174,7 +174,7 @@ describe("Aliases", () => {
   describe("not", () => {
     it("should be an alias for notPredicate", () => {
       const input = "bcd";
-      const pos = createPos(0);
+      const pos = createTestPos(0);
       const result = not(lit("a"))(input, pos);
       expect(result.success).toBe(true);
       if (result.success) {
@@ -185,7 +185,7 @@ describe("Aliases", () => {
 
     it("should behave identically to notPredicate", () => {
       const input = "abc";
-      const pos = createPos(0);
+      const pos = createTestPos(0);
       const notResult = not(lit("a"))(input, pos);
       const notPredicateResult = notPredicate(lit("a"))(input, pos);
       expect(notResult).toEqual(notPredicateResult);
@@ -195,7 +195,7 @@ describe("Aliases", () => {
   describe("negative", () => {
     it("should be an alias for notPredicate", () => {
       const input = "bcd";
-      const pos = createPos(0);
+      const pos = createTestPos(0);
       const result = negative(lit("a"))(input, pos);
       expect(result.success).toBe(true);
     });
@@ -205,7 +205,7 @@ describe("Aliases", () => {
 describe("Edge Cases", () => {
   it("should handle complex nested lookaheads", () => {
     const input = "abc";
-    const pos = createPos(0);
+    const pos = createTestPos(0);
     // Double positive lookahead
     const result = andPredicate(andPredicate(lit("a")))(input, pos);
     expect(result.success).toBe(true);
@@ -216,7 +216,7 @@ describe("Edge Cases", () => {
 
   it("should handle positive followed by negative lookahead", () => {
     const input = "abc";
-    const pos = createPos(0);
+    const pos = createTestPos(0);
     // Positive lookahead for "a" followed by negative lookahead for "b"
     const positiveResult = andPredicate(lit("a"))(input, pos);
     expect(positiveResult.success).toBe(true);
@@ -227,7 +227,7 @@ describe("Edge Cases", () => {
 
   it("should handle Unicode characters", () => {
     const input = "🚀abc";
-    const pos = createPos(0);
+    const pos = createTestPos(0);
     const result = andPredicate(lit("🚀"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
@@ -237,7 +237,7 @@ describe("Edge Cases", () => {
 
   it("should preserve position accuracy with multi-byte characters", () => {
     const input = "🚀🔥";
-    const pos = createPos(2); // after the rocket emoji
+    const pos = createTestPos(2); // after the rocket emoji
     const result = andPredicate(lit("🔥"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
