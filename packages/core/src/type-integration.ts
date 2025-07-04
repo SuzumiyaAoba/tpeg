@@ -1,83 +1,36 @@
 /**
  * Type Integration System for TPEG
  *
- * This module integrates type inference with code generation, providing
- * enhanced type-safe parser generation capabilities for TPEG grammars.
+ * This module integrates type inference from TPEG grammars with TypeScript type generation,
+ * providing strong support for generating type-safe parsers.
  *
- * The Type Integration System provides a comprehensive solution for:
- * - **Type Inference**: Automatic TypeScript type generation from TPEG grammar definitions
- * - **Circular Dependency Detection**: Identification and handling of circular rule references
- * - **Performance Optimization**: Caching and performance monitoring capabilities
- * - **Validation**: Grammar validation with detailed error reporting
- * - **Code Generation**: Type-safe parser interface and type guard generation
+ * ## Main Features
+ * - **Type Inference**: Automatically generate TypeScript types from TPEG grammars
+ * - **Rule Name Validation**: Allow various naming formats such as snake_case, kebab-case, camelCase, etc.
+ * - **PascalCase Conversion**: Convert any rule name to PascalCase for type names
+ * - **Circular Reference Detection**: Detect circular dependencies between rules
+ * - **Performance Optimization**: Optimize with caching and complexity calculations
+ * - **Detailed Error Reporting**: Notify failures in validation and type inference
  *
- * ## Key Features
+ * @remarks
+ * - Rule names are allowed to be `[a-zA-Z_][a-zA-Z0-9_-]*` (e.g., snake_case, kebab-case, camelCase, etc.)
+ * - Type names are automatically converted to PascalCase (e.g., kebab-case → KebabCaseResult)
  *
- * ### Type Safety
- * - Generates precise TypeScript types for all grammar rules
- * - Provides type guards for runtime type checking
- * - Supports strict type generation (no `any` or `unknown` types)
- *
- * ### Performance
- * - Intelligent caching system for repeated grammar processing
- * - Performance metrics and monitoring
- * - Complexity analysis with warnings for overly complex rules
- *
- * ### Error Handling
- * - Comprehensive error reporting with detailed messages
- * - Grammar validation before processing
- * - Circular dependency detection and warnings
- *
- * ## Usage Example
- *
+ * @example
  * ```typescript
- * import { TypeIntegrationEngine } from './type-integration';
- * import { createGrammarDefinition, createRuleDefinition, createStringLiteral } from './grammar-types';
- *
- * // Create a simple grammar
- * const grammar = createGrammarDefinition('Calculator', [], [
- *   createRuleDefinition('number', createStringLiteral('123', '"')),
- *   createRuleDefinition('operator', createStringLiteral('+', '"')),
- * ]);
- *
- * // Initialize the type integration engine
- * const engine = new TypeIntegrationEngine({
- *   strictTypes: true,
- *   generateTypeGuards: true,
- *   typeNamespace: 'CalculatorTypes'
- * });
- *
- * // Generate typed grammar with full type information
- * const typedGrammar = engine.createTypedGrammar(grammar);
- *
- * // Access generated type definitions
- * console.log(typedGrammar.typeDefinitions);
- *
- * // Check for circular dependencies
- * const hasCircular = engine.hasCircularDependency(typedGrammar, 'number');
- * console.log('Has circular dependency:', hasCircular);
+ * // Example rule names
+ * createRuleDefinition('snake_case', ...)
+ * createRuleDefinition('kebab-case', ...)
+ * createRuleDefinition('camelCase', ...)
+ * // Example type definition output
+ * // export type SnakeCaseResult = ...
+ * // export type KebabCaseResult = ...
+ * // export type CamelCaseResult = ...
  * ```
  *
- * ## Architecture
- *
- * The system consists of several key components:
- *
- * 1. **TypeIntegrationEngine**: Main orchestrator that coordinates type inference and code generation
- * 2. **TypeInferenceEngine**: Handles the actual type inference logic (imported from type-inference.ts)
- * 3. **TypedGrammarDefinition**: Enhanced grammar with type information and metadata
- * 4. **TypedRuleDefinition**: Individual rules with inferred types and performance metrics
- *
- * ## Performance Considerations
- *
- * - Large grammars may take significant time for initial type inference
- * - Enable caching for repeated processing of the same grammar
- * - Monitor complexity scores to identify rules that may need refactoring
- * - Use `includePerformanceMetrics: false` in production for better performance
- *
- * @see {@link TypeIntegrationEngine} - Main engine class
- * @see {@link TypedGrammarDefinition} - Enhanced grammar with type information
- * @see {@link TypeIntegrationOptions} - Configuration options
- * @since 1.0.0
+ * @see TypeIntegrationEngine
+ * @see TypedGrammarDefinition
+ * @see TypeIntegrationOptions
  */
 
 import type {
