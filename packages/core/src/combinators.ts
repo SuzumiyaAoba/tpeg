@@ -1,4 +1,4 @@
-import type { ParseError, Parser } from "./types";
+import type { ParseError, Parser, Pos } from "./types";
 import { createFailure, isFailure } from "./utils";
 
 /**
@@ -9,6 +9,7 @@ import { createFailure, isFailure } from "./utils";
  *
  * @template P Array of parsers
  * @param parsers Array of parsers to run in sequence
+ * @param parserName Optional name for error reporting and debugging
  * @returns Parser that succeeds if all parsers succeed in sequence, returning a tuple of all results
  *
  * @example
@@ -26,14 +27,13 @@ import { createFailure, isFailure } from "./utils";
  * // result.val will be [42, "+", 37]
  * ```
  */
-export const sequence =
-  <P extends Parser<unknown>[]>(
-    ...parsers: P
-  ): Parser<{ [K in keyof P]: P[K] extends Parser<infer T> ? T : never }> =>
-  (input: string, pos) => {
+export const sequence = <P extends Parser<unknown>[]>(
+  ...parsers: P
+): Parser<{ [K in keyof P]: P[K] extends Parser<infer T> ? T : never }> => {
+  const sequenceParser = (input: string, pos: Pos) => {
     if (parsers.length === 0) {
       return {
-        success: true,
+        success: true as const,
         val: [] as {
           [K in keyof P]: P[K] extends Parser<infer T> ? T : never;
         },
@@ -78,7 +78,7 @@ export const sequence =
     }
 
     return {
-      success: true,
+      success: true as const,
       val: result as {
         [K in keyof P]: P[K] extends Parser<infer T> ? T : never;
       },
@@ -86,6 +86,9 @@ export const sequence =
       next: currentPos,
     };
   };
+
+  return sequenceParser;
+};
 
 /**
  * Alias for {@link sequence}.
@@ -113,6 +116,7 @@ export const seq = sequence;
  *
  * @template T Array of possible result types
  * @param parsers Array of parsers to try in order
+ * @param parserName Optional name for error reporting and debugging
  * @returns Parser that succeeds if any of the parsers succeed, returning the result of the first successful parser
  *
  * @example
@@ -134,11 +138,10 @@ export const seq = sequence;
  * );
  * ```
  */
-export const choice =
-  <T extends unknown[]>(
-    ...parsers: { [K in keyof T]: Parser<T[K]> }
-  ): Parser<T[number]> =>
-  (input: string, pos) => {
+export const choice = <T extends unknown[]>(
+  ...parsers: { [K in keyof T]: Parser<T[K]> }
+): Parser<T[number]> => {
+  const choiceParser = (input: string, pos: Pos) => {
     if (parsers.length === 0) {
       return createFailure("Empty choice", pos, {
         parserName: "choice",
@@ -195,6 +198,9 @@ export const choice =
     });
   };
 
+  return choiceParser;
+};
+
 /**
  * Parser that tries to parse with the given parser and returns a default value if it fails.
  *
@@ -204,6 +210,7 @@ export const choice =
  * @template T Type of the parser result and default value
  * @param parser The parser to try
  * @param defaultValue The default value to return if parser fails
+ * @param parserName Optional name for error reporting and debugging
  * @returns Parser that always succeeds, returning either the parsed result or the default value
  *
  * @example
@@ -225,7 +232,7 @@ export const choice =
  * ```
  */
 export const withDefault =
-  <T>(parser: Parser<T>, defaultValue: T): Parser<T> =>
+  <T>(parser: Parser<T>, defaultValue: T, parserName?: string): Parser<T> =>
   (input: string, pos) => {
     const result = parser(input, pos);
 
@@ -250,6 +257,7 @@ export const withDefault =
  *
  * @template T Type of the parser result (not used in the result, parser should fail)
  * @param parser The parser that should fail for this combinator to succeed
+ * @param parserName Optional name for error reporting and debugging
  * @returns Parser that returns null if the given parser fails, or fails if the parser succeeds
  *
  * @example
@@ -259,13 +267,13 @@ export const withDefault =
  * ```
  */
 export const reject =
-  <T>(parser: Parser<T>): Parser<null> =>
+  <T>(parser: Parser<T>, parserName?: string): Parser<null> =>
   (input: string, pos) => {
     const result = parser(input, pos);
 
     if (result.success) {
       return createFailure("Expected parser to fail", pos, {
-        parserName: "reject",
+        parserName: parserName || "reject",
         expected: "parser to fail",
       });
     }

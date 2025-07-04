@@ -34,10 +34,11 @@ const createInfiniteLoopError = (
  *
  * @template T Type of the parse result value
  * @param parser Target parser
+ * @param parserName Optional name for error reporting and debugging
  * @returns Parser<[T] | []> A parser that returns a singleton array if the parser succeeds, or an empty array if it fails.
  */
 export const optional =
-  <T>(parser: Parser<T>): Parser<[T] | []> =>
+  <T>(parser: Parser<T>, parserName?: string): Parser<[T] | []> =>
   (input: string, pos) => {
     const result = parser(input, pos);
 
@@ -64,6 +65,7 @@ export const optional =
  *
  * @template T Type of the parse result value
  * @param parser Target parser
+ * @param parserName Optional name for error reporting and debugging
  * @returns Parser<[T] | []> A parser that returns a singleton array if the parser succeeds, or an empty array if it fails.
  * @see optional
  */
@@ -74,10 +76,11 @@ export const opt = optional;
  *
  * @template T Type of the parse result value
  * @param parser Target parser
+ * @param parserName Optional name for error reporting and debugging
  * @returns Parser<T[]> A parser that returns an array of parsed values (possibly empty).
  */
 export const zeroOrMore =
-  <T>(parser: Parser<T>): Parser<T[]> =>
+  <T>(parser: Parser<T>, parserName?: string): Parser<T[]> =>
   (input: string, pos) => {
     const results: T[] = [];
     let currentPos = pos;
@@ -91,7 +94,11 @@ export const zeroOrMore =
 
       // Check for infinite loop (position doesn't advance)
       if (result.next.offset === currentPos.offset) {
-        return createInfiniteLoopError(input, currentPos, "zeroOrMore");
+        return createInfiniteLoopError(
+          input,
+          currentPos,
+          parserName || "zeroOrMore",
+        );
       }
 
       results.push(result.val);
@@ -111,6 +118,7 @@ export const zeroOrMore =
  *
  * @template T Type of the parse result value
  * @param parser Target parser
+ * @param parserName Optional name for error reporting and debugging
  * @returns Parser<T[]> A parser that returns an array of parsed values (possibly empty).
  * @see zeroOrMore
  */
@@ -124,10 +132,11 @@ export const star = zeroOrMore;
  *
  * @template T Type of the parse result value
  * @param parser Target parser
+ * @param parserName Optional name for error reporting and debugging
  * @returns Parser<NonEmptyArray<T>> A parser that returns a non-empty array of parsed values.
  */
 export const oneOrMore =
-  <T>(parser: Parser<T>): Parser<NonEmptyArray<T>> =>
+  <T>(parser: Parser<T>, parserName?: string): Parser<NonEmptyArray<T>> =>
   (input: string, pos) => {
     const results: T[] = [];
     let currentPos = pos;
@@ -145,7 +154,7 @@ export const oneOrMore =
             failure.error.pos,
             {
               ...failure.error,
-              parserName: "oneOrMore",
+              parserName: parserName || "oneOrMore",
               context: [
                 "in oneOrMore",
                 ...(failure.error.context
@@ -166,7 +175,7 @@ export const oneOrMore =
         return createInfiniteLoopError(
           input,
           currentPos,
-          "oneOrMore",
+          parserName || "oneOrMore",
           `Results so far: ${results.length} item(s)`,
         );
       }
@@ -189,6 +198,7 @@ export const oneOrMore =
  *
  * @template T Type of the parse result value
  * @param parser Target parser
+ * @param parserName Optional name for error reporting and debugging
  * @returns Parser<NonEmptyArray<T>> A parser that returns a non-empty array of parsed values.
  * @see oneOrMore
  */
@@ -201,17 +211,23 @@ export const plus = oneOrMore;
  * @param parser Target parser
  * @param min Minimum number of repetitions (inclusive)
  * @param max Maximum number of repetitions (inclusive, undefined for unbounded)
+ * @param parserName Optional name for error reporting and debugging
  * @returns Parser<T[]> A parser that returns an array of parsed values with the specified count.
  */
 export const quantified =
-  <T>(parser: Parser<T>, min: number, max?: number): Parser<T[]> =>
+  <T>(
+    parser: Parser<T>,
+    min: number,
+    max?: number,
+    parserName?: string,
+  ): Parser<T[]> =>
   (input: string, pos) => {
     // Validate input parameters early
     if (min < 0) {
       return createFailure(
         `Invalid quantified range: minimum (${min}) cannot be negative`,
         pos,
-        { parserName: "quantified" },
+        { parserName: parserName || "quantified" },
       );
     }
 
@@ -219,7 +235,7 @@ export const quantified =
       return createFailure(
         `Invalid quantified range: maximum (${max}) cannot be less than minimum (${min})`,
         pos,
-        { parserName: "quantified" },
+        { parserName: parserName || "quantified" },
       );
     }
 
@@ -237,7 +253,7 @@ export const quantified =
           currentPos,
           {
             ...failure.error,
-            parserName: "quantified",
+            parserName: parserName || "quantified",
             context: [
               `in quantified{${min},${max ?? ""}}`,
               `failed at required repetition ${i + 1}/${min}`,
@@ -256,7 +272,7 @@ export const quantified =
         return createInfiniteLoopError(
           input,
           currentPos,
-          "quantified",
+          parserName || "quantified",
           `Repetition: ${i + 1}/${min} (required)`,
         );
       }
@@ -281,7 +297,7 @@ export const quantified =
           return createInfiniteLoopError(
             input,
             currentPos,
-            "quantified",
+            parserName || "quantified",
             `Repetition: ${i + 1} (optional)`,
           );
         }
@@ -304,7 +320,7 @@ export const quantified =
           return createInfiniteLoopError(
             input,
             currentPos,
-            "quantified",
+            parserName || "quantified",
             `Repetition: ${count + 1} (optional)`,
           );
         }

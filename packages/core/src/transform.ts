@@ -7,6 +7,7 @@ import type { ParseFailure, ParseSuccess, Parser } from "./types";
  * @template U Type of the output value
  * @param parser Target parser
  * @param f Transformation function applied to the parse result value
+ * @param parserName Optional name for error reporting and debugging
  * @returns Parser<U> A parser that returns the transformed value if parsing succeeds, or fails otherwise.
  * @example
  *   const digit = map(
@@ -16,7 +17,11 @@ import type { ParseFailure, ParseSuccess, Parser } from "./types";
  *   // Parses a digit char and converts it to a number
  */
 export const map =
-  <T, U>(parser: Parser<T>, f: (value: T) => U): Parser<U> =>
+  <T, U>(
+    parser: Parser<T>,
+    f: (value: T) => U,
+    parserName?: string,
+  ): Parser<U> =>
   (input: string, pos) => {
     const result = parser(input, pos);
 
@@ -39,6 +44,7 @@ export const map =
  * @template U Type of the output value
  * @param parser Target parser
  * @param f Function to transform the ParseSuccess object
+ * @param parserName Optional name for error reporting and debugging
  * @returns Parser<U> A parser that returns the transformed value if parsing succeeds, or fails otherwise.
  * @example
  *   const withPosition = mapResult(
@@ -48,7 +54,11 @@ export const map =
  *   // Returns both the parsed digit and its position in the input
  */
 export const mapResult =
-  <T, U>(parser: Parser<T>, f: (value: ParseSuccess<T>) => U): Parser<U> =>
+  <T, U>(
+    parser: Parser<T>,
+    f: (value: ParseSuccess<T>) => U,
+    parserName?: string,
+  ): Parser<U> =>
   (input: string, pos) => {
     const result = parser(input, pos);
 
@@ -70,6 +80,7 @@ export const mapResult =
  * @template T Type of the parse result value
  * @param parser Target parser
  * @param f Function to transform the error
+ * @param parserName Optional name for error reporting and debugging
  * @returns Parser<T> A parser that returns the original value on success, or the transformed error on failure.
  * @example
  *   const number = mapError(
@@ -79,7 +90,11 @@ export const mapResult =
  *   // Provides a custom error message for digit parsing
  */
 export const mapError =
-  <T>(parser: Parser<T>, f: (error: ParseFailure) => ParseFailure): Parser<T> =>
+  <T>(
+    parser: Parser<T>,
+    f: (error: ParseFailure) => ParseFailure,
+    parserName?: string,
+  ): Parser<T> =>
   (input: string, pos) => {
     const result = parser(input, pos);
 
@@ -97,6 +112,7 @@ export const mapError =
  * @param parser Target parser
  * @param predicate Function to test the parsed value
  * @param errorMessage Error message to use when predicate fails
+ * @param parserName Optional name for error reporting and debugging
  * @returns Parser<T> A parser that succeeds only if both parsing and predicate succeed.
  * @example
  *   const evenDigit = filter(
@@ -111,6 +127,7 @@ export const filter =
     parser: Parser<T>,
     predicate: (value: T) => boolean,
     errorMessage: string,
+    parserName?: string,
   ): Parser<T> =>
   (input: string, pos) => {
     const result = parser(input, pos);
@@ -125,7 +142,7 @@ export const filter =
         error: {
           message: errorMessage,
           pos: result.current,
-          parserName: "filter",
+          parserName: parserName || "filter",
         },
       };
     }
@@ -139,6 +156,7 @@ export const filter =
  * @template T Type of the parse result value
  * @param parser Target parser
  * @param effect Function to execute as a side effect
+ * @param parserName Optional name for error reporting and debugging
  * @returns Parser<T> A parser that returns the original result after executing the side effect.
  * @example
  *   const loggedParser = tap(
@@ -148,7 +166,11 @@ export const filter =
  *   // Logs the parsed value without changing the result
  */
 export const tap =
-  <T>(parser: Parser<T>, effect: (value: T) => void): Parser<T> =>
+  <T>(
+    parser: Parser<T>,
+    effect: (value: T) => void,
+    parserName?: string,
+  ): Parser<T> =>
   (input: string, pos) => {
     const result = parser(input, pos);
 

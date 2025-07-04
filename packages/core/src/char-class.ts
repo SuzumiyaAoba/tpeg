@@ -1,4 +1,4 @@
-import type { NonEmptyArray, NonEmptyString, Parser } from "./types";
+import type { NonEmptyArray, NonEmptyString, Parser, Pos } from "./types";
 import { createFailure, getCharAndLength, nextPos } from "./utils";
 
 /**
@@ -45,15 +45,17 @@ const matchesSpec = (
  * Parser that matches a character against a set of characters or character ranges.
  *
  * @param charOrRanges Array of characters or character ranges to match against
+ * @param parserName Optional name for error reporting and debugging
  * @returns Parser<string> A parser that succeeds if the input character matches any of the given ranges.
  * @example
  *   const digit = charClass(["0", "9"]); // matches any digit
  *   const vowel = charClass("a", "e", "i", "o", "u"); // matches any vowel
  *   const alphaNumeric = charClass(["a", "z"], ["A", "Z"], ["0", "9"]); // matches alphanumeric
  */
-export const charClass =
-  (...charOrRanges: NonEmptyArray<CharClassSpec>): Parser<string> =>
-  (input, pos) => {
+export const charClass = (
+  ...charOrRanges: NonEmptyArray<CharClassSpec>
+): Parser<string> => {
+  const charClassParser = (input: string, pos: Pos) => {
     const [char] = getCharAndLength(input, pos.offset);
     const expected = charOrRanges.map(classToString).join(", ");
 
@@ -75,7 +77,7 @@ export const charClass =
     for (const spec of charOrRanges) {
       if (matchesSpec(char, charCode, spec)) {
         return {
-          success: true,
+          success: true as const,
           val: char,
           current: pos,
           next: nextPos(char, pos),
@@ -94,3 +96,6 @@ export const charClass =
       },
     );
   };
+
+  return charClassParser;
+};

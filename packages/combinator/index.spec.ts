@@ -1044,13 +1044,13 @@ describe("Basic character parsers", () => {
 describe("Line position parsers", () => {
   describe("startOfLine", () => {
     it("should succeed at line start", () => {
-      const parser = startOfLine;
+      const parser = startOfLine();
       const result = parser("hello", { offset: 0, line: 1, column: 1 });
       expect(result.success).toBe(true);
     });
 
     it("should fail when not at line start", () => {
-      const parser = startOfLine;
+      const parser = startOfLine();
       const result = parser("hello", { offset: 2, line: 1, column: 3 });
       expect(result.success).toBe(false);
       if (!result.success) {
@@ -1061,25 +1061,25 @@ describe("Line position parsers", () => {
 
   describe("endOfLine", () => {
     it("should succeed at end of input", () => {
-      const parser = endOfLine;
+      const parser = endOfLine();
       const result = parser("hello", { offset: 5, line: 1, column: 6 });
       expect(result.success).toBe(true);
     });
 
     it("should succeed at newline character", () => {
-      const parser = endOfLine;
+      const parser = endOfLine();
       const result = parser("hello\nworld", { offset: 5, line: 1, column: 6 });
       expect(result.success).toBe(true);
     });
 
     it("should succeed at carriage return", () => {
-      const parser = endOfLine;
+      const parser = endOfLine();
       const result = parser("hello\rworld", { offset: 5, line: 1, column: 6 });
       expect(result.success).toBe(true);
     });
 
     it("should fail when not at end of line", () => {
-      const parser = endOfLine;
+      const parser = endOfLine();
       const result = parser("hello", { offset: 2, line: 1, column: 3 });
       expect(result.success).toBe(false);
       if (!result.success) {

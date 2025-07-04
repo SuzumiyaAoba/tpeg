@@ -65,6 +65,7 @@ const createSuccessResult = (
  *
  * @template T - The type that the target parser would return (for type safety)
  * @param parser - The parser to test without consuming input
+ * @param parserName - Optional name for error reporting and debugging
  * @returns A parser that succeeds if the target parser succeeds, always returning `undefined`
  *
  * @example
@@ -103,7 +104,7 @@ const createSuccessResult = (
  * @since 1.0.0
  */
 export const andPredicate =
-  <T>(parser: Parser<T>): Parser<undefined> =>
+  <T>(parser: Parser<T>, parserName?: string): Parser<undefined> =>
   (input: string, pos) => {
     const result = parser(input, pos);
 
@@ -121,7 +122,7 @@ export const andPredicate =
         result.error.pos,
         {
           ...result.error,
-          parserName: "andPredicate",
+          parserName: parserName || "andPredicate",
           context,
         },
       );
@@ -138,6 +139,7 @@ export const andPredicate =
  *
  * @template T - The type that the target parser would return
  * @param parser - Target parser to check
+ * @param parserName - Optional name for error reporting and debugging
  * @returns Parser<undefined> that checks for success without consuming input
  *
  * @example
@@ -161,6 +163,7 @@ export const and = andPredicate;
  *
  * @template T - The type that the target parser would return
  * @param parser - Target parser to check
+ * @param parserName - Optional name for error reporting and debugging
  * @returns Parser<undefined> that checks for success without consuming input
  *
  * @example
@@ -184,6 +187,7 @@ export const positive = andPredicate;
  *
  * @template T - The type that the target parser would return
  * @param parser - Target parser to check
+ * @param parserName - Optional name for error reporting and debugging
  * @returns Parser<undefined> that checks for success without consuming input
  *
  * @example
@@ -221,6 +225,7 @@ export const assert = andPredicate;
  *
  * @template T - The type that the target parser would return (for type safety)
  * @param parser - The parser that should fail for this lookahead to succeed
+ * @param parserName - Optional name for error reporting and debugging
  * @returns A parser that succeeds if the target parser fails, always returning `undefined`
  *
  * @example
@@ -271,7 +276,7 @@ export const assert = andPredicate;
  * @since 1.0.0
  */
 export const notPredicate =
-  <T>(parser: Parser<T>): Parser<undefined> =>
+  <T>(parser: Parser<T>, parserName?: string): Parser<undefined> =>
   (input: string, pos) => {
     const result = parser(input, pos);
 
@@ -283,7 +288,7 @@ export const notPredicate =
       "Negative lookahead failed: expected pattern not to match",
       pos,
       {
-        parserName: "notPredicate",
+        parserName: parserName || "notPredicate",
         context: ["in negative lookahead"],
         expected: "pattern not to match",
         found: "matching pattern",
@@ -299,6 +304,7 @@ export const notPredicate =
  *
  * @template T - The type that the target parser would return
  * @param parser - Target parser that should fail
+ * @param parserName - Optional name for error reporting and debugging
  * @returns Parser<undefined> that succeeds when target parser fails
  *
  * @example
@@ -321,6 +327,7 @@ export const not = notPredicate;
  *
  * @template T - The type that the target parser would return
  * @param parser - Target parser that should fail
+ * @param parserName - Optional name for error reporting and debugging
  * @returns Parser<undefined> that succeeds when target parser fails
  *
  * @example
