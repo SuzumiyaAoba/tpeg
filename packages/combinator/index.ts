@@ -409,7 +409,7 @@ export const withPosition =
         : positionResult;
     }
 
-    return result;
+    return result as ParseFailure;
   };
 
 /**
@@ -475,7 +475,7 @@ export const debug = <T>(
     } else if (!result.success && logFailure) {
       customLogger(`[DEBUG ${name}] FAILURE`);
       if (logResult) {
-        customLogger(`[DEBUG ${name}] Error:`, result.error);
+        customLogger(`[DEBUG ${name}] Error:`, (result as ParseFailure).error);
       }
     }
 

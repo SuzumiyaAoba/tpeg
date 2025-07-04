@@ -232,7 +232,7 @@ export const choice = <T extends unknown[]>(
  * ```
  */
 export const withDefault =
-  <T>(parser: Parser<T>, defaultValue: T, parserName?: string): Parser<T> =>
+  <T>(parser: Parser<T>, defaultValue: T): Parser<T> =>
   (input: string, pos) => {
     const result = parser(input, pos);
 

@@ -34,11 +34,10 @@ const createInfiniteLoopError = (
  *
  * @template T Type of the parse result value
  * @param parser Target parser
- * @param parserName Optional name for error reporting and debugging
  * @returns Parser<[T] | []> A parser that returns a singleton array if the parser succeeds, or an empty array if it fails.
  */
 export const optional =
-  <T>(parser: Parser<T>, parserName?: string): Parser<[T] | []> =>
+  <T>(parser: Parser<T>): Parser<[T] | []> =>
   (input: string, pos) => {
     const result = parser(input, pos);
 
