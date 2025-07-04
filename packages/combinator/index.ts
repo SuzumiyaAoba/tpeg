@@ -401,7 +401,8 @@ export const withDetailedError = <T>(
       void after;
 
       // First character at error position
-      const found = pos.offset < input.length ? (input[pos.offset] ?? "EOF") : "EOF";
+      const found =
+        pos.offset < input.length ? (input[pos.offset] ?? "EOF") : "EOF";
 
       enhancedError.found = found;
       if (!enhancedError.message) {

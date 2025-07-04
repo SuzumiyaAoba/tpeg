@@ -3,21 +3,21 @@ import { createFailure, isFailure } from "./utils";
 
 /**
  * Parser that parses a sequence of parsers in order.
- * 
+ *
  * Executes each parser in the given sequence and returns an array of all results.
  * If any parser fails, the entire sequence fails at that position.
  *
  * @template P Array of parsers
  * @param parsers Array of parsers to run in sequence
  * @returns Parser that succeeds if all parsers succeed in sequence, returning a tuple of all results
- * 
+ *
  * @example
  * ```typescript
  * const parser = sequence(literal("hello"), literal(" "), literal("world"));
  * const result = parser("hello world", 0);
  * // result.val will be ["hello", " ", "world"]
  * ```
- * 
+ *
  * @example
  * ```typescript
  * // Parse a number followed by a plus sign followed by another number
@@ -89,14 +89,14 @@ export const sequence =
 
 /**
  * Alias for {@link sequence}.
- * 
+ *
  * Provides a shorter name for the sequence combinator. Behaves identically to `sequence`.
  *
  * @template P Array of parsers
  * @param parsers Array of parsers to run in sequence
  * @returns Parser that succeeds if all parsers succeed in sequence, returning a tuple of all results
  * @see sequence
- * 
+ *
  * @example
  * ```typescript
  * const parser = seq(literal("("), expr, literal(")"));
@@ -107,14 +107,14 @@ export const seq = sequence;
 
 /**
  * Parser that attempts multiple parsers and returns the result of the first successful one.
- * 
+ *
  * Tries each parser in order until one succeeds. If all parsers fail, returns a failure
  * with aggregated error information from all attempts.
  *
  * @template T Array of possible result types
  * @param parsers Array of parsers to try in order
  * @returns Parser that succeeds if any of the parsers succeed, returning the result of the first successful parser
- * 
+ *
  * @example
  * ```typescript
  * const numberOrString = choice(
@@ -123,7 +123,7 @@ export const seq = sequence;
  *   identifier        // If that fails, try an identifier
  * );
  * ```
- * 
+ *
  * @example
  * ```typescript
  * // Parse different types of literals
@@ -197,7 +197,7 @@ export const choice =
 
 /**
  * Parser that tries to parse with the given parser and returns a default value if it fails.
- * 
+ *
  * This combinator makes a parser optional by providing a fallback value when parsing fails.
  * The parser position is not advanced if the main parser fails.
  *
@@ -205,16 +205,16 @@ export const choice =
  * @param parser The parser to try
  * @param defaultValue The default value to return if parser fails
  * @returns Parser that always succeeds, returning either the parsed result or the default value
- * 
+ *
  * @example
  * ```typescript
  * // Parse an optional sign, defaulting to "+"
  * const optionalSign = withDefault(choice(literal("+"), literal("-")), "+");
- * 
+ *
  * const result1 = optionalSign("-123", 0); // Returns "-"
  * const result2 = optionalSign("123", 0);  // Returns "+" (default)
  * ```
- * 
+ *
  * @example
  * ```typescript
  * // Parse an optional configuration with defaults
@@ -243,7 +243,7 @@ export const withDefault =
 
 /**
  * Parser that succeeds if the given parser fails (without consuming input).
- * 
+ *
  * This is a negative assertion parser that succeeds only when the given parser fails.
  * It does not consume any input and returns null as a meaningful indicator.
  * This is different from lookahead combinators as it's designed for rejection logic.
@@ -251,7 +251,7 @@ export const withDefault =
  * @template T Type of the parser result (not used in the result, parser should fail)
  * @param parser The parser that should fail for this combinator to succeed
  * @returns Parser that returns null if the given parser fails, or fails if the parser succeeds
- * 
+ *
  * @example
  * ```typescript
  * const notKeyword = reject(literal("if"));
@@ -276,4 +276,4 @@ export const reject =
       current: pos,
       next: pos,
     };
-  }; 
+  };

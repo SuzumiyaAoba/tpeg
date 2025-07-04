@@ -1,25 +1,25 @@
 /**
  * Performance analysis utilities for code generation
- * 
+ *
  * Lightweight version focused on code generation needs.
  */
 
 import type {
-  Expression,
-  GrammarDefinition,
-  ExpressionComplexity,
-  GrammarPerformance,
-  Sequence,
   Choice,
-  Star,
-  Plus,
-  Optional,
+  Expression,
+  ExpressionComplexity,
+  GrammarDefinition,
+  GrammarPerformance,
   Group,
   LabeledExpression,
-  Quantified,
-  PositiveLookahead,
   NegativeLookahead,
-} from './types';
+  Optional,
+  Plus,
+  PositiveLookahead,
+  Quantified,
+  Sequence,
+  Star,
+} from "./types";
 
 /**
  * Simple performance monitoring for generation timing
@@ -50,7 +50,9 @@ export const globalPerformanceMonitor = new PerformanceMonitor();
 /**
  * Analyze the complexity of a single expression
  */
-export function analyzeExpressionComplexity(expr: Expression): ExpressionComplexity {
+export function analyzeExpressionComplexity(
+  expr: Expression,
+): ExpressionComplexity {
   let depth = 0;
   let nodeCount = 0;
   let hasRecursion = false;
@@ -60,41 +62,41 @@ export function analyzeExpressionComplexity(expr: Expression): ExpressionComplex
     depth = Math.max(depth, currentDepth);
 
     switch (expression.type) {
-      case 'Sequence':
+      case "Sequence":
         for (const element of (expression as Sequence).elements) {
           analyze(element, currentDepth + 1);
         }
         break;
-      case 'Choice':
+      case "Choice":
         for (const alternative of (expression as Choice).alternatives) {
           analyze(alternative, currentDepth + 1);
         }
         break;
-      case 'Star':
+      case "Star":
         analyze((expression as Star).expression, currentDepth + 1);
         break;
-      case 'Plus':
+      case "Plus":
         analyze((expression as Plus).expression, currentDepth + 1);
         break;
-      case 'Optional':
+      case "Optional":
         analyze((expression as Optional).expression, currentDepth + 1);
         break;
-      case 'Group':
+      case "Group":
         analyze((expression as Group).expression, currentDepth + 1);
         break;
-      case 'LabeledExpression':
+      case "LabeledExpression":
         analyze((expression as LabeledExpression).expression, currentDepth + 1);
         break;
-      case 'Quantified':
+      case "Quantified":
         analyze((expression as Quantified).expression, currentDepth + 1);
         break;
-      case 'PositiveLookahead':
+      case "PositiveLookahead":
         analyze((expression as PositiveLookahead).expression, currentDepth + 1);
         break;
-      case 'NegativeLookahead':
+      case "NegativeLookahead":
         analyze((expression as NegativeLookahead).expression, currentDepth + 1);
         break;
-      case 'Identifier':
+      case "Identifier":
         // Note: Recursive reference detection would require rule context
         // For now, we assume identifiers could be recursive
         hasRecursion = true;
@@ -104,11 +106,11 @@ export function analyzeExpressionComplexity(expr: Expression): ExpressionComplex
 
   analyze(expr, 0);
 
-  let estimatedComplexity: 'low' | 'medium' | 'high' = 'low';
+  let estimatedComplexity: "low" | "medium" | "high" = "low";
   if (nodeCount > 20 || depth > 10) {
-    estimatedComplexity = 'high';
+    estimatedComplexity = "high";
   } else if (nodeCount > 5 || depth > 3) {
-    estimatedComplexity = 'medium';
+    estimatedComplexity = "medium";
   }
 
   return {
@@ -122,7 +124,9 @@ export function analyzeExpressionComplexity(expr: Expression): ExpressionComplex
 /**
  * Analyze the performance characteristics of an entire grammar
  */
-export function analyzeGrammarPerformance(grammar: GrammarDefinition): GrammarPerformance {
+export function analyzeGrammarPerformance(
+  grammar: GrammarDefinition,
+): GrammarPerformance {
   const ruleComplexity = new Map<string, ExpressionComplexity>();
   const optimizationSuggestions: string[] = [];
 
@@ -135,22 +139,26 @@ export function analyzeGrammarPerformance(grammar: GrammarDefinition): GrammarPe
   // Determine overall complexity
   const ruleCount = grammar.rules.length;
   const highComplexityRules = Array.from(ruleComplexity.values()).filter(
-    c => c.estimatedComplexity === 'high'
+    (c) => c.estimatedComplexity === "high",
   ).length;
 
-  let estimatedParseComplexity: 'low' | 'medium' | 'high' = 'low';
+  let estimatedParseComplexity: "low" | "medium" | "high" = "low";
   if (ruleCount > 50 || highComplexityRules > 5) {
-    estimatedParseComplexity = 'high';
+    estimatedParseComplexity = "high";
   } else if (ruleCount > 20 || highComplexityRules > 2) {
-    estimatedParseComplexity = 'medium';
+    estimatedParseComplexity = "medium";
   }
 
   // Generate optimization suggestions
   if (ruleCount > 50) {
-    optimizationSuggestions.push(`Large grammar with ${ruleCount} rules - consider splitting into modules`);
+    optimizationSuggestions.push(
+      `Large grammar with ${ruleCount} rules - consider splitting into modules`,
+    );
   }
   if (highComplexityRules > 0) {
-    optimizationSuggestions.push(`${highComplexityRules} high-complexity rules - consider memoization`);
+    optimizationSuggestions.push(
+      `${highComplexityRules} high-complexity rules - consider memoization`,
+    );
   }
 
   return {

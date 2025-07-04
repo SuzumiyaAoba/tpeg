@@ -1,6 +1,6 @@
 /**
  * TPEG Code Generator
- * 
+ *
  * Template-based code generation system for TPEG parsers.
  * Separated from parser package for modular architecture.
  */
@@ -9,7 +9,7 @@
 export {
   EtaTPEGCodeGenerator,
   generateEtaTypeScriptParser,
-} from './eta-generator';
+} from "./eta-generator";
 
 // Export performance utilities
 export {
@@ -17,7 +17,7 @@ export {
   globalPerformanceMonitor,
   analyzeExpressionComplexity,
   analyzeGrammarPerformance,
-} from './performance-utils';
+} from "./performance-utils";
 
 // Export type definitions
 export type {
@@ -43,4 +43,4 @@ export type {
   ParserTemplateData,
   CodeGenOptions,
   GeneratedCode,
-} from './types';
+} from "./types";

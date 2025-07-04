@@ -2,28 +2,26 @@
  * Type Inference System Tests
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
+import type { GrammarDefinition } from "./grammar-types";
+import {
+  createAnyChar,
+  createCharRange,
+  createCharacterClass,
+  createChoice,
+  createGrammarDefinition,
+  createIdentifier,
+  createOptional,
+  createPlus,
+  createRuleDefinition,
+  createSequence,
+  createStar,
+  createStringLiteral,
+} from "./grammar-types";
 import {
   TypeInferenceEngine,
   type TypeInferenceOptions,
 } from "./type-inference";
-import type {
-  GrammarDefinition,
-} from "./grammar-types";
-import {
-  createGrammarDefinition,
-  createRuleDefinition,
-  createStringLiteral,
-  createCharacterClass,
-  createCharRange,
-  createIdentifier,
-  createSequence,
-  createChoice,
-  createOptional,
-  createStar,
-  createPlus,
-  createAnyChar,
-} from "./grammar-types";
 
 describe("TypeInferenceEngine", () => {
   let engine: TypeInferenceEngine;
@@ -126,8 +124,11 @@ describe("TypeInferenceEngine", () => {
         [],
         [
           createRuleDefinition("greeting", createStringLiteral("hello", '"')),
-          createRuleDefinition("number", createCharacterClass([createCharRange("0", "9")])),
-        ]
+          createRuleDefinition(
+            "number",
+            createCharacterClass([createCharRange("0", "9")]),
+          ),
+        ],
       );
 
       const result = engine.inferGrammarTypes(grammar);
@@ -143,9 +144,12 @@ describe("TypeInferenceEngine", () => {
         "TestGrammar",
         [],
         [
-          createRuleDefinition("digit", createCharacterClass([createCharRange("0", "9")])),
+          createRuleDefinition(
+            "digit",
+            createCharacterClass([createCharRange("0", "9")]),
+          ),
           createRuleDefinition("number", createPlus(createIdentifier("digit"))),
-        ]
+        ],
       );
 
       const result = engine.inferGrammarTypes(grammar);
@@ -161,7 +165,7 @@ describe("TypeInferenceEngine", () => {
         [
           createRuleDefinition("a", createIdentifier("b")),
           createRuleDefinition("b", createIdentifier("a")),
-        ]
+        ],
       );
 
       const result = engine.inferGrammarTypes(grammar);
@@ -223,12 +227,12 @@ describe("TypeInferenceEngine", () => {
           createChoice([
             createStringLiteral("a", '"'),
             createStringLiteral("b", '"'),
-          ])
-        )
+          ]),
+        ),
       );
       const result = engine.inferExpressionType(nested);
 
-      expect(result.typeString).toBe('((\"a\" | \"b\")[]) | undefined');
+      expect(result.typeString).toBe('(("a" | "b")[]) | undefined');
       expect(result.nullable).toBe(true);
       expect(result.isArray).toBe(false); // The outer level is optional, not array
     });
@@ -245,15 +249,15 @@ describe("TypeInferenceEngine", () => {
       const grammar: GrammarDefinition = createGrammarDefinition(
         "TestGrammar",
         [],
-        [
-          createRuleDefinition("test", createIdentifier("unknownRule")),
-        ]
+        [createRuleDefinition("test", createIdentifier("unknownRule"))],
       );
 
       const result = engine.inferGrammarTypes(grammar);
 
       expect(result.ruleTypes.get("test")?.typeString).toBe("unknown");
-      expect(result.ruleTypes.get("test")?.documentation).toContain("Unknown rule reference");
+      expect(result.ruleTypes.get("test")?.documentation).toContain(
+        "Unknown rule reference",
+      );
     });
   });
 
@@ -275,25 +279,43 @@ describe("TypeInferenceEngine", () => {
         "JSONGrammar",
         [],
         [
-          createRuleDefinition("string", createSequence([
-            createStringLiteral('"', '"'),
-            createStar(createCharacterClass([createCharRange("a", "z"), createCharRange("A", "Z")])),
-            createStringLiteral('"', '"'),
-          ])),
-          createRuleDefinition("number", createPlus(createCharacterClass([createCharRange("0", "9")]))),
-          createRuleDefinition("value", createChoice([
-            createIdentifier("string"),
-            createIdentifier("number"),
-          ])),
-        ]
+          createRuleDefinition(
+            "string",
+            createSequence([
+              createStringLiteral('"', '"'),
+              createStar(
+                createCharacterClass([
+                  createCharRange("a", "z"),
+                  createCharRange("A", "Z"),
+                ]),
+              ),
+              createStringLiteral('"', '"'),
+            ]),
+          ),
+          createRuleDefinition(
+            "number",
+            createPlus(createCharacterClass([createCharRange("0", "9")])),
+          ),
+          createRuleDefinition(
+            "value",
+            createChoice([
+              createIdentifier("string"),
+              createIdentifier("number"),
+            ]),
+          ),
+        ],
       );
 
       const result = engine.inferGrammarTypes(grammar);
 
-      // Note: Complex escaping needed here - \\\" in TypeScript becomes \\\\\" in JavaScript test strings  
-      expect(result.ruleTypes.get("string")?.typeString).toBe('["\\"", string[], "\\""]');
+      // Note: Complex escaping needed here - \\\" in TypeScript becomes \\\\\" in JavaScript test strings
+      expect(result.ruleTypes.get("string")?.typeString).toBe(
+        '["\\"", string[], "\\""]',
+      );
       expect(result.ruleTypes.get("number")?.typeString).toBe("string[]");
-      expect(result.ruleTypes.get("value")?.typeString).toBe('([\"\\\"\", string[], \"\\\"\"]) | (string[])');
+      expect(result.ruleTypes.get("value")?.typeString).toBe(
+        '(["\\"", string[], "\\""]) | (string[])',
+      );
     });
   });
 });

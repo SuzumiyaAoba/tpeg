@@ -1,9 +1,9 @@
 /**
  * Shared TPEG Grammar Types
- * 
+ *
  * Core type definitions for TPEG grammar AST nodes, shared between
  * the parser and type inference systems to avoid circular dependencies.
- * 
+ *
  * @fileoverview This module provides comprehensive type definitions for the TPEG grammar AST,
  * including all expression types, grammar structures, and factory functions for creating AST nodes.
  */
@@ -11,7 +11,7 @@
 /**
  * String literal node in TPEG grammar AST.
  * Represents a quoted string literal like "hello" or 'world'.
- * 
+ *
  * @example
  * ```typescript
  * const literal: StringLiteral = {
@@ -33,7 +33,7 @@ export interface StringLiteral {
 /**
  * Character class node in TPEG grammar AST.
  * Represents character classes like [a-z], [abc], or [^0-9].
- * 
+ *
  * @example
  * ```typescript
  * const charClass: CharacterClass = {
@@ -55,7 +55,7 @@ export interface CharacterClass {
 /**
  * Character range specification within a character class.
  * Can represent single characters or ranges like a-z.
- * 
+ *
  * @example
  * ```typescript
  * // Single character
@@ -74,7 +74,7 @@ export interface CharRange {
 /**
  * Identifier node in TPEG grammar AST.
  * Represents references to other grammar rules.
- * 
+ *
  * @example
  * ```typescript
  * const id: Identifier = {
@@ -93,7 +93,7 @@ export interface Identifier {
 /**
  * Any character dot (.) node in TPEG grammar AST.
  * Matches any single character except newline.
- * 
+ *
  * @example
  * ```typescript
  * const anyChar: AnyChar = { type: "AnyChar" };
@@ -107,7 +107,7 @@ export interface AnyChar {
 /**
  * Sequence node in TPEG grammar AST.
  * Represents consecutive expressions that must all match in order.
- * 
+ *
  * @example
  * ```typescript
  * const sequence: Sequence = {
@@ -126,7 +126,7 @@ export interface Sequence {
 /**
  * Choice node in TPEG grammar AST.
  * Represents alternative expressions where any one can match.
- * 
+ *
  * @example
  * ```typescript
  * const choice: Choice = {
@@ -145,7 +145,7 @@ export interface Choice {
 /**
  * Group node in TPEG grammar AST.
  * Represents a parenthesized expression for grouping.
- * 
+ *
  * @example
  * ```typescript
  * const group: Group = {
@@ -164,7 +164,7 @@ export interface Group {
 /**
  * Star repetition node in TPEG grammar AST.
  * Represents zero or more repetitions of an expression (expr*).
- * 
+ *
  * @example
  * ```typescript
  * const star: Star = {
@@ -183,7 +183,7 @@ export interface Star {
 /**
  * Plus repetition node in TPEG grammar AST.
  * Represents one or more repetitions of an expression (expr+).
- * 
+ *
  * @example
  * ```typescript
  * const plus: Plus = {
@@ -202,7 +202,7 @@ export interface Plus {
 /**
  * Optional node in TPEG grammar AST.
  * Represents zero or one occurrence of an expression (expr?).
- * 
+ *
  * @example
  * ```typescript
  * const optional: Optional = {
@@ -221,7 +221,7 @@ export interface Optional {
 /**
  * Quantified repetition node in TPEG grammar AST.
  * Represents specific repetition counts like expr{2,5} or expr{3}.
- * 
+ *
  * @example
  * ```typescript
  * // Exactly 3 repetitions
@@ -253,7 +253,7 @@ export interface Quantified {
 /**
  * Positive lookahead node in TPEG grammar AST.
  * Represents a positive lookahead assertion (&expr).
- * 
+ *
  * @example
  * ```typescript
  * const lookahead: PositiveLookahead = {
@@ -272,7 +272,7 @@ export interface PositiveLookahead {
 /**
  * Negative lookahead node in TPEG grammar AST.
  * Represents a negative lookahead assertion (!expr).
- * 
+ *
  * @example
  * ```typescript
  * const negLookahead: NegativeLookahead = {
@@ -291,7 +291,7 @@ export interface NegativeLookahead {
 /**
  * Labeled expression node in TPEG grammar AST.
  * Represents a labeled expression for capturing results (label:expr).
- * 
+ *
  * @example
  * ```typescript
  * const labeled: LabeledExpression = {
@@ -333,7 +333,7 @@ export type Expression =
 /**
  * Grammar annotation in TPEG grammar AST.
  * Represents metadata annotations like @version, @author, etc.
- * 
+ *
  * @example
  * ```typescript
  * const annotation: GrammarAnnotation = {
@@ -355,7 +355,7 @@ export interface GrammarAnnotation {
 /**
  * Grammar rule definition in TPEG grammar AST.
  * Represents a named rule with its pattern and optional documentation.
- * 
+ *
  * @example
  * ```typescript
  * const rule: RuleDefinition = {
@@ -380,7 +380,7 @@ export interface RuleDefinition {
 /**
  * Grammar definition in TPEG grammar AST.
  * Represents a complete grammar with metadata and rules.
- * 
+ *
  * @example
  * ```typescript
  * const grammar: GrammarDefinition = {
@@ -408,11 +408,11 @@ export interface GrammarDefinition {
 
 /**
  * Create a StringLiteral AST node.
- * 
+ *
  * @param value - The string content without quotes
  * @param quote - The quote character used (double or single quote)
  * @returns A new StringLiteral AST node
- * 
+ *
  * @example
  * ```typescript
  * const literal = createStringLiteral("hello", '"');
@@ -430,11 +430,11 @@ export const createStringLiteral = (
 
 /**
  * Create a CharacterClass AST node.
- * 
+ *
  * @param ranges - Array of character ranges within the class
  * @param negated - Whether the character class is negated (defaults to false)
  * @returns A new CharacterClass AST node
- * 
+ *
  * @example
  * ```typescript
  * const charClass = createCharacterClass([{ start: "a", end: "z" }], false);
@@ -452,11 +452,11 @@ export const createCharacterClass = (
 
 /**
  * Create a CharRange for use in character classes.
- * 
+ *
  * @param start - The starting character of the range
  * @param end - The ending character of the range (optional for single characters)
  * @returns A new CharRange object
- * 
+ *
  * @example
  * ```typescript
  * const singleChar = createCharRange("a");
@@ -468,10 +468,10 @@ export const createCharRange = (start: string, end?: string): CharRange =>
 
 /**
  * Create an Identifier AST node.
- * 
+ *
  * @param name - The name of the referenced rule
  * @returns A new Identifier AST node
- * 
+ *
  * @example
  * ```typescript
  * const id = createIdentifier("expression");
@@ -485,9 +485,9 @@ export const createIdentifier = (name: string): Identifier => ({
 
 /**
  * Create an AnyChar AST node.
- * 
+ *
  * @returns A new AnyChar AST node
- * 
+ *
  * @example
  * ```typescript
  * const anyChar = createAnyChar();
@@ -500,10 +500,10 @@ export const createAnyChar = (): AnyChar => ({
 
 /**
  * Create a Sequence AST node.
- * 
+ *
  * @param elements - The expressions that must match in sequence
  * @returns A new Sequence AST node
- * 
+ *
  * @example
  * ```typescript
  * const seq = createSequence([literal, identifier]);
@@ -517,10 +517,10 @@ export const createSequence = (elements: Expression[]): Sequence => ({
 
 /**
  * Create a Choice AST node.
- * 
+ *
  * @param alternatives - The alternative expressions to try
  * @returns A new Choice AST node
- * 
+ *
  * @example
  * ```typescript
  * const choice = createChoice([literal, identifier]);
@@ -534,10 +534,10 @@ export const createChoice = (alternatives: Expression[]): Choice => ({
 
 /**
  * Create a Group AST node.
- * 
+ *
  * @param expression - The grouped expression
  * @returns A new Group AST node
- * 
+ *
  * @example
  * ```typescript
  * const group = createGroup(choice);
@@ -551,10 +551,10 @@ export const createGroup = (expression: Expression): Group => ({
 
 /**
  * Create a Star AST node (zero or more repetition).
- * 
+ *
  * @param expression - The expression to repeat
  * @returns A new Star AST node
- * 
+ *
  * @example
  * ```typescript
  * const star = createStar(identifier);
@@ -568,10 +568,10 @@ export const createStar = (expression: Expression): Star => ({
 
 /**
  * Create a Plus AST node (one or more repetition).
- * 
+ *
  * @param expression - The expression to repeat
  * @returns A new Plus AST node
- * 
+ *
  * @example
  * ```typescript
  * const plus = createPlus(identifier);
@@ -585,10 +585,10 @@ export const createPlus = (expression: Expression): Plus => ({
 
 /**
  * Create an Optional AST node (zero or one occurrence).
- * 
+ *
  * @param expression - The optional expression
  * @returns A new Optional AST node
- * 
+ *
  * @example
  * ```typescript
  * const optional = createOptional(identifier);
@@ -602,12 +602,12 @@ export const createOptional = (expression: Expression): Optional => ({
 
 /**
  * Create a Quantified AST node (specific repetition count/range).
- * 
+ *
  * @param expression - The expression to repeat
  * @param min - Minimum number of repetitions
  * @param max - Maximum number of repetitions (optional for exact counts)
  * @returns A new Quantified AST node
- * 
+ *
  * @example
  * ```typescript
  * const exact = createQuantified(identifier, 3);
@@ -634,10 +634,10 @@ export const createQuantified = (
 
 /**
  * Create a PositiveLookahead AST node.
- * 
+ *
  * @param expression - The expression to assert must follow
  * @returns A new PositiveLookahead AST node
- * 
+ *
  * @example
  * ```typescript
  * const lookahead = createPositiveLookahead(identifier);
@@ -653,10 +653,10 @@ export const createPositiveLookahead = (
 
 /**
  * Create a NegativeLookahead AST node.
- * 
+ *
  * @param expression - The expression to assert must not follow
  * @returns A new NegativeLookahead AST node
- * 
+ *
  * @example
  * ```typescript
  * const negLookahead = createNegativeLookahead(identifier);
@@ -672,11 +672,11 @@ export const createNegativeLookahead = (
 
 /**
  * Create a LabeledExpression AST node.
- * 
+ *
  * @param label - The label for capturing the result
  * @param expression - The expression being labeled
  * @returns A new LabeledExpression AST node
- * 
+ *
  * @example
  * ```typescript
  * const labeled = createLabeledExpression("name", identifier);
@@ -694,11 +694,11 @@ export const createLabeledExpression = (
 
 /**
  * Create a GrammarAnnotation AST node.
- * 
+ *
  * @param key - The annotation key
  * @param value - The annotation value
  * @returns A new GrammarAnnotation AST node
- * 
+ *
  * @example
  * ```typescript
  * const annotation = createGrammarAnnotation("version", "1.0.0");
@@ -716,12 +716,12 @@ export const createGrammarAnnotation = (
 
 /**
  * Create a RuleDefinition AST node.
- * 
+ *
  * @param name - The name of the rule
  * @param pattern - The expression pattern for this rule
  * @param documentation - Optional documentation comments for the rule
  * @returns A new RuleDefinition AST node
- * 
+ *
  * @example
  * ```typescript
  * const rule = createRuleDefinition("identifier", charClass, ["Matches identifiers"]);
@@ -748,12 +748,12 @@ export const createRuleDefinition = (
 
 /**
  * Create a GrammarDefinition AST node.
- * 
+ *
  * @param name - The name of the grammar
  * @param annotations - Grammar-level annotations (defaults to empty array)
  * @param rules - The rules that make up this grammar (defaults to empty array)
  * @returns A new GrammarDefinition AST node
- * 
+ *
  * @example
  * ```typescript
  * const grammar = createGrammarDefinition("MyGrammar", [annotation], [rule]);

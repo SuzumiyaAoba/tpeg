@@ -217,7 +217,10 @@ export const quantified =
     let count = 0;
 
     // Helper function to create infinite loop error
-    const createInfiniteLoopError = (position: typeof pos, repetitionInfo: string) => {
+    const createInfiniteLoopError = (
+      position: typeof pos,
+      repetitionInfo: string,
+    ) => {
       return createFailure(
         `Infinite loop detected in quantified: Parser succeeded but consumed no input at position ${position.offset}`,
         position,
@@ -259,7 +262,10 @@ export const quantified =
 
       // Check for infinite loop (position doesn't advance)
       if (result.next.offset === currentPos.offset) {
-        return createInfiniteLoopError(currentPos, `Repetition: ${i + 1}/${min} (required)`);
+        return createInfiniteLoopError(
+          currentPos,
+          `Repetition: ${i + 1}/${min} (required)`,
+        );
       }
 
       results.push(result.val);
@@ -278,7 +284,10 @@ export const quantified =
 
       // Check for infinite loop (position doesn't advance)
       if (result.next.offset === currentPos.offset) {
-        return createInfiniteLoopError(currentPos, `Repetition: ${i + 1} (optional)`);
+        return createInfiniteLoopError(
+          currentPos,
+          `Repetition: ${i + 1} (optional)`,
+        );
       }
 
       results.push(result.val);

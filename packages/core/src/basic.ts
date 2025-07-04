@@ -3,20 +3,20 @@ import { createFailure, getCharAndLength, nextPos } from "./utils";
 
 /**
  * Parser that parses any single character from the input.
- * 
+ *
  * This parser succeeds when there is at least one character available at the current
  * position in the input string. It fails only when it encounters the end of input.
  * The parser is Unicode-aware and will correctly handle multi-byte characters.
  *
  * @param parserName - Optional name for the parser, used in error messages for debugging. Defaults to "anyChar"
  * @returns A parser function that accepts input string and position, returning a ParseResult containing the matched character
- * 
+ *
  * @example
  * ```typescript
  * const parser = anyChar();
  * const result = parser("hello", { offset: 0, line: 1, column: 1 });
  * // result: { success: true, val: "h", current: {...}, next: {...} }
- * 
+ *
  * const endResult = parser("", { offset: 0, line: 1, column: 1 });
  * // endResult: { success: false, error: "Unexpected EOI", ... }
  * ```
@@ -44,7 +44,7 @@ export const anyChar =
 
 /**
  * Alias for {@link anyChar} with a shorter name.
- * 
+ *
  * This is a convenience function that creates an anyChar parser with the name "any".
  * Functionally identical to calling `anyChar("any")`.
  *
@@ -55,7 +55,7 @@ export const any = anyChar("any");
 
 /**
  * Checks if a string can be processed by the optimized string parsing path.
- * 
+ *
  * The optimized path is used for ASCII-only strings that don't contain newlines,
  * allowing for faster parsing by avoiding complex Unicode handling. This function
  * uses a regex to check for ASCII printable characters (32-126) plus common
@@ -63,9 +63,9 @@ export const any = anyChar("any");
  *
  * @param str - The string to check for optimization eligibility
  * @returns `true` if the string can use the optimized parsing path, `false` otherwise
- * 
+ *
  * @internal This is an internal optimization function
- * 
+ *
  * @example
  * ```typescript
  * canUseOptimizedPath("hello world"); // true
@@ -81,20 +81,20 @@ const canUseOptimizedPath = (str: string): boolean => {
 
 /**
  * Simple implementation for string literals that don't need complex Unicode handling.
- * 
+ *
  * This function provides an optimized parsing path for ASCII-only strings without
  * newlines. It uses simple string slicing and comparison operations, which are
  * significantly faster than character-by-character Unicode-aware parsing.
- * 
+ *
  * @template T - The exact string literal type being parsed
  * @param str - The string literal to match against the input
  * @param input - The input string being parsed
  * @param pos - The current parsing position
  * @param parserName - Optional name for error reporting, defaults to "literal"
  * @returns A ParseResult indicating success with the matched string or failure with error details
- * 
+ *
  * @internal This is an internal optimization function used by the literal parser
- * 
+ *
  * @example
  * ```typescript
  * const result = parseSimpleString("hello", "hello world", { offset: 0, line: 1, column: 1 });
@@ -164,21 +164,21 @@ const parseSimpleString = <T extends string>(
 
 /**
  * Complex implementation for string literals that need proper Unicode handling.
- * 
+ *
  * This function provides Unicode-aware parsing for strings that contain non-ASCII
  * characters or newlines. It processes the string character by character, properly
  * handling multi-byte Unicode sequences and updating line/column positions for
  * newline characters.
- * 
+ *
  * @template T - The exact string literal type being parsed
  * @param str - The string literal to match against the input
  * @param input - The input string being parsed
  * @param pos - The current parsing position
  * @param parserName - Optional name for error reporting, defaults to "literal"
  * @returns A ParseResult indicating success with the matched string or failure with error details
- * 
+ *
  * @internal This is an internal function used by the literal parser for Unicode strings
- * 
+ *
  * @example
  * ```typescript
  * const result = parseComplexString("café", "café au lait", { offset: 0, line: 1, column: 1 });
@@ -242,12 +242,12 @@ const parseComplexString = <T extends string>(
 
 /**
  * Parser for literal string matching.
- * 
+ *
  * Creates a parser that matches an exact string literal in the input. The parser
  * automatically chooses between an optimized implementation for simple ASCII strings
  * and a Unicode-aware implementation for complex strings. The optimization is
  * determined at parser creation time for maximum efficiency.
- * 
+ *
  * The parser succeeds if the input at the current position exactly matches the
  * provided string literal. It fails if there's a mismatch or insufficient input.
  * Error messages include detailed information about the expected vs. found characters.
@@ -256,22 +256,22 @@ const parseComplexString = <T extends string>(
  * @param str - The string literal to match. Must be a non-empty string
  * @param parserName - Optional name for the parser, used in error messages. Defaults to "literal"
  * @returns A parser function that matches the specified string literal
- * 
+ *
  * @example
  * ```typescript
  * // Basic usage
  * const helloParser = literal("hello");
  * const result = helloParser("hello world", { offset: 0, line: 1, column: 1 });
  * // result: { success: true, val: "hello", current: {...}, next: {...} }
- * 
+ *
  * // With custom parser name for debugging
  * const keywordParser = literal("function", "keyword");
- * 
+ *
  * // Unicode support
  * const unicodeParser = literal("café");
  * const unicodeResult = unicodeParser("café", { offset: 0, line: 1, column: 1 });
  * // result: { success: true, val: "café", current: {...}, next: {...} }
- * 
+ *
  * // Failure case
  * const failResult = helloParser("hi there", { offset: 0, line: 1, column: 1 });
  * // failResult: { success: false, error: "Unexpected character...", ... }
@@ -296,7 +296,7 @@ export const literal = <T extends string>(
 
 /**
  * Alias for {@link literal} with a shorter name.
- * 
+ *
  * This is a convenience function that provides the same functionality as `literal`
  * but with a more concise name for frequent use in parser compositions.
  *

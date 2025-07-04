@@ -1,28 +1,28 @@
 /**
  * Type Inference System for TPEG Grammar
- * 
+ *
  * This module provides automatic type inference for parser results based on grammar structure.
  * It analyzes TPEG expressions and generates TypeScript type information for better type safety.
  */
 
-import type { 
-  Expression, 
-  GrammarDefinition, 
-  RuleDefinition,
-  StringLiteral,
-  CharacterClass,
-  Identifier,
+import type {
   AnyChar,
-  Sequence,
+  CharacterClass,
   Choice,
+  Expression,
+  GrammarDefinition,
   Group,
-  Star,
-  Plus,
-  Optional,
-  Quantified,
-  PositiveLookahead,
+  Identifier,
+  LabeledExpression,
   NegativeLookahead,
-  LabeledExpression
+  Optional,
+  Plus,
+  PositiveLookahead,
+  Quantified,
+  RuleDefinition,
+  Sequence,
+  Star,
+  StringLiteral,
 } from "./grammar-types";
 
 /**
@@ -142,15 +142,18 @@ export class TypeInferenceEngine {
       try {
         this.context.currentRule = rule.name;
         this.context.ruleStack = [rule.name];
-        
+
         const inferredType = this.inferExpressionType(rule.pattern);
         result.ruleTypes.set(rule.name, inferredType);
-        
+
         // Add any new imports
         result.imports.push(...inferredType.imports);
       } catch (error) {
         // Handle circular dependencies
-        if (error instanceof Error && error.message.includes("Circular dependency")) {
+        if (
+          error instanceof Error &&
+          error.message.includes("Circular dependency")
+        ) {
           result.circularDependencies.push([...this.context.ruleStack]);
           // Use a placeholder type for circular dependencies
           result.ruleTypes.set(rule.name, {
@@ -178,7 +181,7 @@ export class TypeInferenceEngine {
    */
   inferExpressionType(expression: Expression): InferredType {
     const cacheKey = this.getExpressionCacheKey(expression);
-    
+
     // Check cache first
     if (this.context.typeCache.has(cacheKey)) {
       const cached = this.context.typeCache.get(cacheKey);
@@ -231,7 +234,10 @@ export class TypeInferenceEngine {
         inferredType = this.inferLabeledExpressionType(expression);
         break;
       default: {
-        const unknownType = 'type' in expression ? (expression as { type: string }).type : 'unknown';
+        const unknownType =
+          "type" in expression
+            ? (expression as { type: string }).type
+            : "unknown";
         inferredType = {
           typeString: "unknown",
           nullable: false,
@@ -274,10 +280,12 @@ export class TypeInferenceEngine {
 
   private inferIdentifierType(expression: Identifier): InferredType {
     const ruleName = expression.name;
-    
+
     // Check for circular dependency
     if (this.context.ruleStack.includes(ruleName)) {
-      throw new Error(`Circular dependency detected: ${this.context.ruleStack.join(" -> ")} -> ${ruleName}`);
+      throw new Error(
+        `Circular dependency detected: ${this.context.ruleStack.join(" -> ")} -> ${ruleName}`,
+      );
     }
 
     // Look up rule definition
@@ -328,11 +336,11 @@ export class TypeInferenceEngine {
     }
 
     const elementTypes = expression.elements.map((element: Expression) =>
-      this.inferExpressionType(element)
+      this.inferExpressionType(element),
     );
 
-    const typeStrings = elementTypes.map(t => t.typeString);
-    const allImports = elementTypes.flatMap(t => t.imports);
+    const typeStrings = elementTypes.map((t) => t.typeString);
+    const allImports = elementTypes.flatMap((t) => t.imports);
 
     return {
       typeString: `[${typeStrings.join(", ")}]`,
@@ -357,15 +365,17 @@ export class TypeInferenceEngine {
     }
 
     const alternativeTypes = expression.alternatives.map((alt: Expression) =>
-      this.inferExpressionType(alt)
+      this.inferExpressionType(alt),
     );
 
-    const typeStrings = alternativeTypes.map(t => {
+    const typeStrings = alternativeTypes.map((t) => {
       // Add parentheses for complex types in unions
-      const needsParens = t.typeString.includes(" | ") || (t.isArray && t.typeString.includes("["));
+      const needsParens =
+        t.typeString.includes(" | ") ||
+        (t.isArray && t.typeString.includes("["));
       return needsParens ? `(${t.typeString})` : t.typeString;
     });
-    const allImports = alternativeTypes.flatMap(t => t.imports);
+    const allImports = alternativeTypes.flatMap((t) => t.imports);
 
     return {
       typeString: typeStrings.join(" | "),
@@ -383,7 +393,7 @@ export class TypeInferenceEngine {
 
   private inferStarType(expression: Star): InferredType {
     const innerType = this.inferExpressionType(expression.expression);
-    
+
     if (!this.options.inferArrayTypes) {
       return {
         typeString: "string",
@@ -397,7 +407,9 @@ export class TypeInferenceEngine {
 
     // Handle parentheses for complex union types
     const needsParens = innerType.typeString.includes(" | ");
-    const elementType = needsParens ? `(${innerType.typeString})` : innerType.typeString;
+    const elementType = needsParens
+      ? `(${innerType.typeString})`
+      : innerType.typeString;
 
     return {
       typeString: `${elementType}[]`,
@@ -411,7 +423,7 @@ export class TypeInferenceEngine {
 
   private inferPlusType(expression: Plus): InferredType {
     const innerType = this.inferExpressionType(expression.expression);
-    
+
     if (!this.options.inferArrayTypes) {
       return {
         typeString: "string",
@@ -425,7 +437,9 @@ export class TypeInferenceEngine {
 
     // Handle parentheses for complex union types
     const needsParens = innerType.typeString.includes(" | ");
-    const elementType = needsParens ? `(${innerType.typeString})` : innerType.typeString;
+    const elementType = needsParens
+      ? `(${innerType.typeString})`
+      : innerType.typeString;
 
     return {
       typeString: `${elementType}[]`,
@@ -439,11 +453,14 @@ export class TypeInferenceEngine {
 
   private inferOptionalType(expression: Optional): InferredType {
     const innerType = this.inferExpressionType(expression.expression);
-    
+
     // Handle parentheses for complex types
-    const needsParens = innerType.typeString.includes(" | ") || innerType.isArray;
-    const wrappedType = needsParens ? `(${innerType.typeString})` : innerType.typeString;
-    
+    const needsParens =
+      innerType.typeString.includes(" | ") || innerType.isArray;
+    const wrappedType = needsParens
+      ? `(${innerType.typeString})`
+      : innerType.typeString;
+
     return {
       typeString: `${wrappedType} | undefined`,
       nullable: true,
@@ -456,14 +473,19 @@ export class TypeInferenceEngine {
 
   private inferQuantifiedType(expression: Quantified): InferredType {
     const innerType = this.inferExpressionType(expression.expression);
-    
-    if (!this.options.inferArrayTypes || expression.min === 1 && expression.max === 1) {
+
+    if (
+      !this.options.inferArrayTypes ||
+      (expression.min === 1 && expression.max === 1)
+    ) {
       return innerType;
     }
 
     const isOptional = expression.min === 0;
-    const baseTypeString = this.options.inferArrayTypes ? `${innerType.typeString}[]` : "string";
-    
+    const baseTypeString = this.options.inferArrayTypes
+      ? `${innerType.typeString}[]`
+      : "string";
+
     return {
       typeString: isOptional ? `${baseTypeString} | undefined` : baseTypeString,
       nullable: isOptional,
@@ -474,7 +496,9 @@ export class TypeInferenceEngine {
     };
   }
 
-  private inferLookaheadType(_expression: PositiveLookahead | NegativeLookahead): InferredType {
+  private inferLookaheadType(
+    _expression: PositiveLookahead | NegativeLookahead,
+  ): InferredType {
     // Lookaheads don't consume input and don't contribute to the result
     return {
       typeString: "void",
@@ -486,10 +510,12 @@ export class TypeInferenceEngine {
     };
   }
 
-  private inferLabeledExpressionType(expression: LabeledExpression): InferredType {
+  private inferLabeledExpressionType(
+    expression: LabeledExpression,
+  ): InferredType {
     // For labeled expressions, we infer the type of the inner expression
     const innerType = this.inferExpressionType(expression.expression);
-    
+
     return {
       ...innerType,
       documentation: `Labeled expression: ${expression.label}`,

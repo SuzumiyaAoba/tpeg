@@ -2,11 +2,16 @@ import { describe, expect, it } from "bun:test";
 import { literal as lit } from "./basic";
 import { charClass } from "./char-class";
 import { seq } from "./combinators";
-import { oneOrMore, opt, optional, plus, quantified, star, zeroOrMore } from "./repetition";
-import type {
-  Parser,
-  Pos,
-} from "./types";
+import {
+  oneOrMore,
+  opt,
+  optional,
+  plus,
+  quantified,
+  star,
+  zeroOrMore,
+} from "./repetition";
+import type { Parser, Pos } from "./types";
 import { isFailure, isSuccess } from "./utils";
 
 describe("opt", () => {
@@ -392,7 +397,7 @@ describe("quantified", () => {
 
   it("should parse range {n,m}", () => {
     const parser = quantified(lit("a"), 2, 4);
-    
+
     // Test minimum case
     const result1 = parser("aa", { offset: 0, line: 1, column: 1 });
     expect(isSuccess(result1)).toBe(true);
@@ -425,7 +430,7 @@ describe("quantified", () => {
 
   it("should parse minimum {n,} (unbounded)", () => {
     const parser = quantified(lit("a"), 2);
-    
+
     // Test minimum case
     const result1 = parser("aa", { offset: 0, line: 1, column: 1 });
     expect(isSuccess(result1)).toBe(true);
@@ -443,7 +448,7 @@ describe("quantified", () => {
 
   it("should handle zero minimum {0,n}", () => {
     const parser = quantified(lit("a"), 0, 3);
-    
+
     // Test no matches
     const result1 = parser("b", { offset: 0, line: 1, column: 1 });
     expect(isSuccess(result1)).toBe(true);
@@ -461,7 +466,7 @@ describe("quantified", () => {
 
   it("should fail if minimum not met", () => {
     const parser = quantified(lit("a"), 3, 5);
-    
+
     // Test insufficient matches
     const result1 = parser("aa", { offset: 0, line: 1, column: 1 });
     expect(isFailure(result1)).toBe(true);
@@ -476,7 +481,7 @@ describe("quantified", () => {
     expect(isFailure(result2)).toBe(true);
     if (isFailure(result2)) {
       // Should fail when trying to parse 1st "a" but got "b"
-      expect(result2.error.message).toContain("Unexpected character \"b\"");
+      expect(result2.error.message).toContain('Unexpected character "b"');
       expect(result2.error.parserName).toBe("quantified");
     }
   });
@@ -487,7 +492,9 @@ describe("quantified", () => {
     const result1 = parser1("a", { offset: 0, line: 1, column: 1 });
     expect(isFailure(result1)).toBe(true);
     if (isFailure(result1)) {
-      expect(result1.error.message).toContain("minimum (-1) cannot be negative");
+      expect(result1.error.message).toContain(
+        "minimum (-1) cannot be negative",
+      );
     }
 
     // Test max < min
@@ -495,7 +502,9 @@ describe("quantified", () => {
     const result2 = parser2("a", { offset: 0, line: 1, column: 1 });
     expect(isFailure(result2)).toBe(true);
     if (isFailure(result2)) {
-      expect(result2.error.message).toContain("maximum (3) cannot be less than minimum (5)");
+      expect(result2.error.message).toContain(
+        "maximum (3) cannot be less than minimum (5)",
+      );
     }
   });
 
@@ -521,13 +530,13 @@ describe("quantified", () => {
     // {0,} should be equivalent to zeroOrMore
     const quantifiedParser = quantified(lit("a"), 0);
     const zeroOrMoreParser = zeroOrMore(lit("a"));
-    
+
     const input = "aaab";
     const pos = { offset: 0, line: 1, column: 1 };
-    
+
     const result1 = quantifiedParser(input, pos);
     const result2 = zeroOrMoreParser(input, pos);
-    
+
     expect(isSuccess(result1)).toBe(true);
     expect(isSuccess(result2)).toBe(true);
     if (isSuccess(result1) && isSuccess(result2)) {
@@ -538,10 +547,10 @@ describe("quantified", () => {
     // {1,} should be equivalent to oneOrMore
     const quantifiedParser2 = quantified(lit("a"), 1);
     const oneOrMoreParser = oneOrMore(lit("a"));
-    
+
     const result3 = quantifiedParser2(input, pos);
     const result4 = oneOrMoreParser(input, pos);
-    
+
     expect(isSuccess(result3)).toBe(true);
     expect(isSuccess(result4)).toBe(true);
     if (isSuccess(result3) && isSuccess(result4)) {
@@ -552,10 +561,10 @@ describe("quantified", () => {
     // {0,1} should be equivalent to optional
     const quantifiedParser3 = quantified(lit("a"), 0, 1);
     const optionalParser = optional(lit("a"));
-    
+
     const result5 = quantifiedParser3(input, pos);
     const result6 = optionalParser(input, pos);
-    
+
     expect(isSuccess(result5)).toBe(true);
     expect(isSuccess(result6)).toBe(true);
     if (isSuccess(result5) && isSuccess(result6)) {

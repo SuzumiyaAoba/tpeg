@@ -1,12 +1,20 @@
 /**
  * Type Integration System for TPEG
- * 
+ *
  * This module integrates type inference with code generation, providing
  * enhanced type-safe parser generation capabilities.
  */
 
-import type { GrammarDefinition, RuleDefinition, Expression } from "./grammar-types";
-import { TypeInferenceEngine, type GrammarTypeInference, type InferredType } from "./type-inference";
+import type {
+  Expression,
+  GrammarDefinition,
+  RuleDefinition,
+} from "./grammar-types";
+import {
+  type GrammarTypeInference,
+  type InferredType,
+  TypeInferenceEngine,
+} from "./type-inference";
 
 /**
  * Enhanced rule information with type inference
@@ -23,7 +31,8 @@ export interface TypedRuleDefinition extends RuleDefinition {
 /**
  * Enhanced grammar definition with type information
  */
-export interface TypedGrammarDefinition extends Omit<GrammarDefinition, 'rules'> {
+export interface TypedGrammarDefinition
+  extends Omit<GrammarDefinition, "rules"> {
   /** Original grammar definition */
   originalGrammar: GrammarDefinition;
   /** Rules with type information */
@@ -71,7 +80,7 @@ export class TypeIntegrationEngine {
 
   constructor(options: Partial<TypeIntegrationOptions> = {}) {
     this.options = { ...DEFAULT_TYPE_INTEGRATION_OPTIONS, ...options };
-    
+
     // Configure type inference engine based on integration options
     this.typeInferenceEngine = new TypeInferenceEngine({
       inferArrayTypes: true,
@@ -89,13 +98,18 @@ export class TypeIntegrationEngine {
   createTypedGrammar(grammar: GrammarDefinition): TypedGrammarDefinition {
     // Perform type inference
     const typeInference = this.typeInferenceEngine.inferGrammarTypes(grammar);
-    
+
     // Create typed rules
-    const typedRules = grammar.rules.map(rule => this.createTypedRule(rule, typeInference));
-    
+    const typedRules = grammar.rules.map((rule) =>
+      this.createTypedRule(rule, typeInference),
+    );
+
     // Generate type definitions
-    const typeDefinitions = this.generateTypeDefinitions(typeInference, typedRules);
-    
+    const typeDefinitions = this.generateTypeDefinitions(
+      typeInference,
+      typedRules,
+    );
+
     // Collect all required imports
     const imports = this.collectImports(typeInference);
 
@@ -112,7 +126,10 @@ export class TypeIntegrationEngine {
   /**
    * Create a typed rule definition with dependency analysis
    */
-  private createTypedRule(rule: RuleDefinition, typeInference: GrammarTypeInference): TypedRuleDefinition {
+  private createTypedRule(
+    rule: RuleDefinition,
+    typeInference: GrammarTypeInference,
+  ): TypedRuleDefinition {
     const inferredType = typeInference.ruleTypes.get(rule.name);
     if (!inferredType) {
       throw new Error(`No type information found for rule: ${rule.name}`);
@@ -120,7 +137,7 @@ export class TypeIntegrationEngine {
 
     // Check for circular dependencies
     const hasCircularDependency = typeInference.circularDependencies.some(
-      cycle => cycle.includes(rule.name)
+      (cycle) => cycle.includes(rule.name),
     );
 
     // Analyze dependencies
@@ -139,7 +156,7 @@ export class TypeIntegrationEngine {
    */
   private analyzeDependencies(rule: RuleDefinition): string[] {
     const dependencies = new Set<string>();
-    
+
     const traverse = (expr: Expression): void => {
       switch (expr.type) {
         case "Identifier":
@@ -178,7 +195,7 @@ export class TypeIntegrationEngine {
    */
   private generateTypeDefinitions(
     _typeInference: GrammarTypeInference,
-    typedRules: TypedRuleDefinition[]
+    typedRules: TypedRuleDefinition[],
   ): string {
     const typeDefinitions: string[] = [];
 
@@ -190,33 +207,43 @@ export class TypeIntegrationEngine {
     // Generate type aliases for each rule
     for (const rule of typedRules) {
       const inferredType = rule.inferredType;
-      
+
       if (this.options.includeDocumentation && inferredType.documentation) {
         typeDefinitions.push("  /**");
         typeDefinitions.push(`   * ${inferredType.documentation}`);
         if (rule.dependencies.length > 0) {
-          typeDefinitions.push(`   * Dependencies: ${rule.dependencies.join(", ")}`);
+          typeDefinitions.push(
+            `   * Dependencies: ${rule.dependencies.join(", ")}`,
+          );
         }
         if (rule.hasCircularDependency) {
-          typeDefinitions.push("   * Note: This rule has circular dependencies");
+          typeDefinitions.push(
+            "   * Note: This rule has circular dependencies",
+          );
         }
         typeDefinitions.push("   */");
       }
 
       const ruleName = this.pascalCase(rule.name);
-      typeDefinitions.push(`  export type ${ruleName}Result = ${inferredType.typeString};`);
-      
+      typeDefinitions.push(
+        `  export type ${ruleName}Result = ${inferredType.typeString};`,
+      );
+
       if (this.options.generateTypeGuards) {
         typeDefinitions.push(this.generateTypeGuard(ruleName, inferredType));
       }
-      
+
       typeDefinitions.push("");
     }
 
     // Generate result type union
-    const resultTypes = typedRules.map(rule => `${this.pascalCase(rule.name)}Result`);
+    const resultTypes = typedRules.map(
+      (rule) => `${this.pascalCase(rule.name)}Result`,
+    );
     typeDefinitions.push("  /** Union of all parser result types */");
-    typeDefinitions.push(`  export type ParserResult = ${resultTypes.join(" | ")};`);
+    typeDefinitions.push(
+      `  export type ParserResult = ${resultTypes.join(" | ")};`,
+    );
 
     // Close namespace if specified
     if (this.options.typeNamespace) {
@@ -229,14 +256,20 @@ export class TypeIntegrationEngine {
   /**
    * Generate a type guard function for a rule result type
    */
-  private generateTypeGuard(ruleName: string, inferredType: InferredType): string {
+  private generateTypeGuard(
+    ruleName: string,
+    inferredType: InferredType,
+  ): string {
     const guardName = `is${ruleName}Result`;
     const typeName = `${ruleName}Result`;
-    
+
     // Simple type guards based on the inferred type
     let guardImplementation: string;
-    
-    if (inferredType.typeString.startsWith('"') && inferredType.typeString.endsWith('"')) {
+
+    if (
+      inferredType.typeString.startsWith('"') &&
+      inferredType.typeString.endsWith('"')
+    ) {
       // String literal type
       const literal = inferredType.typeString.slice(1, -1);
       guardImplementation = `return typeof value === "string" && value === "${literal}";`;
@@ -262,19 +295,19 @@ export class TypeIntegrationEngine {
    */
   private collectImports(typeInference: GrammarTypeInference): string[] {
     const imports = new Set<string>();
-    
+
     // Add imports from each rule type
     for (const inferredType of Array.from(typeInference.ruleTypes.values())) {
       for (const imp of inferredType.imports) {
         imports.add(imp);
       }
     }
-    
+
     // Add any additional imports from type inference
     for (const imp of typeInference.imports) {
       imports.add(imp);
     }
-    
+
     return Array.from(imports);
   }
 
@@ -284,30 +317,39 @@ export class TypeIntegrationEngine {
   private pascalCase(str: string): string {
     return str
       .split(/[-_\s]+/)
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
       .join("");
   }
 
   /**
    * Get type information for a specific rule
    */
-  getTypeInfo(typedGrammar: TypedGrammarDefinition, ruleName: string): InferredType | undefined {
+  getTypeInfo(
+    typedGrammar: TypedGrammarDefinition,
+    ruleName: string,
+  ): InferredType | undefined {
     return typedGrammar.typeInference.ruleTypes.get(ruleName);
   }
 
   /**
    * Check if a rule has circular dependencies
    */
-  hasCircularDependency(typedGrammar: TypedGrammarDefinition, ruleName: string): boolean {
-    const rule = typedGrammar.rules.find(r => r.name === ruleName);
+  hasCircularDependency(
+    typedGrammar: TypedGrammarDefinition,
+    ruleName: string,
+  ): boolean {
+    const rule = typedGrammar.rules.find((r) => r.name === ruleName);
     return rule?.hasCircularDependency ?? false;
   }
 
   /**
    * Get all dependencies for a rule
    */
-  getDependencies(typedGrammar: TypedGrammarDefinition, ruleName: string): string[] {
-    const rule = typedGrammar.rules.find(r => r.name === ruleName);
+  getDependencies(
+    typedGrammar: TypedGrammarDefinition,
+    ruleName: string,
+  ): string[] {
+    const rule = typedGrammar.rules.find((r) => r.name === ruleName);
     return rule?.dependencies ?? [];
   }
 
@@ -316,30 +358,40 @@ export class TypeIntegrationEngine {
    */
   generateParserInterface(typedGrammar: TypedGrammarDefinition): string {
     const interfaceLines: string[] = [];
-    
+
     interfaceLines.push("/**");
-    interfaceLines.push(` * Generated parser interface for ${typedGrammar.name} grammar`);
-    interfaceLines.push(" * This interface provides type-safe access to all parser rules");
+    interfaceLines.push(
+      ` * Generated parser interface for ${typedGrammar.name} grammar`,
+    );
+    interfaceLines.push(
+      " * This interface provides type-safe access to all parser rules",
+    );
     interfaceLines.push(" */");
     interfaceLines.push(`export interface ${typedGrammar.name}Parser {`);
-    
+
     for (const rule of typedGrammar.rules) {
       const resultType = `${this.pascalCase(rule.name)}Result`;
-      
+
       if (this.options.includeDocumentation) {
         interfaceLines.push("  /**");
-        interfaceLines.push(`   * Parse ${rule.name}: ${rule.inferredType.documentation}`);
+        interfaceLines.push(
+          `   * Parse ${rule.name}: ${rule.inferredType.documentation}`,
+        );
         if (rule.hasCircularDependency) {
-          interfaceLines.push("   * @warning This rule has circular dependencies");
+          interfaceLines.push(
+            "   * @warning This rule has circular dependencies",
+          );
         }
         interfaceLines.push("   */");
       }
-      
-      interfaceLines.push(`  ${rule.name}(input: string): { success: boolean; value?: ${resultType}; error?: string; position: number };`);
+
+      interfaceLines.push(
+        `  ${rule.name}(input: string): { success: boolean; value?: ${resultType}; error?: string; position: number };`,
+      );
     }
-    
+
     interfaceLines.push("}");
-    
+
     return interfaceLines.join("\n");
   }
 }

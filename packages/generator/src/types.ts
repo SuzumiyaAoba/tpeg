@@ -1,6 +1,6 @@
 /**
  * Type definitions for TPEG Code Generator
- * 
+ *
  * These types are used for code generation and template rendering.
  * They import the core TPEG types and extend them with generation-specific interfaces.
  */
@@ -15,98 +15,98 @@ export interface Expression {
 }
 
 export interface StringLiteral extends Expression {
-  type: 'StringLiteral';
+  type: "StringLiteral";
   value: string;
 }
 
 export interface CharacterClass extends Expression {
-  type: 'CharacterClass';
+  type: "CharacterClass";
   ranges: Array<{ start: string; end?: string }>;
   negated: boolean;
 }
 
 export interface Identifier extends Expression {
-  type: 'Identifier';
+  type: "Identifier";
   name: string;
 }
 
 export interface Sequence extends Expression {
-  type: 'Sequence';
+  type: "Sequence";
   elements: Expression[];
 }
 
 export interface Choice extends Expression {
-  type: 'Choice';
+  type: "Choice";
   alternatives: Expression[];
 }
 
 export interface Group extends Expression {
-  type: 'Group';
+  type: "Group";
   expression: Expression;
 }
 
 export interface Star extends Expression {
-  type: 'Star';
+  type: "Star";
   expression: Expression;
 }
 
 export interface Plus extends Expression {
-  type: 'Plus';
+  type: "Plus";
   expression: Expression;
 }
 
 export interface Optional extends Expression {
-  type: 'Optional';
+  type: "Optional";
   expression: Expression;
 }
 
 export interface Quantified extends Expression {
-  type: 'Quantified';
+  type: "Quantified";
   expression: Expression;
   min: number;
   max?: number;
 }
 
 export interface PositiveLookahead extends Expression {
-  type: 'PositiveLookahead';
+  type: "PositiveLookahead";
   expression: Expression;
 }
 
 export interface NegativeLookahead extends Expression {
-  type: 'NegativeLookahead';
+  type: "NegativeLookahead";
   expression: Expression;
 }
 
 export interface LabeledExpression extends Expression {
-  type: 'LabeledExpression';
+  type: "LabeledExpression";
   label: string;
   expression: Expression;
 }
 
 // Union type for all specific expression types
-export type SpecificExpression = 
-  | StringLiteral 
-  | CharacterClass 
-  | Identifier 
-  | Sequence 
-  | Choice 
-  | Group 
-  | Star 
-  | Plus 
-  | Optional 
-  | Quantified 
-  | PositiveLookahead 
-  | NegativeLookahead 
+export type SpecificExpression =
+  | StringLiteral
+  | CharacterClass
+  | Identifier
+  | Sequence
+  | Choice
+  | Group
+  | Star
+  | Plus
+  | Optional
+  | Quantified
+  | PositiveLookahead
+  | NegativeLookahead
   | LabeledExpression;
 
 export interface RuleDefinition {
-  type: 'RuleDefinition';
+  type: "RuleDefinition";
   name: string;
   pattern: Expression;
 }
 
 export interface GrammarDefinition {
-  type: 'GrammarDefinition';
+  type: "GrammarDefinition";
   name: string;
   annotations: unknown[];
   rules: RuleDefinition[];
@@ -119,7 +119,7 @@ export interface ExpressionComplexity {
   depth: number;
   nodeCount: number;
   hasRecursion: boolean;
-  estimatedComplexity: 'low' | 'medium' | 'high';
+  estimatedComplexity: "low" | "medium" | "high";
 }
 
 /**
@@ -127,7 +127,7 @@ export interface ExpressionComplexity {
  */
 export interface GrammarPerformance {
   ruleCount: number;
-  estimatedParseComplexity: 'low' | 'medium' | 'high';
+  estimatedParseComplexity: "low" | "medium" | "high";
   optimizationSuggestions: string[];
   ruleComplexity: Map<string, ExpressionComplexity>;
 }
@@ -163,7 +163,7 @@ export interface ParserTemplateData {
  */
 export interface CodeGenOptions {
   /** Target language (currently only TypeScript) */
-  language: 'typescript';
+  language: "typescript";
   /** Generated parser name prefix */
   namePrefix?: string;
   /** Include runtime imports */
@@ -196,7 +196,7 @@ export interface GeneratedCode {
   exports: string[];
   /** Performance analysis */
   performance: {
-    estimatedComplexity: 'low' | 'medium' | 'high';
+    estimatedComplexity: "low" | "medium" | "high";
     optimizationSuggestions: string[];
     generationTime: number;
     templateEngine: string;
