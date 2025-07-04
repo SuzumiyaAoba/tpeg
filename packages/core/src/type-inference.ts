@@ -462,7 +462,7 @@ export class TypeInferenceEngine {
    * @param expression - Character class expression
    * @returns Inferred type for character class
    */
-  private inferCharacterClassType(expression: CharacterClass): InferredType {
+  private inferCharacterClassType(_expression: CharacterClass): InferredType {
     const result: InferredType = {
       typeString: "string",
       nullable: false,
@@ -537,7 +537,7 @@ export class TypeInferenceEngine {
    * @param expression - Any character expression
    * @returns Inferred type for any character
    */
-  private inferAnyCharType(expression: AnyChar): InferredType {
+  private inferAnyCharType(_expression: AnyChar): InferredType {
     return {
       typeString: "string",
       nullable: false,
@@ -848,32 +848,6 @@ export class TypeInferenceEngine {
         ? `Labeled expression: ${expression.label}`
         : undefined,
     };
-  }
-
-  /**
-   * Create an InferredType with optional documentation
-   */
-  private createInferredType(
-    typeString: string,
-    nullable: boolean,
-    isArray: boolean,
-    baseType: string,
-    imports: string[],
-    documentation?: string,
-  ): InferredType {
-    const result: InferredType = {
-      typeString,
-      nullable,
-      isArray,
-      baseType,
-      imports,
-    };
-
-    if (this.options.generateDocumentation && documentation) {
-      result.documentation = documentation;
-    }
-
-    return result;
   }
 
   /**
