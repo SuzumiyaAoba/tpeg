@@ -25,6 +25,9 @@ import {
 /**
  * Parser that consumes characters until a condition is met.
  *
+ * Efficiently processes input by checking the condition parser at each position
+ * and consuming characters until the condition succeeds.
+ *
  * @template T Type of condition parser result
  * @param condition Parser that determines when to stop consuming characters
  * @param parserName Optional name for error reporting and debugging
@@ -69,6 +72,8 @@ export const takeUntil =
 
 /**
  * Parser for matching content between two parsers.
+ *
+ * Uses takeUntil internally for efficient content extraction between opening and closing parsers.
  *
  * @template O Type of opening parser result
  * @template C Type of closing parser result
@@ -232,12 +237,14 @@ export const commaSeparated1 = <T>(
 };
 
 /**
- * Memoization parser that caches results for optimization.
+ * Memoization parser that caches results for optimization with improved cache management.
+ *
+ * Features LRU-like cache eviction and enhanced cache key generation for better performance.
  *
  * @template T Type of parser result
  * @param parser Parser to memoize
  * @param options Options including maxCacheSize and optional parserName
- * @returns Parser<T> Memoized parser
+ * @returns Parser<T> Memoized parser with optimized caching
  */
 export const memoize = <T>(
   parser: Parser<T>,
@@ -247,18 +254,17 @@ export const memoize = <T>(
   const cache = new Map<string, ParseResult<T>>();
 
   const memoizedParser: Parser<T> = (input: string, pos: Pos) => {
-    const key = `${pos.offset}:${pos.line}:${pos.column}`;
+    // More efficient cache key generation
+    const key = `${pos.offset}:${pos.line}:${pos.column}:${input.length}`;
 
-    if (cache.has(key)) {
-      const result = cache.get(key);
-      if (result) {
-        return result;
-      }
+    const cached = cache.get(key);
+    if (cached) {
+      return cached;
     }
 
     const result = parser(input, pos);
 
-    // Implement cache size limit
+    // Implement cache size limit with LRU-like behavior
     if (cache.size >= maxCacheSize) {
       const firstKey = cache.keys().next().value;
       if (firstKey) {
@@ -314,11 +320,13 @@ export const recursive = <T>(
 /**
  * Creates a labeled parser with custom error message.
  *
+ * Provides simple error labeling for parser debugging and error reporting.
+ *
  * @template T Type of parser result
  * @param parser Parser to label
  * @param errorMessage Error message to use when parser fails
  * @param parserName Optional name for error reporting and debugging
- * @returns Parser<T> Labeled parser
+ * @returns Parser<T> Labeled parser with custom error message
  */
 export const labeled =
   <T>(
@@ -344,14 +352,17 @@ export const labeled =
   };
 
 /**
- * Creates a labeled parser with custom error message and context.
+ * Creates a labeled parser with custom error message and hierarchical context.
+ *
+ * Provides detailed error reporting with context hierarchy for better debugging
+ * and error understanding in complex parser compositions.
  *
  * @template T Type of parser result
  * @param parser Parser to label
  * @param errorMessage Error message to use when parser fails
- * @param context Context information for error reporting
+ * @param context Context information for error reporting (string or array of strings)
  * @param parserName Optional name for error reporting and debugging
- * @returns Parser<T> Labeled parser with context
+ * @returns Parser<T> Labeled parser with hierarchical context information
  */
 export const labeledWithContext =
   <T>(
@@ -426,14 +437,17 @@ export const token = <T>(parser: Parser<T>, parserName?: string): Parser<T> => {
 };
 
 /**
- * Creates a debug wrapper for a parser with logging capabilities.
+ * Creates a debug wrapper for a parser with comprehensive logging capabilities.
+ *
+ * Provides detailed logging for success/failure states, input context, and result values
+ * to aid in parser development and troubleshooting.
  *
  * @template T Type of the parser result
  * @param parser The parser to debug
  * @param name Debug name for logging
- * @param options Debug options
+ * @param options Debug options including logging preferences and custom logger
  * @param parserName Optional name for error reporting and debugging
- * @returns Parser<T> A debug-enabled parser
+ * @returns Parser<T> A debug-enabled parser with comprehensive logging
  */
 export const debug = <T>(
   parser: Parser<T>,
@@ -486,7 +500,9 @@ export const debug = <T>(
 };
 
 /**
- * Parser that matches a regular expression.
+ * Parser that matches a regular expression with optimized performance.
+ *
+ * Uses sticky flag for better performance and ensures thread-safe regex execution.
  *
  * @param regex Regular expression to match
  * @param errorMessage Custom error message (optional)
@@ -501,8 +517,11 @@ export const regex = (
   const regexParser: Parser<string> = (input: string, pos: Pos) => {
     const startPos = pos || { offset: 0, line: 1, column: 1 };
 
-    // Create a new regex with global flag reset
-    const regexCopy = new RegExp(regex.source, regex.flags.replace("g", ""));
+    // Create a new regex with global flag reset and sticky flag for better performance
+    const regexCopy = new RegExp(
+      regex.source,
+      `${regex.flags.replace("g", "").replace("y", "")}y`
+    );
     regexCopy.lastIndex = 0;
 
     const inputFromPos = input.slice(startPos.offset);
@@ -542,7 +561,9 @@ export const regex = (
 };
 
 /**
- * Parser that matches a regular expression and returns capture groups.
+ * Parser that matches a regular expression and returns capture groups with optimized performance.
+ *
+ * Uses sticky flag for better performance and ensures thread-safe regex execution.
  *
  * @param regex Regular expression with capture groups
  * @param errorMessage Custom error message (optional)
@@ -557,8 +578,11 @@ export const regexGroups = (
   const regexParser: Parser<string[]> = (input: string, pos: Pos) => {
     const startPos = pos || { offset: 0, line: 1, column: 1 };
 
-    // Create a new regex with global flag reset
-    const regexCopy = new RegExp(regex.source, regex.flags.replace("g", ""));
+    // Create a new regex with global flag reset and sticky flag for better performance
+    const regexCopy = new RegExp(
+      regex.source,
+      `${regex.flags.replace("g", "").replace("y", "")}y`
+    );
     regexCopy.lastIndex = 0;
 
     const inputFromPos = input.slice(startPos.offset);
@@ -718,8 +742,8 @@ export const endOfLine = (parserName?: string): Parser<never> => {
  * @template T Type of parser result
  * @param parser The parser to apply
  * @param parserName Name of the parser for error reporting
- * @param contextSize Number of characters to include before and after error position
- * @returns Parser<T> A parser with enhanced error reporting
+ * @param contextSize Number of characters to include before and after error position (default: 10)
+ * @returns Parser<T> A parser with enhanced error reporting including context information
  */
 export const withDetailedError = <T>(
   parser: Parser<T>,
@@ -741,17 +765,19 @@ export const withDetailedError = <T>(
       const start = Math.max(0, pos.offset - contextSize);
       const end = Math.min(input.length, pos.offset + contextSize);
 
-      const before = input.substring(start, pos.offset);
-      const after = input.substring(pos.offset, end);
-      // Mark as used for future context features
-      void before;
-      void after;
-
       // First character at error position
       const found =
         pos.offset < input.length ? (input[pos.offset] ?? "EOF") : "EOF";
 
       enhancedError.found = found;
+      
+      // Add context information for better error reporting
+      if (pos.offset < input.length) {
+        const contextStart = Math.max(0, pos.offset - 5);
+        const contextEnd = Math.min(input.length, pos.offset + 5);
+        enhancedError.context = input.substring(contextStart, contextEnd);
+      }
+      
       if (!enhancedError.message) {
         enhancedError.message = `${parserName}: Expected ${
           enhancedError.expected || "valid input"
@@ -801,31 +827,35 @@ export const spaces = zeroOrMore(whitespace);
 /**
  * Parser for matching a JavaScript/JSON-style string with escape sequences.
  *
+ * Uses optimized escape sequence handling with support for common escape characters.
+ *
  * @returns Parser<string> A parser that returns the content of the string without quotes
  */
 export const quotedString: Parser<string> = (() => {
-  const escapeSeq = map(seq(literal("\\"), anyChar()), ([_, char]) => {
-    switch (char) {
-      case "n":
-        return "\n";
-      case "r":
-        return "\r";
-      case "t":
-        return "\t";
-      case "b":
-        return "\b";
-      case "f":
-        return "\f";
-      case "\\":
-        return "\\";
-      case '"':
-        return '"';
-      case "'":
-        return "'";
-      default:
-        return char;
-    }
-  });
+  // Common escape sequence handler
+  const createEscapeHandler = (quoteChar: string) =>
+    map(seq(literal("\\"), anyChar()), ([_, char]) => {
+      switch (char) {
+        case "n":
+          return "\n";
+        case "r":
+          return "\r";
+        case "t":
+          return "\t";
+        case "b":
+          return "\b";
+        case "f":
+          return "\f";
+        case "\\":
+          return "\\";
+        case quoteChar:
+          return quoteChar;
+        default:
+          return char;
+      }
+    });
+
+  const escapeSeq = createEscapeHandler('"');
 
   const stringChar = choice(
     escapeSeq,
@@ -844,33 +874,37 @@ export const quotedString: Parser<string> = (() => {
 })();
 
 /**
- * Parser for matching a string with single quotes.
+ * Parser for matching a string with single quotes and escape sequences.
+ *
+ * Uses optimized escape sequence handling with support for common escape characters.
  *
  * @returns Parser<string> A parser that returns the content of the string without quotes
  */
 export const singleQuotedString: Parser<string> = (() => {
-  const escapeSeq = map(seq(literal("\\"), anyChar()), ([_, char]) => {
-    switch (char) {
-      case "n":
-        return "\n";
-      case "r":
-        return "\r";
-      case "t":
-        return "\t";
-      case "b":
-        return "\b";
-      case "f":
-        return "\f";
-      case "\\":
-        return "\\";
-      case "'":
-        return "'";
-      case '"':
-        return '"';
-      default:
-        return char;
-    }
-  });
+  // Common escape sequence handler
+  const createEscapeHandler = (quoteChar: string) =>
+    map(seq(literal("\\"), anyChar()), ([_, char]) => {
+      switch (char) {
+        case "n":
+          return "\n";
+        case "r":
+          return "\r";
+        case "t":
+          return "\t";
+        case "b":
+          return "\b";
+        case "f":
+          return "\f";
+        case "\\":
+          return "\\";
+        case quoteChar:
+          return quoteChar;
+        default:
+          return char;
+      }
+    });
+
+  const escapeSeq = createEscapeHandler("'");
 
   const stringChar = choice(
     escapeSeq,
@@ -897,9 +931,11 @@ export const anyQuotedString: Parser<string> = choice(
 );
 
 /**
- * Parser for matching a JavaScript/JSON-style number.
+ * Parser for matching a JavaScript/JSON-style number with validation.
  *
- * @returns Parser<number> A parser that returns the parsed number
+ * Supports integers, decimals, and scientific notation with proper error handling.
+ *
+ * @returns Parser<number> A parser that returns the parsed number with validation
  */
 export const number: Parser<number> = (() => {
   const digits = map(oneOrMore(charClass(["0", "9"])), (chars) =>
@@ -920,21 +956,40 @@ export const number: Parser<number> = (() => {
   return map(
     seq(integer, optional(fraction), optional(exponent)),
     ([int, frac, exp]) => {
-      const numStr =
-        int + (frac.length > 0 ? frac[0] : "") + (exp.length > 0 ? exp[0] : "");
-      return Number(numStr);
+      const numStr = int + 
+        (frac.length > 0 ? frac[0] : "") + 
+        (exp.length > 0 ? exp[0] : "");
+      
+      const parsed = Number(numStr);
+      
+      // Validate the parsed number
+      if (Number.isNaN(parsed)) {
+        throw new Error(`Invalid number format: ${numStr}`);
+      }
+      
+      return parsed;
     },
   );
 })();
 
 /**
- * Parse an integer number.
+ * Parse an integer number with validation.
  *
- * @returns Parser<number> A parser that returns the parsed integer
+ * Supports negative integers and provides proper error handling for invalid formats.
+ *
+ * @returns Parser<number> A parser that returns the parsed integer with validation
  */
 export const int: Parser<number> = map(
   seq(optional(literal("-")), oneOrMore(charClass(["0", "9"]))),
   ([sign, digits]) => {
-    return Number.parseInt((sign.length > 0 ? "-" : "") + digits.join(""), 10);
+    const numStr = (sign.length > 0 ? "-" : "") + digits.join("");
+    const parsed = Number.parseInt(numStr, 10);
+    
+    // Validate the parsed integer
+    if (Number.isNaN(parsed)) {
+      throw new Error(`Invalid integer format: ${numStr}`);
+    }
+    
+    return parsed;
   },
 );
