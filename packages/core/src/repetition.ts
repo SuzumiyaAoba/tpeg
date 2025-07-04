@@ -2,6 +2,34 @@ import type { NonEmptyArray, ParseFailure, Parser } from "./types";
 import { createFailure } from "./utils";
 
 /**
+ * Creates a standardized infinite loop error for repetition parsers.
+ * This helper reduces code duplication and ensures consistent error messaging.
+ */
+const createInfiniteLoopError = (
+  input: string,
+  position: { offset: number; line: number; column: number },
+  parserName: string,
+  additionalContext?: string,
+) => {
+  const inputPreview = input.slice(position.offset, position.offset + 10);
+  const truncated = input.length > position.offset + 10 ? "..." : "";
+
+  return createFailure(
+    `Infinite loop detected in ${parserName}: Parser succeeded but consumed no input at position ${position.offset}`,
+    position,
+    {
+      parserName,
+      context: [
+        "Parser matched but did not consume any input",
+        `Input: "${inputPreview}${truncated}"`,
+        `Position: line ${position.line}, column ${position.column}`,
+        ...(additionalContext ? [additionalContext] : []),
+      ],
+    },
+  );
+};
+
+/**
  * Parser for optional content (zero or one occurrence).
  *
  * @template T Type of the parse result value
@@ -63,18 +91,7 @@ export const zeroOrMore =
 
       // Check for infinite loop (position doesn't advance)
       if (result.next.offset === currentPos.offset) {
-        return createFailure(
-          `Infinite loop detected in zeroOrMore: Parser succeeded but consumed no input at position ${currentPos.offset}`,
-          currentPos,
-          {
-            parserName: "zeroOrMore",
-            context: [
-              "Parser matched but did not consume any input",
-              `Input: "${input.slice(currentPos.offset, currentPos.offset + 10)}${input.length > currentPos.offset + 10 ? "..." : ""}"`,
-              `Position: line ${currentPos.line}, column ${currentPos.column}`,
-            ],
-          },
-        );
+        return createInfiniteLoopError(input, currentPos, "zeroOrMore");
       }
 
       results.push(result.val);
@@ -146,18 +163,11 @@ export const oneOrMore =
 
       // Check for infinite loop (position doesn't advance)
       if (result.next.offset === currentPos.offset) {
-        return createFailure(
-          `Infinite loop detected in oneOrMore: Parser succeeded but consumed no input at position ${currentPos.offset}`,
+        return createInfiniteLoopError(
+          input,
           currentPos,
-          {
-            parserName: "oneOrMore",
-            context: [
-              "Parser matched but did not consume any input",
-              `Input: "${input.slice(currentPos.offset, currentPos.offset + 10)}${input.length > currentPos.offset + 10 ? "..." : ""}"`,
-              `Position: line ${currentPos.line}, column ${currentPos.column}`,
-              `Results so far: ${results.length} item(s)`,
-            ],
-          },
+          "oneOrMore",
+          `Results so far: ${results.length} item(s)`,
         );
       }
 
@@ -196,6 +206,7 @@ export const plus = oneOrMore;
 export const quantified =
   <T>(parser: Parser<T>, min: number, max?: number): Parser<T[]> =>
   (input: string, pos) => {
+    // Validate input parameters early
     if (min < 0) {
       return createFailure(
         `Invalid quantified range: minimum (${min}) cannot be negative`,
@@ -216,26 +227,6 @@ export const quantified =
     let currentPos = pos;
     let count = 0;
 
-    // Helper function to create infinite loop error
-    const createInfiniteLoopError = (
-      position: typeof pos,
-      repetitionInfo: string,
-    ) => {
-      return createFailure(
-        `Infinite loop detected in quantified: Parser succeeded but consumed no input at position ${position.offset}`,
-        position,
-        {
-          parserName: "quantified",
-          context: [
-            "Parser matched but did not consume any input",
-            `Input: "${input.slice(position.offset, position.offset + 10)}${input.length > position.offset + 10 ? "..." : ""}"`,
-            `Position: line ${position.line}, column ${position.column}`,
-            repetitionInfo,
-          ],
-        },
-      );
-    };
-
     // Parse exactly min times first (required)
     for (let i = 0; i < min; i++) {
       const result = parser(input, currentPos);
@@ -248,7 +239,7 @@ export const quantified =
             ...failure.error,
             parserName: "quantified",
             context: [
-              `in quantified{${min},${max || ""}}`,
+              `in quantified{${min},${max ?? ""}}`,
               `failed at required repetition ${i + 1}/${min}`,
               ...(failure.error.context
                 ? Array.isArray(failure.error.context)
@@ -263,7 +254,9 @@ export const quantified =
       // Check for infinite loop (position doesn't advance)
       if (result.next.offset === currentPos.offset) {
         return createInfiniteLoopError(
+          input,
           currentPos,
+          "quantified",
           `Repetition: ${i + 1}/${min} (required)`,
         );
       }
@@ -274,25 +267,52 @@ export const quantified =
     }
 
     // Parse additional times up to max (optional)
-    const effectiveMax = max ?? Number.MAX_SAFE_INTEGER;
-    for (let i = count; i < effectiveMax; i++) {
-      const result = parser(input, currentPos);
-      if (!result.success) {
-        // Optional repetitions can fail - just break
-        break;
-      }
+    if (max !== undefined) {
+      // Bounded case: parse up to max
+      for (let i = count; i < max; i++) {
+        const result = parser(input, currentPos);
+        if (!result.success) {
+          // Optional repetitions can fail - just break
+          break;
+        }
 
-      // Check for infinite loop (position doesn't advance)
-      if (result.next.offset === currentPos.offset) {
-        return createInfiniteLoopError(
-          currentPos,
-          `Repetition: ${i + 1} (optional)`,
-        );
-      }
+        // Check for infinite loop (position doesn't advance)
+        if (result.next.offset === currentPos.offset) {
+          return createInfiniteLoopError(
+            input,
+            currentPos,
+            "quantified",
+            `Repetition: ${i + 1} (optional)`,
+          );
+        }
 
-      results.push(result.val);
-      currentPos = result.next;
-      count++;
+        results.push(result.val);
+        currentPos = result.next;
+        count++;
+      }
+    } else {
+      // Unbounded case: parse as many as possible
+      while (true) {
+        const result = parser(input, currentPos);
+        if (!result.success) {
+          // Optional repetitions can fail - just break
+          break;
+        }
+
+        // Check for infinite loop (position doesn't advance)
+        if (result.next.offset === currentPos.offset) {
+          return createInfiniteLoopError(
+            input,
+            currentPos,
+            "quantified",
+            `Repetition: ${count + 1} (optional)`,
+          );
+        }
+
+        results.push(result.val);
+        currentPos = result.next;
+        count++;
+      }
     }
 
     return {
