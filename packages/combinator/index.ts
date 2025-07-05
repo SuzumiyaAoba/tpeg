@@ -106,12 +106,15 @@ export const between =
 /**
  * Parser that applies a parser repeatedly, separated by another parser.
  *
+ * Handles both empty and non-empty cases efficiently. Returns an empty array
+ * when no values are found, making it suitable for optional list parsing.
+ *
  * @template T Type of the value parser result
  * @template S Type of the separator parser result
  * @param value Parser for the values
  * @param separator Parser for the separators
  * @param parserName Optional name for error reporting and debugging
- * @returns Parser<T[]> A parser that returns an array of values
+ * @returns Parser<T[]> A parser that returns an array of values (empty if none found)
  */
 export const sepBy = <T, S>(
   value: Parser<T>,
@@ -133,6 +136,9 @@ export const sepBy = <T, S>(
 
 /**
  * Parser that applies a parser repeatedly at least once, separated by another parser.
+ *
+ * Ensures at least one value is present, making it suitable for required list parsing.
+ * Returns a non-empty array type for better type safety.
  *
  * @template T Type of the value parser result
  * @template S Type of the separator parser result
@@ -162,13 +168,15 @@ export const sepBy1 = <T, S>(
 
 /**
  * Parser for comma-separated values with customizable value parser.
- * Returns an empty array if no values are present.
+ *
+ * Handles trailing commas optionally and returns an empty array if no values are present.
+ * Optimized for common CSV-like parsing scenarios with flexible trailing comma support.
  *
  * @template T Type of the value parser result
  * @param valueParser Parser for individual values
- * @param allowTrailing Whether to allow a trailing comma
+ * @param allowTrailing Whether to allow a trailing comma (default: false)
  * @param parserName Optional name for error reporting and debugging
- * @returns Parser<T[]> A parser that returns an array of values
+ * @returns Parser<T[]> A parser that returns an array of values (empty if none found)
  */
 export const commaSeparated = <T>(
   valueParser: Parser<T>,
@@ -197,11 +205,13 @@ export const commaSeparated = <T>(
 
 /**
  * Parser for comma-separated values with customizable value parser.
- * Requires at least one value to be present.
+ *
+ * Requires at least one value to be present and handles trailing commas optionally.
+ * Returns a non-empty array type for better type safety in required list scenarios.
  *
  * @template T Type of the value parser result
  * @param valueParser Parser for individual values
- * @param allowTrailing Whether to allow a trailing comma
+ * @param allowTrailing Whether to allow a trailing comma (default: false)
  * @param parserName Optional name for error reporting and debugging
  * @returns Parser<NonEmptyArray<T>> A parser that returns a non-empty array of values
  */
@@ -282,11 +292,14 @@ export const memoize = <T>(
 };
 
 /**
- * Creates a recursive parser placeholder and setter.
+ * Creates a recursive parser placeholder and setter for self-referential grammars.
+ *
+ * Enables parsing of recursive structures like nested expressions, lists, and trees.
+ * The parser must be set before use, otherwise returns an initialization error.
  *
  * @template T Type of parser result
  * @param parserName Optional name for error reporting and debugging
- * @returns [Parser<T>, (parser: Parser<T>) => void] Tuple of parser and setter
+ * @returns [Parser<T>, (parser: Parser<T>) => void] Tuple of parser and setter function
  */
 export const recursive = <T>(
   parserName?: string,
@@ -392,7 +405,10 @@ export const labeledWithContext =
   };
 
 /**
- * Creates a parser that returns both the parsed value and its position.
+ * Creates a parser that returns both the parsed value and its position information.
+ *
+ * Useful for AST construction and error reporting where position information is needed.
+ * Returns an object containing both the parsed value and the starting position.
  *
  * @template T Type of the parser result
  * @param parser The parser to apply
@@ -424,12 +440,15 @@ export const withPosition =
   };
 
 /**
- * Creates a parser that automatically handles whitespace.
+ * Creates a parser that automatically handles surrounding whitespace.
+ *
+ * Wraps a parser with automatic whitespace consumption before and after the main parser.
+ * Useful for creating token-based parsers that ignore whitespace automatically.
  *
  * @template T Type of the parser result
  * @param parser The parser to apply
  * @param parserName Optional name for error reporting and debugging
- * @returns Parser<T> A parser that handles surrounding whitespace
+ * @returns Parser<T> A parser that handles surrounding whitespace automatically
  */
 export const token = <T>(parser: Parser<T>, parserName?: string): Parser<T> => {
   const tokenParser = map(seq(spaces, parser, spaces), ([_, value]) => value);
@@ -520,7 +539,7 @@ export const regex = (
     // Create a new regex with global flag reset and sticky flag for better performance
     const regexCopy = new RegExp(
       regex.source,
-      `${regex.flags.replace("g", "").replace("y", "")}y`
+      `${regex.flags.replace("g", "").replace("y", "")}y`,
     );
     regexCopy.lastIndex = 0;
 
@@ -581,7 +600,7 @@ export const regexGroups = (
     // Create a new regex with global flag reset and sticky flag for better performance
     const regexCopy = new RegExp(
       regex.source,
-      `${regex.flags.replace("g", "").replace("y", "")}y`
+      `${regex.flags.replace("g", "").replace("y", "")}y`,
     );
     regexCopy.lastIndex = 0;
 
@@ -627,6 +646,9 @@ export const regexGroups = (
 /**
  * Parser for matching letters (alphabetic characters).
  *
+ * Matches both uppercase and lowercase letters [a-zA-Z].
+ * Useful for identifier parsing and text processing.
+ *
  * @returns Parser<string> A parser that matches [a-zA-Z]
  */
 export const letter: Parser<string> = charClass(["a", "z"], ["A", "Z"]);
@@ -634,12 +656,18 @@ export const letter: Parser<string> = charClass(["a", "z"], ["A", "Z"]);
 /**
  * Parser for matching digits.
  *
+ * Matches numeric characters [0-9].
+ * Useful for number parsing and validation.
+ *
  * @returns Parser<string> A parser that matches [0-9]
  */
 export const digit: Parser<string> = charClass(["0", "9"]);
 
 /**
  * Parser for matching alphanumeric characters.
+ *
+ * Matches letters and digits [a-zA-Z0-9].
+ * Useful for identifier parsing and text validation.
  *
  * @returns Parser<string> A parser that matches [a-zA-Z0-9]
  */
@@ -651,6 +679,9 @@ export const alphaNum: Parser<string> = charClass(
 
 /**
  * Parser for matching identifiers (starts with letter/underscore, followed by alphanumeric/underscore).
+ *
+ * Follows common programming language identifier rules: starts with letter or underscore,
+ * followed by any number of letters, digits, or underscores.
  *
  * @returns Parser<string> A parser that matches valid identifiers
  */
@@ -666,6 +697,9 @@ export const identifier: Parser<string> = (() => {
 
 /**
  * Parser that succeeds only at the start of a line.
+ *
+ * Useful for line-oriented parsing where certain patterns must appear at the beginning
+ * of a line. Checks if the current column position is 1.
  *
  * @param parserName Optional name for error reporting and debugging
  * @returns Parser<never> A parser that matches start of line
@@ -700,6 +734,9 @@ export const startOfLine = (parserName?: string): Parser<never> => {
 
 /**
  * Parser that succeeds only at the end of a line.
+ *
+ * Useful for line-oriented parsing where certain patterns must appear at the end
+ * of a line. Checks for newline characters or end of input.
  *
  * @param parserName Optional name for error reporting and debugging
  * @returns Parser<never> A parser that matches end of line
@@ -742,13 +779,11 @@ export const endOfLine = (parserName?: string): Parser<never> => {
  * @template T Type of parser result
  * @param parser The parser to apply
  * @param parserName Name of the parser for error reporting
- * @param contextSize Number of characters to include before and after error position (default: 10)
  * @returns Parser<T> A parser with enhanced error reporting including context information
  */
 export const withDetailedError = <T>(
   parser: Parser<T>,
   parserName: string,
-  contextSize = 10,
 ): Parser<T> => {
   return (input: string, pos: Pos) => {
     const result = parser(input, pos);
@@ -761,23 +796,19 @@ export const withDetailedError = <T>(
       const enhancedError = { ...failure.error };
       enhancedError.parserName = parserName;
 
-      // Add input excerpt to show context around error
-      const start = Math.max(0, pos.offset - contextSize);
-      const end = Math.min(input.length, pos.offset + contextSize);
-
       // First character at error position
       const found =
         pos.offset < input.length ? (input[pos.offset] ?? "EOF") : "EOF";
 
       enhancedError.found = found;
-      
+
       // Add context information for better error reporting
       if (pos.offset < input.length) {
         const contextStart = Math.max(0, pos.offset - 5);
         const contextEnd = Math.min(input.length, pos.offset + 5);
         enhancedError.context = input.substring(contextStart, contextEnd);
       }
-      
+
       if (!enhancedError.message) {
         enhancedError.message = `${parserName}: Expected ${
           enhancedError.expected || "valid input"
@@ -797,14 +828,18 @@ export const withDetailedError = <T>(
 /**
  * Parser that checks for end of input (EOF).
  *
- * Succeeds only if the input is at the end.
+ * Succeeds only if the input is completely consumed. Useful for ensuring
+ * that no additional content follows the parsed structure.
  *
- * @returns Parser<never> A parser that succeeds at end of input, or fails otherwise.
+ * @returns Parser<never> A parser that succeeds at end of input, or fails otherwise
  */
 export const EOF = not(any);
 
 /**
  * Parser that matches any newline sequence.
+ *
+ * Handles different newline conventions: "\r\n" (Windows), "\n" (Unix), "\r" (Mac).
+ * Useful for cross-platform text parsing.
  *
  * @returns Parser<string> A parser that matches "\r\n", "\n", or "\r"
  */
@@ -813,12 +848,18 @@ export const newline = choice(literal("\r\n"), literal("\n"), literal("\r"));
 /**
  * Parser that consumes whitespace characters.
  *
+ * Matches space, tab, newline, and carriage return characters.
+ * Returns the consumed whitespace string for potential use in formatting.
+ *
  * @returns Parser<string> A parser that returns consumed whitespace characters
  */
 export const whitespace = charClass(" ", "\t", "\n", "\r");
 
 /**
- * Parser that consumes one or more whitespace characters.
+ * Parser that consumes zero or more whitespace characters.
+ *
+ * Matches any number of whitespace characters (space, tab, newline, carriage return).
+ * Useful for ignoring optional whitespace in token-based parsing.
  *
  * @returns Parser<string> A parser that returns consumed whitespace characters
  */
@@ -923,6 +964,9 @@ export const singleQuotedString: Parser<string> = (() => {
 /**
  * Parser for matching a string with either single or double quotes.
  *
+ * Combines both quotedString and singleQuotedString parsers for flexible
+ * string parsing that accepts either quote style.
+ *
  * @returns Parser<string> A parser that returns the content of the string without quotes
  */
 export const anyQuotedString: Parser<string> = choice(
@@ -956,17 +1000,16 @@ export const number: Parser<number> = (() => {
   return map(
     seq(integer, optional(fraction), optional(exponent)),
     ([int, frac, exp]) => {
-      const numStr = int + 
-        (frac.length > 0 ? frac[0] : "") + 
-        (exp.length > 0 ? exp[0] : "");
-      
+      const numStr =
+        int + (frac.length > 0 ? frac[0] : "") + (exp.length > 0 ? exp[0] : "");
+
       const parsed = Number(numStr);
-      
+
       // Validate the parsed number
       if (Number.isNaN(parsed)) {
         throw new Error(`Invalid number format: ${numStr}`);
       }
-      
+
       return parsed;
     },
   );
@@ -984,12 +1027,12 @@ export const int: Parser<number> = map(
   ([sign, digits]) => {
     const numStr = (sign.length > 0 ? "-" : "") + digits.join("");
     const parsed = Number.parseInt(numStr, 10);
-    
+
     // Validate the parsed integer
     if (Number.isNaN(parsed)) {
       throw new Error(`Invalid integer format: ${numStr}`);
     }
-    
+
     return parsed;
   },
 );

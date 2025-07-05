@@ -8,13 +8,15 @@ const START = {
   line: 1,
 } as const;
 
+const pos = (offset: number) => createPos(offset, offset);
+
 describe("Grammar", () => {
   it("should parse simple numbers", () => {
     expect(Grammar("123", createPos(0))).toEqual({
       success: true,
       val: 123,
       current: START,
-      next: createPos(3),
+      next: pos(3),
     });
   });
 
@@ -23,7 +25,7 @@ describe("Grammar", () => {
       success: true,
       val: 3,
       current: START,
-      next: createPos(3),
+      next: pos(3),
     });
   });
 
@@ -32,7 +34,7 @@ describe("Grammar", () => {
       success: true,
       val: 2,
       current: START,
-      next: createPos(3),
+      next: pos(3),
     });
   });
 
@@ -41,7 +43,7 @@ describe("Grammar", () => {
       success: true,
       val: 6,
       current: START,
-      next: createPos(3),
+      next: pos(3),
     });
   });
 
@@ -50,7 +52,7 @@ describe("Grammar", () => {
       success: true,
       val: 3,
       current: START,
-      next: createPos(3),
+      next: pos(3),
     });
   });
 
@@ -59,7 +61,7 @@ describe("Grammar", () => {
       success: true,
       val: 0.5,
       current: START,
-      next: createPos(3),
+      next: pos(3),
     });
   });
 
@@ -68,7 +70,7 @@ describe("Grammar", () => {
       success: true,
       val: 1,
       current: START,
-      next: createPos(3),
+      next: pos(3),
     });
   });
 
@@ -77,7 +79,7 @@ describe("Grammar", () => {
       success: true,
       val: 7,
       current: START,
-      next: createPos(5),
+      next: pos(5),
     });
   });
 
@@ -86,7 +88,7 @@ describe("Grammar", () => {
       success: true,
       val: 9,
       current: START,
-      next: createPos(7),
+      next: pos(7),
     });
   });
 
@@ -95,7 +97,7 @@ describe("Grammar", () => {
       success: true,
       val: 7,
       current: START,
-      next: createPos(11),
+      next: pos(11),
     });
   });
 
@@ -119,7 +121,7 @@ describe("Grammar", () => {
       success: true,
       val: 3,
       current: START,
-      next: createPos(7),
+      next: pos(7),
     });
   });
 
@@ -128,7 +130,7 @@ describe("Grammar", () => {
       success: true,
       val: 3,
       current: START,
-      next: createPos(11),
+      next: pos(11),
     });
   });
 
@@ -137,7 +139,7 @@ describe("Grammar", () => {
       success: true,
       val: 3,
       current: START,
-      next: createPos(5),
+      next: pos(5),
     });
   });
 });

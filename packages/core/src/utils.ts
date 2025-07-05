@@ -388,7 +388,7 @@ export const advancePos = (str: string, pos: Pos): Pos => {
  *
  * This function counts the number of Unicode code points in a string,
  * which is different from the string's length property when the string
- * contains surrogate pairs (like emojis). It uses the spread operator
+ * contains surrogate pairs (like emojis). It uses a for...of loop
  * to properly iterate over Unicode code points.
  *
  * @param str - The string to measure
@@ -403,7 +403,11 @@ export const advancePos = (str: string, pos: Pos): Pos => {
  * ```
  */
 export const unicodeLength = (str: string): number => {
-  return [...str].length;
+  let count = 0;
+  for (const _ of str) {
+    count++;
+  }
+  return count;
 };
 
 /**
