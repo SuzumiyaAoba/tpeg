@@ -17,29 +17,43 @@ import {
 // =============================================================================
 
 /**
- * Whitespace characters (space, tab, newline)
+ * Whitespace characters (space, tab, newline).
+ * 
+ * This parser matches any whitespace character including spaces, tabs,
+ * and newlines. It's used for handling optional whitespace in expressions.
  */
 export const Whitespace = charClass(" ", "\t", "\n", "\r");
 
 /**
- * Optional whitespace
+ * Optional whitespace.
+ * 
+ * This parser matches zero or more whitespace characters. It's commonly
+ * used to handle optional spacing around operators and operands.
  */
 export const _ = star(Whitespace);
 
 /**
- * Single digit
+ * Single digit parser.
+ * 
+ * Matches any single digit from 0 to 9.
  */
 export const Digit = charClass(["0", "9"]);
 
 /**
- * Integer
+ * Integer parser.
+ * 
+ * Parses one or more digits and converts them to a number.
+ * This parser handles positive integers only.
  */
 export const Integer = map(oneOrMore(Digit), (digits) =>
   Number.parseInt(digits.join(""), 10),
 );
 
 /**
- * Floating point number
+ * Floating point number parser.
+ * 
+ * Parses a decimal number with an integer part, decimal point, and fractional part.
+ * The result is converted to a JavaScript number.
  */
 export const Float = map(
   seq(oneOrMore(Digit), lit("."), oneOrMore(Digit)),
@@ -48,7 +62,10 @@ export const Float = map(
 );
 
 /**
- * Number (integer or floating point)
+ * Number parser (integer or floating point).
+ * 
+ * This parser handles both integers and floating-point numbers.
+ * It tries the float parser first, then falls back to integer if that fails.
  */
 export const NumberParser = choice(Float, Integer);
 
@@ -56,11 +73,25 @@ export const NumberParser = choice(Float, Integer);
 // 2. AST Definitions
 // =============================================================================
 
+/**
+ * AST node representing a numeric literal.
+ * 
+ * @property type - Always "number"
+ * @property value - The numeric value
+ */
 export interface NumberNode {
   type: "number";
   value: number;
 }
 
+/**
+ * AST node representing a binary operation.
+ * 
+ * @property type - Always "binaryOp"
+ * @property operator - The binary operator (+, -, *, /, %)
+ * @property left - The left operand expression
+ * @property right - The right operand expression
+ */
 export interface BinaryOpNode {
   type: "binaryOp";
   operator: "+" | "-" | "*" | "/" | "%";
@@ -68,17 +99,35 @@ export interface BinaryOpNode {
   right: ExpressionNode;
 }
 
+/**
+ * AST node representing a unary operation.
+ * 
+ * @property type - Always "unaryOp"
+ * @property operator - The unary operator (+ or -)
+ * @property operand - The operand expression
+ */
 export interface UnaryOpNode {
   type: "unaryOp";
   operator: "+" | "-";
   operand: ExpressionNode;
 }
 
+/**
+ * AST node representing a grouped expression.
+ * 
+ * @property type - Always "group"
+ * @property expression - The grouped expression
+ */
 export interface GroupNode {
   type: "group";
   expression: ExpressionNode;
 }
 
+/**
+ * Union type representing all possible expression nodes.
+ * 
+ * This type covers all AST node types that can appear in arithmetic expressions.
+ */
 export type ExpressionNode =
   | NumberNode
   | BinaryOpNode
@@ -89,11 +138,25 @@ export type ExpressionNode =
 // 3. AST Builder Functions
 // =============================================================================
 
+/**
+ * Creates a number AST node.
+ * 
+ * @param value - The numeric value
+ * @returns A NumberNode with the specified value
+ */
 export const createNumber = (value: number) => ({
   type: "number" as const,
   value,
 });
 
+/**
+ * Creates a binary operation AST node.
+ * 
+ * @param operator - The binary operator
+ * @param left - The left operand
+ * @param right - The right operand
+ * @returns A BinaryOpNode with the specified operator and operands
+ */
 export const createBinaryOp = (
   operator: BinaryOpNode["operator"],
   left: ExpressionNode,
@@ -105,6 +168,13 @@ export const createBinaryOp = (
   right,
 });
 
+/**
+ * Creates a unary operation AST node.
+ * 
+ * @param operator - The unary operator
+ * @param operand - The operand
+ * @returns A UnaryOpNode with the specified operator and operand
+ */
 export const createUnaryOp = (
   operator: UnaryOpNode["operator"],
   operand: ExpressionNode,
@@ -114,6 +184,12 @@ export const createUnaryOp = (
   operand,
 });
 
+/**
+ * Creates a group AST node.
+ * 
+ * @param expression - The grouped expression
+ * @returns A GroupNode containing the specified expression
+ */
 export const createGroup = (expression: ExpressionNode) => ({
   type: "group" as const,
   expression,
@@ -123,6 +199,22 @@ export const createGroup = (expression: ExpressionNode) => ({
 // 4. Evaluator
 // =============================================================================
 
+/**
+ * Evaluates an AST node to produce a numeric result.
+ * 
+ * This function recursively evaluates AST nodes by traversing the tree
+ * and performing the appropriate operations at each node.
+ * 
+ * @param node - The AST node to evaluate
+ * @returns The numeric result of evaluating the expression
+ * @throws Error for division by zero, modulo by zero, or unknown node types
+ * 
+ * @example
+ * ```typescript
+ * const ast = parseToAST("1 + 2 * 3");
+ * const result = evaluate(ast); // Returns 7
+ * ```
+ */
 export function evaluate(node: ExpressionNode): number {
   switch (node.type) {
     case "number":
@@ -184,14 +276,19 @@ export function evaluate(node: ExpressionNode): number {
 // =============================================================================
 
 /**
- * Number literal
+ * Number literal parser.
+ * 
+ * Parses a number and creates a NumberNode AST.
  */
 export const NumberLiteral = map(seq(_, NumberParser, _), ([, value]) =>
   createNumber(value),
 );
 
 /**
- * Factor (number or parenthesized expression)
+ * Factor parser (number or parenthesized expression).
+ * 
+ * This parser handles the highest precedence level in the arithmetic grammar.
+ * It matches either a number literal or a parenthesized expression.
  */
 export const Factor: Parser<ExpressionNode> = choice(
   // Parenthesized expression

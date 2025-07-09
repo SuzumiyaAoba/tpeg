@@ -17,6 +17,11 @@ import type { Expr } from "./ast";
 import { octalDigitsToChar } from "./utils";
 
 /**
+ * End of file parser.
+ * 
+ * Matches the end of input using a negative lookahead.
+ * This parser succeeds only when no more characters are available.
+ * 
  * ```txt
  * EndOfFile <- !.
  * ```
@@ -24,6 +29,11 @@ import { octalDigitsToChar } from "./utils";
 export const EndOfFile = not(any);
 
 /**
+ * End of line parser.
+ * 
+ * Matches various line ending sequences including CRLF, LF, and CR.
+ * This parser handles different line ending conventions across platforms.
+ * 
  * ```txt
  * EndOfLine <- '\r\n' / '\n' / '\r'
  * ```
@@ -31,6 +41,11 @@ export const EndOfFile = not(any);
 export const EndOfLine = choice(lit("\r\n"), lit("\n"), lit("\r"));
 
 /**
+ * Space character parser.
+ * 
+ * Matches a single space, tab, or line ending character.
+ * This parser is used for handling whitespace in PEG grammars.
+ * 
  * ```txt
  * Space <- ' ' / '\t' / EndOfLine
  * ```
@@ -38,6 +53,11 @@ export const EndOfLine = choice(lit("\r\n"), lit("\n"), lit("\r"));
 export const Space = choice(lit(" "), lit("\r"), EndOfLine);
 
 /**
+ * Comment parser.
+ * 
+ * Matches PEG-style comments that start with '#' and continue until the end of line.
+ * Comments are used for documentation and are typically ignored during parsing.
+ * 
  * ```txt
  * Comment <- '#' (!EndOfLine .)* EndOfLine
  * ```
@@ -49,6 +69,11 @@ export const Comment = seq(
 );
 
 /**
+ * Spacing parser.
+ * 
+ * Matches zero or more spaces or comments.
+ * This parser is used to handle optional whitespace and comments in PEG grammars.
+ * 
  * ```txt
  * Spacing <- (Space / Comment)*
  * ```
@@ -56,6 +81,11 @@ export const Comment = seq(
 export const Spacing = many(choice(Space, Comment));
 
 /**
+ * DOT parser.
+ * 
+ * Matches a literal dot followed by optional spacing.
+ * The dot represents "any character" in PEG grammars.
+ * 
  * ```txt
  * DOT <- '.' Spacing
  * ```
@@ -63,13 +93,23 @@ export const Spacing = many(choice(Space, Comment));
 export const DOT = map(seq(lit("."), Spacing), ($) => $[0]);
 
 /**
+ * CLOSE parser.
+ * 
+ * Matches a literal closing parenthesis followed by optional spacing.
+ * Used for parsing parenthesized expressions.
+ * 
  * ```txt
- * CLOSE <- '(' Spacing
+ * CLOSE <- ')' Spacing
  * ```
  */
 export const CLOSE = map(seq(lit(")"), Spacing), ($) => $[0]);
 
 /**
+ * OPEN parser.
+ * 
+ * Matches a literal opening parenthesis followed by optional spacing.
+ * Used for parsing parenthesized expressions.
+ * 
  * ```txt
  * OPEN <- '(' Spacing
  * ```
@@ -77,6 +117,11 @@ export const CLOSE = map(seq(lit(")"), Spacing), ($) => $[0]);
 export const OPEN = map(seq(lit("("), Spacing), ($) => $[0]);
 
 /**
+ * PLUS parser.
+ * 
+ * Matches a literal plus sign followed by optional spacing.
+ * The plus represents "one or more" repetition in PEG grammars.
+ * 
  * ```txt
  * PLUS <- '+' Spacing
  * ```
@@ -84,6 +129,11 @@ export const OPEN = map(seq(lit("("), Spacing), ($) => $[0]);
 export const PLUS = map(seq(lit("+"), Spacing), ($) => $[0]);
 
 /**
+ * STAR parser.
+ * 
+ * Matches a literal asterisk followed by optional spacing.
+ * The star represents "zero or more" repetition in PEG grammars.
+ * 
  * ```txt
  * STAR <- '*' Spacing
  * ```
@@ -91,6 +141,11 @@ export const PLUS = map(seq(lit("+"), Spacing), ($) => $[0]);
 export const STAR = map(seq(lit("*"), Spacing), ($) => $[0]);
 
 /**
+ * QUESTION parser.
+ * 
+ * Matches a literal question mark followed by optional spacing.
+ * The question mark represents "zero or one" (optional) in PEG grammars.
+ * 
  * ```txt
  * QUESTION <- '?' Spacing
  * ```
@@ -98,6 +153,11 @@ export const STAR = map(seq(lit("*"), Spacing), ($) => $[0]);
 export const QUESTION = map(seq(lit("?"), Spacing), ($) => $[0]);
 
 /**
+ * NOT parser.
+ * 
+ * Matches a literal exclamation mark followed by optional spacing.
+ * The exclamation mark represents negative lookahead in PEG grammars.
+ * 
  * ```txt
  * NOT <- '!' Spacing
  * ```
@@ -105,6 +165,11 @@ export const QUESTION = map(seq(lit("?"), Spacing), ($) => $[0]);
 export const NOT = map(seq(lit("!"), Spacing), ($) => $[0]);
 
 /**
+ * AND parser.
+ * 
+ * Matches a literal ampersand followed by optional spacing.
+ * The ampersand represents positive lookahead in PEG grammars.
+ * 
  * ```txt
  * AND <- '&' Spacing
  * ```
@@ -112,6 +177,11 @@ export const NOT = map(seq(lit("!"), Spacing), ($) => $[0]);
 export const AND = map(seq(lit("&"), Spacing), ($) => $[0]);
 
 /**
+ * SLASH parser.
+ * 
+ * Matches a literal forward slash followed by optional spacing.
+ * The slash represents ordered choice in PEG grammars.
+ * 
  * ```txt
  * SLASH <- '/' Spacing
  * ```
@@ -119,6 +189,11 @@ export const AND = map(seq(lit("&"), Spacing), ($) => $[0]);
 export const SLASH = map(seq(lit("/"), Spacing), ($) => $[0]);
 
 /**
+ * LEFTARROW parser.
+ * 
+ * Matches the literal '<-' followed by optional spacing.
+ * The left arrow is used to define rules in PEG grammars.
+ * 
  * ```txt
  * LEFTARROW <- '<-' Spacing
  * ```
@@ -126,6 +201,14 @@ export const SLASH = map(seq(lit("/"), Spacing), ($) => $[0]);
 export const LEFTARROW = seq(lit("<-"), Spacing);
 
 /**
+ * Character parser.
+ * 
+ * Matches individual characters with support for escape sequences.
+ * This parser handles various character representations including:
+ * - Escape sequences (n, r, t, quotes, brackets, backslash)
+ * - Octal escape sequences (1-3 digits)
+ * - Any character except backslash
+ * 
  * ```txt
  * Char <- '\\' [nrt'"\[\]\\]
  *       / '\\' [0-2][0-7][0-7]
@@ -166,6 +249,11 @@ export const Char = choice(
 );
 
 /**
+ * Range parser.
+ * 
+ * Matches either a character range (char-char) or a single character.
+ * Character ranges are used in character classes to specify ranges of characters.
+ * 
  * ```txt
  * Range <- Char '-' Char / Char
  * ```
@@ -176,6 +264,11 @@ export const Range = choice(
 );
 
 /**
+ * Character class parser.
+ * 
+ * Matches a character class enclosed in square brackets.
+ * Character classes can contain individual characters and character ranges.
+ * 
  * ```txt
  * Class <- '[' (!']' Range)* ']' Spacing
  * ```
@@ -196,9 +289,13 @@ export const Class = mapResult(
 );
 
 /**
+ * Literal parser.
+ * 
+ * Matches a literal string enclosed in single quotes.
+ * Literals can contain escape sequences and are used for matching exact text.
+ * 
  * ```txt
  * Literal <- ['] (!['] Char)* ['] Spacing
- *          / ["] (!["] Char)* ["] Spacing
  * ```
  */
 export const Literal = mapResult(
@@ -276,7 +373,7 @@ export function Primary(input: string, pos: Pos): ParseResult<Expr> {
           pos: $.current,
         }) as const,
     ),
-  )(input, pos);
+  )(input, pos) as ParseResult<Expr>;
 }
 
 /**
