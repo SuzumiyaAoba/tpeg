@@ -25,8 +25,33 @@ import {
 /**
  * Parser that consumes characters until a condition is met.
  *
- * Efficiently processes input by checking the condition parser at each position
- * and consuming characters until the condition succeeds.
+ * Checks the condition parser at each position and consumes characters until the condition succeeds.
+ * Efficient input processing allows fast operation even with large text.
+ * This is particularly useful for extracting content up to a delimiter or boundary.
+ *
+ * @example
+ * ```typescript
+ * // Get characters until double quote
+ * const content = takeUntil(literal('"'));
+ * const result = content('Hello "World"', { offset: 0, line: 1, column: 1 });
+ * // result.val === "Hello "
+ * 
+ * // Extract content until newline
+ * const lineContent = takeUntil(newline);
+ * const lineResult = lineContent('First line\nSecond line', { offset: 0, line: 1, column: 1 });
+ * // lineResult.val === "First line"
+ * 
+ * // Extract until end of input
+ * const untilEnd = takeUntil(EOF);
+ * const endResult = untilEnd('Complete content', { offset: 0, line: 1, column: 1 });
+ * // endResult.val === "Complete content"
+ * ```
+ *
+ * @remarks
+ * - The condition parser is checked at each character position
+ * - Characters are consumed one by one until the condition succeeds
+ * - If the condition never succeeds, all remaining input is consumed
+ * - Performance is O(n) where n is the number of characters consumed
  *
  * @template T Type of condition parser result
  * @param condition Parser that determines when to stop consuming characters
@@ -73,7 +98,33 @@ export const takeUntil =
 /**
  * Parser for matching content between two parsers.
  *
- * Uses takeUntil internally for efficient content extraction between opening and closing parsers.
+ * Efficiently extracts content between opening and closing parsers.
+ * Uses takeUntil internally for optimized processing.
+ * This is commonly used for parsing delimited content like parentheses, brackets, or quotes.
+ *
+ * @example
+ * ```typescript
+ * // Get content between parentheses
+ * const content = between(literal('('), literal(')'));
+ * const result = content('(Hello World)', { offset: 0, line: 1, column: 1 });
+ * // result.val === "Hello World"
+ * 
+ * // Extract content between quotes
+ * const quoted = between(literal('"'), literal('"'));
+ * const quoteResult = quoted('"Important message"', { offset: 0, line: 1, column: 1 });
+ * // quoteResult.val === "Important message"
+ * 
+ * // Parse JSON-like object content
+ * const objectContent = between(literal('{'), literal('}'));
+ * const jsonResult = objectContent('{"key": "value"}', { offset: 0, line: 1, column: 1 });
+ * // jsonResult.val === '"key": "value"'
+ * ```
+ *
+ * @remarks
+ * - The opening parser must succeed first
+ * - Content is extracted until the closing parser succeeds
+ * - Both opening and closing parsers are consumed
+ * - If the closing parser never succeeds, parsing fails
  *
  * @template O Type of opening parser result
  * @template C Type of closing parser result
@@ -108,6 +159,36 @@ export const between =
  *
  * Handles both empty and non-empty cases efficiently. Returns an empty array
  * when no values are found, making it suitable for optional list parsing.
+ * This is ideal for parsing lists where the first value might be optional.
+ *
+ * @example
+ * ```typescript
+ * // Parse comma-separated number list
+ * const numberList = sepBy(int, literal(','));
+ * const result = numberList('1,2,3', { offset: 0, line: 1, column: 1 });
+ * // result.val === [1, 2, 3]
+ * 
+ * // Handle empty input
+ * const emptyResult = numberList('', { offset: 0, line: 1, column: 1 });
+ * // emptyResult.val === []
+ * 
+ * // Parse space-separated words
+ * const wordList = sepBy(identifier, spaces);
+ * const wordResult = wordList('hello world test', { offset: 0, line: 1, column: 1 });
+ * // wordResult.val === ["hello", "world", "test"]
+ * 
+ * // Parse with complex separator
+ * const complexList = sepBy(int, seq(spaces, literal(','), spaces));
+ * const complexResult = complexList('1 , 2 , 3', { offset: 0, line: 1, column: 1 });
+ * // complexResult.val === [1, 2, 3]
+ * ```
+ *
+ * @remarks
+ * - Always succeeds, even with empty input
+ * - Returns empty array if no values are found
+ * - Separator is consumed between each value
+ * - No trailing separator is allowed
+ * - Performance is O(n) where n is the number of values
  *
  * @template T Type of the value parser result
  * @template S Type of the separator parser result
@@ -139,6 +220,36 @@ export const sepBy = <T, S>(
  *
  * Ensures at least one value is present, making it suitable for required list parsing.
  * Returns a non-empty array type for better type safety.
+ * This is ideal for parsing lists where at least one value is mandatory.
+ *
+ * @example
+ * ```typescript
+ * // List requiring at least one number
+ * const numberList = sepBy1(int, literal(','));
+ * const result = numberList('1,2,3', { offset: 0, line: 1, column: 1 });
+ * // result.val === [1, 2, 3] (NonEmptyArray<number> type)
+ * 
+ * // Empty input fails
+ * const emptyResult = numberList('', { offset: 0, line: 1, column: 1 });
+ * // emptyResult.success === false
+ * 
+ * // Parse function arguments (at least one required)
+ * const args = sepBy1(identifier, seq(spaces, literal(','), spaces));
+ * const argsResult = args('x, y, z', { offset: 0, line: 1, column: 1 });
+ * // argsResult.val === ["x", "y", "z"]
+ * 
+ * // Single value also works
+ * const singleResult = numberList('42', { offset: 0, line: 1, column: 1 });
+ * // singleResult.val === [42]
+ * ```
+ *
+ * @remarks
+ * - Fails if no values are found
+ * - Returns NonEmptyArray<T> for better type safety
+ * - At least one value must be present
+ * - Separator is consumed between each value
+ * - No trailing separator is allowed
+ * - Performance is O(n) where n is the number of values
  *
  * @template T Type of the value parser result
  * @template S Type of the separator parser result
@@ -171,6 +282,42 @@ export const sepBy1 = <T, S>(
  *
  * Handles trailing commas optionally and returns an empty array if no values are present.
  * Optimized for common CSV-like parsing scenarios with flexible trailing comma support.
+ * This is specifically designed for parsing comma-separated lists with optional trailing commas.
+ *
+ * @example
+ * ```typescript
+ * // Basic comma separation
+ * const csv = commaSeparated(int);
+ * const result = csv('1,2,3', { offset: 0, line: 1, column: 1 });
+ * // result.val === [1, 2, 3]
+ * 
+ * // Allow trailing comma
+ * const csvWithTrailing = commaSeparated(int, true);
+ * const result2 = csvWithTrailing('1,2,3,', { offset: 0, line: 1, column: 1 });
+ * // result2.val === [1, 2, 3]
+ * 
+ * // Empty input
+ * const emptyResult = csv('', { offset: 0, line: 1, column: 1 });
+ * // emptyResult.val === []
+ * 
+ * // Parse string values
+ * const stringList = commaSeparated(quotedString);
+ * const stringResult = stringList('"a","b","c"', { offset: 0, line: 1, column: 1 });
+ * // stringResult.val === ["a", "b", "c"]
+ * 
+ * // Parse with whitespace handling
+ * const spacedList = commaSeparated(token(int));
+ * const spacedResult = spacedList(' 1 , 2 , 3 ', { offset: 0, line: 1, column: 1 });
+ * // spacedResult.val === [1, 2, 3]
+ * ```
+ *
+ * @remarks
+ * - Always succeeds, even with empty input
+ * - Returns empty array if no values are found
+ * - Handles optional trailing commas when allowTrailing is true
+ * - Automatically handles whitespace around commas
+ * - Optimized for CSV-like formats
+ * - Performance is O(n) where n is the number of values
  *
  * @template T Type of the value parser result
  * @param valueParser Parser for individual values
@@ -204,10 +351,45 @@ export const commaSeparated = <T>(
 };
 
 /**
- * Parser for comma-separated values with customizable value parser.
+ * Parser for comma-separated values requiring at least one value.
  *
  * Requires at least one value to be present and handles trailing commas optionally.
  * Returns a non-empty array type for better type safety in required list scenarios.
+ * This is designed for parsing comma-separated lists where at least one value is mandatory.
+ *
+ * @example
+ * ```typescript
+ * // Requires at least one value
+ * const csv = commaSeparated1(int);
+ * const result = csv('1,2,3', { offset: 0, line: 1, column: 1 });
+ * // result.val === [1, 2, 3] (NonEmptyArray<number> type)
+ * 
+ * // Allow trailing comma
+ * const csvWithTrailing = commaSeparated1(int, true);
+ * const result2 = csvWithTrailing('1,2,3,', { offset: 0, line: 1, column: 1 });
+ * // result2.val === [1, 2, 3]
+ * 
+ * // Empty input fails
+ * const emptyResult = csv('', { offset: 0, line: 1, column: 1 });
+ * // emptyResult.success === false
+ * 
+ * // Single value works
+ * const singleResult = csv('42', { offset: 0, line: 1, column: 1 });
+ * // singleResult.val === [42]
+ * 
+ * // Parse function parameters
+ * const params = commaSeparated1(identifier);
+ * const paramsResult = params('x,y,z', { offset: 0, line: 1, column: 1 });
+ * // paramsResult.val === ["x", "y", "z"]
+ * ```
+ *
+ * @remarks
+ * - Fails if no values are found
+ * - Returns NonEmptyArray<T> for better type safety
+ * - At least one value must be present
+ * - Handles optional trailing commas when allowTrailing is true
+ * - Automatically handles whitespace around commas
+ * - Performance is O(n) where n is the number of values
  *
  * @template T Type of the value parser result
  * @param valueParser Parser for individual values
@@ -247,9 +429,39 @@ export const commaSeparated1 = <T>(
 };
 
 /**
- * Memoization parser that caches results for optimization with improved cache management.
+ * Memoization parser that caches results for optimization.
  *
  * Features LRU-like cache eviction and enhanced cache key generation for better performance.
+ * This is particularly useful for recursive parsers or parsers that are called repeatedly
+ * with the same input positions.
+ *
+ * @example
+ * ```typescript
+ * // Basic memoization
+ * const memoizedParser = memoize(complexParser);
+ * 
+ * // Limit cache size
+ * const limitedCache = memoize(complexParser, { maxCacheSize: 100 });
+ * 
+ * // Named memoized parser
+ * const namedMemoized = memoize(complexParser, { 
+ *   maxCacheSize: 500, 
+ *   parserName: "ComplexParser" 
+ * });
+ * 
+ * // Memoize recursive parser
+ * const [expression, setExpression] = recursive<number>();
+ * const memoizedExpression = memoize(expression);
+ * setExpression(choice(add, int));
+ * ```
+ *
+ * @remarks
+ * - Caches results based on input position and length
+ * - Uses LRU-like eviction when cache size limit is reached
+ * - Cache key includes offset, line, column, and input length
+ * - Memory usage is proportional to maxCacheSize
+ * - Performance improvement is most noticeable with recursive parsers
+ * - Default cache size is 1000 entries
  *
  * @template T Type of parser result
  * @param parser Parser to memoize
@@ -296,6 +508,39 @@ export const memoize = <T>(
  *
  * Enables parsing of recursive structures like nested expressions, lists, and trees.
  * The parser must be set before use, otherwise returns an initialization error.
+ * This is essential for parsing languages with recursive grammar rules.
+ *
+ * @example
+ * ```typescript
+ * // Recursive expression parser
+ * const [expression, setExpression] = recursive<number>("Expression");
+ * 
+ * const number = int;
+ * const add = map(seq(number, literal('+'), expression), ([a, _, b]) => a + b);
+ * 
+ * // Set up recursion
+ * setExpression(choice(add, number));
+ * 
+ * const result = expression('1+2+3', { offset: 0, line: 1, column: 1 });
+ * // result.val === 6
+ * 
+ * // Recursive list parser
+ * const [list, setList] = recursive<string[]>("List");
+ * const item = identifier;
+ * const nestedList = map(seq(literal('['), list, literal(']')), ([_, items, __]) => items);
+ * setList(choice(nestedList, sepBy(item, literal(','))));
+ * 
+ * const listResult = list('[a,b,[c,d]]', { offset: 0, line: 1, column: 1 });
+ * // listResult.val === ["a", "b", ["c", "d"]]
+ * ```
+ *
+ * @remarks
+ * - Returns a placeholder parser and a setter function
+ * - The placeholder must be set before use
+ * - Returns initialization error if used before setting
+ * - Essential for parsing recursive grammars
+ * - Often used with memoize for performance
+ * - Common in expression parsing and nested structures
  *
  * @template T Type of parser result
  * @param parserName Optional name for error reporting and debugging
@@ -334,6 +579,37 @@ export const recursive = <T>(
  * Creates a labeled parser with custom error message.
  *
  * Provides simple error labeling for parser debugging and error reporting.
+ * This is useful for providing more meaningful error messages when parsers fail.
+ *
+ * @example
+ * ```typescript
+ * // Parser with custom error message
+ * const numberParser = labeled(int, "Number expected");
+ * const result = numberParser('abc', { offset: 0, line: 1, column: 1 });
+ * // result.error.message === "Number expected"
+ * 
+ * // Named labeled parser
+ * const namedParser = labeled(int, "Number expected", "NumberParser");
+ * 
+ * // Label complex parser
+ * const expressionParser = labeled(
+ *   choice(int, identifier),
+ *   "Expression expected (number or identifier)"
+ * );
+ * 
+ * // Label with context
+ * const functionCall = labeled(
+ *   seq(identifier, literal('('), sepBy(identifier, literal(',')), literal(')')),
+ *   "Function call expected"
+ * );
+ * ```
+ *
+ * @remarks
+ * - Replaces the original error message when parser fails
+ * - Useful for providing user-friendly error messages
+ * - Can be combined with withDetailedError for enhanced reporting
+ * - Often used in complex parser compositions
+ * - Error message should be descriptive and actionable
  *
  * @template T Type of parser result
  * @param parser Parser to label
@@ -369,6 +645,45 @@ export const labeled =
  *
  * Provides detailed error reporting with context hierarchy for better debugging
  * and error understanding in complex parser compositions.
+ * This is particularly useful for complex grammars where error context is important.
+ *
+ * @example
+ * ```typescript
+ * // Single context
+ * const numberParser = labeledWithContext(int, "Number expected", "Expression");
+ * 
+ * // Multiple contexts (hierarchical)
+ * const complexParser = labeledWithContext(
+ *   int, 
+ *   "Number expected", 
+ *   ["Function", "Parameter", "Type"]
+ * );
+ * 
+ * const result = complexParser('abc', { offset: 0, line: 1, column: 1 });
+ * // result.error.message === "Number expected (in context: Function > Parameter > Type)"
+ * 
+ * // Nested structure context
+ * const objectParser = labeledWithContext(
+ *   seq(literal('{'), sepBy(identifier, literal(',')), literal('}')),
+ *   "Object definition expected",
+ *   ["JSON", "Object", "Properties"]
+ * );
+ * 
+ * // Function call context
+ * const functionCallParser = labeledWithContext(
+ *   seq(identifier, literal('('), sepBy(identifier, literal(',')), literal(')')),
+ *   "Function call expected",
+ *   ["Statement", "FunctionCall", "Arguments"]
+ * );
+ * ```
+ *
+ * @remarks
+ * - Provides hierarchical context information in error messages
+ * - Context can be a single string or array of strings
+ * - Array contexts are joined with " > " separator
+ * - Useful for complex nested grammars
+ * - Helps users understand where parsing failed
+ * - Can be combined with withDetailedError for comprehensive reporting
  *
  * @template T Type of parser result
  * @param parser Parser to label
@@ -409,6 +724,38 @@ export const labeledWithContext =
  *
  * Useful for AST construction and error reporting where position information is needed.
  * Returns an object containing both the parsed value and the starting position.
+ * This is essential for building ASTs with source location information.
+ *
+ * @example
+ * ```typescript
+ * // Parser with position information
+ * const numberWithPos = withPosition(int);
+ * const result = numberWithPos('123', { offset: 0, line: 1, column: 1 });
+ * // result.val === { value: 123, position: { offset: 0, line: 1, column: 1 } }
+ * 
+ * // Named position parser
+ * const namedWithPos = withPosition(int, "NumberWithPosition");
+ * 
+ * // Position information for AST nodes
+ * const identifierWithPos = withPosition(identifier);
+ * const idResult = identifierWithPos('myVariable', { offset: 0, line: 1, column: 1 });
+ * // idResult.val === { value: "myVariable", position: { offset: 0, line: 1, column: 1 } }
+ * 
+ * // Complex expression with position
+ * const expressionWithPos = withPosition(
+ *   seq(int, literal('+'), int)
+ * );
+ * const exprResult = expressionWithPos('1+2', { offset: 0, line: 1, column: 1 });
+ * // exprResult.val === { value: [1, "+", 2], position: { offset: 0, line: 1, column: 1 } }
+ * ```
+ *
+ * @remarks
+ * - Returns an object with value and position properties
+ * - Position contains offset, line, and column information
+ * - Essential for AST construction with source locations
+ * - Useful for error reporting with precise location
+ * - Can be used with any parser type
+ * - Position is captured at the start of parsing
  *
  * @template T Type of the parser result
  * @param parser The parser to apply
@@ -445,6 +792,17 @@ export const withPosition =
  * Wraps a parser with automatic whitespace consumption before and after the main parser.
  * Useful for creating token-based parsers that ignore whitespace automatically.
  *
+ * @example
+ * ```typescript
+ * // Number parser that ignores whitespace
+ * const numberToken = token(int);
+ * const result = numberToken('  123  ', { offset: 0, line: 1, column: 1 });
+ * // result.val === 123
+ * 
+ * // Named token parser
+ * const namedToken = token(int, "NumberToken");
+ * ```
+ *
  * @template T Type of the parser result
  * @param parser The parser to apply
  * @param parserName Optional name for error reporting and debugging
@@ -460,6 +818,29 @@ export const token = <T>(parser: Parser<T>, parserName?: string): Parser<T> => {
  *
  * Provides detailed logging for success/failure states, input context, and result values
  * to aid in parser development and troubleshooting.
+ *
+ * @example
+ * ```typescript
+ * // Basic debug parser
+ * const debugParser = debug(int, "NumberParser");
+ * 
+ * // Debug with custom options
+ * const customDebug = debug(int, "NumberParser", {
+ *   logSuccess: true,
+ *   logFailure: true,
+ *   logInput: true,
+ *   logResult: true,
+ *   customLogger: (msg) => console.log(`[CUSTOM] ${msg}`)
+ * });
+ * 
+ * // Log only results
+ * const resultOnly = debug(int, "NumberParser", {
+ *   logSuccess: false,
+ *   logFailure: false,
+ *   logInput: false,
+ *   logResult: true
+ * });
+ * ```
  *
  * @template T Type of the parser result
  * @param parser The parser to debug
@@ -523,6 +904,20 @@ export const debug = <T>(
  *
  * Uses sticky flag for better performance and ensures thread-safe regex execution.
  *
+ * @example
+ * ```typescript
+ * // Basic regex match
+ * const wordParser = regex(/\w+/, "Word expected");
+ * const result = wordParser('hello123', { offset: 0, line: 1, column: 1 });
+ * // result.val === "hello123"
+ * 
+ * // With custom error message
+ * const emailParser = regex(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/, "Valid email address expected");
+ * 
+ * // Named regex parser
+ * const namedRegex = regex(/\d+/, "Number expected", "NumberRegex");
+ * ```
+ *
  * @param regex Regular expression to match
  * @param errorMessage Custom error message (optional)
  * @param parserName Optional name for error reporting and debugging
@@ -583,6 +978,19 @@ export const regex = (
  * Parser that matches a regular expression and returns capture groups with optimized performance.
  *
  * Uses sticky flag for better performance and ensures thread-safe regex execution.
+ *
+ * @example
+ * ```typescript
+ * // Regex with capture groups
+ * const dateParser = regexGroups(/(\d{4})-(\d{2})-(\d{2})/, "Date expected");
+ * const result = dateParser('2023-12-25', { offset: 0, line: 1, column: 1 });
+ * // result.val === ["2023", "12", "25"]
+ * 
+ * // Extract name and email
+ * const contactParser = regexGroups(/(\w+)\s+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/, "Contact information expected");
+ * const contactResult = contactParser('John john@example.com', { offset: 0, line: 1, column: 1 });
+ * // contactResult.val === ["John", "john@example.com"]
+ * ```
  *
  * @param regex Regular expression with capture groups
  * @param errorMessage Custom error message (optional)
@@ -649,6 +1057,18 @@ export const regexGroups = (
  * Matches both uppercase and lowercase letters [a-zA-Z].
  * Useful for identifier parsing and text processing.
  *
+ * @example
+ * ```typescript
+ * const result = letter('a', { offset: 0, line: 1, column: 1 });
+ * // result.val === "a"
+ * 
+ * const result2 = letter('Z', { offset: 0, line: 1, column: 1 });
+ * // result2.val === "Z"
+ * 
+ * const result3 = letter('1', { offset: 0, line: 1, column: 1 });
+ * // result3.success === false
+ * ```
+ *
  * @returns Parser<string> A parser that matches [a-zA-Z]
  */
 export const letter: Parser<string> = charClass(["a", "z"], ["A", "Z"]);
@@ -659,6 +1079,15 @@ export const letter: Parser<string> = charClass(["a", "z"], ["A", "Z"]);
  * Matches numeric characters [0-9].
  * Useful for number parsing and validation.
  *
+ * @example
+ * ```typescript
+ * const result = digit('5', { offset: 0, line: 1, column: 1 });
+ * // result.val === "5"
+ * 
+ * const result2 = digit('a', { offset: 0, line: 1, column: 1 });
+ * // result2.success === false
+ * ```
+ *
  * @returns Parser<string> A parser that matches [0-9]
  */
 export const digit: Parser<string> = charClass(["0", "9"]);
@@ -668,6 +1097,18 @@ export const digit: Parser<string> = charClass(["0", "9"]);
  *
  * Matches letters and digits [a-zA-Z0-9].
  * Useful for identifier parsing and text validation.
+ *
+ * @example
+ * ```typescript
+ * const result = alphaNum('a', { offset: 0, line: 1, column: 1 });
+ * // result.val === "a"
+ * 
+ * const result2 = alphaNum('5', { offset: 0, line: 1, column: 1 });
+ * // result2.val === "5"
+ * 
+ * const result3 = alphaNum('_', { offset: 0, line: 1, column: 1 });
+ * // result3.success === false
+ * ```
  *
  * @returns Parser<string> A parser that matches [a-zA-Z0-9]
  */
@@ -682,6 +1123,18 @@ export const alphaNum: Parser<string> = charClass(
  *
  * Follows common programming language identifier rules: starts with letter or underscore,
  * followed by any number of letters, digits, or underscores.
+ *
+ * @example
+ * ```typescript
+ * const result = identifier('myVariable', { offset: 0, line: 1, column: 1 });
+ * // result.val === "myVariable"
+ * 
+ * const result2 = identifier('_private', { offset: 0, line: 1, column: 1 });
+ * // result2.val === "_private"
+ * 
+ * const result3 = identifier('123invalid', { offset: 0, line: 1, column: 1 });
+ * // result3.success === false
+ * ```
  *
  * @returns Parser<string> A parser that matches valid identifiers
  */
@@ -700,6 +1153,17 @@ export const identifier: Parser<string> = (() => {
  *
  * Useful for line-oriented parsing where certain patterns must appear at the beginning
  * of a line. Checks if the current column position is 1.
+ *
+ * @example
+ * ```typescript
+ * // Match only at line start
+ * const lineStart = startOfLine("LineStart");
+ * const result = lineStart('Hello World', { offset: 0, line: 1, column: 1 });
+ * // result.success === true
+ * 
+ * const result2 = lineStart('  Hello World', { offset: 2, line: 1, column: 3 });
+ * // result2.success === false
+ * ```
  *
  * @param parserName Optional name for error reporting and debugging
  * @returns Parser<never> A parser that matches start of line
@@ -738,6 +1202,21 @@ export const startOfLine = (parserName?: string): Parser<never> => {
  * Useful for line-oriented parsing where certain patterns must appear at the end
  * of a line. Checks for newline characters or end of input.
  *
+ * @example
+ * ```typescript
+ * // Match only at line end
+ * const lineEnd = endOfLine("LineEnd");
+ * const result = lineEnd('\n', { offset: 0, line: 1, column: 1 });
+ * // result.success === true
+ * 
+ * const result2 = lineEnd('Hello World', { offset: 0, line: 1, column: 1 });
+ * // result2.success === false
+ * 
+ * // Also matches at end of input
+ * const result3 = lineEnd('', { offset: 0, line: 1, column: 1 });
+ * // result3.success === true
+ * ```
+ *
  * @param parserName Optional name for error reporting and debugging
  * @returns Parser<never> A parser that matches end of line
  */
@@ -775,6 +1254,18 @@ export const endOfLine = (parserName?: string): Parser<never> => {
 
 /**
  * Creates a parser that provides more detailed error reporting with input excerpt.
+ *
+ * Generates detailed error messages including context information around the error position.
+ *
+ * @example
+ * ```typescript
+ * // Parser with detailed error reporting
+ * const detailedParser = withDetailedError(int, "NumberParser");
+ * const result = detailedParser('abc', { offset: 0, line: 1, column: 1 });
+ * // result.error.message === "NumberParser: Expected valid input but found 'a'"
+ * // result.error.context === "abc"
+ * // result.error.found === "a"
+ * ```
  *
  * @template T Type of parser result
  * @param parser The parser to apply
@@ -831,6 +1322,17 @@ export const withDetailedError = <T>(
  * Succeeds only if the input is completely consumed. Useful for ensuring
  * that no additional content follows the parsed structure.
  *
+ * @example
+ * ```typescript
+ * // Ensure complete input consumption
+ * const completeParser = seq(int, EOF);
+ * const result = completeParser('123', { offset: 0, line: 1, column: 1 });
+ * // result.success === true
+ * 
+ * const result2 = completeParser('123abc', { offset: 0, line: 1, column: 1 });
+ * // result2.success === false (additional content present)
+ * ```
+ *
  * @returns Parser<never> A parser that succeeds at end of input, or fails otherwise
  */
 export const EOF = not(any);
@@ -840,6 +1342,21 @@ export const EOF = not(any);
  *
  * Handles different newline conventions: "\r\n" (Windows), "\n" (Unix), "\r" (Mac).
  * Useful for cross-platform text parsing.
+ *
+ * @example
+ * ```typescript
+ * // Unix newline
+ * const result = newline('\n', { offset: 0, line: 1, column: 1 });
+ * // result.val === "\n"
+ * 
+ * // Windows newline
+ * const result2 = newline('\r\n', { offset: 0, line: 1, column: 1 });
+ * // result2.val === "\r\n"
+ * 
+ * // Mac newline
+ * const result3 = newline('\r', { offset: 0, line: 1, column: 1 });
+ * // result3.val === "\r"
+ * ```
  *
  * @returns Parser<string> A parser that matches "\r\n", "\n", or "\r"
  */
@@ -851,6 +1368,18 @@ export const newline = choice(literal("\r\n"), literal("\n"), literal("\r"));
  * Matches space, tab, newline, and carriage return characters.
  * Returns the consumed whitespace string for potential use in formatting.
  *
+ * @example
+ * ```typescript
+ * const result = whitespace(' ', { offset: 0, line: 1, column: 1 });
+ * // result.val === " "
+ * 
+ * const result2 = whitespace('\t', { offset: 0, line: 1, column: 1 });
+ * // result2.val === "\t"
+ * 
+ * const result3 = whitespace('a', { offset: 0, line: 1, column: 1 });
+ * // result3.success === false
+ * ```
+ *
  * @returns Parser<string> A parser that returns consumed whitespace characters
  */
 export const whitespace = charClass(" ", "\t", "\n", "\r");
@@ -861,6 +1390,15 @@ export const whitespace = charClass(" ", "\t", "\n", "\r");
  * Matches any number of whitespace characters (space, tab, newline, carriage return).
  * Useful for ignoring optional whitespace in token-based parsing.
  *
+ * @example
+ * ```typescript
+ * const result = spaces('   \t\n', { offset: 0, line: 1, column: 1 });
+ * // result.val === "   \t\n"
+ * 
+ * const result2 = spaces('abc', { offset: 0, line: 1, column: 1 });
+ * // result2.val === "" (empty string)
+ * ```
+ *
  * @returns Parser<string> A parser that returns consumed whitespace characters
  */
 export const spaces = zeroOrMore(whitespace);
@@ -869,6 +1407,18 @@ export const spaces = zeroOrMore(whitespace);
  * Parser for matching a JavaScript/JSON-style string with escape sequences.
  *
  * Uses optimized escape sequence handling with support for common escape characters.
+ *
+ * @example
+ * ```typescript
+ * const result = quotedString('"Hello\\nWorld"', { offset: 0, line: 1, column: 1 });
+ * // result.val === "Hello\nWorld"
+ * 
+ * const result2 = quotedString('"Escaped\\"quote"', { offset: 0, line: 1, column: 1 });
+ * // result2.val === "Escaped\"quote"
+ * 
+ * const result3 = quotedString('"Invalid', { offset: 0, line: 1, column: 1 });
+ * // result3.success === false
+ * ```
  *
  * @returns Parser<string> A parser that returns the content of the string without quotes
  */
@@ -919,6 +1469,15 @@ export const quotedString: Parser<string> = (() => {
  *
  * Uses optimized escape sequence handling with support for common escape characters.
  *
+ * @example
+ * ```typescript
+ * const result = singleQuotedString("'Hello\\nWorld'", { offset: 0, line: 1, column: 1 });
+ * // result.val === "Hello\nWorld"
+ * 
+ * const result2 = singleQuotedString("'Escaped\\'quote'", { offset: 0, line: 1, column: 1 });
+ * // result2.val === "Escaped'quote"
+ * ```
+ *
  * @returns Parser<string> A parser that returns the content of the string without quotes
  */
 export const singleQuotedString: Parser<string> = (() => {
@@ -967,6 +1526,15 @@ export const singleQuotedString: Parser<string> = (() => {
  * Combines both quotedString and singleQuotedString parsers for flexible
  * string parsing that accepts either quote style.
  *
+ * @example
+ * ```typescript
+ * const result = anyQuotedString('"Hello World"', { offset: 0, line: 1, column: 1 });
+ * // result.val === "Hello World"
+ * 
+ * const result2 = anyQuotedString("'Hello World'", { offset: 0, line: 1, column: 1 });
+ * // result2.val === "Hello World"
+ * ```
+ *
  * @returns Parser<string> A parser that returns the content of the string without quotes
  */
 export const anyQuotedString: Parser<string> = choice(
@@ -978,6 +1546,21 @@ export const anyQuotedString: Parser<string> = choice(
  * Parser for matching a JavaScript/JSON-style number with validation.
  *
  * Supports integers, decimals, and scientific notation with proper error handling.
+ *
+ * @example
+ * ```typescript
+ * const result = number('123', { offset: 0, line: 1, column: 1 });
+ * // result.val === 123
+ * 
+ * const result2 = number('-3.14', { offset: 0, line: 1, column: 1 });
+ * // result2.val === -3.14
+ * 
+ * const result3 = number('1.23e-4', { offset: 0, line: 1, column: 1 });
+ * // result3.val === 0.000123
+ * 
+ * const result4 = number('invalid', { offset: 0, line: 1, column: 1 });
+ * // result4.success === false
+ * ```
  *
  * @returns Parser<number> A parser that returns the parsed number with validation
  */
@@ -1019,6 +1602,21 @@ export const number: Parser<number> = (() => {
  * Parse an integer number with validation.
  *
  * Supports negative integers and provides proper error handling for invalid formats.
+ *
+ * @example
+ * ```typescript
+ * const result = int('123', { offset: 0, line: 1, column: 1 });
+ * // result.val === 123
+ * 
+ * const result2 = int('-456', { offset: 0, line: 1, column: 1 });
+ * // result2.val === -456
+ * 
+ * const result3 = int('3.14', { offset: 0, line: 1, column: 1 });
+ * // result3.success === false (decimals not supported)
+ * 
+ * const result4 = int('invalid', { offset: 0, line: 1, column: 1 });
+ * // result4.success === false
+ * ```
  *
  * @returns Parser<number> A parser that returns the parsed integer with validation
  */

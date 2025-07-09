@@ -8,7 +8,7 @@ const START = {
   line: 1,
 } as const;
 
-const pos = (offset: number) => createPos(offset, offset);
+const pos = (offset: number) => ({ offset, line: 1, column: offset });
 
 describe("Grammar", () => {
   it("should parse simple numbers", () => {

@@ -1124,7 +1124,7 @@ describe("Advanced memoize edge cases", () => {
 describe("Enhanced error reporting", () => {
   describe("withDetailedError comprehensive tests", () => {
     it("should provide detailed error with input context", () => {
-      const parser = withDetailedError(literal("expected"), "TestParser", 5);
+      const parser = withDetailedError(literal("expected"), "TestParser");
       const result = parse(parser)("unexpected input");
 
       expect(result.success).toBe(false);

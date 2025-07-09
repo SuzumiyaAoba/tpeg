@@ -10,8 +10,25 @@
  * These are simplified versions of the full AST types
  */
 
+// Expression type literals
+export type ExpressionType = 
+  | "StringLiteral"
+  | "CharacterClass"
+  | "Identifier"
+  | "AnyChar"
+  | "Sequence"
+  | "Choice"
+  | "Group"
+  | "Star"
+  | "Plus"
+  | "Optional"
+  | "Quantified"
+  | "PositiveLookahead"
+  | "NegativeLookahead"
+  | "LabeledExpression";
+
 export interface Expression {
-  type: string;
+  type: ExpressionType;
 }
 
 export interface StringLiteral extends Expression {
@@ -28,6 +45,10 @@ export interface CharacterClass extends Expression {
 export interface Identifier extends Expression {
   type: "Identifier";
   name: string;
+}
+
+export interface AnyChar extends Expression {
+  type: "AnyChar";
 }
 
 export interface Sequence extends Expression {
@@ -88,6 +109,7 @@ export type SpecificExpression =
   | StringLiteral
   | CharacterClass
   | Identifier
+  | AnyChar
   | Sequence
   | Choice
   | Group
@@ -98,6 +120,71 @@ export type SpecificExpression =
   | PositiveLookahead
   | NegativeLookahead
   | LabeledExpression;
+
+// Type guard functions for type narrowing
+export function isStringLiteral(expr: Expression): expr is StringLiteral {
+  return expr.type === "StringLiteral";
+}
+
+export function isCharacterClass(expr: Expression): expr is CharacterClass {
+  return expr.type === "CharacterClass";
+}
+
+export function isIdentifier(expr: Expression): expr is Identifier {
+  return expr.type === "Identifier";
+}
+
+export function isAnyChar(expr: Expression): expr is AnyChar {
+  return expr.type === "AnyChar";
+}
+
+export function isSequence(expr: Expression): expr is Sequence {
+  return expr.type === "Sequence";
+}
+
+export function isChoice(expr: Expression): expr is Choice {
+  return expr.type === "Choice";
+}
+
+export function isGroup(expr: Expression): expr is Group {
+  return expr.type === "Group";
+}
+
+export function isStar(expr: Expression): expr is Star {
+  return expr.type === "Star";
+}
+
+export function isPlus(expr: Expression): expr is Plus {
+  return expr.type === "Plus";
+}
+
+export function isOptional(expr: Expression): expr is Optional {
+  return expr.type === "Optional";
+}
+
+export function isQuantified(expr: Expression): expr is Quantified {
+  return expr.type === "Quantified";
+}
+
+export function isPositiveLookahead(expr: Expression): expr is PositiveLookahead {
+  return expr.type === "PositiveLookahead";
+}
+
+export function isNegativeLookahead(expr: Expression): expr is NegativeLookahead {
+  return expr.type === "NegativeLookahead";
+}
+
+export function isLabeledExpression(expr: Expression): expr is LabeledExpression {
+  return expr.type === "LabeledExpression";
+}
+
+// Generic type guard for any expression type
+export function isExpressionType<T extends ExpressionType>(
+  expr: Expression,
+  type: T
+): expr is Extract<SpecificExpression, { type: T }> {
+  return expr.type === type;
+}
 
 export interface RuleDefinition {
   type: "RuleDefinition";
