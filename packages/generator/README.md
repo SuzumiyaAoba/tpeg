@@ -168,6 +168,32 @@ const generator = new EtaTPEGCodeGenerator({
 });
 ```
 
+## Testing
+
+The package includes comprehensive tests including snapshot tests for code generation consistency:
+
+```bash
+# Run all tests
+bun test
+
+# Run snapshot tests only
+bun test src/eta-generator.spec.ts
+
+# Update snapshots after code changes
+bun test --update-snapshots
+```
+
+### Snapshot Testing
+
+Snapshot tests ensure that code generation produces consistent and expected output. They verify:
+
+- Generated TypeScript code structure
+- Import statements
+- Export declarations
+- Performance metadata
+
+For detailed information about snapshot testing, see [SNAPSHOT_TESTING.md](./SNAPSHOT_TESTING.md).
+
 ## Development
 
 ```bash

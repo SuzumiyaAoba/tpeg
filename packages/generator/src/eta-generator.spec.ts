@@ -9,7 +9,23 @@ import {
 } from "./eta-generator";
 
 // Import test utilities from core
-import type { Expression, GrammarDefinition, RuleDefinition } from "./types";
+import type { 
+  Expression, 
+  GrammarDefinition, 
+  RuleDefinition,
+  StringLiteral,
+  CharacterClass,
+  Sequence,
+  Choice,
+  Star,
+  Plus,
+  Optional,
+  Quantified,
+  Identifier,
+  PositiveLookahead,
+  NegativeLookahead,
+  LabeledExpression
+} from "./types";
 
 // Simple test helper functions
 function createGrammarDefinition(
@@ -36,7 +52,7 @@ function createRuleDefinition(
   };
 }
 
-function createStringLiteral(value: string) {
+function createStringLiteral(value: string): StringLiteral {
   return {
     type: "StringLiteral",
     value,
@@ -46,7 +62,7 @@ function createStringLiteral(value: string) {
 function createCharacterClass(
   ranges: Array<{ start: string; end?: string }>,
   negated: boolean,
-) {
+): CharacterClass {
   return {
     type: "CharacterClass",
     ranges,
@@ -58,42 +74,42 @@ function createCharRange(start: string, end: string) {
   return { start, end };
 }
 
-function createSequence(elements: Expression[]) {
+function createSequence(elements: Expression[]): Sequence {
   return {
     type: "Sequence",
     elements,
   };
 }
 
-function createChoice(alternatives: Expression[]) {
+function createChoice(alternatives: Expression[]): Choice {
   return {
     type: "Choice",
     alternatives,
   };
 }
 
-function createStar(expression: Expression) {
+function createStar(expression: Expression): Star {
   return {
     type: "Star",
     expression,
   };
 }
 
-function createPlus(expression: Expression) {
+function createPlus(expression: Expression): Plus {
   return {
     type: "Plus",
     expression,
   };
 }
 
-function createOptional(expression: Expression) {
+function createOptional(expression: Expression): Optional {
   return {
     type: "Optional",
     expression,
   };
 }
 
-function createQuantified(expression: Expression, min: number, max?: number) {
+function createQuantified(expression: Expression, min: number, max?: number): Quantified {
   return {
     type: "Quantified",
     expression,
@@ -102,7 +118,7 @@ function createQuantified(expression: Expression, min: number, max?: number) {
   };
 }
 
-function createIdentifier(name: string) {
+function createIdentifier(name: string): Identifier {
   return {
     type: "Identifier",
     name,
@@ -385,6 +401,313 @@ describe("EtaTPEGCodeGenerator", () => {
       // Should still attempt to generate, even if templates are missing
       // The actual error handling depends on Eta's behavior
       await expect(generator.generateGrammar(grammar)).rejects.toThrow();
+    });
+  });
+
+  describe("Snapshot Tests", () => {
+    it("should generate consistent code for simple grammar", async () => {
+      const grammar = createGrammarDefinition(
+        "SimpleGrammar",
+        [],
+        [
+          createRuleDefinition("hello", createStringLiteral("world")),
+          createRuleDefinition("number", createCharacterClass([createCharRange("0", "9")], false)),
+        ],
+      );
+
+      const result = await generateEtaTypeScriptParser(grammar, {
+        namePrefix: "test_",
+        includeTypes: true,
+        optimize: false,
+      });
+
+      // Snapshot test: Verify the complete generated code
+      expect(result.code).toMatchSnapshot();
+      expect(result.imports).toMatchSnapshot();
+      expect(result.exports).toMatchSnapshot();
+      
+      // Verify performance information excluding generation time
+      const { generationTime, ...performanceWithoutTime } = result.performance;
+      expect(performanceWithoutTime).toMatchSnapshot();
+      expect(typeof generationTime).toBe("number");
+      expect(generationTime).toBeGreaterThan(0);
+    });
+
+    it("should generate consistent code for complex grammar", async () => {
+      const grammar = createGrammarDefinition(
+        "ComplexGrammar",
+        [],
+        [
+          createRuleDefinition("digit", createCharacterClass([createCharRange("0", "9")], false)),
+          createRuleDefinition("letter", createCharacterClass([createCharRange("a", "z")], false)),
+          createRuleDefinition("word", createPlus(createCharacterClass([createCharRange("a", "z")], false))),
+          createRuleDefinition(
+            "expression",
+            createSequence([
+              createIdentifier("word"),
+              createOptional(createStringLiteral(" ")),
+              createIdentifier("word"),
+            ]),
+          ),
+          createRuleDefinition(
+            "number",
+            createChoice([
+              createPlus(createCharacterClass([createCharRange("0", "9")], false)),
+              createSequence([
+                createPlus(createCharacterClass([createCharRange("0", "9")], false)),
+                createStringLiteral("."),
+                createPlus(createCharacterClass([createCharRange("0", "9")], false)),
+              ]),
+            ]),
+          ),
+        ],
+      );
+
+      const result = await generateEtaTypeScriptParser(grammar, {
+        namePrefix: "complex_",
+        includeTypes: true,
+        optimize: true,
+        enableMemoization: true,
+      });
+
+      // Snapshot test: Verify complex grammar generated code
+      expect(result.code).toMatchSnapshot();
+      expect(result.imports).toMatchSnapshot();
+      expect(result.exports).toMatchSnapshot();
+      
+      // Verify performance information excluding generation time
+      const { generationTime, ...performanceWithoutTime } = result.performance;
+      expect(performanceWithoutTime).toMatchSnapshot();
+      expect(typeof generationTime).toBe("number");
+      expect(generationTime).toBeGreaterThan(0);
+    });
+
+    it("should generate consistent optimized code", async () => {
+      const grammar = createGrammarDefinition(
+        "OptimizedGrammar",
+        [],
+        [
+          createRuleDefinition("recursive", createChoice([
+            createStringLiteral("a"),
+            createSequence([
+              createStringLiteral("("),
+              createIdentifier("recursive"),
+              createStringLiteral(")"),
+            ]),
+          ])),
+          createRuleDefinition("highComplexity", createStar(createChoice([
+            createStringLiteral("x"),
+            createStringLiteral("y"),
+            createStringLiteral("z"),
+          ]))),
+        ],
+      );
+
+      const result = await generateEtaTypeScriptParser(grammar, {
+        namePrefix: "opt_",
+        includeTypes: true,
+        optimize: true,
+        enableMemoization: true,
+        includeMonitoring: true,
+      });
+
+      // Snapshot test: Verify optimized code
+      expect(result.code).toMatchSnapshot();
+      expect(result.imports).toMatchSnapshot();
+      expect(result.exports).toMatchSnapshot();
+      
+      // Verify performance information excluding generation time
+      const { generationTime, ...performanceWithoutTime } = result.performance;
+      expect(performanceWithoutTime).toMatchSnapshot();
+      expect(typeof generationTime).toBe("number");
+      expect(generationTime).toBeGreaterThan(0);
+    });
+
+    it("should generate consistent code without types", async () => {
+      const grammar = createGrammarDefinition(
+        "NoTypesGrammar",
+        [],
+        [
+          createRuleDefinition("simple", createStringLiteral("value")),
+          createRuleDefinition("choice", createChoice([
+            createStringLiteral("a"),
+            createStringLiteral("b"),
+          ])),
+        ],
+      );
+
+      const result = await generateEtaTypeScriptParser(grammar, {
+        namePrefix: "notypes_",
+        includeTypes: false,
+        optimize: false,
+      });
+
+      // Snapshot test: Verify code without types
+      expect(result.code).toMatchSnapshot();
+      expect(result.imports).toMatchSnapshot();
+      expect(result.exports).toMatchSnapshot();
+      
+      // Verify performance information excluding generation time
+      const { generationTime, ...performanceWithoutTime } = result.performance;
+      expect(performanceWithoutTime).toMatchSnapshot();
+      expect(typeof generationTime).toBe("number");
+      expect(generationTime).toBeGreaterThan(0);
+    });
+
+    it("should generate consistent code without imports", async () => {
+      const grammar = createGrammarDefinition(
+        "NoImportsGrammar",
+        [],
+        [
+          createRuleDefinition("basic", createStringLiteral("test")),
+        ],
+      );
+
+      const result = await generateEtaTypeScriptParser(grammar, {
+        namePrefix: "noimports_",
+        includeImports: false,
+        includeTypes: true,
+        optimize: false,
+      });
+
+      // Snapshot test: Verify code without imports
+      expect(result.code).toMatchSnapshot();
+      expect(result.imports).toMatchSnapshot();
+      expect(result.exports).toMatchSnapshot();
+      
+      // Verify performance information excluding generation time
+      const { generationTime, ...performanceWithoutTime } = result.performance;
+      expect(performanceWithoutTime).toMatchSnapshot();
+      expect(typeof generationTime).toBe("number");
+      expect(generationTime).toBeGreaterThan(0);
+    });
+
+    it("should generate consistent code with custom name prefix", async () => {
+      const grammar = createGrammarDefinition(
+        "CustomPrefixGrammar",
+        [],
+        [
+          createRuleDefinition("rule1", createStringLiteral("value1")),
+          createRuleDefinition("rule2", createStringLiteral("value2")),
+          createRuleDefinition("rule3", createSequence([
+            createIdentifier("rule1"),
+            createStringLiteral(" "),
+            createIdentifier("rule2"),
+          ])),
+        ],
+      );
+
+      const result = await generateEtaTypeScriptParser(grammar, {
+        namePrefix: "custom_prefix_",
+        includeTypes: true,
+        optimize: false,
+      });
+
+      // Snapshot test: Verify code with custom name prefix
+      expect(result.code).toMatchSnapshot();
+      expect(result.imports).toMatchSnapshot();
+      expect(result.exports).toMatchSnapshot();
+      
+      // Verify performance information excluding generation time
+      const { generationTime, ...performanceWithoutTime } = result.performance;
+      expect(performanceWithoutTime).toMatchSnapshot();
+      expect(typeof generationTime).toBe("number");
+      expect(generationTime).toBeGreaterThan(0);
+    });
+
+    it("should generate consistent code with quantified expressions", async () => {
+      const grammar = createGrammarDefinition(
+        "QuantifiedGrammar",
+        [],
+        [
+          createRuleDefinition("exactly3", createQuantified(createStringLiteral("a"), 3, 3)),
+          createRuleDefinition("range2to5", createQuantified(createStringLiteral("b"), 2, 5)),
+          createRuleDefinition("minimum3", createQuantified(createStringLiteral("c"), 3)),
+          createRuleDefinition("optional", createQuantified(createStringLiteral("d"), 0, 1)),
+        ],
+      );
+
+      const result = await generateEtaTypeScriptParser(grammar, {
+        namePrefix: "quant_",
+        includeTypes: true,
+        optimize: false,
+      });
+
+      // Snapshot test: Verify quantified expressions code
+      expect(result.code).toMatchSnapshot();
+      expect(result.imports).toMatchSnapshot();
+      expect(result.exports).toMatchSnapshot();
+      
+      // Verify performance information excluding generation time
+      const { generationTime, ...performanceWithoutTime } = result.performance;
+      expect(performanceWithoutTime).toMatchSnapshot();
+      expect(typeof generationTime).toBe("number");
+      expect(generationTime).toBeGreaterThan(0);
+    });
+
+    it("should generate consistent code with lookahead expressions", async () => {
+      const grammar = createGrammarDefinition(
+        "LookaheadGrammar",
+        [],
+        [
+          createRuleDefinition("positive", {
+            type: "PositiveLookahead" as const,
+            expression: createStringLiteral("a"),
+          } as PositiveLookahead),
+          createRuleDefinition("negative", {
+            type: "NegativeLookahead" as const,
+            expression: createStringLiteral("b"),
+          } as NegativeLookahead),
+        ],
+      );
+
+      const result = await generateEtaTypeScriptParser(grammar, {
+        namePrefix: "lookahead_",
+        includeTypes: true,
+        optimize: false,
+      });
+
+      // Snapshot test: Verify lookahead expressions code
+      expect(result.code).toMatchSnapshot();
+      expect(result.imports).toMatchSnapshot();
+      expect(result.exports).toMatchSnapshot();
+      
+      // Verify performance information excluding generation time
+      const { generationTime, ...performanceWithoutTime } = result.performance;
+      expect(performanceWithoutTime).toMatchSnapshot();
+      expect(typeof generationTime).toBe("number");
+      expect(generationTime).toBeGreaterThan(0);
+    });
+
+    it("should generate consistent code with labeled expressions", async () => {
+      const grammar = createGrammarDefinition(
+        "LabeledGrammar",
+        [],
+        [
+          createRuleDefinition("labeled", {
+            type: "LabeledExpression" as const,
+            label: "test_label",
+            expression: createStringLiteral("value"),
+          } as LabeledExpression),
+        ],
+      );
+
+      const result = await generateEtaTypeScriptParser(grammar, {
+        namePrefix: "labeled_",
+        includeTypes: true,
+        optimize: false,
+      });
+
+      // Snapshot test: Verify labeled expressions code
+      expect(result.code).toMatchSnapshot();
+      expect(result.imports).toMatchSnapshot();
+      expect(result.exports).toMatchSnapshot();
+      
+      // Verify performance information excluding generation time
+      const { generationTime, ...performanceWithoutTime } = result.performance;
+      expect(performanceWithoutTime).toMatchSnapshot();
+      expect(typeof generationTime).toBe("number");
+      expect(generationTime).toBeGreaterThan(0);
     });
   });
 });
