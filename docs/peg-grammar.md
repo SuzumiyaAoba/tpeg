@@ -1,4 +1,4 @@
-# [DRAFT] TPEG Grammar Definition Language Specification
+# TPEG Grammar Definition Language Specification
 
 TPEG (TypeScript Parsing Expression Grammar) is an extended PEG grammar definition language that can **transpile parser code to arbitrary programming languages** from a single grammar definition.
 
