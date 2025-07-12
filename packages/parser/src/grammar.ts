@@ -25,6 +25,7 @@ import type {
   GrammarAnnotation,
   GrammarDefinition,
   RuleDefinition,
+  TransformDefinition,
 } from "./types";
 import {
   createGrammarAnnotation,
@@ -32,6 +33,7 @@ import {
   createRuleDefinition,
 } from "./types";
 import { optionalWhitespace, whitespace } from "./whitespace-utils";
+import { transformDefinition } from "./transforms";
 
 /**
  * Bounded expression parser for grammar rules
@@ -246,10 +248,11 @@ export const ruleDefinition: Parser<RuleDefinition> = map(
 type GrammarItemType =
   | { type: "annotation"; value: GrammarAnnotation }
   | { type: "rule"; value: RuleDefinition }
+  | { type: "transform"; value: TransformDefinition }
   | { type: "comment"; value: string };
 
 /**
- * Parse grammar item (annotation, rule, or comment)
+ * Parse grammar item (annotation, rule, transform, or comment)
  * Returns a tagged union for easier processing in the main grammar parser
  */
 const grammarItem: Parser<GrammarItemType> = choice(
@@ -263,6 +266,10 @@ const grammarItem: Parser<GrammarItemType> = choice(
   map(
     ruleDefinition,
     (rule): GrammarItemType => ({ type: "rule", value: rule }),
+  ),
+  map(
+    transformDefinition,
+    (transform): GrammarItemType => ({ type: "transform", value: transform }),
   ),
   map(
     singleLineComment,
@@ -288,30 +295,34 @@ const grammarItems: Parser<GrammarItemType[]> = map(
 );
 
 /**
- * Separate grammar items into annotations and rules
+ * Separate grammar items into annotations, rules, and transforms
  * Comments are ignored as they don't contribute to the AST
  * @param items Array of mixed grammar items
- * @returns Separated annotations and rules arrays
+ * @returns Separated annotations, rules, and transforms arrays
  */
 const separateGrammarItems = (
   items: GrammarItemType[],
 ): {
   annotations: GrammarAnnotation[];
   rules: RuleDefinition[];
+  transforms: TransformDefinition[];
 } => {
   const annotations: GrammarAnnotation[] = [];
   const rules: RuleDefinition[] = [];
+  const transforms: TransformDefinition[] = [];
 
   for (const item of items) {
     if (item.type === "annotation") {
       annotations.push(item.value);
     } else if (item.type === "rule") {
       rules.push(item.value);
+    } else if (item.type === "transform") {
+      transforms.push(item.value);
     }
     // Comments are ignored - they don't contribute to the grammar structure
   }
 
-  return { annotations, rules };
+  return { annotations, rules, transforms };
 };
 
 /**
@@ -359,8 +370,8 @@ export const grammarDefinition: Parser<GrammarDefinition> = map(
   (results) => {
     const grammarName = results[3].name;
     const items = results[6];
-    const { annotations, rules } = separateGrammarItems(items);
+    const { annotations, rules, transforms } = separateGrammarItems(items);
 
-    return createGrammarDefinition(grammarName, annotations, rules);
+    return createGrammarDefinition(grammarName, annotations, rules, transforms);
   },
 );

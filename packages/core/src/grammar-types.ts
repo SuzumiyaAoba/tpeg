@@ -378,16 +378,69 @@ export interface RuleDefinition {
 }
 
 /**
- * Grammar definition in TPEG grammar AST.
- * Represents a complete grammar with metadata and rules.
+ * Represents a transform function parameter
+ */
+export interface TransformParameter {
+  name: string;
+  type: string;
+  optional?: boolean;
+}
+
+/**
+ * Represents a transform function return type
+ */
+export interface TransformReturnType {
+  type: string;
+  generic?: string;
+}
+
+/**
+ * Represents a transform function definition
+ */
+export interface TransformFunction {
+  name: string;
+  parameters: TransformParameter[];
+  returnType: TransformReturnType;
+  body: string;
+  documentation?: string[];
+}
+
+/**
+ * Represents a transform set declaration
+ */
+export interface TransformSet {
+  name: string;
+  targetLanguage: string;
+  functions: TransformFunction[];
+}
+
+/**
+ * Represents a complete transform definition
+ */
+export interface TransformDefinition {
+  type: "TransformDefinition";
+  transformSet: TransformSet;
+}
+
+/**
+ * Represents a complete grammar definition.
+ *
+ * A grammar definition contains:
+ * - A name for the grammar
+ * - Optional annotations for metadata
+ * - A collection of rule definitions
+ * - Optional transform definitions
  *
  * @example
  * ```typescript
  * const grammar: GrammarDefinition = {
  *   type: "GrammarDefinition",
- *   name: "MyGrammar",
- *   annotations: [versionAnnotation],
- *   rules: [identifierRule, expressionRule]
+ *   name: "Calculator",
+ *   annotations: [
+ *     { type: "GrammarAnnotation", key: "version", value: "1.0" }
+ *   ],
+ *   rules: [identifierRule, expressionRule],
+ *   transforms: [transformDefinition]
  * };
  * ```
  */
@@ -400,6 +453,8 @@ export interface GrammarDefinition {
   annotations: GrammarAnnotation[];
   /** The rules that make up this grammar */
   rules: RuleDefinition[];
+  /** Transform definitions for this grammar */
+  transforms?: TransformDefinition[];
 }
 
 // ============================================================================
@@ -752,21 +807,24 @@ export const createRuleDefinition = (
  * @param name - The name of the grammar
  * @param annotations - Grammar-level annotations (defaults to empty array)
  * @param rules - The rules that make up this grammar (defaults to empty array)
+ * @param transforms - Transform definitions for this grammar (defaults to empty array)
  * @returns A new GrammarDefinition AST node
  *
  * @example
  * ```typescript
- * const grammar = createGrammarDefinition("MyGrammar", [annotation], [rule]);
- * // Returns: { type: "GrammarDefinition", name: "MyGrammar", annotations: [...], rules: [...] }
+ * const grammar = createGrammarDefinition("MyGrammar", [annotation], [rule], [transform]);
+ * // Returns: { type: "GrammarDefinition", name: "MyGrammar", annotations: [...], rules: [...], transforms: [...] }
  * ```
  */
 export const createGrammarDefinition = (
   name: string,
   annotations: GrammarAnnotation[] = [],
   rules: RuleDefinition[] = [],
+  transforms: TransformDefinition[] = [],
 ): GrammarDefinition => ({
   type: "GrammarDefinition",
   name,
   annotations,
   rules,
+  transforms,
 });

@@ -50,7 +50,58 @@ export type {
   GrammarDefinition,
 };
 
+// ============================================================================
+// Transform AST Types
+// ============================================================================
+
+/**
+ * Represents a transform function parameter
+ */
+export interface TransformParameter {
+  name: string;
+  type: string;
+  optional?: boolean;
+}
+
+/**
+ * Represents a transform function return type
+ */
+export interface TransformReturnType {
+  type: string;
+  generic?: string;
+}
+
+/**
+ * Represents a transform function definition
+ */
+export interface TransformFunction {
+  name: string;
+  parameters: TransformParameter[];
+  returnType: TransformReturnType;
+  body: string;
+  documentation?: string[];
+}
+
+/**
+ * Represents a transform set declaration
+ */
+export interface TransformSet {
+  name: string;
+  targetLanguage: string;
+  functions: TransformFunction[];
+}
+
+/**
+ * Represents a complete transform definition
+ */
+export interface TransformDefinition {
+  type: "TransformDefinition";
+  transformSet: TransformSet;
+}
+
+// ============================================================================
 // Parser-specific derived types
+// ============================================================================
 export type BasicSyntaxNode =
   | StringLiteral
   | CharacterClass
@@ -340,15 +391,102 @@ export const createRuleDefinition = (
  * @param name The grammar name
  * @param annotations Grammar annotations
  * @param rules Grammar rules
+ * @param transforms Grammar transforms
  * @returns GrammarDefinition node
  */
 export const createGrammarDefinition = (
   name: string,
   annotations: GrammarAnnotation[] = [],
   rules: RuleDefinition[] = [],
+  transforms: TransformDefinition[] = [],
 ): GrammarDefinition => ({
   type: "GrammarDefinition",
   name,
   annotations,
   rules,
+  transforms,
+});
+
+// ============================================================================
+// Transform Factory Functions
+// ============================================================================
+
+/**
+ * Create a TransformParameter AST node
+ * @param name Parameter name
+ * @param type Parameter type
+ * @param optional Whether the parameter is optional
+ * @returns TransformParameter node
+ */
+export const createTransformParameter = (
+  name: string,
+  type: string,
+  optional = false,
+): TransformParameter => ({
+  name,
+  type,
+  optional,
+});
+
+/**
+ * Create a TransformReturnType AST node
+ * @param type Return type
+ * @param generic Generic type parameter (optional)
+ * @returns TransformReturnType node
+ */
+export const createTransformReturnType = (
+  type: string,
+  generic?: string,
+): TransformReturnType => 
+  generic !== undefined 
+    ? { type, generic }
+    : { type };
+
+/**
+ * Create a TransformFunction AST node
+ * @param name Function name
+ * @param parameters Function parameters
+ * @param returnType Function return type
+ * @param body Function body
+ * @param documentation Optional documentation
+ * @returns TransformFunction node
+ */
+export const createTransformFunction = (
+  name: string,
+  parameters: TransformParameter[],
+  returnType: TransformReturnType,
+  body: string,
+  documentation?: string[],
+): TransformFunction => 
+  documentation !== undefined 
+    ? { name, parameters, returnType, body, documentation }
+    : { name, parameters, returnType, body };
+
+/**
+ * Create a TransformSet AST node
+ * @param name Transform set name
+ * @param targetLanguage Target language
+ * @param functions Transform functions
+ * @returns TransformSet node
+ */
+export const createTransformSet = (
+  name: string,
+  targetLanguage: string,
+  functions: TransformFunction[],
+): TransformSet => ({
+  name,
+  targetLanguage,
+  functions,
+});
+
+/**
+ * Create a TransformDefinition AST node
+ * @param transformSet The transform set
+ * @returns TransformDefinition node
+ */
+export const createTransformDefinition = (
+  transformSet: TransformSet,
+): TransformDefinition => ({
+  type: "TransformDefinition",
+  transformSet,
 });

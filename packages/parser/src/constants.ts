@@ -121,6 +121,51 @@ export const ESCAPE_CHARS = {
  */
 export const GRAMMAR_KEYWORDS = {
   GRAMMAR: "grammar",
+  TRANSFORMS: "transforms",
+} as const;
+
+/**
+ * Transform-related symbols and operators
+ */
+export const TRANSFORM_SYMBOLS = {
+  // Transform declaration
+  TRANSFORM_DECLARATION: "transforms",
+  
+  // Language specification separator
+  LANGUAGE_SEPARATOR: "@",
+  
+  // Function declaration
+  FUNCTION_KEYWORD: "function",
+  
+  // Parameter and return type separators
+  PARAMETER_START: "(",
+  PARAMETER_END: ")",
+  RETURN_TYPE_SEPARATOR: "->",
+  
+  // Block delimiters
+  TRANSFORM_BLOCK_OPEN: "{",
+  TRANSFORM_BLOCK_CLOSE: "}",
+  
+  // Type annotations
+  TYPE_SEPARATOR: ":",
+  OPTIONAL_TYPE: "?",
+  ARRAY_TYPE: "[]",
+  UNION_TYPE: "|",
+  
+  // Result type
+  RESULT_TYPE: "Result",
+} as const;
+
+/**
+ * Supported target languages for transforms
+ */
+export const SUPPORTED_LANGUAGES = {
+  TYPESCRIPT: "typescript",
+  PYTHON: "python",
+  GO: "go",
+  RUST: "rust",
+  JAVA: "java",
+  CPP: "cpp",
 } as const;
 
 /**
