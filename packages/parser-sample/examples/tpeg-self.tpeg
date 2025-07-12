@@ -1,0 +1,74 @@
+// TPEG Self-Hosting Grammar Definition
+// This grammar defines TPEG grammar syntax itself
+// Used for self-transpilation capability
+
+grammar TPEGSelf {
+  @version: "1.0.0"
+  @description: "TPEG grammar definition for self-hosting"
+  @author: "TPEG Team"
+  @license: "MIT"
+  
+  // Main grammar structure
+  grammar = "grammar" identifier "{" grammar_items "}"
+  grammar_items = (grammar_item grammar_whitespace)*
+  grammar_item = annotation / rule_definition / comment
+  
+  // Grammar annotations
+  annotation = "@" identifier ":" annotation_value
+  annotation_value = string_literal / identifier / number
+  
+  // Rule definitions
+  rule_definition = identifier "=" expression
+  expression = choice_expression
+  choice_expression = sequence_expression ("/" sequence_expression)*
+  sequence_expression = labeled_expression*
+  labeled_expression = label ":" primary_expression / primary_expression
+  primary_expression = group_expression / repetition_expression / basic_expression
+  
+  // Basic expressions
+  basic_expression = string_literal / character_class / identifier / any_char
+  
+  // Groups and repetition
+  group_expression = "(" expression ")"
+  repetition_expression = primary_expression repetition_operator
+  repetition_operator = "*" / "+" / "?" / quantified_repetition
+  quantified_repetition = "{" number ("," number)? "}"
+  
+  // Labels
+  label = identifier
+  
+  // String literals
+  string_literal = double_quoted_string / single_quoted_string
+  double_quoted_string = "\"" string_content "\""
+  single_quoted_string = "'" string_content "'"
+  string_content = (escape_sequence / [^"\\])*
+  escape_sequence = "\\" escape_char
+  escape_char = "\"" / "\\" / "n" / "t" / "r"
+  
+  // Character classes
+  character_class = "[" char_class_content "]"
+  char_class_content = char_class_item*
+  char_class_item = char_range / escape_sequence / [^\\\]]
+  char_range = char "-" char
+  char = [^\\\-\[\]]
+  
+  // Any character
+  any_char = "."
+  
+  // Identifiers
+  identifier = ident_start ident_continue*
+  ident_start = [a-zA-Z_]
+  ident_continue = ident_start / [0-9]
+  
+  // Numbers
+  number = [0-9]+
+  
+  // Comments
+  comment = line_comment / block_comment
+  line_comment = "//" [^\n]* "\n"
+  block_comment = "/*" (!"*/" .)* "*/"
+  
+  // Whitespace
+  grammar_whitespace = [ \t\n\r]+
+  whitespace = [ \t\n\r]*
+} 

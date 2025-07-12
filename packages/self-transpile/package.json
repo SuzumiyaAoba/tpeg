@@ -1,0 +1,33 @@
+{
+  "name": "tpeg-self-transpile",
+  "version": "0.1.0",
+  "description": "Self-transpilation system for TPEG grammar definitions",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "keywords": [
+    "self-transpile",
+    "self-hosting",
+    "grammar",
+    "parser",
+    "bootstrap"
+  ],
+  "author": "SuzumiyaAoba",
+  "license": "MIT",
+  "dependencies": {
+    "tpeg-core": "workspace:*",
+    "tpeg-parser": "workspace:*",
+    "tpeg-generator": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+} 
