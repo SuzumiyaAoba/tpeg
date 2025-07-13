@@ -73,6 +73,7 @@ export class ModuleResolutionError extends Error {
 
   constructor(message: string, modulePath: string, _cause?: Error) {
     super(message);
+    this.name = "ModuleResolutionError";
     this.modulePath = modulePath;
   }
 }
@@ -88,6 +89,7 @@ export class CircularDependencyError extends ModuleResolutionError {
       `Circular dependency detected: ${cycle.join(" -> ")} -> ${cycle[0]}`,
       cycle[0] ?? "",
     );
+    this.name = "CircularDependencyError";
     this.cycle = cycle;
   }
 }

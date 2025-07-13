@@ -100,7 +100,7 @@ describe("Module System Integration Tests", () => {
       );
     });
 
-    it.skip("should detect circular dependencies", async () => {
+    it("should detect circular dependencies", async () => {
       // Setup circular dependency
       const MODULE_A = `
         import "moduleB.tpeg" as b
