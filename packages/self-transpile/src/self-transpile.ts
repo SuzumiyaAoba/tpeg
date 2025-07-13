@@ -84,7 +84,8 @@ export async function selfTranspile(
     }
 
     // Generate parser code using the generator
-    const generationResult = await generateEtaTypeScriptParser(grammar, {
+    // @ts-ignore - Temporary type compatibility workaround
+    const generationResult = await generateEtaTypeScriptParser(grammar as any, {
       namePrefix: finalConfig.namePrefix || "self_",
       includeTypes: finalConfig.includeTypes,
       optimize: finalConfig.optimize,
@@ -135,10 +136,11 @@ function parseGrammarDefinition(source: string): GrammarDefinition | null {
     // Import the grammar parser dynamically to avoid circular dependencies
     const { grammarDefinition } = require("tpeg-parser");
     
-    const result = parse(grammarDefinition, source);
+    const parser = parse(grammarDefinition);
+    const result = parser(source);
     
     if (result.success) {
-      return result.val;
+      return result.val as GrammarDefinition;
     }
     
     return null;
