@@ -1,0 +1,270 @@
+{
+  "timestamp": "2025-07-13T14:06:40.562Z",
+  "analysis": {
+    "overall": {
+      "statements": {
+        "total": 5348,
+        "covered": 4676,
+        "percentage": 87.43455497382199,
+        "threshold": 70,
+        "passing": true
+      },
+      "branches": {
+        "total": 847,
+        "covered": 752,
+        "percentage": 88.78394332939787,
+        "threshold": 60,
+        "passing": true
+      },
+      "functions": {
+        "total": 2694,
+        "covered": 2377,
+        "percentage": 88.23311061618412,
+        "threshold": 70,
+        "passing": true
+      },
+      "lines": {
+        "total": 9681,
+        "covered": 6854,
+        "percentage": 70.79847123231072,
+        "threshold": 70,
+        "passing": true
+      }
+    },
+    "files": {},
+    "functional": {
+      "features": {
+        "self-transpilation": {
+          "name": "self-transpilation",
+          "description": "TPEG can parse and generate parsers for its own grammar",
+          "covered": true,
+          "testCases": [
+            "self-parse-basic",
+            "code-generation",
+            "self-hosting-loop"
+          ],
+          "lastTested": "2025-07-13T14:06:40.557Z",
+          "coverage": 100
+        },
+        "error-handling": {
+          "name": "error-handling",
+          "description": "Comprehensive error handling and recovery mechanisms",
+          "covered": true,
+          "testCases": [
+            "error-detection",
+            "recovery-mechanisms",
+            "error-integration"
+          ],
+          "lastTested": "2025-07-13T14:06:40.557Z",
+          "coverage": 100
+        },
+        "performance-optimization": {
+          "name": "performance-optimization",
+          "description": "Performance optimization features and caching",
+          "covered": true,
+          "testCases": [
+            "baseline-performance",
+            "optimization-features",
+            "caching-system"
+          ],
+          "lastTested": "2025-07-13T14:06:40.557Z",
+          "coverage": 100
+        },
+        "iteration-optimization": {
+          "name": "iteration-optimization",
+          "description": "Batch processing and parallel execution capabilities",
+          "covered": true,
+          "testCases": [
+            "parallel-execution",
+            "memory-management"
+          ],
+          "lastTested": "2025-07-13T14:06:40.557Z",
+          "coverage": 66.66666666666666
+        },
+        "bootstrap-validation": {
+          "name": "bootstrap-validation",
+          "description": "Bootstrap validation and multi-stage compilation",
+          "covered": true,
+          "testCases": [
+            "bootstrap-validation",
+            "complete-workflow"
+          ],
+          "lastTested": "2025-07-13T14:06:40.557Z",
+          "coverage": 100
+        }
+      },
+      "scenarios": {
+        "basic-grammar-parsing": {
+          "name": "basic-grammar-parsing",
+          "description": "Parse simple grammar definitions",
+          "covered": true,
+          "testCases": [
+            "self-parse-basic"
+          ],
+          "expectedBehavior": "Successfully parse TPEG grammar files",
+          "actualBehavior": "Parsing works correctly",
+          "passed": true
+        },
+        "code-generation": {
+          "name": "code-generation",
+          "description": "Generate TypeScript parser code",
+          "covered": true,
+          "testCases": [
+            "code-generation"
+          ],
+          "expectedBehavior": "Generate functional TypeScript code",
+          "actualBehavior": "Code generation works correctly",
+          "passed": true
+        },
+        "self-hosting": {
+          "name": "self-hosting",
+          "description": "Complete self-hosting capability",
+          "covered": true,
+          "testCases": [
+            "self-hosting-loop"
+          ],
+          "expectedBehavior": "Generated parser can parse original grammar",
+          "actualBehavior": "Self-hosting works correctly",
+          "passed": true
+        }
+      },
+      "requirements": {
+        "REQ-001": {
+          "id": "REQ-001",
+          "description": "System must support self-transpilation",
+          "covered": true,
+          "testCases": [
+            "self-parse-basic",
+            "code-generation"
+          ],
+          "priority": "high",
+          "status": "passed"
+        },
+        "REQ-002": {
+          "id": "REQ-002",
+          "description": "System must handle errors gracefully",
+          "covered": true,
+          "testCases": [
+            "error-detection",
+            "recovery-mechanisms"
+          ],
+          "priority": "high",
+          "status": "passed"
+        },
+        "REQ-003": {
+          "id": "REQ-003",
+          "description": "System must provide performance optimization",
+          "covered": true,
+          "testCases": [
+            "baseline-performance",
+            "optimization-features"
+          ],
+          "priority": "medium",
+          "status": "passed"
+        },
+        "REQ-004": {
+          "id": "REQ-004",
+          "description": "System must support batch processing",
+          "covered": true,
+          "testCases": [
+            "batch-processing",
+            "parallel-execution"
+          ],
+          "priority": "medium",
+          "status": "passed"
+        },
+        "REQ-005": {
+          "id": "REQ-005",
+          "description": "System must validate bootstrap process",
+          "covered": true,
+          "testCases": [
+            "bootstrap-validation"
+          ],
+          "priority": "low",
+          "status": "passed"
+        }
+      },
+      "overall": {
+        "featuresCovered": 5,
+        "totalFeatures": 5,
+        "scenariosCovered": 3,
+        "totalScenarios": 3,
+        "requirementsCovered": 5,
+        "totalRequirements": 5
+      }
+    },
+    "quality": {
+      "testDistribution": {
+        "unitTests": 0,
+        "integrationTests": 15,
+        "systemTests": 0,
+        "performanceTests": 0
+      },
+      "testQuality": {
+        "averageAssertions": 6.466666666666667,
+        "averageTestLength": 106.8,
+        "duplicateTests": 2,
+        "flakinesss": 6.25,
+        "maintainability": 79.61538461538461
+      },
+      "testEffectiveness": {
+        "bugDetectionRate": 93.75,
+        "falsePositiveRate": 0.625,
+        "testExecution": {
+          "averageTime": 7.792788866666667,
+          "totalTime": 116.891833,
+          "slowestTests": [
+            "Stress Testing (31.73ms)",
+            "Basic Self-Parse (14.58ms)",
+            "Complete Workflow (8.47ms)",
+            "Memory Management (8.16ms)",
+            "Baseline Performance (7.83ms)"
+          ]
+        }
+      },
+      "recommendations": []
+    },
+    "summary": {
+      "grade": "A",
+      "score": 105,
+      "passedThresholds": 4,
+      "totalThresholds": 4,
+      "criticalGaps": [],
+      "strengths": [
+        "Good statement coverage",
+        "Good function coverage"
+      ],
+      "weaknesses": [
+        "Duplicate tests detected"
+      ],
+      "nextSteps": [
+        "Continuous monitoring of coverage metrics"
+      ]
+    },
+    "recommendations": [
+      "Remove duplicate tests"
+    ]
+  },
+  "config": {
+    "sourceDirectory": "./src",
+    "testDirectory": "./src",
+    "includePaths": [
+      "*.ts"
+    ],
+    "excludePaths": [
+      "*.spec.ts",
+      "*.test.ts",
+      "node_modules/**"
+    ],
+    "coverageThreshold": {
+      "statements": 70,
+      "branches": 60,
+      "functions": 70,
+      "lines": 70
+    },
+    "enableFunctionalCoverage": true,
+    "enableQualityAnalysis": true,
+    "outputPath": "./task9-coverage-results.json",
+    "reportFormat": "json"
+  }
+}
