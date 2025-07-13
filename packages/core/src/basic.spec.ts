@@ -445,7 +445,8 @@ describe("literal parser", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.message).toContain("Unexpected character");
+        expect(result.error.message).toContain("Expected");
+        expect(result.error.message).toContain("but found");
         expect(result.error.pos).toEqual({
           offset: 2, // Position of "ば"
           column: 2,
@@ -461,7 +462,8 @@ describe("literal parser", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.message).toContain("Unexpected character");
+        expect(result.error.message).toContain("Expected");
+        expect(result.error.message).toContain("but found");
         expect(result.error.pos).toEqual({
           offset: 2, // Position of second emoji
           column: 1, // Second character for display
