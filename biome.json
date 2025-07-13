@@ -7,7 +7,17 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "ignore": ["node_modules", "out", "dist"]
+    "ignore": [
+      "node_modules",
+      "out",
+      "dist",
+      "**/generated-*.ts",
+      "**/generated-*.js",
+      "**/generated-*.mjs",
+      "**/*.generated.ts",
+      "**/*.generated.js",
+      "**/*.generated.mjs"
+    ]
   },
   "formatter": {
     "enabled": true,
