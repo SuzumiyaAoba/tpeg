@@ -1,11 +1,3 @@
-/**
- * Error Handling System Test for TPEG Self-Transpilation
- *
- * Tests various error scenarios and recovery mechanisms
- * to ensure robust error handling in self-transpilation.
- */
-
-import { readFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 import {
   ErrorHandlingContext,
@@ -26,6 +18,17 @@ interface ErrorTestScenario {
   expectedErrorType: ErrorType;
   expectedRecovery: boolean;
   timeout: number;
+}
+
+interface TestResult {
+  scenario: string;
+  success: boolean;
+  expected: boolean;
+  errors: string[];
+  warnings: string[];
+  testTime: number;
+  errorTypeMatch?: boolean;
+  exception?: boolean;
 }
 
 async function testErrorHandling() {
@@ -96,7 +99,7 @@ async function testErrorHandling() {
   console.log(`🎯 Testing ${scenarios.length} error scenarios...`);
   console.log("");
 
-  const results = [];
+  const results: TestResult[] = [];
 
   for (let i = 0; i < scenarios.length; i++) {
     const scenario = scenarios[i];
@@ -207,7 +210,7 @@ async function testErrorHandling() {
   const unexpectedSuccesses = results.filter(
     (r) => r.success && !r.expected,
   ).length;
-  const exceptions = results.filter((r) => (r as any).exception).length;
+  const exceptions = results.filter((r: TestResult) => r.exception).length;
 
   console.log(`✅ Expected failures: ${expectedFailures}`);
   console.log(`❌ Unexpected successes: ${unexpectedSuccesses}`);
@@ -215,7 +218,7 @@ async function testErrorHandling() {
 
   // Detailed results
   console.log("\n📋 Detailed Results:");
-  results.forEach((result, index) => {
+  results.forEach((result: TestResult, index) => {
     const status = result.success
       ? result.expected
         ? "❌ UNEXPECTED SUCCESS"
@@ -229,9 +232,9 @@ async function testErrorHandling() {
     console.log(`      Errors: ${result.errors.length}`);
     console.log(`      Warnings: ${result.warnings.length}`);
 
-    if ((result as any).errorTypeMatch !== undefined) {
+    if (result.errorTypeMatch !== undefined) {
       console.log(
-        `      Error type match: ${(result as any).errorTypeMatch ? "✅" : "❌"}`,
+        `      Error type match: ${result.errorTypeMatch ? "✅" : "❌"}`,
       );
     }
   });

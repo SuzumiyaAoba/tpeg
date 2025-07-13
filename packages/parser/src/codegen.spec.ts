@@ -5,7 +5,6 @@
 import { describe, expect, test } from "bun:test";
 import { TPEGCodeGenerator, generateTypeScriptParser } from "./codegen";
 import {
-  createAnyChar,
   createCharRange,
   createCharacterClass,
   createChoice,

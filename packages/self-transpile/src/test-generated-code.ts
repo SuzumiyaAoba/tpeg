@@ -73,10 +73,10 @@ async function testGeneratedCode() {
       ];
 
       console.log("\n🔍 Expected Parser Functions:");
-      expectedParsers.forEach((parser) => {
+      for (const parser of expectedParsers) {
         const found = result.code.includes(parser);
         console.log(`   ${found ? "✅" : "❌"} ${parser}`);
-      });
+      }
 
       // Check for memoization
       const hasMemoization = result.code.includes("memoize");

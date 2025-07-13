@@ -162,11 +162,11 @@ export const parseStringLiteral = self_string_literal;
     ];
 
     console.log("🔍 Checking rule coverage:");
-    originalGrammarRules.forEach((rule) => {
+    for (const rule of originalGrammarRules) {
       const expected = `self_${rule}`;
       const found = result.code.includes(expected);
       console.log(`   ${found ? "✅" : "❌"} ${rule} → ${expected}`);
-    });
+    }
 
     console.log("\n🎉 Runtime validation completed!");
 

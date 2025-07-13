@@ -10,7 +10,6 @@ import {
   type FileSystemInterface,
   ModuleResolutionError,
   ModuleResolver,
-  type ResolvedModule,
   createModuleResolver,
 } from "./module-resolver";
 

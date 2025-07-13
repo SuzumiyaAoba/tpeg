@@ -2,7 +2,91 @@
  * Types for TPEG self-transpilation system
  */
 
-import type { Expression, GrammarDefinition } from "tpeg-core";
+import type { GrammarDefinition } from "tpeg-core";
+
+/**
+ * Generic configuration object with string keys
+ */
+export interface ConfigObject {
+  [key: string]: unknown;
+}
+
+/**
+ * Test configuration object
+ */
+export interface TestConfig extends ConfigObject {
+  timeout?: number;
+  retries?: number;
+  verbose?: boolean;
+}
+
+/**
+ * Coverage configuration object
+ */
+export interface CoverageConfig extends ConfigObject {
+  threshold?: number;
+  includeUncovered?: boolean;
+}
+
+/**
+ * Performance statistics object
+ */
+export interface PerformanceStats {
+  memoryUsage: number;
+  executionTime: number;
+  cacheHits: number;
+  cacheMisses: number;
+  parallelProcessingUsed: number;
+  stringBuilderOptimizationUsed: number;
+  [key: string]: number | string | boolean;
+}
+
+/**
+ * Expression types for code generation
+ */
+export interface ExpressionNode {
+  type: string;
+  value?: string;
+  items?: ExpressionNode[];
+  pattern?: ExpressionNode;
+  min?: number;
+  max?: number;
+  name?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Validation result for bootstrap stage
+ */
+export interface ValidationResult {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+  metrics?: {
+    codeLength: number;
+    complexity: number;
+    performance: number;
+  };
+}
+
+/**
+ * Performance grade assessment
+ */
+export interface GradeAssessment {
+  grade: "A" | "B" | "C" | "D" | "F";
+  assessment: string;
+  score: number;
+}
+
+/**
+ * Diagnostic information
+ */
+export interface DiagnosticInfo {
+  timestamp: number;
+  level: "info" | "warning" | "error";
+  message: string;
+  context?: Record<string, unknown>;
+}
 
 /**
  * Result of self-transpilation process

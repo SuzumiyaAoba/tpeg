@@ -1,7 +1,5 @@
 #!/usr/bin/env bun
 
-import { Grammar } from "./index";
-
 /**
  * PEG Parser Demo
  *

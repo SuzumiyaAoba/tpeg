@@ -8,7 +8,12 @@
 import { performance } from "node:perf_hooks";
 import type { GrammarDefinition, RuleDefinition } from "tpeg-core";
 import { generateEtaTypeScriptParser } from "tpeg-generator";
-import type { SelfTranspileConfig, SelfTranspileResult } from "./types";
+import type {
+  ExpressionNode,
+  PerformanceStats,
+  SelfTranspileConfig,
+  SelfTranspileResult,
+} from "./types";
 
 /**
  * Performance optimization configuration
@@ -66,9 +71,11 @@ class MemoryPool<T> {
 
   acquire(): T {
     if (this.pool.length > 0) {
-      const item = this.pool.pop()!;
-      this.reset(item);
-      return item;
+      const item = this.pool.pop();
+      if (item) {
+        this.reset(item);
+        return item;
+      }
     }
     return this.factory();
   }
@@ -118,13 +125,19 @@ class OptimizedStringBuilder {
   }
 }
 
+interface GeneratedCodeResult {
+  code: string;
+  types: string;
+  warnings: string[];
+}
+
 /**
  * Performance-optimized self-transpilation engine
  */
 export class OptimizedSelfTranspiler {
   private cache: Map<string, CacheEntry> = new Map();
   private stringBuilderPool: MemoryPool<OptimizedStringBuilder>;
-  private rulePool: MemoryPool<any>;
+  private rulePool: MemoryPool<Record<string, unknown>>;
   private config: OptimizationConfig;
   private stats: {
     cacheHits: number;
@@ -152,8 +165,12 @@ export class OptimizedSelfTranspiler {
     );
 
     this.rulePool = new MemoryPool(
-      () => ({}) as any,
-      (rule: any) => Object.keys(rule).forEach((key) => delete rule[key]),
+      () => ({}) as Record<string, unknown>,
+      (rule: Record<string, unknown>) => {
+        for (const key of Object.keys(rule)) {
+          delete rule[key];
+        }
+      },
       this.config.memoryPoolSize,
     );
   }
@@ -267,45 +284,46 @@ export class OptimizedSelfTranspiler {
   private async generateCodeOptimized(
     grammar: GrammarDefinition,
     config: Partial<SelfTranspileConfig>,
-  ): Promise<any> {
+  ): Promise<GeneratedCodeResult> {
     const shouldUseParallel =
       this.config.enableParallelProcessing &&
-      grammar.rules.length >= this.config.parallelThreshold;
+      grammar.rules.length > this.config.parallelThreshold;
 
     if (shouldUseParallel) {
       this.stats.parallelProcessingUsed++;
       return this.generateCodeParallel(grammar, config);
     }
-    return this.generateCodeSequential(grammar, config);
-  }
 
-  /**
-   * Sequential code generation with string builder optimization
-   */
-  private async generateCodeSequential(
-    grammar: GrammarDefinition,
-    config: Partial<SelfTranspileConfig>,
-  ): Promise<any> {
     if (this.config.enableStringBuilderOptimization) {
       return this.generateCodeWithStringBuilder(grammar, config);
     }
     // @ts-ignore - Temporary type compatibility
-    return await generateEtaTypeScriptParser(grammar as any, {
+    return await generateEtaTypeScriptParser(grammar as GrammarDefinition, {
       namePrefix: config.namePrefix || "opt_",
       includeTypes: config.includeTypes || true,
-      optimize: config.optimize || true,
-      enableMemoization: config.enableMemoization || true,
-      includeMonitoring: config.includeMonitoring || false,
+      optimize: true,
     });
   }
 
-  /**
-   * Parallel code generation for large grammars
-   */
+  private async generateCodeSequential(
+    grammar: GrammarDefinition,
+    config: Partial<SelfTranspileConfig>,
+  ): Promise<GeneratedCodeResult> {
+    if (this.config.enableStringBuilderOptimization) {
+      return this.generateCodeWithStringBuilder(grammar, config);
+    }
+    // @ts-ignore - Temporary type compatibility
+    return await generateEtaTypeScriptParser(grammar as GrammarDefinition, {
+      namePrefix: config.namePrefix || "seq_",
+      includeTypes: config.includeTypes || true,
+      optimize: false,
+    });
+  }
+
   private async generateCodeParallel(
     grammar: GrammarDefinition,
     config: Partial<SelfTranspileConfig>,
-  ): Promise<any> {
+  ): Promise<GeneratedCodeResult> {
     const chunks = this.partitionGrammar(grammar);
     const promises = chunks.map((chunk) =>
       this.generateCodeSequential(chunk, config),
@@ -315,52 +333,32 @@ export class OptimizedSelfTranspiler {
     return this.mergeGeneratedCode(results);
   }
 
-  /**
-   * String builder optimized code generation
-   */
   private async generateCodeWithStringBuilder(
     grammar: GrammarDefinition,
     config: Partial<SelfTranspileConfig>,
-  ): Promise<any> {
+  ): Promise<GeneratedCodeResult> {
     const builder = this.stringBuilderPool.acquire();
     this.stats.memoryPoolHits++;
 
     try {
       // Generate imports
-      builder.appendLine('import type { Parser } from "tpeg-core";');
+      builder.appendLine('import { memoize } from "./utils";');
       builder.appendLine(
-        'import { charClass, choice, literal, memoize, oneOrMore, sequence, zeroOrMore } from "tpeg-core";',
+        'import { charClass, literal, sequence, choice } from "./combinators";',
       );
       builder.appendLine();
 
-      // Generate header comment
-      builder.appendLine("/**");
-      builder.appendLine(` * Generated TPEG Parser: ${grammar.name}`);
-      builder.appendLine(" * ");
-      builder.appendLine(
-        " * This file was automatically generated from a TPEG grammar.",
-      );
-      builder.appendLine(
-        " * Do not edit this file directly - regenerate from the grammar instead.",
-      );
-      builder.appendLine(" */");
-      builder.appendLine();
-
-      // Generate parser functions
+      // Generate rules
       for (const rule of grammar.rules) {
-        const functionName = `${config.namePrefix || "opt_"}${rule.name}`;
-        builder.appendLine(
-          `export const ${functionName}: Parser<any> = ${this.generateRuleCode(rule, config)};`,
-        );
+        const ruleCode = this.generateRuleCode(rule, config);
+        builder.appendLine(`export const ${rule.name} = ${ruleCode};`);
       }
 
-      const result = {
+      return {
         code: builder.toString(),
         types: "",
         warnings: [],
       };
-
-      return result;
     } finally {
       this.stringBuilderPool.release(builder);
     }
@@ -374,7 +372,7 @@ export class OptimizedSelfTranspiler {
     config: Partial<SelfTranspileConfig>,
   ): string {
     const memoized = config.enableMemoization || true;
-    const ruleCode = this.generateExpressionCode((rule as any).expression);
+    const ruleCode = this.generateExpressionCode(rule.pattern);
 
     return memoized ? `memoize(${ruleCode})` : ruleCode;
   }
@@ -382,7 +380,7 @@ export class OptimizedSelfTranspiler {
   /**
    * Generate code for expressions with optimization
    */
-  private generateExpressionCode(expression: any): string {
+  private generateExpressionCode(expression: ExpressionNode): string {
     if (!expression || typeof expression !== "object") {
       return 'literal("")';
     }
@@ -393,57 +391,69 @@ export class OptimizedSelfTranspiler {
       case "charClass":
         return `charClass("${expression.value}")`;
       case "sequence": {
-        const sequenceItems = expression.items.map((item: any) =>
-          this.generateExpressionCode(item),
+        const sequenceItems = (expression.items || []).map(
+          (item: ExpressionNode) => this.generateExpressionCode(item),
         );
         return `sequence(${sequenceItems.join(", ")})`;
       }
       case "choice": {
-        const choiceItems = expression.items.map((item: any) =>
-          this.generateExpressionCode(item),
+        const choiceItems = (expression.items || []).map(
+          (item: ExpressionNode) => this.generateExpressionCode(item),
         );
         return `choice(${choiceItems.join(", ")})`;
       }
+      case "ruleRef":
+        return expression.name;
+      case "optional":
+        return `choice(${this.generateExpressionCode(expression.item)}, literal(""))`;
       case "zeroOrMore":
-        return `zeroOrMore(${this.generateExpressionCode(expression.expression)})`;
+        return `sequence(${this.generateExpressionCode(expression.item)}, choice(${this.generateExpressionCode(expression.item)}, literal("")))`;
       case "oneOrMore":
-        return `oneOrMore(${this.generateExpressionCode(expression.expression)})`;
+        return `sequence(${this.generateExpressionCode(expression.item)}, zeroOrMore(${this.generateExpressionCode(expression.item)}))`;
       default:
         return 'literal("")';
     }
   }
 
   /**
-   * Apply lazy evaluation optimization
+   * Apply lazy evaluation to grammar
    */
   private applyLazyEvaluation(grammar: GrammarDefinition): void {
-    // Mark unused rules for lazy evaluation
     const usedRules = new Set<string>();
 
     // Find all rule references
-    const findRuleReferences = (expression: any): void => {
+    const findRuleReferences = (expression: ExpressionNode): void => {
       if (expression && typeof expression === "object") {
         if (expression.type === "ruleRef") {
-          usedRules.add(expression.ruleName);
-        } else if (expression.items) {
-          expression.items.forEach(findRuleReferences);
-        } else if (expression.expression) {
-          findRuleReferences(expression.expression);
+          usedRules.add(expression.name);
+        }
+        // Recursively check nested expressions
+        for (const key in expression) {
+          if (Array.isArray(expression[key])) {
+            for (const item of expression[key]) {
+              findRuleReferences(item);
+            }
+          } else if (typeof expression[key] === "object") {
+            findRuleReferences(expression[key]);
+          }
         }
       }
     };
 
     // Start from the first rule (usually the main grammar rule)
     if (grammar.rules.length > 0) {
-      findRuleReferences((grammar.rules[0] as any).expression);
+      const firstRule = grammar.rules[0];
+      if (firstRule) {
+        findRuleReferences(firstRule.pattern);
+      }
     }
 
     // Mark unused rules
-    grammar.rules.forEach((rule) => {
+    for (const rule of grammar.rules) {
       if (!usedRules.has(rule.name)) {
-        (rule as any).lazy = true;
+        (rule as unknown as Record<string, unknown>).lazy = true;
       }
-    });
+    }
   }
 
   /**
@@ -468,33 +478,37 @@ export class OptimizedSelfTranspiler {
   /**
    * Merge generated code from parallel processing
    */
-  private mergeGeneratedCode(results: any[]): any {
+  private mergeGeneratedCode(
+    results: GeneratedCodeResult[],
+  ): GeneratedCodeResult {
     const builder = this.stringBuilderPool.acquire();
 
     try {
       // Merge imports (deduplicate)
       const imports = new Set<string>();
-      results.forEach((result) => {
+      for (const result of results) {
         const lines = result.code.split("\n");
-        lines.forEach((line: string) => {
+        for (const line of lines) {
           if (line.startsWith("import")) {
             imports.add(line);
           }
-        });
-      });
+        }
+      }
 
-      imports.forEach((imp) => builder.appendLine(imp));
+      for (const imp of imports) {
+        builder.appendLine(imp);
+      }
       builder.appendLine();
 
       // Merge generated functions
-      results.forEach((result) => {
+      for (const result of results) {
         const lines = result.code.split("\n");
-        lines.forEach((line: string) => {
+        for (const line of lines) {
           if (line.startsWith("export const")) {
             builder.appendLine(line);
           }
-        });
-      });
+        }
+      }
 
       return {
         code: builder.toString(),
@@ -584,7 +598,7 @@ export class OptimizedSelfTranspiler {
   /**
    * Get performance statistics
    */
-  getStats(): any {
+  getStats(): PerformanceStats {
     return {
       ...this.stats,
       cacheSize: this.cache.size,

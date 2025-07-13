@@ -10,7 +10,6 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import type { Parser } from "tpeg-core";
 import { generateTypeScriptParser, grammarDefinition } from "./index";
 import {
   createCharRange,

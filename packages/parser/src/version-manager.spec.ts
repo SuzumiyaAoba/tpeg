@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import type { GrammarDefinition } from "./types.js";
 import {
-  type ModuleVersion,
   type SemanticVersion,
   VersionCompatibilityError,
   type VersionConstraint,

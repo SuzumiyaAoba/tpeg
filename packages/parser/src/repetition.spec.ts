@@ -17,7 +17,7 @@ import {
   starExpression,
   starOperator,
 } from "./repetition";
-import type { Expression, Optional, Plus, Quantified, Star } from "./types";
+import type { Expression } from "./types";
 
 const pos = { offset: 0, line: 1, column: 1 };
 

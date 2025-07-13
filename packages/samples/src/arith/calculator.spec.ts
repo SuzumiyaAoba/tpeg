@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 import {
-  type ExpressionNode,
   astToString,
   calculate,
   calculateDirect,

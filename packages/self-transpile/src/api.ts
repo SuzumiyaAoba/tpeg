@@ -18,14 +18,13 @@ export * from "./test-runner";
 export * from "./test-coverage";
 export * from "./performance-optimization";
 export * from "./iteration-optimization";
+
+// Import types for internal use
+import type { CoverageConfig, TestConfig } from "./types";
 export * from "./error-handling";
 export * from "./bootstrap-validation";
-
-// Import necessary types and functions for convenience API
-import { readFileSync } from "node:fs";
 import type { TestSuiteResult } from "./comprehensive-test-suite";
 import { runComprehensiveTestSuite } from "./comprehensive-test-suite";
-import { createOptimizedTranspiler } from "./performance-optimization";
 import { selfTranspile } from "./self-transpile";
 import type { CoverageAnalysis } from "./test-coverage";
 import { analyzeCoverage } from "./test-coverage";
@@ -86,7 +85,7 @@ export class TPEGSelfTranspilationSystem {
    * @param config - Optional test configuration
    * @returns Promise resolving to test results
    */
-  async runTests(config?: any): Promise<TestSuiteResult> {
+  async runTests(config?: TestConfig): Promise<TestSuiteResult> {
     if (!this.config.enableTesting) {
       throw new Error("Testing is disabled in system configuration");
     }
@@ -111,7 +110,7 @@ export class TPEGSelfTranspilationSystem {
    */
   async analyzeCoverage(
     testResults: TestSuiteResult,
-    config?: any,
+    config?: CoverageConfig,
   ): Promise<CoverageAnalysis> {
     if (!this.config.enableCoverage) {
       throw new Error("Coverage analysis is disabled in system configuration");

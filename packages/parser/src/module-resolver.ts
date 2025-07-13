@@ -13,13 +13,10 @@
  */
 
 import type {
-  GrammarDefinition,
   ImportStatement,
-  ModularGrammarDefinition,
   ModuleFile,
   QualifiedIdentifier,
 } from "tpeg-core";
-import { parse as parseCore } from "tpeg-core";
 import { importStatement } from "./module";
 
 // ============================================================================

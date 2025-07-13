@@ -8,11 +8,7 @@
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
-import type {
-  TestCategoryResult,
-  TestResult,
-  TestSuiteResult,
-} from "./comprehensive-test-suite";
+import type { TestSuiteResult } from "./comprehensive-test-suite";
 
 /**
  * Coverage analysis configuration
@@ -1489,9 +1485,9 @@ ${analysis.recommendations.map((rec) => `- ${rec}`).join("\n")}
     }
 
     console.log("\n📋 Recommendations:");
-    analysis.recommendations.forEach((rec) => {
+    for (const rec of analysis.recommendations) {
       console.log(`- ${rec}`);
-    });
+    }
   }
 }
 

@@ -11,7 +11,6 @@ import {
   groupOperator,
   sequenceOperator,
 } from "./composition";
-import type { Choice, Expression, Group, Sequence } from "./types";
 
 const pos = { offset: 0, line: 1, column: 1 };
 

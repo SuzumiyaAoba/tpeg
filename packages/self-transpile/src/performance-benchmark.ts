@@ -5,9 +5,10 @@
  * to identify bottlenecks and measure improvement opportunities.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 import { selfTranspile } from "./self-transpile";
+import type { ConfigObject } from "./types";
 
 interface BenchmarkResult {
   testName: string;
@@ -282,7 +283,7 @@ async function runPerformanceBenchmark() {
 async function benchmarkSingleTest(
   testName: string,
   grammarSource: string,
-  config: any,
+  config: ConfigObject,
 ): Promise<BenchmarkResult> {
   const memoryBefore = process.memoryUsage().heapUsed;
   const startTime = performance.now();
@@ -324,7 +325,7 @@ async function benchmarkSingleTest(
 async function benchmarkMemoryUsage(
   testName: string,
   grammarSource: string,
-  config: any,
+  config: ConfigObject,
 ) {
   const memoryBefore = process.memoryUsage().heapUsed;
   let peakMemory = memoryBefore;
@@ -377,7 +378,7 @@ function generateScalingGrammar(ruleCount: number): string {
 
 function analyzePerformanceMetrics(
   results: BenchmarkResult[],
-  iterationResults: any[],
+  iterationResults: ConfigObject[],
 ): PerformanceMetrics {
   const successfulTests = results.filter((r) => r.success);
   const totalTime = results.reduce((sum, r) => sum + r.executionTime, 0);
@@ -489,8 +490,8 @@ function calculatePerformanceGrade(metrics: PerformanceMetrics): {
   if (successRate < 0.9) score -= 20;
   else if (successRate < 0.95) score -= 10;
 
-  let grade;
-  let assessment;
+  let grade: string;
+  let assessment: string;
 
   if (score >= 90) {
     grade = "A";

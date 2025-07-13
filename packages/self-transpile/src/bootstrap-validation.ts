@@ -5,7 +5,7 @@
  * with rollback capabilities, progress tracking, and detailed logging.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 import { createSelfTranspileContext, selfTranspile } from "./self-transpile";
 import type {
@@ -26,6 +26,15 @@ interface BootstrapStage {
     requiredExports: string[];
     requiredFeatures: string[];
   };
+}
+
+interface StageValidationResult {
+  lengthCheck: boolean;
+  exportsCheck: boolean;
+  featuresCheck: boolean;
+  structureCheck: boolean;
+  allPassed: boolean;
+  failedChecks: (string | false)[];
 }
 
 interface StageResult {
@@ -335,7 +344,10 @@ grammar Extended {
 }`;
 }
 
-function validateStageOutput(stage: BootstrapStage, code: string): any {
+function validateStageOutput(
+  stage: BootstrapStage,
+  code: string,
+): StageValidationResult {
   const lengthCheck =
     code.length >= stage.validationCriteria.minCodeLength &&
     code.length <= stage.validationCriteria.maxCodeLength;

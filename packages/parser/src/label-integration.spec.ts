@@ -12,7 +12,6 @@ import type {
   Choice,
   Group,
   LabeledExpression,
-  NegativeLookahead,
   Optional,
   Plus,
   PositiveLookahead,

@@ -17,12 +17,10 @@ import type { Parser } from "tpeg-core";
 import {
   type ExportDeclaration,
   type ImportStatement,
-  type ModuleInfo,
   type QualifiedIdentifier,
   choice,
   createExportDeclaration,
   createImportStatement,
-  createModuleInfo,
   createQualifiedIdentifier,
   literal,
   map,
@@ -30,7 +28,7 @@ import {
   seq as sequence,
   star as zeroOrMore,
 } from "tpeg-core";
-import { GRAMMAR_KEYWORDS, GRAMMAR_SYMBOLS } from "./constants";
+import { GRAMMAR_SYMBOLS } from "./constants";
 import { identifier } from "./identifier";
 import { stringLiteral } from "./string-literal";
 import { optionalWhitespace, whitespace } from "./whitespace-utils";

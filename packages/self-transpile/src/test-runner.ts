@@ -5,13 +5,8 @@
  * the comprehensive test suite with various options and configurations.
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { performance } from "node:perf_hooks";
-import {
-  ComprehensiveTestSuite,
-  runComprehensiveTestSuite,
-} from "./comprehensive-test-suite";
+import { writeFileSync } from "node:fs";
+import { runComprehensiveTestSuite } from "./comprehensive-test-suite";
 import type { TestSuiteResult } from "./comprehensive-test-suite";
 
 /**

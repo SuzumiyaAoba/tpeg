@@ -1,11 +1,3 @@
-/**
- * TPEG Self-Transpilation Implementation
- *
- * Provides the core functionality for self-transpiling TPEG grammar definitions.
- * This allows TPEG to parse and generate parsers for its own grammar syntax.
- */
-
-import type { Parser } from "tpeg-core";
 import { parse } from "tpeg-core";
 import type { GrammarDefinition } from "tpeg-core";
 import { generateEtaTypeScriptParser } from "tpeg-generator";
@@ -131,7 +123,7 @@ export async function selfTranspile(
     const generationResult = await withErrorHandling(
       async () => {
         // @ts-ignore - Temporary type compatibility workaround
-        return await generateEtaTypeScriptParser(grammar as any, {
+        return await generateEtaTypeScriptParser(grammar as GrammarDefinition, {
           namePrefix: finalConfig.namePrefix || "self_",
           includeTypes: finalConfig.includeTypes,
           optimize: finalConfig.optimize,

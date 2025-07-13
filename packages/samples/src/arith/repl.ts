@@ -1,12 +1,6 @@
 #!/usr/bin/env bun
 
-import {
-  astToString,
-  calculate,
-  calculateDirect,
-  examples,
-  parseToAST,
-} from "./calculator";
+import { astToString, calculate, examples, parseToAST } from "./calculator";
 
 /**
  * Simple REPL implementation for the TPEG Arithmetic Calculator.

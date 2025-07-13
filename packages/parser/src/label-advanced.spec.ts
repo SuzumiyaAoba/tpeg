@@ -6,7 +6,6 @@
 
 import { describe, expect, test } from "bun:test";
 import type { Pos } from "tpeg-core";
-import { characterClass } from "./character-class";
 import { expression } from "./composition";
 import { withOptionalLabel } from "./label";
 import { stringLiteral } from "./string-literal";
@@ -14,8 +13,6 @@ import type {
   Choice,
   Group,
   LabeledExpression,
-  NegativeLookahead,
-  Optional,
   Plus,
   PositiveLookahead,
   Quantified,

@@ -6,7 +6,7 @@
  */
 
 import { performance } from "node:perf_hooks";
-import type { GrammarDefinition } from "tpeg-core";
+import type { ConfigObject, DiagnosticInfo } from "./types";
 
 /**
  * Error classification system for TPEG self-transpilation
@@ -78,7 +78,7 @@ export interface RecoveryResult {
   timeTaken: number;
   message: string;
   warnings: string[];
-  data?: any;
+  data?: ConfigObject;
 }
 
 /**
@@ -116,7 +116,7 @@ export class ErrorHandlingContext {
   private errors: TPEGError[] = [];
   private recoveryAttempts: Map<string, number> = new Map();
   private config: ErrorHandlingConfig;
-  private diagnostics: Map<string, any> = new Map();
+  private diagnostics: Map<string, DiagnosticInfo> = new Map();
 
   constructor(config: Partial<ErrorHandlingConfig> = {}) {
     this.config = { ...DEFAULT_ERROR_CONFIG, ...config };
@@ -294,8 +294,8 @@ export class ErrorHandlingContext {
    */
   async attemptRecovery(
     error: TPEGError,
-    recoveryFunction: () => Promise<any>,
-    fallbackData?: any,
+    recoveryFunction: () => Promise<ConfigObject>,
+    fallbackData?: ConfigObject,
   ): Promise<RecoveryResult> {
     if (!this.config.enableRecovery || !error.recoverable) {
       return {
@@ -349,8 +349,8 @@ export class ErrorHandlingContext {
   private async executeRecoveryStrategy(
     strategy: RecoveryStrategy,
     error: TPEGError,
-    recoveryFunction: () => Promise<any>,
-    fallbackData: any,
+    recoveryFunction: () => Promise<ConfigObject>,
+    fallbackData: ConfigObject,
     currentAttempts: number,
   ): Promise<RecoveryResult> {
     console.log(`🔄 Attempting ${strategy} recovery for ${error.type}...`);
@@ -467,7 +467,7 @@ export class ErrorHandlingContext {
   /**
    * Creates a simplified grammar for partial recovery
    */
-  private createSimplifiedGrammar(_error: TPEGError): any {
+  private createSimplifiedGrammar(_error: TPEGError): ConfigObject {
     // This is a simplified fallback grammar
     return {
       name: "SimplifiedFallback",
@@ -483,14 +483,14 @@ export class ErrorHandlingContext {
   /**
    * Gets diagnostic information
    */
-  getDiagnostics(): Map<string, any> {
+  getDiagnostics(): Map<string, DiagnosticInfo> {
     return new Map(this.diagnostics);
   }
 
   /**
    * Adds diagnostic information
    */
-  addDiagnostic(key: string, value: any): void {
+  addDiagnostic(key: string, value: DiagnosticInfo): void {
     this.diagnostics.set(key, value);
   }
 

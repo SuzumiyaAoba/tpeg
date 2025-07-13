@@ -12,6 +12,7 @@ import {
   selfTranspileOptimized,
 } from "./performance-optimization";
 import { selfTranspile } from "./self-transpile";
+import type { SelfTranspileConfig } from "./types";
 
 interface PerformanceTestResult {
   testName: string;
@@ -168,7 +169,7 @@ async function testPerformanceOptimization() {
 async function compareBasicPerformance(
   testName: string,
   grammarSource: string,
-  config: any,
+  config: Partial<SelfTranspileConfig>,
 ): Promise<PerformanceTestResult> {
   // Baseline test
   const baselineStart = performance.now();
@@ -599,8 +600,8 @@ function calculateOptimizationGrade(
   // Success rate scoring (30% of total)
   score += successRate * 30;
 
-  let grade;
-  let assessment;
+  let grade: string;
+  let assessment: string;
 
   if (score >= 90) {
     grade = "A+";

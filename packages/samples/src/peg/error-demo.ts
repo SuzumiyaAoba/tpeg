@@ -1,15 +1,6 @@
 import { spaces, whitespace } from "tpeg-combinator";
-import type { ParseResult, Parser } from "tpeg-core";
-import {
-  any,
-  choice,
-  lit,
-  map,
-  oneOrMore,
-  parse,
-  seq,
-  zeroOrMore,
-} from "tpeg-core";
+import type { ParseResult } from "tpeg-core";
+import { choice, lit, oneOrMore, parse, seq } from "tpeg-core";
 
 // Define a custom ParseError interface
 interface DemoParseError {

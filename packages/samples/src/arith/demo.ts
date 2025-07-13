@@ -4,7 +4,6 @@ import {
   astToString,
   calculate,
   calculateDirect,
-  examples,
   parseToAST,
   runExamples,
 } from "./calculator";

@@ -212,7 +212,7 @@ async function testSelfHostingLoop() {
 
     // Detailed iteration summary
     console.log("\n📋 Iteration Summary:");
-    iterations.forEach((it) => {
+    for (const it of iterations) {
       const status = it.success ? "✅" : "❌";
       const convergence = it.converged ? " 🎯" : "";
       console.log(
@@ -221,7 +221,7 @@ async function testSelfHostingLoop() {
       if (it.errors.length > 0) {
         console.log(`      🚨 ${it.errors.join(", ")}`);
       }
-    });
+    }
 
     // Final assessment
     const result: SelfHostingResult = {

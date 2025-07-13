@@ -1,21 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import {
-  between,
-  int,
-  labeled,
-  memoize,
-  number,
-  quotedString,
-  recursive,
-  sepBy,
-  sepBy1,
-  takeUntil,
-  token,
-  whitespace,
-  withPosition,
-} from "tpeg-combinator";
-import type { ParseSuccess, Parser } from "tpeg-core";
-import { choice, literal, map, parse, seq } from "tpeg-core";
+import { number, quotedString, sepBy, token } from "tpeg-combinator";
+import { literal, parse } from "tpeg-core";
 
 describe("TPEG Samples Integration Tests", () => {
   describe("JSON Parser Integration", () => {

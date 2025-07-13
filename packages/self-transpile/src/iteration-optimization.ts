@@ -8,9 +8,12 @@
 
 import { cpus } from "node:os";
 import { performance } from "node:perf_hooks";
-import { Worker } from "node:worker_threads";
 import { createOptimizedTranspiler } from "./performance-optimization";
-import type { SelfTranspileConfig, SelfTranspileResult } from "./types";
+import type {
+  ConfigObject,
+  SelfTranspileConfig,
+  SelfTranspileResult,
+} from "./types";
 
 /**
  * Iteration optimization configuration
@@ -70,7 +73,7 @@ const DEFAULT_ITERATION_CONFIG: IterationOptimizationConfig = {
  */
 export class IterationOptimizer {
   private config: IterationOptimizationConfig;
-  private transpiler: any;
+  private transpiler: ConfigObject;
   private stats: IterationStats;
   private batchSizeHistory: number[] = [];
   private performanceHistory: number[] = [];
@@ -671,7 +674,7 @@ export async function processIterationsOptimized(
 ): Promise<{
   results: SelfTranspileResult[];
   stats: IterationStats;
-  batchResults: any[];
+  batchResults: ConfigObject[];
 }> {
   const optimizer = createIterationOptimizer(config);
   return optimizer.processIterations(iterations);

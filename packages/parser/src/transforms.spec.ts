@@ -9,7 +9,6 @@ import { describe, expect, it } from "bun:test";
 import { parse } from "tpeg-core";
 import type { Pos } from "tpeg-core";
 import {
-  functionBody,
   parameterList,
   parameterType,
   returnTypeSpec,

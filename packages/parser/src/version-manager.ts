@@ -1,4 +1,4 @@
-import type { GrammarDefinition, RuleDefinition } from "./types.js";
+import type { GrammarDefinition } from "./types.js";
 
 // Module system types (temporary until proper package structure)
 interface ModuleInfo {

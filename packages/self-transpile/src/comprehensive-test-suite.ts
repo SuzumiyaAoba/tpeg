@@ -8,14 +8,11 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
-import {
-  ErrorHandlingContext,
-  ErrorType,
-  withErrorHandling,
-} from "./error-handling";
+import { ErrorHandlingContext, withErrorHandling } from "./error-handling";
 import { createIterationOptimizer } from "./iteration-optimization";
 import { createOptimizedTranspiler } from "./performance-optimization";
 import { selfTranspile } from "./self-transpile";
+import type { ConfigObject } from "./types";
 
 /**
  * Test category definitions for comprehensive testing
@@ -53,7 +50,7 @@ export interface TestResult {
   duration: number;
   memoryUsage: number;
   errorMessage?: string;
-  details?: any;
+  details?: ConfigObject;
   score: number; // Score out of 100
   grade: "A" | "B" | "C" | "D" | "F";
   warnings: string[];
@@ -1803,9 +1800,9 @@ export class ComprehensiveTestSuite {
 
     if (criticalFailures.length > 0) {
       summary += "\nCRITICAL FAILURES:\n";
-      criticalFailures.forEach((cat) => {
+      for (const cat of criticalFailures) {
         summary += `- ${cat.categoryName}: ${cat.failedTests} failed tests\n`;
-      });
+      }
     }
 
     if (allWarnings.length > 0) {
@@ -1813,9 +1810,9 @@ export class ComprehensiveTestSuite {
     }
 
     summary += "\nCategory Breakdown:\n";
-    categories.forEach((cat) => {
+    for (const cat of categories) {
       summary += `- ${cat.categoryName}: ${cat.grade} (${cat.score.toFixed(1)}/100)\n`;
-    });
+    }
 
     return summary;
   }
@@ -1890,18 +1887,18 @@ export class ComprehensiveTestSuite {
     );
 
     console.log("\n📋 Category Results:");
-    Object.values(this.results.categoryResults).forEach((cat) => {
+    for (const cat of Object.values(this.results.categoryResults)) {
       const status = cat.failedTests === 0 ? "✅" : "❌";
       console.log(
         `${status} ${cat.categoryName}: ${cat.grade} (${cat.score.toFixed(1)}/100) - ${cat.passedTests}/${cat.totalTests} passed`,
       );
-    });
+    }
 
     if (this.results.recommendations.length > 0) {
       console.log("\n📋 Recommendations:");
-      this.results.recommendations.forEach((rec) => {
+      for (const rec of this.results.recommendations) {
         console.log(`- ${rec}`);
-      });
+      }
     }
 
     console.log(`\n${this.results.summary}`);

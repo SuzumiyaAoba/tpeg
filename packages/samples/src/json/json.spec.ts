@@ -1,32 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { parse as originalParse } from "tpeg-core";
 import type { ParseResult, Pos } from "tpeg-core";
 import { jsonParser, parseJSON } from "./json";
-import type { JSONArray, JSONObject, JSONValue, Parser } from "./json";
-
-// Import helpers for testing internal components
-import {
-  between,
-  memoize,
-  number as numberParser,
-  quotedString,
-  recursive,
-  sepBy,
-  token,
-  whitespace,
-} from "tpeg-combinator";
-
-import {
-  charClass,
-  choice,
-  literal,
-  map,
-  notPredicate,
-  oneOrMore,
-  optional,
-  seq,
-  zeroOrMore,
-} from "tpeg-core";
+import type { JSONObject, Parser } from "./json";
 
 // Type for extended global object for testing
 interface ExtendedGlobal {
