@@ -318,6 +318,7 @@ export type Expression =
   | StringLiteral
   | CharacterClass
   | Identifier
+  | QualifiedIdentifier
   | AnyChar
   | Sequence
   | Choice
@@ -420,6 +421,154 @@ export interface TransformSet {
 export interface TransformDefinition {
   type: "TransformDefinition";
   transformSet: TransformSet;
+}
+
+// ============================================================================
+// Module System Types
+// ============================================================================
+
+/**
+ * Represents an import statement in TPEG module system.
+ * 
+ * Supports various import patterns:
+ * - Simple import: `import "module.tpeg" as alias`
+ * - Selective import: `import "module.tpeg" { rule1, rule2 }`
+ * - Versioned import: `import "module.tpeg" version "^1.0" as alias`
+ * 
+ * @example
+ * ```typescript
+ * const importStmt: ImportStatement = {
+ *   type: "ImportStatement",
+ *   modulePath: "base.tpeg",
+ *   alias: "base",
+ *   selective: undefined,
+ *   version: undefined
+ * };
+ * ```
+ */
+export interface ImportStatement {
+  /** The node type identifier */
+  type: "ImportStatement";
+  /** The path to the module being imported */
+  modulePath: string;
+  /** Optional alias for the imported module */
+  alias?: string;
+  /** Optional selective import list (specific rules to import) */
+  selective?: string[];
+  /** Optional version constraint for the import */
+  version?: string;
+}
+
+/**
+ * Represents an export declaration in TPEG module system.
+ * 
+ * Controls which rules are exported from a module:
+ * - Default: all rules are exported
+ * - Explicit: only specified rules are exported
+ * 
+ * @example
+ * ```typescript
+ * const exportDecl: ExportDeclaration = {
+ *   type: "ExportDeclaration",
+ *   rules: ["identifier", "whitespace", "number"]
+ * };
+ * ```
+ */
+export interface ExportDeclaration {
+  /** The node type identifier */
+  type: "ExportDeclaration";
+  /** List of rule names to export */
+  rules: string[];
+}
+
+/**
+ * Represents module-level metadata and dependencies.
+ * 
+ * @example
+ * ```typescript
+ * const moduleInfo: ModuleInfo = {
+ *   type: "ModuleInfo",
+ *   namespace: "Math.Core",
+ *   dependencies: ["base.tpeg", "utils.tpeg"],
+ *   conflicts: ["legacy.tpeg"],
+ *   version: "1.0.0"
+ * };
+ * ```
+ */
+export interface ModuleInfo {
+  /** The node type identifier */
+  type: "ModuleInfo";
+  /** Optional namespace for the module */
+  namespace?: string;
+  /** List of required dependencies */
+  dependencies?: string[];
+  /** List of conflicting modules */
+  conflicts?: string[];
+  /** Module version */
+  version?: string;
+}
+
+/**
+ * Represents a qualified identifier with module prefix.
+ * 
+ * Used for referencing rules from imported modules:
+ * - `base.identifier` - rule from base module
+ * - `Math.Core.expression` - rule from namespaced module
+ * 
+ * @example
+ * ```typescript
+ * const qualifiedId: QualifiedIdentifier = {
+ *   type: "QualifiedIdentifier",
+ *   module: "base",
+ *   name: "identifier"
+ * };
+ * ```
+ */
+export interface QualifiedIdentifier {
+  /** The node type identifier */
+  type: "QualifiedIdentifier";
+  /** The module prefix */
+  module: string;
+  /** The rule name within the module */
+  name: string;
+}
+
+/**
+ * Extended grammar definition with module system support.
+ * 
+ * Includes import statements, export declarations, and module metadata
+ * in addition to the standard grammar components.
+ */
+export interface ModularGrammarDefinition extends Omit<GrammarDefinition, 'type'> {
+  /** The node type identifier */
+  type: "ModularGrammarDefinition";
+  /** Import statements for this grammar */
+  imports?: ImportStatement[];
+  /** Export declaration for this grammar */
+  exports?: ExportDeclaration;
+  /** Module metadata */
+  moduleInfo?: ModuleInfo;
+  /** Optional parent grammar this extends */
+  extends?: string;
+}
+
+/**
+ * Represents a complete TPEG module file.
+ * 
+ * A module file can contain multiple grammar definitions,
+ * import statements, and shared module metadata.
+ */
+export interface ModuleFile {
+  /** The node type identifier */
+  type: "ModuleFile";
+  /** The file path of this module */
+  filePath: string;
+  /** Import statements at module level */
+  imports: ImportStatement[];
+  /** Grammar definitions in this module */
+  grammars: (GrammarDefinition | ModularGrammarDefinition)[];
+  /** Module-level metadata */
+  moduleInfo?: ModuleInfo;
 }
 
 /**
@@ -535,6 +684,28 @@ export const createCharRange = (start: string, end?: string): CharRange =>
  */
 export const createIdentifier = (name: string): Identifier => ({
   type: "Identifier",
+  name,
+});
+
+/**
+ * Create a QualifiedIdentifier AST node.
+ *
+ * @param module - The module prefix
+ * @param name - The rule name within the module
+ * @returns A new QualifiedIdentifier AST node
+ *
+ * @example
+ * ```typescript
+ * const qualifiedId = createQualifiedIdentifier("base", "identifier");
+ * // Returns: { type: "QualifiedIdentifier", module: "base", name: "identifier" }
+ * ```
+ */
+export const createQualifiedIdentifier = (
+  module: string,
+  name: string,
+): QualifiedIdentifier => ({
+  type: "QualifiedIdentifier",
+  module,
   name,
 });
 
@@ -828,3 +999,130 @@ export const createGrammarDefinition = (
   rules,
   transforms,
 });
+
+// ============================================================================
+// Module System Factory Functions
+// ============================================================================
+
+/**
+ * Create an ImportStatement AST node.
+ *
+ * @param modulePath - The path to the module being imported
+ * @param alias - Optional alias for the imported module
+ * @param selective - Optional selective import list
+ * @param version - Optional version constraint
+ * @returns A new ImportStatement AST node
+ */
+export const createImportStatement = (
+  modulePath: string,
+  alias?: string,
+  selective?: string[],
+  version?: string,
+): ImportStatement => {
+  const result: ImportStatement = {
+    type: "ImportStatement",
+    modulePath,
+  };
+  if (alias !== undefined) result.alias = alias;
+  if (selective !== undefined) result.selective = selective;
+  if (version !== undefined) result.version = version;
+  return result;
+};
+
+/**
+ * Create an ExportDeclaration AST node.
+ *
+ * @param rules - List of rule names to export
+ * @returns A new ExportDeclaration AST node
+ */
+export const createExportDeclaration = (rules: string[]): ExportDeclaration => ({
+  type: "ExportDeclaration",
+  rules,
+});
+
+/**
+ * Create a ModuleInfo AST node.
+ *
+ * @param namespace - Optional namespace for the module
+ * @param dependencies - List of required dependencies
+ * @param conflicts - List of conflicting modules
+ * @param version - Module version
+ * @returns A new ModuleInfo AST node
+ */
+export const createModuleInfo = (
+  namespace?: string,
+  dependencies?: string[],
+  conflicts?: string[],
+  version?: string,
+): ModuleInfo => {
+  const result: ModuleInfo = {
+    type: "ModuleInfo",
+  };
+  if (namespace !== undefined) result.namespace = namespace;
+  if (dependencies !== undefined) result.dependencies = dependencies;
+  if (conflicts !== undefined) result.conflicts = conflicts;
+  if (version !== undefined) result.version = version;
+  return result;
+};
+
+/**
+ * Create a ModularGrammarDefinition AST node.
+ *
+ * @param name - The name of the grammar
+ * @param annotations - Grammar-level annotations
+ * @param rules - The rules that make up this grammar
+ * @param transforms - Transform definitions for this grammar
+ * @param imports - Import statements for this grammar
+ * @param exports - Export declaration for this grammar
+ * @param moduleInfo - Module metadata
+ * @param extendsGrammar - Optional parent grammar this extends
+ * @returns A new ModularGrammarDefinition AST node
+ */
+export const createModularGrammarDefinition = (
+  name: string,
+  annotations: GrammarAnnotation[] = [],
+  rules: RuleDefinition[] = [],
+  transforms: TransformDefinition[] = [],
+  imports?: ImportStatement[],
+  exports?: ExportDeclaration,
+  moduleInfo?: ModuleInfo,
+  extendsGrammar?: string,
+): ModularGrammarDefinition => {
+  const result: ModularGrammarDefinition = {
+    type: "ModularGrammarDefinition",
+    name,
+    annotations,
+    rules,
+    transforms,
+  };
+  if (imports !== undefined) result.imports = imports;
+  if (exports !== undefined) result.exports = exports;
+  if (moduleInfo !== undefined) result.moduleInfo = moduleInfo;
+  if (extendsGrammar !== undefined) result.extends = extendsGrammar;
+  return result;
+};
+
+/**
+ * Create a ModuleFile AST node.
+ *
+ * @param filePath - The file path of this module
+ * @param imports - Import statements at module level
+ * @param grammars - Grammar definitions in this module
+ * @param moduleInfo - Module-level metadata
+ * @returns A new ModuleFile AST node
+ */
+export const createModuleFile = (
+  filePath: string,
+  imports: ImportStatement[] = [],
+  grammars: (GrammarDefinition | ModularGrammarDefinition)[] = [],
+  moduleInfo?: ModuleInfo,
+): ModuleFile => {
+  const result: ModuleFile = {
+    type: "ModuleFile",
+    filePath,
+    imports,
+    grammars,
+  };
+  if (moduleInfo !== undefined) result.moduleInfo = moduleInfo;
+  return result;
+};

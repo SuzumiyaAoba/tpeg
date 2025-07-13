@@ -122,3 +122,15 @@ export const basicSyntax: Parser<BasicSyntaxNode> = coreChoice(
  * ```
  */
 export const tpegExpression = expression();
+
+// Export module system parsers
+export * from "./module";
+
+// Export module resolution engine  
+export * from "./module-resolver";
+
+// Export namespace management system
+export * from "./namespace-manager";
+
+// Export version management system
+export * from "./version-manager";
