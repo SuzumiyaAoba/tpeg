@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "bun:test";
+import type { ImportStatement } from "tpeg-core";
 import { type FileSystemInterface, ModuleResolver } from "./module-resolver.js";
 import { NamespaceManager } from "./namespace-manager.js";
 import { VersionManager } from "./version-manager.js";
@@ -124,8 +125,8 @@ describe("Module System Integration Tests", () => {
       try {
         await resolver.resolveModule("/test/moduleA.tpeg");
         expect(false).toBe(true); // Should not reach here
-      } catch (error: any) {
-        expect(error.name).toBe("CircularDependencyError");
+      } catch (error: unknown) {
+        expect((error as Error).name).toBe("CircularDependencyError");
       }
     });
 
@@ -135,7 +136,7 @@ describe("Module System Integration Tests", () => {
         name: string,
         rules: string[],
         exports: string[],
-        imports: any[] = [],
+        imports: ImportStatement[] = [],
       ) => ({
         type: "ModuleFile" as const,
         filePath: `${name}.tpeg`,
@@ -148,7 +149,7 @@ describe("Module System Integration Tests", () => {
             rules: rules.map((rule) => ({
               type: "RuleDefinition" as const,
               name: rule,
-              pattern: { type: "Identifier", name: "test" },
+              pattern: { type: "Identifier" as const, name: "test" },
             })),
             exports:
               exports.length > 0
@@ -203,7 +204,7 @@ describe("Module System Integration Tests", () => {
       const createVersionModuleFile = (
         name: string,
         version: string,
-        dependencies: any[] = [],
+        dependencies: ImportStatement[] = [],
       ) => ({
         type: "ModuleFile" as const,
         filePath: `${name}.tpeg`,
@@ -304,8 +305,8 @@ describe("Module System Integration Tests", () => {
       try {
         versionManager.parseVersion("invalid-version");
         expect(false).toBe(true); // Should not reach here
-      } catch (error: any) {
-        expect(error.name).toBe("VersionParseError");
+      } catch (error: unknown) {
+        expect((error as Error).name).toBe("VersionParseError");
       }
 
       // Namespace resolution error
@@ -315,8 +316,8 @@ describe("Module System Integration Tests", () => {
           "main",
         );
         expect(false).toBe(true); // Should not reach here
-      } catch (error: any) {
-        expect(error.name).toBe("QualifiedNameResolutionError");
+      } catch (error: unknown) {
+        expect((error as Error).name).toBe("QualifiedNameResolutionError");
       }
 
       // Version compatibility error
@@ -346,8 +347,8 @@ describe("Module System Integration Tests", () => {
       try {
         versionManager.validateDependencies("test");
         expect(false).toBe(true); // Should not reach here
-      } catch (error: any) {
-        expect(error.name).toBe("VersionCompatibilityError");
+      } catch (error: unknown) {
+        expect((error as Error).name).toBe("VersionCompatibilityError");
       }
     });
   });
@@ -356,7 +357,7 @@ describe("Module System Integration Tests", () => {
     it("should handle multiple modules efficiently", () => {
       // Test with multiple modules
       const moduleCount = 10;
-      const modules = [];
+      const modules: any[] = [];
 
       for (let i = 0; i < moduleCount; i++) {
         const moduleFile = {
@@ -372,7 +373,7 @@ describe("Module System Integration Tests", () => {
                 {
                   type: "RuleDefinition" as const,
                   name: `rule${i}`,
-                  pattern: { type: "Identifier", name: "test" },
+                  pattern: { type: "Identifier" as const, name: "test" },
                 },
               ],
             },

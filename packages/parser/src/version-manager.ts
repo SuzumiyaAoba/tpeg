@@ -95,8 +95,9 @@ export class VersionManager {
    * セマンティックバージョンを解析
    */
   parseVersion(versionString: string): SemanticVersion {
-    if (this.versionCache.has(versionString)) {
-      return this.versionCache.get(versionString)!;
+    const cached = this.versionCache.get(versionString);
+    if (cached) {
+      return cached;
     }
 
     const cleanVersion = versionString.replace(/^v/, "");
@@ -335,12 +336,15 @@ export class VersionManager {
     // 競合をチェック
     for (const conflictModule of moduleVersion.conflicts) {
       if (this.moduleVersions.has(conflictModule)) {
-        throw new VersionCompatibilityError(
-          conflictModule,
-          "none",
-          this.formatVersion(this.moduleVersions.get(conflictModule)?.version),
-          "Conflicting module detected",
-        );
+        const conflictingModule = this.moduleVersions.get(conflictModule);
+        if (conflictingModule) {
+          throw new VersionCompatibilityError(
+            conflictModule,
+            "none",
+            this.formatVersion(conflictingModule.version),
+            "Conflicting module detected",
+          );
+        }
       }
     }
   }

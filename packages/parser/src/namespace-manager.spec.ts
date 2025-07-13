@@ -4,7 +4,7 @@ import {
   NamespaceManager,
   QualifiedNameResolutionError,
 } from "./namespace-manager.js";
-import type { GrammarDefinition, RuleDefinition } from "./types.js";
+import type { Expression, GrammarDefinition, RuleDefinition } from "./types.js";
 
 // テスト用の型定義
 interface ImportStatement {
@@ -60,7 +60,7 @@ describe("NamespaceManager", () => {
   // テストデータ作成ヘルパー
   const createRule = (
     name: string,
-    pattern: any = { type: "Identifier", name: "test" },
+    pattern: Expression = { type: "Identifier", name: "test" },
   ): RuleDefinition => ({
     type: "RuleDefinition",
     name,

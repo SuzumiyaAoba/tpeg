@@ -202,7 +202,7 @@ export class ModuleResolver {
    * @returns Promise<Map<string, string[]>> Dependency graph
    */
   async getDependencyGraph(modulePath: string): Promise<Map<string, string[]>> {
-    const _resolved = await this.resolveModule(modulePath);
+    await this.resolveModule(modulePath);
     const graph = new Map<string, string[]>();
 
     // Build graph from cache
