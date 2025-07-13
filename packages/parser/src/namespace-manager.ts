@@ -1,4 +1,4 @@
-import type { GrammarDefinition, RuleDefinition } from './types.js';
+import type { GrammarDefinition, RuleDefinition } from "./types.js";
 
 // Module system types (temporary until proper package structure)
 interface ImportStatement {
@@ -28,7 +28,7 @@ interface QualifiedIdentifier {
   name: string;
 }
 
-interface ModularGrammarDefinition extends Omit<GrammarDefinition, 'type'> {
+interface ModularGrammarDefinition extends Omit<GrammarDefinition, "type"> {
   type: "ModularGrammarDefinition";
   imports?: ImportStatement[];
   exports?: ExportDeclaration;
@@ -51,10 +51,12 @@ export class NamespaceConflictError extends Error {
   constructor(
     public readonly ruleName: string,
     public readonly conflictingModules: string[],
-    public readonly currentModule: string
+    public readonly currentModule: string,
   ) {
-    super(`Rule '${ruleName}' conflicts between modules: ${conflictingModules.join(', ')} in module '${currentModule}'`);
-    this.name = 'NamespaceConflictError';
+    super(
+      `Rule '${ruleName}' conflicts between modules: ${conflictingModules.join(", ")} in module '${currentModule}'`,
+    );
+    this.name = "NamespaceConflictError";
   }
 }
 
@@ -64,10 +66,10 @@ export class NamespaceConflictError extends Error {
 export class QualifiedNameResolutionError extends Error {
   constructor(
     public readonly qualifiedName: string,
-    public readonly reason: string
+    public readonly reason: string,
   ) {
     super(`Cannot resolve qualified name '${qualifiedName}': ${reason}`);
-    this.name = 'QualifiedNameResolutionError';
+    this.name = "QualifiedNameResolutionError";
   }
 }
 
@@ -108,19 +110,22 @@ export class NamespaceManager {
    * モジュールを登録
    */
   registerModule(moduleFile: ModuleFile): void {
-    const moduleName = moduleFile.moduleInfo?.namespace || this.extractModuleName(moduleFile.filePath);
-    
+    const moduleName =
+      moduleFile.moduleInfo?.namespace ||
+      this.extractModuleName(moduleFile.filePath);
+
     const scope: NamespaceScope = {
       currentModule: moduleName,
       imports: new Map(),
       exports: new Set(),
       localRules: new Set(),
-      availableRules: new Map()
+      availableRules: new Map(),
     };
 
     // インポートを処理
     for (const importStmt of moduleFile.imports) {
-      const alias = importStmt.alias || this.extractModuleName(importStmt.modulePath);
+      const alias =
+        importStmt.alias || this.extractModuleName(importStmt.modulePath);
       scope.imports.set(alias, importStmt.modulePath);
     }
 
@@ -134,7 +139,7 @@ export class NamespaceManager {
       }
 
       // モジュラーグラマーの場合はエクスポートを処理
-      if (grammar.type === 'ModularGrammarDefinition') {
+      if (grammar.type === "ModularGrammarDefinition") {
         const modularGrammar = grammar as ModularGrammarDefinition;
         if (modularGrammar.exports) {
           for (const ruleName of modularGrammar.exports.rules) {
@@ -151,12 +156,15 @@ export class NamespaceManager {
   /**
    * 修飾名を解決
    */
-  resolveQualifiedName(qualifiedId: QualifiedIdentifier, currentModule: string): ResolvedRule {
+  resolveQualifiedName(
+    qualifiedId: QualifiedIdentifier,
+    currentModule: string,
+  ): ResolvedRule {
     const scope = this.scopes.get(currentModule);
     if (!scope) {
       throw new QualifiedNameResolutionError(
         `${qualifiedId.module}.${qualifiedId.name}`,
-        `Module '${currentModule}' is not registered`
+        `Module '${currentModule}' is not registered`,
       );
     }
 
@@ -165,7 +173,7 @@ export class NamespaceManager {
     if (!targetModulePath) {
       throw new QualifiedNameResolutionError(
         `${qualifiedId.module}.${qualifiedId.name}`,
-        `Module '${qualifiedId.module}' is not imported`
+        `Module '${qualifiedId.module}' is not imported`,
       );
     }
 
@@ -177,7 +185,7 @@ export class NamespaceManager {
     if (!targetRules) {
       throw new QualifiedNameResolutionError(
         `${qualifiedId.module}.${qualifiedId.name}`,
-        `Module '${targetModule}' is not registered`
+        `Module '${targetModule}' is not registered`,
       );
     }
 
@@ -185,7 +193,7 @@ export class NamespaceManager {
     if (!rule) {
       throw new QualifiedNameResolutionError(
         `${qualifiedId.module}.${qualifiedId.name}`,
-        `Rule '${qualifiedId.name}' not found in module '${targetModule}'`
+        `Rule '${qualifiedId.name}' not found in module '${targetModule}'`,
       );
     }
 
@@ -196,7 +204,7 @@ export class NamespaceManager {
     if (!isExported) {
       throw new QualifiedNameResolutionError(
         `${qualifiedId.module}.${qualifiedId.name}`,
-        `Rule '${qualifiedId.name}' is not exported from module '${targetModule}'`
+        `Rule '${qualifiedId.name}' is not exported from module '${targetModule}'`,
       );
     }
 
@@ -204,7 +212,7 @@ export class NamespaceManager {
       rule,
       moduleName: targetModule,
       isExported: true,
-      isLocal: false
+      isLocal: false,
     };
   }
 
@@ -216,7 +224,7 @@ export class NamespaceManager {
     if (!scope) {
       throw new QualifiedNameResolutionError(
         ruleName,
-        `Module '${currentModule}' is not registered`
+        `Module '${currentModule}' is not registered`,
       );
     }
 
@@ -224,7 +232,7 @@ export class NamespaceManager {
     if (!rules) {
       throw new QualifiedNameResolutionError(
         ruleName,
-        `Module '${currentModule}' is not registered`
+        `Module '${currentModule}' is not registered`,
       );
     }
 
@@ -232,7 +240,7 @@ export class NamespaceManager {
     if (!rule) {
       throw new QualifiedNameResolutionError(
         ruleName,
-        `Rule '${ruleName}' not found in module '${currentModule}'`
+        `Rule '${ruleName}' not found in module '${currentModule}'`,
       );
     }
 
@@ -240,7 +248,7 @@ export class NamespaceManager {
       rule,
       moduleName: currentModule,
       isExported: scope.exports.has(ruleName),
-      isLocal: true
+      isLocal: true,
     };
   }
 
@@ -265,7 +273,7 @@ export class NamespaceManager {
         if (!ruleToModules.has(ruleName)) {
           ruleToModules.set(ruleName, []);
         }
-        ruleToModules.get(ruleName)!.push(alias);
+        ruleToModules.get(ruleName)?.push(alias);
       }
     }
 
@@ -307,9 +315,9 @@ export class NamespaceManager {
    * モジュール名をパスから抽出
    */
   private extractModuleName(modulePath: string): string {
-    const parts = modulePath.split('/');
+    const parts = modulePath.split("/");
     const filename = parts[parts.length - 1];
-    return filename ? filename.replace(/\.tpeg$/, '') : 'unknown';
+    return filename ? filename.replace(/\.tpeg$/, "") : "unknown";
   }
 
   /**
@@ -333,4 +341,4 @@ export class NamespaceManager {
     this.scopes.clear();
     this.moduleRules.clear();
   }
-} 
+}

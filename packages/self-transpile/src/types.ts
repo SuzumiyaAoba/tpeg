@@ -2,7 +2,7 @@
  * Types for TPEG self-transpilation system
  */
 
-import type { GrammarDefinition, Expression } from "tpeg-core";
+import type { Expression, GrammarDefinition } from "tpeg-core";
 
 /**
  * Result of self-transpilation process
@@ -101,4 +101,4 @@ export interface BootstrapResult {
   };
   /** Generated test cases */
   tests?: string;
-} 
+}

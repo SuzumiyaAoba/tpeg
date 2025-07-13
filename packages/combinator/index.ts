@@ -35,12 +35,12 @@ import {
  * const content = takeUntil(literal('"'));
  * const result = content('Hello "World"', { offset: 0, line: 1, column: 1 });
  * // result.val === "Hello "
- * 
+ *
  * // Extract content until newline
  * const lineContent = takeUntil(newline);
  * const lineResult = lineContent('First line\nSecond line', { offset: 0, line: 1, column: 1 });
  * // lineResult.val === "First line"
- * 
+ *
  * // Extract until end of input
  * const untilEnd = takeUntil(EOF);
  * const endResult = untilEnd('Complete content', { offset: 0, line: 1, column: 1 });
@@ -108,12 +108,12 @@ export const takeUntil =
  * const content = between(literal('('), literal(')'));
  * const result = content('(Hello World)', { offset: 0, line: 1, column: 1 });
  * // result.val === "Hello World"
- * 
+ *
  * // Extract content between quotes
  * const quoted = between(literal('"'), literal('"'));
  * const quoteResult = quoted('"Important message"', { offset: 0, line: 1, column: 1 });
  * // quoteResult.val === "Important message"
- * 
+ *
  * // Parse JSON-like object content
  * const objectContent = between(literal('{'), literal('}'));
  * const jsonResult = objectContent('{"key": "value"}', { offset: 0, line: 1, column: 1 });
@@ -167,16 +167,16 @@ export const between =
  * const numberList = sepBy(int, literal(','));
  * const result = numberList('1,2,3', { offset: 0, line: 1, column: 1 });
  * // result.val === [1, 2, 3]
- * 
+ *
  * // Handle empty input
  * const emptyResult = numberList('', { offset: 0, line: 1, column: 1 });
  * // emptyResult.val === []
- * 
+ *
  * // Parse space-separated words
  * const wordList = sepBy(identifier, spaces);
  * const wordResult = wordList('hello world test', { offset: 0, line: 1, column: 1 });
  * // wordResult.val === ["hello", "world", "test"]
- * 
+ *
  * // Parse with complex separator
  * const complexList = sepBy(int, seq(spaces, literal(','), spaces));
  * const complexResult = complexList('1 , 2 , 3', { offset: 0, line: 1, column: 1 });
@@ -228,16 +228,16 @@ export const sepBy = <T, S>(
  * const numberList = sepBy1(int, literal(','));
  * const result = numberList('1,2,3', { offset: 0, line: 1, column: 1 });
  * // result.val === [1, 2, 3] (NonEmptyArray<number> type)
- * 
+ *
  * // Empty input fails
  * const emptyResult = numberList('', { offset: 0, line: 1, column: 1 });
  * // emptyResult.success === false
- * 
+ *
  * // Parse function arguments (at least one required)
  * const args = sepBy1(identifier, seq(spaces, literal(','), spaces));
  * const argsResult = args('x, y, z', { offset: 0, line: 1, column: 1 });
  * // argsResult.val === ["x", "y", "z"]
- * 
+ *
  * // Single value also works
  * const singleResult = numberList('42', { offset: 0, line: 1, column: 1 });
  * // singleResult.val === [42]
@@ -290,21 +290,21 @@ export const sepBy1 = <T, S>(
  * const csv = commaSeparated(int);
  * const result = csv('1,2,3', { offset: 0, line: 1, column: 1 });
  * // result.val === [1, 2, 3]
- * 
+ *
  * // Allow trailing comma
  * const csvWithTrailing = commaSeparated(int, true);
  * const result2 = csvWithTrailing('1,2,3,', { offset: 0, line: 1, column: 1 });
  * // result2.val === [1, 2, 3]
- * 
+ *
  * // Empty input
  * const emptyResult = csv('', { offset: 0, line: 1, column: 1 });
  * // emptyResult.val === []
- * 
+ *
  * // Parse string values
  * const stringList = commaSeparated(quotedString);
  * const stringResult = stringList('"a","b","c"', { offset: 0, line: 1, column: 1 });
  * // stringResult.val === ["a", "b", "c"]
- * 
+ *
  * // Parse with whitespace handling
  * const spacedList = commaSeparated(token(int));
  * const spacedResult = spacedList(' 1 , 2 , 3 ', { offset: 0, line: 1, column: 1 });
@@ -363,20 +363,20 @@ export const commaSeparated = <T>(
  * const csv = commaSeparated1(int);
  * const result = csv('1,2,3', { offset: 0, line: 1, column: 1 });
  * // result.val === [1, 2, 3] (NonEmptyArray<number> type)
- * 
+ *
  * // Allow trailing comma
  * const csvWithTrailing = commaSeparated1(int, true);
  * const result2 = csvWithTrailing('1,2,3,', { offset: 0, line: 1, column: 1 });
  * // result2.val === [1, 2, 3]
- * 
+ *
  * // Empty input fails
  * const emptyResult = csv('', { offset: 0, line: 1, column: 1 });
  * // emptyResult.success === false
- * 
+ *
  * // Single value works
  * const singleResult = csv('42', { offset: 0, line: 1, column: 1 });
  * // singleResult.val === [42]
- * 
+ *
  * // Parse function parameters
  * const params = commaSeparated1(identifier);
  * const paramsResult = params('x,y,z', { offset: 0, line: 1, column: 1 });
@@ -439,16 +439,16 @@ export const commaSeparated1 = <T>(
  * ```typescript
  * // Basic memoization
  * const memoizedParser = memoize(complexParser);
- * 
+ *
  * // Limit cache size
  * const limitedCache = memoize(complexParser, { maxCacheSize: 100 });
- * 
+ *
  * // Named memoized parser
- * const namedMemoized = memoize(complexParser, { 
- *   maxCacheSize: 500, 
- *   parserName: "ComplexParser" 
+ * const namedMemoized = memoize(complexParser, {
+ *   maxCacheSize: 500,
+ *   parserName: "ComplexParser"
  * });
- * 
+ *
  * // Memoize recursive parser
  * const [expression, setExpression] = recursive<number>();
  * const memoizedExpression = memoize(expression);
@@ -514,22 +514,22 @@ export const memoize = <T>(
  * ```typescript
  * // Recursive expression parser
  * const [expression, setExpression] = recursive<number>("Expression");
- * 
+ *
  * const number = int;
  * const add = map(seq(number, literal('+'), expression), ([a, _, b]) => a + b);
- * 
+ *
  * // Set up recursion
  * setExpression(choice(add, number));
- * 
+ *
  * const result = expression('1+2+3', { offset: 0, line: 1, column: 1 });
  * // result.val === 6
- * 
+ *
  * // Recursive list parser
  * const [list, setList] = recursive<string[]>("List");
  * const item = identifier;
  * const nestedList = map(seq(literal('['), list, literal(']')), ([_, items, __]) => items);
  * setList(choice(nestedList, sepBy(item, literal(','))));
- * 
+ *
  * const listResult = list('[a,b,[c,d]]', { offset: 0, line: 1, column: 1 });
  * // listResult.val === ["a", "b", ["c", "d"]]
  * ```
@@ -587,16 +587,16 @@ export const recursive = <T>(
  * const numberParser = labeled(int, "Number expected");
  * const result = numberParser('abc', { offset: 0, line: 1, column: 1 });
  * // result.error.message === "Number expected"
- * 
+ *
  * // Named labeled parser
  * const namedParser = labeled(int, "Number expected", "NumberParser");
- * 
+ *
  * // Label complex parser
  * const expressionParser = labeled(
  *   choice(int, identifier),
  *   "Expression expected (number or identifier)"
  * );
- * 
+ *
  * // Label with context
  * const functionCall = labeled(
  *   seq(identifier, literal('('), sepBy(identifier, literal(',')), literal(')')),
@@ -651,24 +651,24 @@ export const labeled =
  * ```typescript
  * // Single context
  * const numberParser = labeledWithContext(int, "Number expected", "Expression");
- * 
+ *
  * // Multiple contexts (hierarchical)
  * const complexParser = labeledWithContext(
- *   int, 
- *   "Number expected", 
+ *   int,
+ *   "Number expected",
  *   ["Function", "Parameter", "Type"]
  * );
- * 
+ *
  * const result = complexParser('abc', { offset: 0, line: 1, column: 1 });
  * // result.error.message === "Number expected (in context: Function > Parameter > Type)"
- * 
+ *
  * // Nested structure context
  * const objectParser = labeledWithContext(
  *   seq(literal('{'), sepBy(identifier, literal(',')), literal('}')),
  *   "Object definition expected",
  *   ["JSON", "Object", "Properties"]
  * );
- * 
+ *
  * // Function call context
  * const functionCallParser = labeledWithContext(
  *   seq(identifier, literal('('), sepBy(identifier, literal(',')), literal(')')),
@@ -732,15 +732,15 @@ export const labeledWithContext =
  * const numberWithPos = withPosition(int);
  * const result = numberWithPos('123', { offset: 0, line: 1, column: 1 });
  * // result.val === { value: 123, position: { offset: 0, line: 1, column: 1 } }
- * 
+ *
  * // Named position parser
  * const namedWithPos = withPosition(int, "NumberWithPosition");
- * 
+ *
  * // Position information for AST nodes
  * const identifierWithPos = withPosition(identifier);
  * const idResult = identifierWithPos('myVariable', { offset: 0, line: 1, column: 1 });
  * // idResult.val === { value: "myVariable", position: { offset: 0, line: 1, column: 1 } }
- * 
+ *
  * // Complex expression with position
  * const expressionWithPos = withPosition(
  *   seq(int, literal('+'), int)
@@ -798,7 +798,7 @@ export const withPosition =
  * const numberToken = token(int);
  * const result = numberToken('  123  ', { offset: 0, line: 1, column: 1 });
  * // result.val === 123
- * 
+ *
  * // Named token parser
  * const namedToken = token(int, "NumberToken");
  * ```
@@ -823,7 +823,7 @@ export const token = <T>(parser: Parser<T>, parserName?: string): Parser<T> => {
  * ```typescript
  * // Basic debug parser
  * const debugParser = debug(int, "NumberParser");
- * 
+ *
  * // Debug with custom options
  * const customDebug = debug(int, "NumberParser", {
  *   logSuccess: true,
@@ -832,7 +832,7 @@ export const token = <T>(parser: Parser<T>, parserName?: string): Parser<T> => {
  *   logResult: true,
  *   customLogger: (msg) => console.log(`[CUSTOM] ${msg}`)
  * });
- * 
+ *
  * // Log only results
  * const resultOnly = debug(int, "NumberParser", {
  *   logSuccess: false,
@@ -910,10 +910,10 @@ export const debug = <T>(
  * const wordParser = regex(/\w+/, "Word expected");
  * const result = wordParser('hello123', { offset: 0, line: 1, column: 1 });
  * // result.val === "hello123"
- * 
+ *
  * // With custom error message
  * const emailParser = regex(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/, "Valid email address expected");
- * 
+ *
  * // Named regex parser
  * const namedRegex = regex(/\d+/, "Number expected", "NumberRegex");
  * ```
@@ -985,7 +985,7 @@ export const regex = (
  * const dateParser = regexGroups(/(\d{4})-(\d{2})-(\d{2})/, "Date expected");
  * const result = dateParser('2023-12-25', { offset: 0, line: 1, column: 1 });
  * // result.val === ["2023", "12", "25"]
- * 
+ *
  * // Extract name and email
  * const contactParser = regexGroups(/(\w+)\s+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/, "Contact information expected");
  * const contactResult = contactParser('John john@example.com', { offset: 0, line: 1, column: 1 });
@@ -1061,10 +1061,10 @@ export const regexGroups = (
  * ```typescript
  * const result = letter('a', { offset: 0, line: 1, column: 1 });
  * // result.val === "a"
- * 
+ *
  * const result2 = letter('Z', { offset: 0, line: 1, column: 1 });
  * // result2.val === "Z"
- * 
+ *
  * const result3 = letter('1', { offset: 0, line: 1, column: 1 });
  * // result3.success === false
  * ```
@@ -1083,7 +1083,7 @@ export const letter: Parser<string> = charClass(["a", "z"], ["A", "Z"]);
  * ```typescript
  * const result = digit('5', { offset: 0, line: 1, column: 1 });
  * // result.val === "5"
- * 
+ *
  * const result2 = digit('a', { offset: 0, line: 1, column: 1 });
  * // result2.success === false
  * ```
@@ -1102,10 +1102,10 @@ export const digit: Parser<string> = charClass(["0", "9"]);
  * ```typescript
  * const result = alphaNum('a', { offset: 0, line: 1, column: 1 });
  * // result.val === "a"
- * 
+ *
  * const result2 = alphaNum('5', { offset: 0, line: 1, column: 1 });
  * // result2.val === "5"
- * 
+ *
  * const result3 = alphaNum('_', { offset: 0, line: 1, column: 1 });
  * // result3.success === false
  * ```
@@ -1128,10 +1128,10 @@ export const alphaNum: Parser<string> = charClass(
  * ```typescript
  * const result = identifier('myVariable', { offset: 0, line: 1, column: 1 });
  * // result.val === "myVariable"
- * 
+ *
  * const result2 = identifier('_private', { offset: 0, line: 1, column: 1 });
  * // result2.val === "_private"
- * 
+ *
  * const result3 = identifier('123invalid', { offset: 0, line: 1, column: 1 });
  * // result3.success === false
  * ```
@@ -1160,7 +1160,7 @@ export const identifier: Parser<string> = (() => {
  * const lineStart = startOfLine("LineStart");
  * const result = lineStart('Hello World', { offset: 0, line: 1, column: 1 });
  * // result.success === true
- * 
+ *
  * const result2 = lineStart('  Hello World', { offset: 2, line: 1, column: 3 });
  * // result2.success === false
  * ```
@@ -1208,10 +1208,10 @@ export const startOfLine = (parserName?: string): Parser<never> => {
  * const lineEnd = endOfLine("LineEnd");
  * const result = lineEnd('\n', { offset: 0, line: 1, column: 1 });
  * // result.success === true
- * 
+ *
  * const result2 = lineEnd('Hello World', { offset: 0, line: 1, column: 1 });
  * // result2.success === false
- * 
+ *
  * // Also matches at end of input
  * const result3 = lineEnd('', { offset: 0, line: 1, column: 1 });
  * // result3.success === true
@@ -1328,7 +1328,7 @@ export const withDetailedError = <T>(
  * const completeParser = seq(int, EOF);
  * const result = completeParser('123', { offset: 0, line: 1, column: 1 });
  * // result.success === true
- * 
+ *
  * const result2 = completeParser('123abc', { offset: 0, line: 1, column: 1 });
  * // result2.success === false (additional content present)
  * ```
@@ -1348,11 +1348,11 @@ export const EOF = not(any);
  * // Unix newline
  * const result = newline('\n', { offset: 0, line: 1, column: 1 });
  * // result.val === "\n"
- * 
+ *
  * // Windows newline
  * const result2 = newline('\r\n', { offset: 0, line: 1, column: 1 });
  * // result2.val === "\r\n"
- * 
+ *
  * // Mac newline
  * const result3 = newline('\r', { offset: 0, line: 1, column: 1 });
  * // result3.val === "\r"
@@ -1372,10 +1372,10 @@ export const newline = choice(literal("\r\n"), literal("\n"), literal("\r"));
  * ```typescript
  * const result = whitespace(' ', { offset: 0, line: 1, column: 1 });
  * // result.val === " "
- * 
+ *
  * const result2 = whitespace('\t', { offset: 0, line: 1, column: 1 });
  * // result2.val === "\t"
- * 
+ *
  * const result3 = whitespace('a', { offset: 0, line: 1, column: 1 });
  * // result3.success === false
  * ```
@@ -1394,7 +1394,7 @@ export const whitespace = charClass(" ", "\t", "\n", "\r");
  * ```typescript
  * const result = spaces('   \t\n', { offset: 0, line: 1, column: 1 });
  * // result.val === "   \t\n"
- * 
+ *
  * const result2 = spaces('abc', { offset: 0, line: 1, column: 1 });
  * // result2.val === "" (empty string)
  * ```
@@ -1412,10 +1412,10 @@ export const spaces = zeroOrMore(whitespace);
  * ```typescript
  * const result = quotedString('"Hello\\nWorld"', { offset: 0, line: 1, column: 1 });
  * // result.val === "Hello\nWorld"
- * 
+ *
  * const result2 = quotedString('"Escaped\\"quote"', { offset: 0, line: 1, column: 1 });
  * // result2.val === "Escaped\"quote"
- * 
+ *
  * const result3 = quotedString('"Invalid', { offset: 0, line: 1, column: 1 });
  * // result3.success === false
  * ```
@@ -1473,7 +1473,7 @@ export const quotedString: Parser<string> = (() => {
  * ```typescript
  * const result = singleQuotedString("'Hello\\nWorld'", { offset: 0, line: 1, column: 1 });
  * // result.val === "Hello\nWorld"
- * 
+ *
  * const result2 = singleQuotedString("'Escaped\\'quote'", { offset: 0, line: 1, column: 1 });
  * // result2.val === "Escaped'quote"
  * ```
@@ -1530,7 +1530,7 @@ export const singleQuotedString: Parser<string> = (() => {
  * ```typescript
  * const result = anyQuotedString('"Hello World"', { offset: 0, line: 1, column: 1 });
  * // result.val === "Hello World"
- * 
+ *
  * const result2 = anyQuotedString("'Hello World'", { offset: 0, line: 1, column: 1 });
  * // result2.val === "Hello World"
  * ```
@@ -1551,13 +1551,13 @@ export const anyQuotedString: Parser<string> = choice(
  * ```typescript
  * const result = number('123', { offset: 0, line: 1, column: 1 });
  * // result.val === 123
- * 
+ *
  * const result2 = number('-3.14', { offset: 0, line: 1, column: 1 });
  * // result2.val === -3.14
- * 
+ *
  * const result3 = number('1.23e-4', { offset: 0, line: 1, column: 1 });
  * // result3.val === 0.000123
- * 
+ *
  * const result4 = number('invalid', { offset: 0, line: 1, column: 1 });
  * // result4.success === false
  * ```
@@ -1607,13 +1607,13 @@ export const number: Parser<number> = (() => {
  * ```typescript
  * const result = int('123', { offset: 0, line: 1, column: 1 });
  * // result.val === 123
- * 
+ *
  * const result2 = int('-456', { offset: 0, line: 1, column: 1 });
  * // result2.val === -456
- * 
+ *
  * const result3 = int('3.14', { offset: 0, line: 1, column: 1 });
  * // result3.success === false (decimals not supported)
- * 
+ *
  * const result4 = int('invalid', { offset: 0, line: 1, column: 1 });
  * // result4.success === false
  * ```

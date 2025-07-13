@@ -4,14 +4,14 @@
  * Tests for module resolution, dependency tracking, and circular dependency detection.
  */
 
-import { describe, expect, it, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import {
-  ModuleResolver,
-  ModuleResolutionError,
   CircularDependencyError,
-  createModuleResolver,
   type FileSystemInterface,
+  ModuleResolutionError,
+  ModuleResolver,
   type ResolvedModule,
+  createModuleResolver,
 } from "./module-resolver";
 
 // ============================================================================
@@ -40,14 +40,14 @@ class MockFileSystem implements FileSystemInterface {
   resolve(basePath: string, relativePath: string): string {
     // Simple path resolution for testing
     if (relativePath.startsWith("./")) {
-      return basePath + "/" + relativePath.slice(2);
+      return `${basePath}/${relativePath.slice(2)}`;
     }
     if (relativePath.startsWith("../")) {
       const parts = basePath.split("/");
       parts.pop();
-      return parts.join("/") + "/" + relativePath.slice(3);
+      return `${parts.join("/")}/${relativePath.slice(3)}`;
     }
-    return basePath + "/" + relativePath;
+    return `${basePath}/${relativePath}`;
   }
 }
 
@@ -156,7 +156,10 @@ describe("Module Resolution Engine", () => {
       const resolved = await resolver.resolveModule("arithmetic.tpeg");
 
       expect(resolved.resolved).toBe(true);
-      expect(resolved.dependencies).toEqual(["/test/base.tpeg", "/test/operators.tpeg"]);
+      expect(resolved.dependencies).toEqual([
+        "/test/base.tpeg",
+        "/test/operators.tpeg",
+      ]);
       expect(resolved.allDependencies).toContain("/test/base.tpeg");
       expect(resolved.allDependencies).toContain("/test/operators.tpeg");
       expect(resolved.allDependencies).toContain("/test/utils.tpeg");
@@ -193,8 +196,8 @@ describe("Module Resolution Engine", () => {
 
       const resolved = await resolver.resolveModules([
         "base.tpeg",
-        "utils.tpeg", 
-        "operators.tpeg"
+        "utils.tpeg",
+        "operators.tpeg",
       ]);
 
       expect(resolved.size).toBe(3);
@@ -213,7 +216,7 @@ describe("Module Resolution Engine", () => {
 
       expect(graph.get("/test/arithmetic.tpeg")).toEqual([
         "/test/base.tpeg",
-        "/test/operators.tpeg"
+        "/test/operators.tpeg",
       ]);
       expect(graph.get("/test/base.tpeg")).toEqual(["/test/utils.tpeg"]);
       expect(graph.get("/test/utils.tpeg")).toEqual([]);
@@ -270,4 +273,4 @@ describe("Module Resolution Engine", () => {
       expect(error).toBeInstanceOf(ModuleResolutionError);
     });
   });
-}); 
+});

@@ -10,14 +10,14 @@ import {
 
 /**
  * Simple REPL implementation for the TPEG Arithmetic Calculator.
- * 
+ *
  * This module provides an interactive command-line interface for evaluating
  * arithmetic expressions using the TPEG parser.
  */
 
 /**
  * Prints the welcome message and available commands.
- * 
+ *
  * Displays information about the calculator and lists all available commands
  * that users can use in the REPL.
  */
@@ -34,7 +34,7 @@ function printWelcome() {
 
 /**
  * Prints help information about supported operations.
- * 
+ *
  * Displays all supported arithmetic operations and provides examples
  * for each operation type.
  */
@@ -53,7 +53,7 @@ function printHelp() {
 
 /**
  * Prints example expressions with their calculated results.
- * 
+ *
  * Displays all example expressions from the examples object,
  * showing both the expression and its calculated result.
  */
@@ -75,14 +75,14 @@ function printExamples() {
 
 /**
  * Handles user input and executes appropriate commands.
- * 
+ *
  * This function processes user input and determines whether to:
  * - Exit the REPL
  * - Show help information
  * - Display examples
  * - Show AST structure for an expression
  * - Calculate an arithmetic expression
- * 
+ *
  * @param input - The user's input string
  * @returns True if the REPL should exit, false otherwise
  */
@@ -130,7 +130,7 @@ function handleCommand(input: string) {
 
 /**
  * Starts the interactive REPL.
- * 
+ *
  * This function sets up the readline interface and starts the main
  * REPL loop, handling user input and displaying results.
  */

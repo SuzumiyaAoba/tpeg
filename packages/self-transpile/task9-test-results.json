@@ -48,9 +48,7 @@
             "memoryUsage": 0,
             "score": 50,
             "grade": "F",
-            "warnings": [
-              "Self-hosting loop did not converge"
-            ]
+            "warnings": ["Self-hosting loop did not converge"]
           },
           {
             "id": "bootstrap-validation",
@@ -64,9 +62,7 @@
           }
         ],
         "critical": true,
-        "warnings": [
-          "Self-hosting loop did not converge"
-        ]
+        "warnings": ["Self-hosting loop did not converge"]
       },
       "error-handling": {
         "categoryId": "error-handling",
@@ -236,13 +232,7 @@
             "warnings": [],
             "details": {
               "iterations": 5,
-              "memorySnapshots": [
-                "0.00",
-                "0.00",
-                "0.00",
-                "0.00",
-                "0.00"
-              ]
+              "memorySnapshots": ["0.00", "0.00", "0.00", "0.00", "0.00"]
             }
           }
         ],
@@ -310,9 +300,7 @@
           }
         ],
         "critical": false,
-        "warnings": [
-          "Edge case Grammar with unicode not handled correctly"
-        ]
+        "warnings": ["Edge case Grammar with unicode not handled correctly"]
       }
     },
     "summary": "TPEG Self-Transpilation System Test Summary\n==========================================\nOverall Grade: B (85.6/100)\nTotal Tests: 16 (15 passed, 1 failed)\nSuccess Rate: 93.8%\n\nWarnings: 2\n\nCategory Breakdown:\n- Core Functionality: B (87.5/100)\n- Error Handling: A (100.0/100)\n- Performance Optimization: B (80.0/100)\n- Iteration Optimization: F (58.3/100)\n- Integration Testing: A (93.3/100)\n",

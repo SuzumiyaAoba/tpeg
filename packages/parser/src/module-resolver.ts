@@ -13,10 +13,10 @@
  */
 
 import type {
-  ImportStatement,
-  ModuleFile,
-  ModularGrammarDefinition,
   GrammarDefinition,
+  ImportStatement,
+  ModularGrammarDefinition,
+  ModuleFile,
   QualifiedIdentifier,
 } from "tpeg-core";
 import { parse as parseCore } from "tpeg-core";
@@ -74,11 +74,7 @@ export interface FileSystemInterface {
 export class ModuleResolutionError extends Error {
   public readonly modulePath: string;
 
-  constructor(
-    message: string,
-    modulePath: string,
-    cause?: Error,
-  ) {
+  constructor(message: string, modulePath: string, _cause?: Error) {
     super(message);
     this.modulePath = modulePath;
   }
@@ -109,10 +105,7 @@ export class CircularDependencyError extends ModuleResolutionError {
 export class ModuleResolver {
   public context: ModuleResolutionContext;
 
-  constructor(
-    baseDir: string,
-    fileSystem: FileSystemInterface,
-  ) {
+  constructor(baseDir: string, fileSystem: FileSystemInterface) {
     this.context = {
       baseDir,
       cache: new Map(),
@@ -149,7 +142,7 @@ export class ModuleResolver {
     try {
       // Load and parse the module
       const content = await this.loadModule(normalizedPath);
-      
+
       // Extract dependencies
       const dependencies = this.extractDependencies(content);
 
@@ -169,7 +162,7 @@ export class ModuleResolver {
       for (const depPath of dependencies) {
         const resolvedDep = await this.resolveModule(depPath);
         resolvedModule.allDependencies.add(resolvedDep.filePath);
-        
+
         // Add transitive dependencies
         for (const transitiveDep of resolvedDep.allDependencies) {
           resolvedModule.allDependencies.add(transitiveDep);
@@ -192,7 +185,9 @@ export class ModuleResolver {
    * @param modulePaths - Array of module paths to resolve
    * @returns Promise<Map<string, ResolvedModule>> Map of resolved modules
    */
-  async resolveModules(modulePaths: string[]): Promise<Map<string, ResolvedModule>> {
+  async resolveModules(
+    modulePaths: string[],
+  ): Promise<Map<string, ResolvedModule>> {
     const resolved = new Map<string, ResolvedModule>();
 
     for (const modulePath of modulePaths) {
@@ -210,7 +205,7 @@ export class ModuleResolver {
    * @returns Promise<Map<string, string[]>> Dependency graph
    */
   async getDependencyGraph(modulePath: string): Promise<Map<string, string[]>> {
-    const resolved = await this.resolveModule(modulePath);
+    const _resolved = await this.resolveModule(modulePath);
     const graph = new Map<string, string[]>();
 
     // Build graph from cache
@@ -229,7 +224,9 @@ export class ModuleResolver {
    * @param modulePath - The module to check
    * @returns Promise<string[] | null> Cycle path if found, null otherwise
    */
-  async checkCircularDependencies(modulePath: string): Promise<string[] | null> {
+  async checkCircularDependencies(
+    modulePath: string,
+  ): Promise<string[] | null> {
     try {
       await this.resolveModule(modulePath);
       return null;
@@ -261,7 +258,7 @@ export class ModuleResolver {
     if (modulePath.startsWith("/")) {
       return modulePath;
     }
-    
+
     // Resolve relative paths
     return this.context.fileSystem.resolve(this.context.baseDir, modulePath);
   }
@@ -326,13 +323,17 @@ export class ModuleResolver {
    */
   private parseImports(content: string): ImportStatement[] {
     const imports: ImportStatement[] = [];
-    const lines = content.split('\n');
+    const lines = content.split("\n");
 
     for (const line of lines) {
       const trimmed = line.trim();
-      if (trimmed.startsWith('import ')) {
+      if (trimmed.startsWith("import ")) {
         try {
-          const result = importStatement(trimmed, { offset: 0, line: 1, column: 1 });
+          const result = importStatement(trimmed, {
+            offset: 0,
+            line: 1,
+            column: 1,
+          });
           if (result.success) {
             imports.push(result.val);
           }
@@ -355,13 +356,13 @@ export class ModuleResolver {
  */
 export class NodeFileSystem implements FileSystemInterface {
   async readFile(path: string): Promise<string> {
-    const fs = await import('fs/promises');
-    return fs.readFile(path, 'utf-8');
+    const fs = await import("node:fs/promises");
+    return fs.readFile(path, "utf-8");
   }
 
   async exists(path: string): Promise<boolean> {
     try {
-      const fs = await import('fs/promises');
+      const fs = await import("node:fs/promises");
       await fs.access(path);
       return true;
     } catch {
@@ -370,7 +371,7 @@ export class NodeFileSystem implements FileSystemInterface {
   }
 
   resolve(basePath: string, relativePath: string): string {
-    const path = require('path');
+    const path = require("node:path");
     return path.resolve(basePath, relativePath);
   }
 }
@@ -407,10 +408,15 @@ export async function resolveQualifiedIdentifier(
       for (const importStmt of module.content.imports) {
         if (importStmt.alias === qualifiedId.module) {
           // Resolve the imported module
-          const resolver = new ModuleResolver(context.baseDir, context.fileSystem);
+          const resolver = new ModuleResolver(
+            context.baseDir,
+            context.fileSystem,
+          );
           resolver.context = context;
-          const importedModule = await resolver.resolveModule(importStmt.modulePath);
-          
+          const importedModule = await resolver.resolveModule(
+            importStmt.modulePath,
+          );
+
           return {
             module: importedModule,
             ruleName: qualifiedId.name,
@@ -424,4 +430,4 @@ export async function resolveQualifiedIdentifier(
     `Cannot resolve qualified identifier: ${qualifiedId.module}.${qualifiedId.name}`,
     qualifiedId.module,
   );
-} 
+}

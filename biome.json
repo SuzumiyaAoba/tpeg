@@ -14,12 +14,16 @@
     "indentStyle": "space"
   },
   "organizeImports": {
-    "enabled": true
+    "enabled": true,
+    "ignore": []
   },
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "recommended": true,
+      "correctness": {
+        "noUnusedVariables": "error"
+      }
     }
   },
   "javascript": {

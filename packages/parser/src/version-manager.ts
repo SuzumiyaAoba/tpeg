@@ -1,4 +1,4 @@
-import type { GrammarDefinition, RuleDefinition } from './types.js';
+import type { GrammarDefinition, RuleDefinition } from "./types.js";
 
 // Module system types (temporary until proper package structure)
 interface ModuleInfo {
@@ -33,10 +33,12 @@ export class VersionCompatibilityError extends Error {
     public readonly moduleName: string,
     public readonly requiredVersion: string,
     public readonly actualVersion: string,
-    public readonly reason: string
+    public readonly reason: string,
   ) {
-    super(`Version compatibility error for module '${moduleName}': required '${requiredVersion}', found '${actualVersion}' - ${reason}`);
-    this.name = 'VersionCompatibilityError';
+    super(
+      `Version compatibility error for module '${moduleName}': required '${requiredVersion}', found '${actualVersion}' - ${reason}`,
+    );
+    this.name = "VersionCompatibilityError";
   }
 }
 
@@ -46,10 +48,10 @@ export class VersionCompatibilityError extends Error {
 export class VersionParseError extends Error {
   constructor(
     public readonly versionString: string,
-    public readonly reason: string
+    public readonly reason: string,
   ) {
     super(`Cannot parse version '${versionString}': ${reason}`);
-    this.name = 'VersionParseError';
+    this.name = "VersionParseError";
   }
 }
 
@@ -68,7 +70,7 @@ export interface SemanticVersion {
  * バージョン制約
  */
 export interface VersionConstraint {
-  operator: '=' | '>=' | '<=' | '>' | '<' | '^' | '~' | '*';
+  operator: "=" | ">=" | "<=" | ">" | "<" | "^" | "~" | "*";
   version: SemanticVersion;
 }
 
@@ -97,20 +99,21 @@ export class VersionManager {
       return this.versionCache.get(versionString)!;
     }
 
-    const cleanVersion = versionString.replace(/^v/, '');
-    const versionRegex = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
-    
+    const cleanVersion = versionString.replace(/^v/, "");
+    const versionRegex =
+      /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+
     const match = cleanVersion.match(versionRegex);
     if (!match) {
-      throw new VersionParseError(versionString, 'Invalid semver format');
+      throw new VersionParseError(versionString, "Invalid semver format");
     }
 
     const version: SemanticVersion = {
-      major: parseInt(match[1] || '0', 10),
-      minor: parseInt(match[2] || '0', 10),
-      patch: parseInt(match[3] || '0', 10),
+      major: Number.parseInt(match[1] || "0", 10),
+      minor: Number.parseInt(match[2] || "0", 10),
+      patch: Number.parseInt(match[3] || "0", 10),
       ...(match[4] ? { prerelease: match[4] } : {}),
-      ...(match[5] ? { build: match[5] } : {})
+      ...(match[5] ? { build: match[5] } : {}),
     };
 
     this.versionCache.set(versionString, version);
@@ -122,31 +125,34 @@ export class VersionManager {
    */
   parseVersionConstraint(constraintString: string): VersionConstraint {
     const trimmed = constraintString.trim();
-    
+
     // 特殊ケース: * (any version)
-    if (trimmed === '*') {
+    if (trimmed === "*") {
       return {
-        operator: '*',
-        version: { major: 0, minor: 0, patch: 0 }
+        operator: "*",
+        version: { major: 0, minor: 0, patch: 0 },
       };
     }
 
     // 演算子を抽出
     const operatorMatch = trimmed.match(/^(>=|<=|>|<|\^|~|=)?(.+)$/);
     if (!operatorMatch) {
-      throw new VersionParseError(constraintString, 'Invalid constraint format');
+      throw new VersionParseError(
+        constraintString,
+        "Invalid constraint format",
+      );
     }
 
-    const operator = (operatorMatch[1] || '=') as VersionConstraint['operator'];
+    const operator = (operatorMatch[1] || "=") as VersionConstraint["operator"];
     const versionString = operatorMatch[2];
 
     if (!versionString) {
-      throw new VersionParseError(constraintString, 'Missing version string');
+      throw new VersionParseError(constraintString, "Missing version string");
     }
 
     return {
       operator,
-      version: this.parseVersion(versionString)
+      version: this.parseVersion(versionString),
     };
   }
 
@@ -188,29 +194,34 @@ export class VersionManager {
   /**
    * バージョン制約を満たすかチェック
    */
-  satisfiesConstraint(version: SemanticVersion, constraint: VersionConstraint): boolean {
+  satisfiesConstraint(
+    version: SemanticVersion,
+    constraint: VersionConstraint,
+  ): boolean {
     const comparison = this.compareVersions(version, constraint.version);
 
     switch (constraint.operator) {
-      case '=':
+      case "=":
         return comparison === 0;
-      case '>':
+      case ">":
         return comparison > 0;
-      case '>=':
+      case ">=":
         return comparison >= 0;
-      case '<':
+      case "<":
         return comparison < 0;
-      case '<=':
+      case "<=":
         return comparison <= 0;
-      case '^':
+      case "^":
         // Compatible within major version
         return version.major === constraint.version.major && comparison >= 0;
-      case '~':
+      case "~":
         // Compatible within minor version
-        return version.major === constraint.version.major && 
-               version.minor === constraint.version.minor && 
-               comparison >= 0;
-      case '*':
+        return (
+          version.major === constraint.version.major &&
+          version.minor === constraint.version.minor &&
+          comparison >= 0
+        );
+      case "*":
         return true; // Any version
       default:
         return false;
@@ -221,8 +232,10 @@ export class VersionManager {
    * モジュールバージョンを登録
    */
   registerModule(moduleFile: ModuleFile): void {
-    const moduleName = moduleFile.moduleInfo?.namespace || this.extractModuleName(moduleFile.filePath);
-    const versionString = moduleFile.moduleInfo?.version || '1.0.0';
+    const moduleName =
+      moduleFile.moduleInfo?.namespace ||
+      this.extractModuleName(moduleFile.filePath);
+    const versionString = moduleFile.moduleInfo?.version || "1.0.0";
     const version = this.parseVersion(versionString);
 
     const dependencies = new Map<string, VersionConstraint>();
@@ -249,8 +262,8 @@ export class VersionManager {
         if (!dependencies.has(dependency)) {
           // デフォルトの制約を追加
           dependencies.set(dependency, {
-            operator: '>=',
-            version: { major: 1, minor: 0, patch: 0 }
+            operator: ">=",
+            version: { major: 1, minor: 0, patch: 0 },
           });
         }
       }
@@ -260,7 +273,7 @@ export class VersionManager {
       moduleName,
       version,
       dependencies,
-      conflicts
+      conflicts,
     };
 
     this.moduleVersions.set(moduleName, moduleVersion);
@@ -269,12 +282,16 @@ export class VersionManager {
   /**
    * バージョン互換性をチェック
    */
-  checkCompatibility(requiredModule: string, requiredVersion: string, availableVersion: string): boolean {
+  checkCompatibility(
+    _requiredModule: string,
+    requiredVersion: string,
+    availableVersion: string,
+  ): boolean {
     try {
       const constraint = this.parseVersionConstraint(requiredVersion);
       const version = this.parseVersion(availableVersion);
       return this.satisfiesConstraint(version, constraint);
-    } catch (error) {
+    } catch (_error) {
       return false;
     }
   }
@@ -287,9 +304,9 @@ export class VersionManager {
     if (!moduleVersion) {
       throw new VersionCompatibilityError(
         currentModule,
-        'unknown',
-        'unknown',
-        'Module not registered'
+        "unknown",
+        "unknown",
+        "Module not registered",
       );
     }
 
@@ -300,8 +317,8 @@ export class VersionManager {
         throw new VersionCompatibilityError(
           dependencyModule,
           this.formatConstraint(constraint),
-          'not found',
-          'Required dependency not found'
+          "not found",
+          "Required dependency not found",
         );
       }
 
@@ -310,7 +327,7 @@ export class VersionManager {
           dependencyModule,
           this.formatConstraint(constraint),
           this.formatVersion(dependencyVersion.version),
-          'Version constraint not satisfied'
+          "Version constraint not satisfied",
         );
       }
     }
@@ -320,9 +337,9 @@ export class VersionManager {
       if (this.moduleVersions.has(conflictModule)) {
         throw new VersionCompatibilityError(
           conflictModule,
-          'none',
-          this.formatVersion(this.moduleVersions.get(conflictModule)!.version),
-          'Conflicting module detected'
+          "none",
+          this.formatVersion(this.moduleVersions.get(conflictModule)?.version),
+          "Conflicting module detected",
         );
       }
     }
@@ -341,8 +358,8 @@ export class VersionManager {
    * バージョン制約を文字列にフォーマット
    */
   formatConstraint(constraint: VersionConstraint): string {
-    if (constraint.operator === '*') {
-      return '*';
+    if (constraint.operator === "*") {
+      return "*";
     }
     return `${constraint.operator}${this.formatVersion(constraint.version)}`;
   }
@@ -365,9 +382,9 @@ export class VersionManager {
    * モジュール名をパスから抽出
    */
   private extractModuleName(modulePath: string): string {
-    const parts = modulePath.split('/');
+    const parts = modulePath.split("/");
     const filename = parts[parts.length - 1];
-    return filename ? filename.replace(/\.tpeg$/, '') : 'unknown';
+    return filename ? filename.replace(/\.tpeg$/, "") : "unknown";
   }
 
   /**
@@ -389,7 +406,7 @@ export class VersionManager {
    */
   getDependencyGraph(): Map<string, string[]> {
     const graph = new Map<string, string[]>();
-    
+
     for (const [moduleName, moduleVersion] of this.moduleVersions) {
       const dependencies = Array.from(moduleVersion.dependencies.keys());
       graph.set(moduleName, dependencies);
@@ -422,7 +439,10 @@ export class VersionManager {
         // 依存関係チェック
         const constraint = moduleVersion.dependencies.get(otherModuleName);
         if (constraint) {
-          const isCompatible = this.satisfiesConstraint(otherModuleVersion.version, constraint);
+          const isCompatible = this.satisfiesConstraint(
+            otherModuleVersion.version,
+            constraint,
+          );
           compatibilityRow.set(otherModuleName, isCompatible);
         } else {
           compatibilityRow.set(otherModuleName, true); // 依存関係なし
@@ -442,4 +462,4 @@ export class VersionManager {
     this.moduleVersions.clear();
     this.versionCache.clear();
   }
-} 
+}

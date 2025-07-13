@@ -74,10 +74,7 @@
           "name": "iteration-optimization",
           "description": "Batch processing and parallel execution capabilities",
           "covered": true,
-          "testCases": [
-            "parallel-execution",
-            "memory-management"
-          ],
+          "testCases": ["parallel-execution", "memory-management"],
           "lastTested": "2025-07-13T14:06:40.557Z",
           "coverage": 66.66666666666666
         },
@@ -85,10 +82,7 @@
           "name": "bootstrap-validation",
           "description": "Bootstrap validation and multi-stage compilation",
           "covered": true,
-          "testCases": [
-            "bootstrap-validation",
-            "complete-workflow"
-          ],
+          "testCases": ["bootstrap-validation", "complete-workflow"],
           "lastTested": "2025-07-13T14:06:40.557Z",
           "coverage": 100
         }
@@ -98,9 +92,7 @@
           "name": "basic-grammar-parsing",
           "description": "Parse simple grammar definitions",
           "covered": true,
-          "testCases": [
-            "self-parse-basic"
-          ],
+          "testCases": ["self-parse-basic"],
           "expectedBehavior": "Successfully parse TPEG grammar files",
           "actualBehavior": "Parsing works correctly",
           "passed": true
@@ -109,9 +101,7 @@
           "name": "code-generation",
           "description": "Generate TypeScript parser code",
           "covered": true,
-          "testCases": [
-            "code-generation"
-          ],
+          "testCases": ["code-generation"],
           "expectedBehavior": "Generate functional TypeScript code",
           "actualBehavior": "Code generation works correctly",
           "passed": true
@@ -120,9 +110,7 @@
           "name": "self-hosting",
           "description": "Complete self-hosting capability",
           "covered": true,
-          "testCases": [
-            "self-hosting-loop"
-          ],
+          "testCases": ["self-hosting-loop"],
           "expectedBehavior": "Generated parser can parse original grammar",
           "actualBehavior": "Self-hosting works correctly",
           "passed": true
@@ -133,10 +121,7 @@
           "id": "REQ-001",
           "description": "System must support self-transpilation",
           "covered": true,
-          "testCases": [
-            "self-parse-basic",
-            "code-generation"
-          ],
+          "testCases": ["self-parse-basic", "code-generation"],
           "priority": "high",
           "status": "passed"
         },
@@ -144,10 +129,7 @@
           "id": "REQ-002",
           "description": "System must handle errors gracefully",
           "covered": true,
-          "testCases": [
-            "error-detection",
-            "recovery-mechanisms"
-          ],
+          "testCases": ["error-detection", "recovery-mechanisms"],
           "priority": "high",
           "status": "passed"
         },
@@ -155,10 +137,7 @@
           "id": "REQ-003",
           "description": "System must provide performance optimization",
           "covered": true,
-          "testCases": [
-            "baseline-performance",
-            "optimization-features"
-          ],
+          "testCases": ["baseline-performance", "optimization-features"],
           "priority": "medium",
           "status": "passed"
         },
@@ -166,10 +145,7 @@
           "id": "REQ-004",
           "description": "System must support batch processing",
           "covered": true,
-          "testCases": [
-            "batch-processing",
-            "parallel-execution"
-          ],
+          "testCases": ["batch-processing", "parallel-execution"],
           "priority": "medium",
           "status": "passed"
         },
@@ -177,9 +153,7 @@
           "id": "REQ-005",
           "description": "System must validate bootstrap process",
           "covered": true,
-          "testCases": [
-            "bootstrap-validation"
-          ],
+          "testCases": ["bootstrap-validation"],
           "priority": "low",
           "status": "passed"
         }
@@ -230,32 +204,17 @@
       "passedThresholds": 4,
       "totalThresholds": 4,
       "criticalGaps": [],
-      "strengths": [
-        "Good statement coverage",
-        "Good function coverage"
-      ],
-      "weaknesses": [
-        "Duplicate tests detected"
-      ],
-      "nextSteps": [
-        "Continuous monitoring of coverage metrics"
-      ]
+      "strengths": ["Good statement coverage", "Good function coverage"],
+      "weaknesses": ["Duplicate tests detected"],
+      "nextSteps": ["Continuous monitoring of coverage metrics"]
     },
-    "recommendations": [
-      "Remove duplicate tests"
-    ]
+    "recommendations": ["Remove duplicate tests"]
   },
   "config": {
     "sourceDirectory": "./src",
     "testDirectory": "./src",
-    "includePaths": [
-      "*.ts"
-    ],
-    "excludePaths": [
-      "*.spec.ts",
-      "*.test.ts",
-      "node_modules/**"
-    ],
+    "includePaths": ["*.ts"],
+    "excludePaths": ["*.spec.ts", "*.test.ts", "node_modules/**"],
     "coverageThreshold": {
       "statements": 70,
       "branches": 60,

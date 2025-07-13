@@ -126,7 +126,7 @@ export const tpegExpression = expression();
 // Export module system parsers
 export * from "./module";
 
-// Export module resolution engine  
+// Export module resolution engine
 export * from "./module-resolver";
 
 // Export namespace management system

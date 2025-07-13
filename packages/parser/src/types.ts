@@ -437,10 +437,8 @@ export const createTransformParameter = (
 export const createTransformReturnType = (
   type: string,
   generic?: string,
-): TransformReturnType => 
-  generic !== undefined 
-    ? { type, generic }
-    : { type };
+): TransformReturnType =>
+  generic !== undefined ? { type, generic } : { type };
 
 /**
  * Create a TransformFunction AST node
@@ -457,8 +455,8 @@ export const createTransformFunction = (
   returnType: TransformReturnType,
   body: string,
   documentation?: string[],
-): TransformFunction => 
-  documentation !== undefined 
+): TransformFunction =>
+  documentation !== undefined
     ? { name, parameters, returnType, body, documentation }
     : { name, parameters, returnType, body };
 

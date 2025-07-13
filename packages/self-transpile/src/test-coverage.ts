@@ -1,14 +1,18 @@
 /**
  * Test Coverage Analysis System for TPEG Self-Transpilation
- * 
+ *
  * Provides comprehensive code coverage analysis, functional coverage tracking,
  * and test quality assessment for the TPEG self-transpilation system.
  */
 
-import { readFileSync, writeFileSync, readdirSync, statSync } from "fs";
-import { join } from "path";
-import { performance } from "perf_hooks";
-import type { TestSuiteResult, TestCategoryResult, TestResult } from "./comprehensive-test-suite";
+import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { performance } from "node:perf_hooks";
+import type {
+  TestCategoryResult,
+  TestResult,
+  TestSuiteResult,
+} from "./comprehensive-test-suite";
 
 /**
  * Coverage analysis configuration
@@ -187,27 +191,31 @@ export class TestCoverageAnalyzer {
         statements: 80,
         branches: 70,
         functions: 80,
-        lines: 80
+        lines: 80,
       },
       enableFunctionalCoverage: true,
       enableQualityAnalysis: true,
       outputPath: "./coverage-report.json",
       reportFormat: "json",
-      ...config
+      ...config,
     };
   }
 
   /**
    * Analyze coverage from test results
    */
-  async analyzeCoverage(testResults: TestSuiteResult): Promise<CoverageAnalysis> {
+  async analyzeCoverage(
+    testResults: TestSuiteResult,
+  ): Promise<CoverageAnalysis> {
     this.testResults = testResults;
-    
+
     console.log("📊 TPEG Test Coverage Analysis");
     console.log("===============================");
     console.log(`📁 Source Directory: ${this.config.sourceDirectory}`);
     console.log(`🧪 Test Directory: ${this.config.testDirectory}`);
-    console.log(`📋 Coverage Thresholds: ${this.config.coverageThreshold.statements}%`);
+    console.log(
+      `📋 Coverage Thresholds: ${this.config.coverageThreshold.statements}%`,
+    );
     console.log("");
 
     const startTime = performance.now();
@@ -221,7 +229,7 @@ export class TestCoverageAnalyzer {
 
     // Analyze code coverage
     const codeCoverage = await this.analyzeCodeCoverage(sourceFiles, testFiles);
-    
+
     // Analyze functional coverage
     const functionalCoverage = this.config.enableFunctionalCoverage
       ? await this.analyzeFunctionalCoverage(testResults)
@@ -233,17 +241,27 @@ export class TestCoverageAnalyzer {
       : this.getEmptyQualityAnalysis();
 
     // Generate summary
-    const summary = this.generateCoverageSummary(codeCoverage, functionalCoverage, qualityAnalysis);
+    const summary = this.generateCoverageSummary(
+      codeCoverage,
+      functionalCoverage,
+      qualityAnalysis,
+    );
 
     // Generate recommendations
-    const recommendations = this.generateRecommendations(codeCoverage, functionalCoverage, qualityAnalysis);
+    const recommendations = this.generateRecommendations(
+      codeCoverage,
+      functionalCoverage,
+      qualityAnalysis,
+    );
 
     const endTime = performance.now();
     const duration = endTime - startTime;
 
     console.log(`⏱️  Analysis completed in ${duration.toFixed(2)}ms`);
     console.log(`📊 Overall Grade: ${summary.grade} (${summary.score}/100)`);
-    console.log(`✅ Passed Thresholds: ${summary.passedThresholds}/${summary.totalThresholds}`);
+    console.log(
+      `✅ Passed Thresholds: ${summary.passedThresholds}/${summary.totalThresholds}`,
+    );
 
     const analysis: CoverageAnalysis = {
       overall: codeCoverage,
@@ -251,7 +269,7 @@ export class TestCoverageAnalyzer {
       functional: functionalCoverage,
       quality: qualityAnalysis,
       summary,
-      recommendations
+      recommendations,
     };
 
     // Generate report
@@ -265,15 +283,15 @@ export class TestCoverageAnalyzer {
    */
   private async findSourceFiles(): Promise<string[]> {
     const files: string[] = [];
-    
+
     const findFiles = (dir: string): void => {
       try {
         const items = readdirSync(dir);
-        
+
         for (const item of items) {
           const fullPath = join(dir, item);
           const stat = statSync(fullPath);
-          
+
           if (stat.isDirectory()) {
             // Skip excluded directories
             if (!this.isExcluded(fullPath)) {
@@ -300,15 +318,15 @@ export class TestCoverageAnalyzer {
    */
   private async findTestFiles(): Promise<string[]> {
     const files: string[] = [];
-    
+
     const findFiles = (dir: string): void => {
       try {
         const items = readdirSync(dir);
-        
+
         for (const item of items) {
           const fullPath = join(dir, item);
           const stat = statSync(fullPath);
-          
+
           if (stat.isDirectory()) {
             findFiles(fullPath);
           } else if (stat.isFile() && this.isTestFile(fullPath)) {
@@ -328,8 +346,8 @@ export class TestCoverageAnalyzer {
    * Check if file is included
    */
   private isIncluded(filePath: string): boolean {
-    return this.config.includePaths.some(pattern => 
-      filePath.endsWith(pattern.replace("*", ""))
+    return this.config.includePaths.some((pattern) =>
+      filePath.endsWith(pattern.replace("*", "")),
     );
   }
 
@@ -337,7 +355,7 @@ export class TestCoverageAnalyzer {
    * Check if file is excluded
    */
   private isExcluded(filePath: string): boolean {
-    return this.config.excludePaths.some(pattern => {
+    return this.config.excludePaths.some((pattern) => {
       if (pattern.includes("**")) {
         return filePath.includes(pattern.replace("**", ""));
       }
@@ -349,18 +367,23 @@ export class TestCoverageAnalyzer {
    * Check if file is a test file
    */
   private isTestFile(filePath: string): boolean {
-    return filePath.includes(".spec.") || 
-           filePath.includes(".test.") ||
-           filePath.includes("test-") ||
-           filePath.includes("-test");
+    return (
+      filePath.includes(".spec.") ||
+      filePath.includes(".test.") ||
+      filePath.includes("test-") ||
+      filePath.includes("-test")
+    );
   }
 
   /**
    * Analyze code coverage
    */
-  private async analyzeCodeCoverage(sourceFiles: string[], testFiles: string[]): Promise<CoverageAnalysis["overall"]> {
+  private async analyzeCodeCoverage(
+    sourceFiles: string[],
+    testFiles: string[],
+  ): Promise<CoverageAnalysis["overall"]> {
     console.log("📊 Analyzing code coverage...");
-    
+
     let totalStatements = 0;
     let coveredStatements = 0;
     let totalBranches = 0;
@@ -374,7 +397,7 @@ export class TestCoverageAnalyzer {
       try {
         const content = readFileSync(sourceFile, "utf-8");
         const analysis = this.analyzeFile(content, sourceFile, testFiles);
-        
+
         totalStatements += analysis.statements;
         coveredStatements += analysis.coveredStatements;
         totalBranches += analysis.branches;
@@ -392,38 +415,61 @@ export class TestCoverageAnalyzer {
       statements: {
         total: totalStatements,
         covered: coveredStatements,
-        percentage: totalStatements > 0 ? (coveredStatements / totalStatements) * 100 : 0,
+        percentage:
+          totalStatements > 0 ? (coveredStatements / totalStatements) * 100 : 0,
         threshold: this.config.coverageThreshold.statements,
-        passing: totalStatements > 0 ? (coveredStatements / totalStatements) * 100 >= this.config.coverageThreshold.statements : false
+        passing:
+          totalStatements > 0
+            ? (coveredStatements / totalStatements) * 100 >=
+              this.config.coverageThreshold.statements
+            : false,
       },
       branches: {
         total: totalBranches,
         covered: coveredBranches,
-        percentage: totalBranches > 0 ? (coveredBranches / totalBranches) * 100 : 0,
+        percentage:
+          totalBranches > 0 ? (coveredBranches / totalBranches) * 100 : 0,
         threshold: this.config.coverageThreshold.branches,
-        passing: totalBranches > 0 ? (coveredBranches / totalBranches) * 100 >= this.config.coverageThreshold.branches : false
+        passing:
+          totalBranches > 0
+            ? (coveredBranches / totalBranches) * 100 >=
+              this.config.coverageThreshold.branches
+            : false,
       },
       functions: {
         total: totalFunctions,
         covered: coveredFunctions,
-        percentage: totalFunctions > 0 ? (coveredFunctions / totalFunctions) * 100 : 0,
+        percentage:
+          totalFunctions > 0 ? (coveredFunctions / totalFunctions) * 100 : 0,
         threshold: this.config.coverageThreshold.functions,
-        passing: totalFunctions > 0 ? (coveredFunctions / totalFunctions) * 100 >= this.config.coverageThreshold.functions : false
+        passing:
+          totalFunctions > 0
+            ? (coveredFunctions / totalFunctions) * 100 >=
+              this.config.coverageThreshold.functions
+            : false,
       },
       lines: {
         total: totalLines,
         covered: coveredLines,
         percentage: totalLines > 0 ? (coveredLines / totalLines) * 100 : 0,
         threshold: this.config.coverageThreshold.lines,
-        passing: totalLines > 0 ? (coveredLines / totalLines) * 100 >= this.config.coverageThreshold.lines : false
-      }
+        passing:
+          totalLines > 0
+            ? (coveredLines / totalLines) * 100 >=
+              this.config.coverageThreshold.lines
+            : false,
+      },
     };
   }
 
   /**
    * Analyze a single file
    */
-  private analyzeFile(content: string, filePath: string, testFiles: string[]): {
+  private analyzeFile(
+    content: string,
+    filePath: string,
+    testFiles: string[],
+  ): {
     statements: number;
     coveredStatements: number;
     branches: number;
@@ -433,9 +479,9 @@ export class TestCoverageAnalyzer {
     lines: number;
     coveredLines: number;
   } {
-    const lines = content.split('\n');
-    const fileName = filePath.split('/').pop()?.replace('.ts', '') || '';
-    
+    const lines = content.split("\n");
+    const fileName = filePath.split("/").pop()?.replace(".ts", "") || "";
+
     // Count statements (simplified analysis)
     let statements = 0;
     let coveredStatements = 0;
@@ -446,18 +492,28 @@ export class TestCoverageAnalyzer {
     let coveredLines = 0;
 
     // Check if file has corresponding test file
-    const hasTestFile = testFiles.some(testFile => 
-      testFile.includes(fileName) || testFile.includes(filePath.replace('.ts', ''))
+    const hasTestFile = testFiles.some(
+      (testFile) =>
+        testFile.includes(fileName) ||
+        testFile.includes(filePath.replace(".ts", "")),
     );
 
     for (const line of lines) {
       const trimmedLine = line.trim();
-      if (trimmedLine === '' || trimmedLine.startsWith('//') || trimmedLine.startsWith('/*')) {
+      if (
+        trimmedLine === "" ||
+        trimmedLine.startsWith("//") ||
+        trimmedLine.startsWith("/*")
+      ) {
         continue;
       }
 
       // Count statements
-      if (trimmedLine.includes(';') || trimmedLine.includes('{') || trimmedLine.includes('}')) {
+      if (
+        trimmedLine.includes(";") ||
+        trimmedLine.includes("{") ||
+        trimmedLine.includes("}")
+      ) {
         statements++;
         if (hasTestFile) {
           coveredStatements++;
@@ -465,10 +521,15 @@ export class TestCoverageAnalyzer {
       }
 
       // Count branches
-      if (trimmedLine.includes('if') || trimmedLine.includes('else') || 
-          trimmedLine.includes('switch') || trimmedLine.includes('case') ||
-          trimmedLine.includes('?') || trimmedLine.includes('||') || 
-          trimmedLine.includes('&&')) {
+      if (
+        trimmedLine.includes("if") ||
+        trimmedLine.includes("else") ||
+        trimmedLine.includes("switch") ||
+        trimmedLine.includes("case") ||
+        trimmedLine.includes("?") ||
+        trimmedLine.includes("||") ||
+        trimmedLine.includes("&&")
+      ) {
         branches++;
         if (hasTestFile) {
           coveredBranches++;
@@ -476,8 +537,11 @@ export class TestCoverageAnalyzer {
       }
 
       // Count functions
-      if (trimmedLine.includes('function') || trimmedLine.includes('=>') ||
-          trimmedLine.match(/\w+\s*\(/)) {
+      if (
+        trimmedLine.includes("function") ||
+        trimmedLine.includes("=>") ||
+        trimmedLine.match(/\w+\s*\(/)
+      ) {
         functions++;
         if (hasTestFile) {
           coveredFunctions++;
@@ -500,16 +564,18 @@ export class TestCoverageAnalyzer {
       functions,
       coveredFunctions,
       lines: lines.length,
-      coveredLines
+      coveredLines,
     };
   }
 
   /**
    * Analyze functional coverage
    */
-  private async analyzeFunctionalCoverage(testResults: TestSuiteResult): Promise<FunctionalCoverage> {
+  private async analyzeFunctionalCoverage(
+    testResults: TestSuiteResult,
+  ): Promise<FunctionalCoverage> {
     console.log("🎯 Analyzing functional coverage...");
-    
+
     const features: Record<string, FeatureCoverage> = {};
     const scenarios: Record<string, ScenarioCoverage> = {};
     const requirements: Record<string, RequirementCoverage> = {};
@@ -519,44 +585,59 @@ export class TestCoverageAnalyzer {
       {
         name: "self-transpilation",
         description: "TPEG can parse and generate parsers for its own grammar",
-        testCases: ["self-parse-basic", "code-generation", "self-hosting-loop"]
+        testCases: ["self-parse-basic", "code-generation", "self-hosting-loop"],
       },
       {
         name: "error-handling",
         description: "Comprehensive error handling and recovery mechanisms",
-        testCases: ["error-detection", "recovery-mechanisms", "error-integration"]
+        testCases: [
+          "error-detection",
+          "recovery-mechanisms",
+          "error-integration",
+        ],
       },
       {
         name: "performance-optimization",
         description: "Performance optimization features and caching",
-        testCases: ["baseline-performance", "optimization-features", "caching-system"]
+        testCases: [
+          "baseline-performance",
+          "optimization-features",
+          "caching-system",
+        ],
       },
       {
         name: "iteration-optimization",
         description: "Batch processing and parallel execution capabilities",
-        testCases: ["batch-processing", "parallel-execution", "memory-management"]
+        testCases: [
+          "batch-processing",
+          "parallel-execution",
+          "memory-management",
+        ],
       },
       {
         name: "bootstrap-validation",
         description: "Bootstrap validation and multi-stage compilation",
-        testCases: ["bootstrap-validation", "complete-workflow"]
-      }
+        testCases: ["bootstrap-validation", "complete-workflow"],
+      },
     ];
 
     // Analyze feature coverage
     for (const feature of coreFeatures) {
       const testCases = feature.testCases;
-      const coveredTestCases = testCases.filter(testCase => 
-        this.isTestCaseCovered(testCase, testResults)
+      const coveredTestCases = testCases.filter((testCase) =>
+        this.isTestCaseCovered(testCase, testResults),
       );
-      
+
       features[feature.name] = {
         name: feature.name,
         description: feature.description,
         covered: coveredTestCases.length > 0,
         testCases: coveredTestCases,
         lastTested: new Date(),
-        coverage: testCases.length > 0 ? (coveredTestCases.length / testCases.length) * 100 : 0
+        coverage:
+          testCases.length > 0
+            ? (coveredTestCases.length / testCases.length) * 100
+            : 0,
       };
     }
 
@@ -567,29 +648,29 @@ export class TestCoverageAnalyzer {
         description: "Parse simple grammar definitions",
         testCases: ["self-parse-basic"],
         expectedBehavior: "Successfully parse TPEG grammar files",
-        actualBehavior: "Parsing works correctly"
+        actualBehavior: "Parsing works correctly",
       },
       {
         name: "code-generation",
         description: "Generate TypeScript parser code",
         testCases: ["code-generation"],
         expectedBehavior: "Generate functional TypeScript code",
-        actualBehavior: "Code generation works correctly"
+        actualBehavior: "Code generation works correctly",
       },
       {
         name: "self-hosting",
         description: "Complete self-hosting capability",
         testCases: ["self-hosting-loop"],
         expectedBehavior: "Generated parser can parse original grammar",
-        actualBehavior: "Self-hosting works correctly"
-      }
+        actualBehavior: "Self-hosting works correctly",
+      },
     ];
 
     for (const scenario of coreScenarios) {
-      const covered = scenario.testCases.some(testCase => 
-        this.isTestCaseCovered(testCase, testResults)
+      const covered = scenario.testCases.some((testCase) =>
+        this.isTestCaseCovered(testCase, testResults),
       );
-      
+
       scenarios[scenario.name] = {
         name: scenario.name,
         description: scenario.description,
@@ -597,7 +678,7 @@ export class TestCoverageAnalyzer {
         testCases: scenario.testCases,
         expectedBehavior: scenario.expectedBehavior,
         actualBehavior: scenario.actualBehavior,
-        passed: covered
+        passed: covered,
       };
     }
 
@@ -607,46 +688,46 @@ export class TestCoverageAnalyzer {
         id: "REQ-001",
         description: "System must support self-transpilation",
         testCases: ["self-parse-basic", "code-generation"],
-        priority: "high" as const
+        priority: "high" as const,
       },
       {
         id: "REQ-002",
         description: "System must handle errors gracefully",
         testCases: ["error-detection", "recovery-mechanisms"],
-        priority: "high" as const
+        priority: "high" as const,
       },
       {
         id: "REQ-003",
         description: "System must provide performance optimization",
         testCases: ["baseline-performance", "optimization-features"],
-        priority: "medium" as const
+        priority: "medium" as const,
       },
       {
         id: "REQ-004",
         description: "System must support batch processing",
         testCases: ["batch-processing", "parallel-execution"],
-        priority: "medium" as const
+        priority: "medium" as const,
       },
       {
         id: "REQ-005",
         description: "System must validate bootstrap process",
         testCases: ["bootstrap-validation"],
-        priority: "low" as const
-      }
+        priority: "low" as const,
+      },
     ];
 
     for (const requirement of coreRequirements) {
-      const covered = requirement.testCases.some(testCase => 
-        this.isTestCaseCovered(testCase, testResults)
+      const covered = requirement.testCases.some((testCase) =>
+        this.isTestCaseCovered(testCase, testResults),
       );
-      
+
       requirements[requirement.id] = {
         id: requirement.id,
         description: requirement.description,
         covered,
         testCases: requirement.testCases,
         priority: requirement.priority,
-        status: covered ? "passed" : "not_tested"
+        status: covered ? "passed" : "not_tested",
       };
     }
 
@@ -655,20 +736,27 @@ export class TestCoverageAnalyzer {
       scenarios,
       requirements,
       overall: {
-        featuresCovered: Object.values(features).filter(f => f.covered).length,
+        featuresCovered: Object.values(features).filter((f) => f.covered)
+          .length,
         totalFeatures: Object.values(features).length,
-        scenariosCovered: Object.values(scenarios).filter(s => s.covered).length,
+        scenariosCovered: Object.values(scenarios).filter((s) => s.covered)
+          .length,
         totalScenarios: Object.values(scenarios).length,
-        requirementsCovered: Object.values(requirements).filter(r => r.covered).length,
-        totalRequirements: Object.values(requirements).length
-      }
+        requirementsCovered: Object.values(requirements).filter(
+          (r) => r.covered,
+        ).length,
+        totalRequirements: Object.values(requirements).length,
+      },
     };
   }
 
   /**
    * Check if test case is covered
    */
-  private isTestCaseCovered(testCaseId: string, testResults: TestSuiteResult): boolean {
+  private isTestCaseCovered(
+    testCaseId: string,
+    testResults: TestSuiteResult,
+  ): boolean {
     for (const categoryResult of Object.values(testResults.categoryResults)) {
       for (const testResult of categoryResult.testResults) {
         if (testResult.id === testCaseId && testResult.success) {
@@ -682,9 +770,12 @@ export class TestCoverageAnalyzer {
   /**
    * Analyze test quality
    */
-  private async analyzeTestQuality(testFiles: string[], testResults: TestSuiteResult): Promise<QualityAnalysis> {
+  private async analyzeTestQuality(
+    testFiles: string[],
+    testResults: TestSuiteResult,
+  ): Promise<QualityAnalysis> {
     console.log("🔍 Analyzing test quality...");
-    
+
     let totalAssertions = 0;
     let totalTestLength = 0;
     let testCount = 0;
@@ -698,12 +789,12 @@ export class TestCoverageAnalyzer {
       try {
         const content = readFileSync(testFile, "utf-8");
         const analysis = this.analyzeTestFile(content);
-        
+
         totalAssertions += analysis.assertions;
         totalTestLength += analysis.testLength;
         testCount += analysis.testCount;
         duplicateTests += analysis.duplicateTests;
-        
+
         // Categorize tests
         if (testFile.includes("unit") || testFile.includes("spec")) {
           unitTests += analysis.testCount;
@@ -711,14 +802,20 @@ export class TestCoverageAnalyzer {
           integrationTests += analysis.testCount;
         } else if (testFile.includes("system") || testFile.includes("e2e")) {
           systemTests += analysis.testCount;
-        } else if (testFile.includes("performance") || testFile.includes("benchmark")) {
+        } else if (
+          testFile.includes("performance") ||
+          testFile.includes("benchmark")
+        ) {
           performanceTests += analysis.testCount;
         } else {
           // Default to integration tests
           integrationTests += analysis.testCount;
         }
       } catch (error) {
-        console.warn(`Warning: Could not analyze test file ${testFile}:`, error);
+        console.warn(
+          `Warning: Could not analyze test file ${testFile}:`,
+          error,
+        );
       }
     }
 
@@ -732,14 +829,14 @@ export class TestCoverageAnalyzer {
         unitTests,
         integrationTests,
         systemTests,
-        performanceTests
+        performanceTests,
       },
       testQuality: {
         averageAssertions: testCount > 0 ? totalAssertions / testCount : 0,
         averageTestLength: testCount > 0 ? totalTestLength / testCount : 0,
         duplicateTests,
         flakinesss: this.calculateFlakiness(testResults),
-        maintainability: this.calculateMaintainability(testFiles)
+        maintainability: this.calculateMaintainability(testFiles),
       },
       testEffectiveness: {
         bugDetectionRate: this.calculateBugDetectionRate(testResults),
@@ -747,10 +844,13 @@ export class TestCoverageAnalyzer {
         testExecution: {
           averageTime,
           totalTime,
-          slowestTests
-        }
+          slowestTests,
+        },
       },
-      recommendations: this.generateQualityRecommendations(testResults, testFiles)
+      recommendations: this.generateQualityRecommendations(
+        testResults,
+        testFiles,
+      ),
     };
   }
 
@@ -763,7 +863,7 @@ export class TestCoverageAnalyzer {
     testCount: number;
     duplicateTests: number;
   } {
-    const lines = content.split('\n');
+    const lines = content.split("\n");
     let assertions = 0;
     let testCount = 0;
     let currentTestLength = 0;
@@ -773,23 +873,31 @@ export class TestCoverageAnalyzer {
 
     for (const line of lines) {
       const trimmedLine = line.trim();
-      
+
       // Count assertions
-      if (trimmedLine.includes('expect') || trimmedLine.includes('assert') || 
-          trimmedLine.includes('should') || trimmedLine.includes('toBe') ||
-          trimmedLine.includes('toEqual') || trimmedLine.includes('toMatch')) {
+      if (
+        trimmedLine.includes("expect") ||
+        trimmedLine.includes("assert") ||
+        trimmedLine.includes("should") ||
+        trimmedLine.includes("toBe") ||
+        trimmedLine.includes("toEqual") ||
+        trimmedLine.includes("toMatch")
+      ) {
         assertions++;
       }
 
       // Count tests
-      if (trimmedLine.includes('test(') || trimmedLine.includes('it(') || 
-          trimmedLine.includes('describe(')) {
+      if (
+        trimmedLine.includes("test(") ||
+        trimmedLine.includes("it(") ||
+        trimmedLine.includes("describe(")
+      ) {
         if (currentTestLength > 0) {
           totalTestLength += currentTestLength;
         }
         testCount++;
         currentTestLength = 0;
-        
+
         // Check for duplicate test names
         const testNameMatch = trimmedLine.match(/["']([^"']+)["']/);
         if (testNameMatch) {
@@ -801,7 +909,7 @@ export class TestCoverageAnalyzer {
           }
         }
       }
-      
+
       if (testCount > 0) {
         currentTestLength++;
       }
@@ -815,7 +923,7 @@ export class TestCoverageAnalyzer {
       assertions,
       testLength: totalTestLength,
       testCount,
-      duplicateTests
+      duplicateTests,
     };
   }
 
@@ -824,12 +932,12 @@ export class TestCoverageAnalyzer {
    */
   private findSlowestTests(testResults: TestSuiteResult): string[] {
     const slowTests: Array<{ name: string; duration: number }> = [];
-    
+
     for (const categoryResult of Object.values(testResults.categoryResults)) {
       for (const testResult of categoryResult.testResults) {
         slowTests.push({
           name: testResult.name,
-          duration: testResult.duration
+          duration: testResult.duration,
         });
       }
     }
@@ -837,7 +945,7 @@ export class TestCoverageAnalyzer {
     return slowTests
       .sort((a, b) => b.duration - a.duration)
       .slice(0, 5)
-      .map(test => `${test.name} (${test.duration.toFixed(2)}ms)`);
+      .map((test) => `${test.name} (${test.duration.toFixed(2)}ms)`);
   }
 
   /**
@@ -847,7 +955,7 @@ export class TestCoverageAnalyzer {
     // Simplified flakiness calculation
     const totalTests = testResults.totalTests;
     const failedTests = testResults.failedTests;
-    
+
     if (totalTests === 0) return 0;
     return (failedTests / totalTests) * 100;
   }
@@ -858,36 +966,37 @@ export class TestCoverageAnalyzer {
   private calculateMaintainability(testFiles: string[]): number {
     // Simplified maintainability calculation based on test file structure
     let totalScore = 0;
-    
+
     for (const testFile of testFiles) {
       try {
         const content = readFileSync(testFile, "utf-8");
-        const lines = content.split('\n');
-        
+        const lines = content.split("\n");
+
         // Factors that affect maintainability
         let score = 100;
-        
+
         // Penalize very long files
         if (lines.length > 1000) score -= 20;
         else if (lines.length > 500) score -= 10;
-        
+
         // Penalize lack of comments
-        const commentLines = lines.filter(line => 
-          line.trim().startsWith('//') || line.trim().startsWith('/*')
+        const commentLines = lines.filter(
+          (line) =>
+            line.trim().startsWith("//") || line.trim().startsWith("/*"),
         ).length;
         const commentRatio = commentLines / lines.length;
         if (commentRatio < 0.1) score -= 15;
-        
+
         // Penalize complex test structures
         const nestedBlocks = (content.match(/\{/g) || []).length;
         if (nestedBlocks > 100) score -= 10;
-        
+
         totalScore += Math.max(0, score);
-      } catch (error) {
+      } catch (_error) {
         totalScore += 50; // Default score for unreadable files
       }
     }
-    
+
     return testFiles.length > 0 ? totalScore / testFiles.length : 0;
   }
 
@@ -898,7 +1007,7 @@ export class TestCoverageAnalyzer {
     // Simplified bug detection rate calculation
     const totalTests = testResults.totalTests;
     const passedTests = testResults.passedTests;
-    
+
     if (totalTests === 0) return 0;
     return (passedTests / totalTests) * 100;
   }
@@ -910,7 +1019,7 @@ export class TestCoverageAnalyzer {
     // Simplified false positive rate calculation
     const totalTests = testResults.totalTests;
     const failedTests = testResults.failedTests;
-    
+
     if (totalTests === 0) return 0;
     return (failedTests / totalTests) * 10; // Assume 10% of failures are false positives
   }
@@ -918,23 +1027,30 @@ export class TestCoverageAnalyzer {
   /**
    * Generate quality recommendations
    */
-  private generateQualityRecommendations(testResults: TestSuiteResult, testFiles: string[]): string[] {
+  private generateQualityRecommendations(
+    testResults: TestSuiteResult,
+    testFiles: string[],
+  ): string[] {
     const recommendations: string[] = [];
-    
+
     const successRate = testResults.passedTests / testResults.totalTests;
     if (successRate < 0.9) {
       recommendations.push("Improve test success rate - currently below 90%");
     }
-    
+
     if (testFiles.length < 10) {
-      recommendations.push("Consider adding more test files for better coverage");
+      recommendations.push(
+        "Consider adding more test files for better coverage",
+      );
     }
-    
+
     const averageTestTime = testResults.totalDuration / testResults.totalTests;
     if (averageTestTime > 5000) {
-      recommendations.push("Optimize test execution time - average test takes too long");
+      recommendations.push(
+        "Optimize test execution time - average test takes too long",
+      );
     }
-    
+
     return recommendations;
   }
 
@@ -952,8 +1068,8 @@ export class TestCoverageAnalyzer {
         scenariosCovered: 0,
         totalScenarios: 0,
         requirementsCovered: 0,
-        totalRequirements: 0
-      }
+        totalRequirements: 0,
+      },
     };
   }
 
@@ -966,14 +1082,14 @@ export class TestCoverageAnalyzer {
         unitTests: 0,
         integrationTests: 0,
         systemTests: 0,
-        performanceTests: 0
+        performanceTests: 0,
       },
       testQuality: {
         averageAssertions: 0,
         averageTestLength: 0,
         duplicateTests: 0,
         flakinesss: 0,
-        maintainability: 0
+        maintainability: 0,
       },
       testEffectiveness: {
         bugDetectionRate: 0,
@@ -981,10 +1097,10 @@ export class TestCoverageAnalyzer {
         testExecution: {
           averageTime: 0,
           totalTime: 0,
-          slowestTests: []
-        }
+          slowestTests: [],
+        },
       },
-      recommendations: []
+      recommendations: [],
     };
   }
 
@@ -994,7 +1110,7 @@ export class TestCoverageAnalyzer {
   private generateCoverageSummary(
     codeCoverage: CoverageAnalysis["overall"],
     functionalCoverage: FunctionalCoverage,
-    qualityAnalysis: QualityAnalysis
+    qualityAnalysis: QualityAnalysis,
   ): CoverageSummary {
     let score = 0;
     let passedThresholds = 0;
@@ -1019,7 +1135,9 @@ export class TestCoverageAnalyzer {
     }
 
     // Functional coverage bonus
-    const functionalScore = functionalCoverage.overall.featuresCovered / Math.max(1, functionalCoverage.overall.totalFeatures);
+    const functionalScore =
+      functionalCoverage.overall.featuresCovered /
+      Math.max(1, functionalCoverage.overall.totalFeatures);
     score += functionalScore * 10;
 
     // Quality analysis bonus
@@ -1031,7 +1149,7 @@ export class TestCoverageAnalyzer {
     }
 
     const grade = this.calculateGrade(score);
-    
+
     const criticalGaps: string[] = [];
     if (!codeCoverage.statements.passing) {
       criticalGaps.push("Statement coverage below threshold");
@@ -1039,7 +1157,10 @@ export class TestCoverageAnalyzer {
     if (!codeCoverage.functions.passing) {
       criticalGaps.push("Function coverage below threshold");
     }
-    if (functionalCoverage.overall.featuresCovered < functionalCoverage.overall.totalFeatures) {
+    if (
+      functionalCoverage.overall.featuresCovered <
+      functionalCoverage.overall.totalFeatures
+    ) {
       criticalGaps.push("Not all features are covered by tests");
     }
 
@@ -1082,7 +1203,7 @@ export class TestCoverageAnalyzer {
       criticalGaps,
       strengths,
       weaknesses,
-      nextSteps
+      nextSteps,
     };
   }
 
@@ -1092,28 +1213,40 @@ export class TestCoverageAnalyzer {
   private generateRecommendations(
     codeCoverage: CoverageAnalysis["overall"],
     functionalCoverage: FunctionalCoverage,
-    qualityAnalysis: QualityAnalysis
+    qualityAnalysis: QualityAnalysis,
   ): string[] {
     const recommendations: string[] = [];
 
     // Code coverage recommendations
     if (!codeCoverage.statements.passing) {
-      recommendations.push(`Increase statement coverage from ${codeCoverage.statements.percentage.toFixed(1)}% to ${codeCoverage.statements.threshold}%`);
+      recommendations.push(
+        `Increase statement coverage from ${codeCoverage.statements.percentage.toFixed(1)}% to ${codeCoverage.statements.threshold}%`,
+      );
     }
     if (!codeCoverage.branches.passing) {
-      recommendations.push(`Increase branch coverage from ${codeCoverage.branches.percentage.toFixed(1)}% to ${codeCoverage.branches.threshold}%`);
+      recommendations.push(
+        `Increase branch coverage from ${codeCoverage.branches.percentage.toFixed(1)}% to ${codeCoverage.branches.threshold}%`,
+      );
     }
     if (!codeCoverage.functions.passing) {
-      recommendations.push(`Increase function coverage from ${codeCoverage.functions.percentage.toFixed(1)}% to ${codeCoverage.functions.threshold}%`);
+      recommendations.push(
+        `Increase function coverage from ${codeCoverage.functions.percentage.toFixed(1)}% to ${codeCoverage.functions.threshold}%`,
+      );
     }
     if (!codeCoverage.lines.passing) {
-      recommendations.push(`Increase line coverage from ${codeCoverage.lines.percentage.toFixed(1)}% to ${codeCoverage.lines.threshold}%`);
+      recommendations.push(
+        `Increase line coverage from ${codeCoverage.lines.percentage.toFixed(1)}% to ${codeCoverage.lines.threshold}%`,
+      );
     }
 
     // Functional coverage recommendations
-    const uncoveredFeatures = Object.values(functionalCoverage.features).filter(f => !f.covered);
+    const uncoveredFeatures = Object.values(functionalCoverage.features).filter(
+      (f) => !f.covered,
+    );
     if (uncoveredFeatures.length > 0) {
-      recommendations.push(`Add tests for uncovered features: ${uncoveredFeatures.map(f => f.name).join(", ")}`);
+      recommendations.push(
+        `Add tests for uncovered features: ${uncoveredFeatures.map((f) => f.name).join(", ")}`,
+      );
     }
 
     // Quality recommendations
@@ -1147,16 +1280,18 @@ export class TestCoverageAnalyzer {
   /**
    * Generate coverage report
    */
-  private async generateCoverageReport(analysis: CoverageAnalysis): Promise<void> {
+  private async generateCoverageReport(
+    analysis: CoverageAnalysis,
+  ): Promise<void> {
     const report = {
       timestamp: new Date().toISOString(),
       analysis,
-      config: this.config
+      config: this.config,
     };
 
     // Generate JSON report
     writeFileSync(this.config.outputPath, JSON.stringify(report, null, 2));
-    
+
     // Generate additional formats
     if (this.config.reportFormat === "html") {
       await this.generateHTMLCoverageReport(analysis);
@@ -1172,9 +1307,11 @@ export class TestCoverageAnalyzer {
   /**
    * Generate HTML coverage report
    */
-  private async generateHTMLCoverageReport(analysis: CoverageAnalysis): Promise<void> {
+  private async generateHTMLCoverageReport(
+    analysis: CoverageAnalysis,
+  ): Promise<void> {
     const htmlPath = this.config.outputPath.replace(/\.json$/, ".html");
-    
+
     const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -1205,44 +1342,52 @@ export class TestCoverageAnalyzer {
     </div>
 
     <h2>Code Coverage</h2>
-    ${Object.entries(analysis.overall).map(([type, metrics]) => `
-        <div class="coverage-metric ${metrics.passing ? 'passing' : 'failing'}">
+    ${Object.entries(analysis.overall)
+      .map(
+        ([type, metrics]) => `
+        <div class="coverage-metric ${metrics.passing ? "passing" : "failing"}">
             <h3>${type.charAt(0).toUpperCase() + type.slice(1)} Coverage</h3>
             <p>${metrics.covered}/${metrics.total} (${metrics.percentage.toFixed(1)}%)</p>
             <div class="progress-bar">
                 <div class="progress-fill" style="width: ${metrics.percentage}%"></div>
             </div>
-            <p>Threshold: ${metrics.threshold}% - ${metrics.passing ? 'PASSED' : 'FAILED'}</p>
+            <p>Threshold: ${metrics.threshold}% - ${metrics.passing ? "PASSED" : "FAILED"}</p>
         </div>
-    `).join('')}
+    `,
+      )
+      .join("")}
 
     <h2>Functional Coverage</h2>
     <table>
         <tr><th>Feature</th><th>Covered</th><th>Coverage</th><th>Test Cases</th></tr>
-        ${Object.values(analysis.functional.features).map(feature => `
+        ${Object.values(analysis.functional.features)
+          .map(
+            (feature) => `
             <tr>
                 <td>${feature.name}</td>
-                <td>${feature.covered ? '✅' : '❌'}</td>
+                <td>${feature.covered ? "✅" : "❌"}</td>
                 <td>${feature.coverage.toFixed(1)}%</td>
-                <td>${feature.testCases.join(', ')}</td>
+                <td>${feature.testCases.join(", ")}</td>
             </tr>
-        `).join('')}
+        `,
+          )
+          .join("")}
     </table>
 
     <h2>Summary</h2>
     <h3>Strengths</h3>
     <ul>
-        ${analysis.summary.strengths.map(strength => `<li>${strength}</li>`).join('')}
+        ${analysis.summary.strengths.map((strength) => `<li>${strength}</li>`).join("")}
     </ul>
 
     <h3>Weaknesses</h3>
     <ul>
-        ${analysis.summary.weaknesses.map(weakness => `<li>${weakness}</li>`).join('')}
+        ${analysis.summary.weaknesses.map((weakness) => `<li>${weakness}</li>`).join("")}
     </ul>
 
     <h2>Recommendations</h2>
     <ul>
-        ${analysis.recommendations.map(rec => `<li>${rec}</li>`).join('')}
+        ${analysis.recommendations.map((rec) => `<li>${rec}</li>`).join("")}
     </ul>
 </body>
 </html>`;
@@ -1253,9 +1398,11 @@ export class TestCoverageAnalyzer {
   /**
    * Generate Markdown coverage report
    */
-  private async generateMarkdownCoverageReport(analysis: CoverageAnalysis): Promise<void> {
+  private async generateMarkdownCoverageReport(
+    analysis: CoverageAnalysis,
+  ): Promise<void> {
     const markdownPath = this.config.outputPath.replace(/\.json$/, ".md");
-    
+
     const markdown = `# TPEG Coverage Report
 
 ## Overview
@@ -1266,39 +1413,46 @@ export class TestCoverageAnalyzer {
 
 ## Code Coverage
 
-${Object.entries(analysis.overall).map(([type, metrics]) => `
+${Object.entries(analysis.overall)
+  .map(
+    ([type, metrics]) => `
 ### ${type.charAt(0).toUpperCase() + type.slice(1)} Coverage
 
 - **Coverage:** ${metrics.covered}/${metrics.total} (${metrics.percentage.toFixed(1)}%)
 - **Threshold:** ${metrics.threshold}%
-- **Status:** ${metrics.passing ? 'PASSED ✅' : 'FAILED ❌'}
-`).join('')}
+- **Status:** ${metrics.passing ? "PASSED ✅" : "FAILED ❌"}
+`,
+  )
+  .join("")}
 
 ## Functional Coverage
 
 | Feature | Covered | Coverage | Test Cases |
 |---------|---------|----------|------------|
-${Object.values(analysis.functional.features).map(feature => 
-  `| ${feature.name} | ${feature.covered ? '✅' : '❌'} | ${feature.coverage.toFixed(1)}% | ${feature.testCases.join(', ')} |`
-).join('\n')}
+${Object.values(analysis.functional.features)
+  .map(
+    (feature) =>
+      `| ${feature.name} | ${feature.covered ? "✅" : "❌"} | ${feature.coverage.toFixed(1)}% | ${feature.testCases.join(", ")} |`,
+  )
+  .join("\n")}
 
 ## Summary
 
 ### Strengths
-${analysis.summary.strengths.map(strength => `- ${strength}`).join('\n')}
+${analysis.summary.strengths.map((strength) => `- ${strength}`).join("\n")}
 
 ### Weaknesses
-${analysis.summary.weaknesses.map(weakness => `- ${weakness}`).join('\n')}
+${analysis.summary.weaknesses.map((weakness) => `- ${weakness}`).join("\n")}
 
 ### Critical Gaps
-${analysis.summary.criticalGaps.map(gap => `- ${gap}`).join('\n')}
+${analysis.summary.criticalGaps.map((gap) => `- ${gap}`).join("\n")}
 
 ### Next Steps
-${analysis.summary.nextSteps.map(step => `- ${step}`).join('\n')}
+${analysis.summary.nextSteps.map((step) => `- ${step}`).join("\n")}
 
 ## Recommendations
 
-${analysis.recommendations.map(rec => `- ${rec}`).join('\n')}
+${analysis.recommendations.map((rec) => `- ${rec}`).join("\n")}
 `;
 
     writeFileSync(markdownPath, markdown);
@@ -1310,24 +1464,32 @@ ${analysis.recommendations.map(rec => `- ${rec}`).join('\n')}
   private printCoverageReport(analysis: CoverageAnalysis): void {
     console.log("\n📊 COVERAGE ANALYSIS RESULTS");
     console.log("=============================");
-    console.log(`📊 Overall Grade: ${analysis.summary.grade} (${analysis.summary.score}/100)`);
-    console.log(`✅ Passed Thresholds: ${analysis.summary.passedThresholds}/${analysis.summary.totalThresholds}`);
+    console.log(
+      `📊 Overall Grade: ${analysis.summary.grade} (${analysis.summary.score}/100)`,
+    );
+    console.log(
+      `✅ Passed Thresholds: ${analysis.summary.passedThresholds}/${analysis.summary.totalThresholds}`,
+    );
     console.log("");
 
     console.log("📋 Code Coverage:");
     for (const [type, metrics] of Object.entries(analysis.overall)) {
       const status = metrics.passing ? "✅" : "❌";
-      console.log(`${status} ${type.charAt(0).toUpperCase() + type.slice(1)}: ${metrics.percentage.toFixed(1)}% (${metrics.covered}/${metrics.total})`);
+      console.log(
+        `${status} ${type.charAt(0).toUpperCase() + type.slice(1)}: ${metrics.percentage.toFixed(1)}% (${metrics.covered}/${metrics.total})`,
+      );
     }
 
     console.log("\n🎯 Functional Coverage:");
     for (const feature of Object.values(analysis.functional.features)) {
       const status = feature.covered ? "✅" : "❌";
-      console.log(`${status} ${feature.name}: ${feature.coverage.toFixed(1)}% coverage`);
+      console.log(
+        `${status} ${feature.name}: ${feature.coverage.toFixed(1)}% coverage`,
+      );
     }
 
     console.log("\n📋 Recommendations:");
-    analysis.recommendations.forEach(rec => {
+    analysis.recommendations.forEach((rec) => {
       console.log(`- ${rec}`);
     });
   }
@@ -1338,8 +1500,8 @@ ${analysis.recommendations.map(rec => `- ${rec}`).join('\n')}
  */
 export async function analyzeCoverage(
   testResults: TestSuiteResult,
-  config: Partial<CoverageConfig> = {}
+  config: Partial<CoverageConfig> = {},
 ): Promise<CoverageAnalysis> {
   const analyzer = new TestCoverageAnalyzer(config);
   return await analyzer.analyzeCoverage(testResults);
-} 
+}

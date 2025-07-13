@@ -9,22 +9,22 @@ import {
 } from "./eta-generator";
 
 // Import test utilities from core
-import type { 
-  Expression, 
-  GrammarDefinition, 
-  RuleDefinition,
-  StringLiteral,
+import type {
   CharacterClass,
-  Sequence,
   Choice,
-  Star,
-  Plus,
-  Optional,
-  Quantified,
+  Expression,
+  GrammarDefinition,
   Identifier,
-  PositiveLookahead,
+  LabeledExpression,
   NegativeLookahead,
-  LabeledExpression
+  Optional,
+  Plus,
+  PositiveLookahead,
+  Quantified,
+  RuleDefinition,
+  Sequence,
+  Star,
+  StringLiteral,
 } from "./types";
 
 // Simple test helper functions
@@ -109,7 +109,11 @@ function createOptional(expression: Expression): Optional {
   };
 }
 
-function createQuantified(expression: Expression, min: number, max?: number): Quantified {
+function createQuantified(
+  expression: Expression,
+  min: number,
+  max?: number,
+): Quantified {
   return {
     type: "Quantified",
     expression,
@@ -411,7 +415,10 @@ describe("EtaTPEGCodeGenerator", () => {
         [],
         [
           createRuleDefinition("hello", createStringLiteral("world")),
-          createRuleDefinition("number", createCharacterClass([createCharRange("0", "9")], false)),
+          createRuleDefinition(
+            "number",
+            createCharacterClass([createCharRange("0", "9")], false),
+          ),
         ],
       );
 
@@ -425,7 +432,7 @@ describe("EtaTPEGCodeGenerator", () => {
       expect(result.code).toMatchSnapshot();
       expect(result.imports).toMatchSnapshot();
       expect(result.exports).toMatchSnapshot();
-      
+
       // Verify performance information excluding generation time
       const { generationTime, ...performanceWithoutTime } = result.performance;
       expect(performanceWithoutTime).toMatchSnapshot();
@@ -438,9 +445,20 @@ describe("EtaTPEGCodeGenerator", () => {
         "ComplexGrammar",
         [],
         [
-          createRuleDefinition("digit", createCharacterClass([createCharRange("0", "9")], false)),
-          createRuleDefinition("letter", createCharacterClass([createCharRange("a", "z")], false)),
-          createRuleDefinition("word", createPlus(createCharacterClass([createCharRange("a", "z")], false))),
+          createRuleDefinition(
+            "digit",
+            createCharacterClass([createCharRange("0", "9")], false),
+          ),
+          createRuleDefinition(
+            "letter",
+            createCharacterClass([createCharRange("a", "z")], false),
+          ),
+          createRuleDefinition(
+            "word",
+            createPlus(
+              createCharacterClass([createCharRange("a", "z")], false),
+            ),
+          ),
           createRuleDefinition(
             "expression",
             createSequence([
@@ -452,11 +470,17 @@ describe("EtaTPEGCodeGenerator", () => {
           createRuleDefinition(
             "number",
             createChoice([
-              createPlus(createCharacterClass([createCharRange("0", "9")], false)),
+              createPlus(
+                createCharacterClass([createCharRange("0", "9")], false),
+              ),
               createSequence([
-                createPlus(createCharacterClass([createCharRange("0", "9")], false)),
+                createPlus(
+                  createCharacterClass([createCharRange("0", "9")], false),
+                ),
                 createStringLiteral("."),
-                createPlus(createCharacterClass([createCharRange("0", "9")], false)),
+                createPlus(
+                  createCharacterClass([createCharRange("0", "9")], false),
+                ),
               ]),
             ]),
           ),
@@ -474,7 +498,7 @@ describe("EtaTPEGCodeGenerator", () => {
       expect(result.code).toMatchSnapshot();
       expect(result.imports).toMatchSnapshot();
       expect(result.exports).toMatchSnapshot();
-      
+
       // Verify performance information excluding generation time
       const { generationTime, ...performanceWithoutTime } = result.performance;
       expect(performanceWithoutTime).toMatchSnapshot();
@@ -487,19 +511,27 @@ describe("EtaTPEGCodeGenerator", () => {
         "OptimizedGrammar",
         [],
         [
-          createRuleDefinition("recursive", createChoice([
-            createStringLiteral("a"),
-            createSequence([
-              createStringLiteral("("),
-              createIdentifier("recursive"),
-              createStringLiteral(")"),
+          createRuleDefinition(
+            "recursive",
+            createChoice([
+              createStringLiteral("a"),
+              createSequence([
+                createStringLiteral("("),
+                createIdentifier("recursive"),
+                createStringLiteral(")"),
+              ]),
             ]),
-          ])),
-          createRuleDefinition("highComplexity", createStar(createChoice([
-            createStringLiteral("x"),
-            createStringLiteral("y"),
-            createStringLiteral("z"),
-          ]))),
+          ),
+          createRuleDefinition(
+            "highComplexity",
+            createStar(
+              createChoice([
+                createStringLiteral("x"),
+                createStringLiteral("y"),
+                createStringLiteral("z"),
+              ]),
+            ),
+          ),
         ],
       );
 
@@ -515,7 +547,7 @@ describe("EtaTPEGCodeGenerator", () => {
       expect(result.code).toMatchSnapshot();
       expect(result.imports).toMatchSnapshot();
       expect(result.exports).toMatchSnapshot();
-      
+
       // Verify performance information excluding generation time
       const { generationTime, ...performanceWithoutTime } = result.performance;
       expect(performanceWithoutTime).toMatchSnapshot();
@@ -529,10 +561,10 @@ describe("EtaTPEGCodeGenerator", () => {
         [],
         [
           createRuleDefinition("simple", createStringLiteral("value")),
-          createRuleDefinition("choice", createChoice([
-            createStringLiteral("a"),
-            createStringLiteral("b"),
-          ])),
+          createRuleDefinition(
+            "choice",
+            createChoice([createStringLiteral("a"), createStringLiteral("b")]),
+          ),
         ],
       );
 
@@ -546,7 +578,7 @@ describe("EtaTPEGCodeGenerator", () => {
       expect(result.code).toMatchSnapshot();
       expect(result.imports).toMatchSnapshot();
       expect(result.exports).toMatchSnapshot();
-      
+
       // Verify performance information excluding generation time
       const { generationTime, ...performanceWithoutTime } = result.performance;
       expect(performanceWithoutTime).toMatchSnapshot();
@@ -558,9 +590,7 @@ describe("EtaTPEGCodeGenerator", () => {
       const grammar = createGrammarDefinition(
         "NoImportsGrammar",
         [],
-        [
-          createRuleDefinition("basic", createStringLiteral("test")),
-        ],
+        [createRuleDefinition("basic", createStringLiteral("test"))],
       );
 
       const result = await generateEtaTypeScriptParser(grammar, {
@@ -574,7 +604,7 @@ describe("EtaTPEGCodeGenerator", () => {
       expect(result.code).toMatchSnapshot();
       expect(result.imports).toMatchSnapshot();
       expect(result.exports).toMatchSnapshot();
-      
+
       // Verify performance information excluding generation time
       const { generationTime, ...performanceWithoutTime } = result.performance;
       expect(performanceWithoutTime).toMatchSnapshot();
@@ -589,11 +619,14 @@ describe("EtaTPEGCodeGenerator", () => {
         [
           createRuleDefinition("rule1", createStringLiteral("value1")),
           createRuleDefinition("rule2", createStringLiteral("value2")),
-          createRuleDefinition("rule3", createSequence([
-            createIdentifier("rule1"),
-            createStringLiteral(" "),
-            createIdentifier("rule2"),
-          ])),
+          createRuleDefinition(
+            "rule3",
+            createSequence([
+              createIdentifier("rule1"),
+              createStringLiteral(" "),
+              createIdentifier("rule2"),
+            ]),
+          ),
         ],
       );
 
@@ -607,7 +640,7 @@ describe("EtaTPEGCodeGenerator", () => {
       expect(result.code).toMatchSnapshot();
       expect(result.imports).toMatchSnapshot();
       expect(result.exports).toMatchSnapshot();
-      
+
       // Verify performance information excluding generation time
       const { generationTime, ...performanceWithoutTime } = result.performance;
       expect(performanceWithoutTime).toMatchSnapshot();
@@ -620,10 +653,22 @@ describe("EtaTPEGCodeGenerator", () => {
         "QuantifiedGrammar",
         [],
         [
-          createRuleDefinition("exactly3", createQuantified(createStringLiteral("a"), 3, 3)),
-          createRuleDefinition("range2to5", createQuantified(createStringLiteral("b"), 2, 5)),
-          createRuleDefinition("minimum3", createQuantified(createStringLiteral("c"), 3)),
-          createRuleDefinition("optional", createQuantified(createStringLiteral("d"), 0, 1)),
+          createRuleDefinition(
+            "exactly3",
+            createQuantified(createStringLiteral("a"), 3, 3),
+          ),
+          createRuleDefinition(
+            "range2to5",
+            createQuantified(createStringLiteral("b"), 2, 5),
+          ),
+          createRuleDefinition(
+            "minimum3",
+            createQuantified(createStringLiteral("c"), 3),
+          ),
+          createRuleDefinition(
+            "optional",
+            createQuantified(createStringLiteral("d"), 0, 1),
+          ),
         ],
       );
 
@@ -637,7 +682,7 @@ describe("EtaTPEGCodeGenerator", () => {
       expect(result.code).toMatchSnapshot();
       expect(result.imports).toMatchSnapshot();
       expect(result.exports).toMatchSnapshot();
-      
+
       // Verify performance information excluding generation time
       const { generationTime, ...performanceWithoutTime } = result.performance;
       expect(performanceWithoutTime).toMatchSnapshot();
@@ -671,7 +716,7 @@ describe("EtaTPEGCodeGenerator", () => {
       expect(result.code).toMatchSnapshot();
       expect(result.imports).toMatchSnapshot();
       expect(result.exports).toMatchSnapshot();
-      
+
       // Verify performance information excluding generation time
       const { generationTime, ...performanceWithoutTime } = result.performance;
       expect(performanceWithoutTime).toMatchSnapshot();
@@ -702,7 +747,7 @@ describe("EtaTPEGCodeGenerator", () => {
       expect(result.code).toMatchSnapshot();
       expect(result.imports).toMatchSnapshot();
       expect(result.exports).toMatchSnapshot();
-      
+
       // Verify performance information excluding generation time
       const { generationTime, ...performanceWithoutTime } = result.performance;
       expect(performanceWithoutTime).toMatchSnapshot();

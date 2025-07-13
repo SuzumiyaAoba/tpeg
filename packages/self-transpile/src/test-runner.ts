@@ -1,14 +1,17 @@
 /**
  * Test Runner for TPEG Self-Transpilation System
- * 
+ *
  * Provides command-line interface and orchestration for running
  * the comprehensive test suite with various options and configurations.
  */
 
-import { readFileSync, writeFileSync, existsSync } from "fs";
-import { join } from "path";
-import { performance } from "perf_hooks";
-import { runComprehensiveTestSuite, ComprehensiveTestSuite } from "./comprehensive-test-suite";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { performance } from "node:perf_hooks";
+import {
+  ComprehensiveTestSuite,
+  runComprehensiveTestSuite,
+} from "./comprehensive-test-suite";
 import type { TestSuiteResult } from "./comprehensive-test-suite";
 
 /**
@@ -21,31 +24,31 @@ export interface TestRunnerConfig {
   stopOnFirstFailure?: boolean;
   maxConcurrentTests?: number;
   timeout?: number;
-  
+
   // Output options
   verbose?: boolean;
   quiet?: boolean;
   outputFormat?: "console" | "json" | "html" | "markdown";
   outputFile?: string;
-  
+
   // Performance options
   enablePerformanceMonitoring?: boolean;
   memoryLimit?: number;
-  
+
   // Retry options
   maxRetries?: number;
   retryDelay?: number;
-  
+
   // Report options
   generateReport?: boolean;
   reportPath?: string;
   includeDetails?: boolean;
-  
+
   // CI/CD options
   exitOnFailure?: boolean;
   minimumPassRate?: number;
   minimumGrade?: string;
-  
+
   // Debug options
   debugMode?: boolean;
   saveIntermediateResults?: boolean;
@@ -83,8 +86,8 @@ export class TestRunner {
   private config: TestRunnerConfig;
   private result: TestRunnerResult | null = null;
   private startTime: Date = new Date();
-  private interrupted: boolean = false;
-  private retries: number = 0;
+  private interrupted = false;
+  private retries = 0;
 
   constructor(config: TestRunnerConfig = {}) {
     this.config = {
@@ -110,7 +113,7 @@ export class TestRunner {
       minimumGrade: "C",
       debugMode: false,
       saveIntermediateResults: false,
-      ...config
+      ...config,
     };
   }
 
@@ -119,7 +122,7 @@ export class TestRunner {
    */
   async run(): Promise<TestRunnerResult> {
     this.startTime = new Date();
-    
+
     if (!this.config.quiet) {
       this.printHeader();
     }
@@ -134,10 +137,10 @@ export class TestRunner {
 
     try {
       const testSuiteResult = await this.runTestSuiteWithRetry();
-      
+
       const endTime = new Date();
       const duration = endTime.getTime() - this.startTime.getTime();
-      
+
       this.result = {
         config: this.config,
         testSuiteResult,
@@ -147,17 +150,17 @@ export class TestRunner {
           duration,
           memoryUsage: process.memoryUsage?.()?.heapUsed || 0,
           retries: this.retries,
-          interrupted: this.interrupted
+          interrupted: this.interrupted,
         },
         environment: {
           nodeVersion: process.version,
           platform: process.platform,
           architecture: process.arch,
           memoryLimit: this.config.memoryLimit || 1024,
-          cpuCount: require("os").cpus().length
+          cpuCount: require("node:os").cpus().length,
         },
         exitCode: this.calculateExitCode(testSuiteResult),
-        messages: []
+        messages: [],
       };
 
       if (this.config.generateReport) {
@@ -172,7 +175,7 @@ export class TestRunner {
     } catch (error) {
       const endTime = new Date();
       const duration = endTime.getTime() - this.startTime.getTime();
-      
+
       this.result = {
         config: this.config,
         testSuiteResult: {
@@ -185,7 +188,7 @@ export class TestRunner {
           overallGrade: "F",
           categoryResults: {},
           summary: `Test runner failed: ${error}`,
-          recommendations: ["Fix test runner configuration and try again"]
+          recommendations: ["Fix test runner configuration and try again"],
         },
         execution: {
           startTime: this.startTime,
@@ -193,17 +196,17 @@ export class TestRunner {
           duration,
           memoryUsage: process.memoryUsage?.()?.heapUsed || 0,
           retries: this.retries,
-          interrupted: this.interrupted
+          interrupted: this.interrupted,
         },
         environment: {
           nodeVersion: process.version,
           platform: process.platform,
           architecture: process.arch,
           memoryLimit: this.config.memoryLimit || 1024,
-          cpuCount: require("os").cpus().length
+          cpuCount: require("node:os").cpus().length,
         },
         exitCode: 1,
-        messages: [error instanceof Error ? error.message : String(error)]
+        messages: [error instanceof Error ? error.message : String(error)],
       };
 
       if (!this.config.quiet) {
@@ -219,35 +222,39 @@ export class TestRunner {
    */
   private async runTestSuiteWithRetry(): Promise<TestSuiteResult> {
     let lastError: Error | null = null;
-    
+
     for (let attempt = 0; attempt <= (this.config.maxRetries || 0); attempt++) {
       try {
         if (attempt > 0) {
           this.retries++;
           if (!this.config.quiet) {
-            console.log(`🔄 Retry attempt ${attempt}/${this.config.maxRetries}...`);
+            console.log(
+              `🔄 Retry attempt ${attempt}/${this.config.maxRetries}...`,
+            );
           }
-          
+
           if (this.config.retryDelay && this.config.retryDelay > 0) {
-            await new Promise(resolve => setTimeout(resolve, this.config.retryDelay));
+            await new Promise((resolve) =>
+              setTimeout(resolve, this.config.retryDelay),
+            );
           }
         }
 
-                 const testSuiteResult = await runComprehensiveTestSuite({
-           stopOnFirstFailure: this.config.stopOnFirstFailure || false,
-           verbose: (this.config.verbose && !this.config.quiet) || false,
-           generateReport: false, // We'll generate our own report
-           reportPath: this.config.reportPath || "./test-results.json"
-         });
+        const testSuiteResult = await runComprehensiveTestSuite({
+          stopOnFirstFailure: this.config.stopOnFirstFailure || false,
+          verbose: (this.config.verbose && !this.config.quiet) || false,
+          generateReport: false, // We'll generate our own report
+          reportPath: this.config.reportPath || "./test-results.json",
+        });
 
         return testSuiteResult;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        
+
         if (this.config.debugMode) {
           console.error(`Attempt ${attempt + 1} failed:`, error);
         }
-        
+
         if (attempt === (this.config.maxRetries || 0)) {
           break; // Last attempt, don't retry
         }
@@ -275,8 +282,9 @@ export class TestRunner {
     // Check minimum grade
     const gradeValues = { A: 4, B: 3, C: 2, D: 1, F: 0 };
     const actualGrade = gradeValues[testSuiteResult.overallGrade] || 0;
-    const requiredGrade = gradeValues[this.config.minimumGrade as keyof typeof gradeValues] || 2;
-    
+    const requiredGrade =
+      gradeValues[this.config.minimumGrade as keyof typeof gradeValues] || 2;
+
     if (actualGrade < requiredGrade) {
       return 3; // Insufficient grade
     }
@@ -292,11 +300,11 @@ export class TestRunner {
     const handleSignal = (signal: string) => {
       console.log(`\n🚨 Received ${signal}, shutting down gracefully...`);
       this.interrupted = true;
-      
+
       if (this.config.saveIntermediateResults && this.result) {
         this.generateReports();
       }
-      
+
       process.exit(130); // Standard exit code for SIGINT
     };
 
@@ -311,10 +319,13 @@ export class TestRunner {
     if (this.config.memoryLimit) {
       const memoryCheckInterval = setInterval(() => {
         const memoryUsage = process.memoryUsage?.()?.heapUsed || 0;
-        const memoryLimitBytes = (this.config.memoryLimit || 1024) * 1024 * 1024;
-        
+        const memoryLimitBytes =
+          (this.config.memoryLimit || 1024) * 1024 * 1024;
+
         if (memoryUsage > memoryLimitBytes) {
-          console.error(`🚨 Memory usage (${Math.round(memoryUsage / 1024 / 1024)}MB) exceeded limit (${this.config.memoryLimit}MB)`);
+          console.error(
+            `🚨 Memory usage (${Math.round(memoryUsage / 1024 / 1024)}MB) exceeded limit (${this.config.memoryLimit}MB)`,
+          );
           process.exit(4); // Memory limit exceeded
         }
       }, 5000); // Check every 5 seconds
@@ -333,7 +344,7 @@ export class TestRunner {
     console.log(`⏰ Started: ${this.startTime.toLocaleString()}`);
     console.log(`🖥️  Platform: ${process.platform} (${process.arch})`);
     console.log(`📦 Node.js: ${process.version}`);
-    console.log(`🧠 CPU Cores: ${require("os").cpus().length}`);
+    console.log(`🧠 CPU Cores: ${require("node:os").cpus().length}`);
     console.log(`💾 Memory Limit: ${this.config.memoryLimit}MB`);
     console.log(`⏱️  Timeout: ${(this.config.timeout || 300000) / 1000}s`);
     console.log(`🔄 Max Retries: ${this.config.maxRetries || 0}`);
@@ -346,27 +357,35 @@ export class TestRunner {
    */
   private printSummary(): void {
     if (!this.result) return;
-    
+
     const { testSuiteResult, execution, exitCode } = this.result;
-    
+
     console.log("\n🎯 TEST RUNNER SUMMARY");
     console.log("======================");
-    console.log(`📊 Overall Result: ${testSuiteResult.overallGrade} (${testSuiteResult.overallScore.toFixed(1)}/100)`);
-    console.log(`📋 Tests: ${testSuiteResult.passedTests}/${testSuiteResult.totalTests} passed`);
-    console.log(`📈 Success Rate: ${((testSuiteResult.passedTests / testSuiteResult.totalTests) * 100).toFixed(1)}%`);
+    console.log(
+      `📊 Overall Result: ${testSuiteResult.overallGrade} (${testSuiteResult.overallScore.toFixed(1)}/100)`,
+    );
+    console.log(
+      `📋 Tests: ${testSuiteResult.passedTests}/${testSuiteResult.totalTests} passed`,
+    );
+    console.log(
+      `📈 Success Rate: ${((testSuiteResult.passedTests / testSuiteResult.totalTests) * 100).toFixed(1)}%`,
+    );
     console.log(`⏱️  Duration: ${(execution.duration / 1000).toFixed(2)}s`);
-    console.log(`💾 Memory Used: ${(execution.memoryUsage / 1024 / 1024).toFixed(2)}MB`);
+    console.log(
+      `💾 Memory Used: ${(execution.memoryUsage / 1024 / 1024).toFixed(2)}MB`,
+    );
     console.log(`🔄 Retries: ${execution.retries}`);
     console.log(`📤 Exit Code: ${exitCode}`);
-    
+
     if (execution.interrupted) {
-      console.log(`🚨 Execution was interrupted`);
+      console.log("🚨 Execution was interrupted");
     }
-    
+
     if (this.config.generateReport) {
       console.log(`📊 Report: ${this.config.reportPath}`);
     }
-    
+
     // Print status indicator
     if (exitCode === 0) {
       console.log("✅ All tests passed successfully!");
@@ -384,7 +403,10 @@ export class TestRunner {
     try {
       // Always generate JSON report
       const jsonReport = JSON.stringify(this.result, null, 2);
-      writeFileSync(this.config.reportPath || "./test-results.json", jsonReport);
+      writeFileSync(
+        this.config.reportPath || "./test-results.json",
+        jsonReport,
+      );
 
       // Generate additional formats based on config
       if (this.config.outputFormat === "html") {
@@ -413,8 +435,10 @@ export class TestRunner {
   private async generateHTMLReport(): Promise<void> {
     if (!this.result) return;
 
-    const htmlPath = this.config.reportPath?.replace(/\.json$/, ".html") || "./test-results.html";
-    
+    const htmlPath =
+      this.config.reportPath?.replace(/\.json$/, ".html") ||
+      "./test-results.html";
+
     const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -459,7 +483,9 @@ export class TestRunner {
     </table>
 
     <h2>Category Results</h2>
-    ${Object.values(this.result.testSuiteResult.categoryResults).map(cat => `
+    ${Object.values(this.result.testSuiteResult.categoryResults)
+      .map(
+        (cat) => `
         <div class="category">
             <h3>${cat.categoryName} <span class="grade-${cat.grade}">${cat.grade}</span> (${cat.score.toFixed(1)}/100)</h3>
             <p>Tests: ${cat.passedTests}/${cat.totalTests} passed</p>
@@ -469,7 +495,9 @@ export class TestRunner {
                 ${cat.warnings.length > 0 ? `<p><strong>Warnings:</strong> ${cat.warnings.join(", ")}</p>` : ""}
             </div>
         </div>
-    `).join("")}
+    `,
+      )
+      .join("")}
 
     <h2>Environment</h2>
     <table>
@@ -482,7 +510,7 @@ export class TestRunner {
 
     <h2>Recommendations</h2>
     <ul>
-        ${this.result.testSuiteResult.recommendations.map(rec => `<li>${rec}</li>`).join("")}
+        ${this.result.testSuiteResult.recommendations.map((rec) => `<li>${rec}</li>`).join("")}
     </ul>
 </body>
 </html>`;
@@ -496,8 +524,9 @@ export class TestRunner {
   private async generateMarkdownReport(): Promise<void> {
     if (!this.result) return;
 
-    const markdownPath = this.config.reportPath?.replace(/\.json$/, ".md") || "./test-results.md";
-    
+    const markdownPath =
+      this.config.reportPath?.replace(/\.json$/, ".md") || "./test-results.md";
+
     const markdown = `# TPEG Test Results
 
 ## Overview
@@ -519,14 +548,18 @@ export class TestRunner {
 
 ## Category Results
 
-${Object.values(this.result.testSuiteResult.categoryResults).map(cat => `
+${Object.values(this.result.testSuiteResult.categoryResults)
+  .map(
+    (cat) => `
 ### ${cat.categoryName} - ${cat.grade} (${cat.score.toFixed(1)}/100)
 
 - **Tests:** ${cat.passedTests}/${cat.totalTests} passed
 - **Duration:** ${cat.duration.toFixed(2)}ms
 - **Memory:** ${(cat.memoryUsage / 1024 / 1024).toFixed(2)}MB
 ${cat.warnings.length > 0 ? `- **Warnings:** ${cat.warnings.join(", ")}` : ""}
-`).join("")}
+`,
+  )
+  .join("")}
 
 ## Environment
 
@@ -539,7 +572,7 @@ ${cat.warnings.length > 0 ? `- **Warnings:** ${cat.warnings.join(", ")}` : ""}
 
 ## Recommendations
 
-${this.result.testSuiteResult.recommendations.map(rec => `- ${rec}`).join("\n")}
+${this.result.testSuiteResult.recommendations.map((rec) => `- ${rec}`).join("\n")}
 
 ## Full Results
 
@@ -574,7 +607,7 @@ Environment:
 - Memory Usage: ${(this.result.execution.memoryUsage / 1024 / 1024).toFixed(2)}MB
 
 Recommendations:
-${this.result.testSuiteResult.recommendations.map(rec => `- ${rec}`).join("\n")}
+${this.result.testSuiteResult.recommendations.map((rec) => `- ${rec}`).join("\n")}
 `;
   }
 }
@@ -582,13 +615,15 @@ ${this.result.testSuiteResult.recommendations.map(rec => `- ${rec}`).join("\n")}
 /**
  * CLI entry point
  */
-export async function runTestRunner(args: string[] = process.argv.slice(2)): Promise<number> {
+export async function runTestRunner(
+  args: string[] = process.argv.slice(2),
+): Promise<number> {
   const config: TestRunnerConfig = {};
-  
+
   // Parse command line arguments
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    
+
     switch (arg) {
       case "--verbose":
         config.verbose = true;
@@ -608,57 +643,65 @@ export async function runTestRunner(args: string[] = process.argv.slice(2)): Pro
       case "--no-report":
         config.generateReport = false;
         break;
-             case "--timeout":
-         config.timeout = parseInt(args[++i] || "300000", 10);
-         break;
-       case "--memory-limit":
-         config.memoryLimit = parseInt(args[++i] || "1024", 10);
-         break;
-       case "--max-retries":
-         config.maxRetries = parseInt(args[++i] || "0", 10);
-         break;
-       case "--output-format":
-         const formatArg = args[++i];
-         if (formatArg) {
-           config.outputFormat = formatArg as "console" | "json" | "html" | "markdown";
-         }
-         break;
-       case "--output-file":
-         const outputFileArg = args[++i];
-         if (outputFileArg) {
-           config.outputFile = outputFileArg;
-         }
-         break;
-       case "--report-path":
-         const reportPathArg = args[++i];
-         if (reportPathArg) {
-           config.reportPath = reportPathArg;
-         }
-         break;
-       case "--minimum-pass-rate":
-         config.minimumPassRate = parseFloat(args[++i] || "0.8");
-         break;
-       case "--minimum-grade":
-         const gradeArg = args[++i];
-         if (gradeArg) {
-           config.minimumGrade = gradeArg;
-         }
-         break;
+      case "--timeout":
+        config.timeout = Number.parseInt(args[++i] || "300000", 10);
+        break;
+      case "--memory-limit":
+        config.memoryLimit = Number.parseInt(args[++i] || "1024", 10);
+        break;
+      case "--max-retries":
+        config.maxRetries = Number.parseInt(args[++i] || "0", 10);
+        break;
+      case "--output-format": {
+        const formatArg = args[++i];
+        if (formatArg) {
+          config.outputFormat = formatArg as
+            | "console"
+            | "json"
+            | "html"
+            | "markdown";
+        }
+        break;
+      }
+      case "--output-file": {
+        const outputFileArg = args[++i];
+        if (outputFileArg) {
+          config.outputFile = outputFileArg;
+        }
+        break;
+      }
+      case "--report-path": {
+        const reportPathArg = args[++i];
+        if (reportPathArg) {
+          config.reportPath = reportPathArg;
+        }
+        break;
+      }
+      case "--minimum-pass-rate":
+        config.minimumPassRate = Number.parseFloat(args[++i] || "0.8");
+        break;
+      case "--minimum-grade": {
+        const gradeArg = args[++i];
+        if (gradeArg) {
+          config.minimumGrade = gradeArg;
+        }
+        break;
+      }
       case "--help":
         printHelp();
         return 0;
-             default:
-         if (arg && arg.startsWith("--")) {
-           console.error(`Unknown option: ${arg}`);
-           return 1;
-         }
-         break;
+      default:
+        if (arg?.startsWith("--")) {
+          console.error(`Unknown option: ${arg}`);
+          return 1;
+        }
+        break;
     }
   }
 
   const runner = new TestRunner(config);
   const result = await runner.run();
-  
+
   return result.exitCode;
 }
 
@@ -697,10 +740,12 @@ Examples:
 
 // If run as main module
 if (require.main === module) {
-  runTestRunner().then(exitCode => {
-    process.exit(exitCode);
-  }).catch(error => {
-    console.error("Test runner failed:", error);
-    process.exit(1);
-  });
-} 
+  runTestRunner()
+    .then((exitCode) => {
+      process.exit(exitCode);
+    })
+    .catch((error) => {
+      console.error("Test runner failed:", error);
+      process.exit(1);
+    });
+}

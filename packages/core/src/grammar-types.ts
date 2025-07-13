@@ -429,12 +429,12 @@ export interface TransformDefinition {
 
 /**
  * Represents an import statement in TPEG module system.
- * 
+ *
  * Supports various import patterns:
  * - Simple import: `import "module.tpeg" as alias`
  * - Selective import: `import "module.tpeg" { rule1, rule2 }`
  * - Versioned import: `import "module.tpeg" version "^1.0" as alias`
- * 
+ *
  * @example
  * ```typescript
  * const importStmt: ImportStatement = {
@@ -461,11 +461,11 @@ export interface ImportStatement {
 
 /**
  * Represents an export declaration in TPEG module system.
- * 
+ *
  * Controls which rules are exported from a module:
  * - Default: all rules are exported
  * - Explicit: only specified rules are exported
- * 
+ *
  * @example
  * ```typescript
  * const exportDecl: ExportDeclaration = {
@@ -483,7 +483,7 @@ export interface ExportDeclaration {
 
 /**
  * Represents module-level metadata and dependencies.
- * 
+ *
  * @example
  * ```typescript
  * const moduleInfo: ModuleInfo = {
@@ -510,11 +510,11 @@ export interface ModuleInfo {
 
 /**
  * Represents a qualified identifier with module prefix.
- * 
+ *
  * Used for referencing rules from imported modules:
  * - `base.identifier` - rule from base module
  * - `Math.Core.expression` - rule from namespaced module
- * 
+ *
  * @example
  * ```typescript
  * const qualifiedId: QualifiedIdentifier = {
@@ -535,11 +535,12 @@ export interface QualifiedIdentifier {
 
 /**
  * Extended grammar definition with module system support.
- * 
+ *
  * Includes import statements, export declarations, and module metadata
  * in addition to the standard grammar components.
  */
-export interface ModularGrammarDefinition extends Omit<GrammarDefinition, 'type'> {
+export interface ModularGrammarDefinition
+  extends Omit<GrammarDefinition, "type"> {
   /** The node type identifier */
   type: "ModularGrammarDefinition";
   /** Import statements for this grammar */
@@ -554,7 +555,7 @@ export interface ModularGrammarDefinition extends Omit<GrammarDefinition, 'type'
 
 /**
  * Represents a complete TPEG module file.
- * 
+ *
  * A module file can contain multiple grammar definitions,
  * import statements, and shared module metadata.
  */
@@ -1035,7 +1036,9 @@ export const createImportStatement = (
  * @param rules - List of rule names to export
  * @returns A new ExportDeclaration AST node
  */
-export const createExportDeclaration = (rules: string[]): ExportDeclaration => ({
+export const createExportDeclaration = (
+  rules: string[],
+): ExportDeclaration => ({
   type: "ExportDeclaration",
   rules,
 });

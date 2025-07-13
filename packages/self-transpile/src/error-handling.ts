@@ -1,26 +1,26 @@
 /**
  * TPEG Self-Transpilation Error Handling System
- * 
+ *
  * Provides comprehensive error handling, recovery mechanisms, and diagnostic capabilities
  * for the TPEG self-transpilation system.
  */
 
+import { performance } from "node:perf_hooks";
 import type { GrammarDefinition } from "tpeg-core";
-import { performance } from "perf_hooks";
 
 /**
  * Error classification system for TPEG self-transpilation
  */
 export enum ErrorType {
   PARSE_ERROR = "PARSE_ERROR",
-  GENERATION_ERROR = "GENERATION_ERROR", 
+  GENERATION_ERROR = "GENERATION_ERROR",
   VALIDATION_ERROR = "VALIDATION_ERROR",
   RUNTIME_ERROR = "RUNTIME_ERROR",
   MEMORY_ERROR = "MEMORY_ERROR",
   TIMEOUT_ERROR = "TIMEOUT_ERROR",
   SYNTAX_ERROR = "SYNTAX_ERROR",
   SEMANTIC_ERROR = "SEMANTIC_ERROR",
-  SYSTEM_ERROR = "SYSTEM_ERROR"
+  SYSTEM_ERROR = "SYSTEM_ERROR",
 }
 
 /**
@@ -28,9 +28,9 @@ export enum ErrorType {
  */
 export enum ErrorSeverity {
   LOW = "LOW",
-  MEDIUM = "MEDIUM", 
+  MEDIUM = "MEDIUM",
   HIGH = "HIGH",
-  CRITICAL = "CRITICAL"
+  CRITICAL = "CRITICAL",
 }
 
 /**
@@ -41,7 +41,7 @@ export enum RecoveryStrategy {
   FALLBACK = "FALLBACK",
   ROLLBACK = "ROLLBACK",
   PARTIAL = "PARTIAL",
-  ABORT = "ABORT"
+  ABORT = "ABORT",
 }
 
 /**
@@ -105,8 +105,8 @@ const DEFAULT_ERROR_CONFIG: ErrorHandlingConfig = {
   recoveryStrategies: [
     RecoveryStrategy.RETRY,
     RecoveryStrategy.FALLBACK,
-    RecoveryStrategy.PARTIAL
-  ]
+    RecoveryStrategy.PARTIAL,
+  ],
 };
 
 /**
@@ -135,8 +135,8 @@ export class ErrorHandlingContext {
       input?: string;
       stack?: string;
     },
-    details: string = "",
-    location?: { line: number; column: number; source?: string }
+    details = "",
+    location?: { line: number; column: number; source?: string },
   ): TPEGError {
     return {
       type,
@@ -147,7 +147,7 @@ export class ErrorHandlingContext {
       timestamp: Date.now(),
       context,
       suggestions: this.generateSuggestions(type, message, context),
-      recoverable: this.isRecoverable(type, severity)
+      recoverable: this.isRecoverable(type, severity),
     };
   }
 
@@ -164,8 +164,8 @@ export class ErrorHandlingContext {
    */
   private generateSuggestions(
     type: ErrorType,
-    message: string,
-    context: { operation: string; phase: string; input?: string }
+    _message: string,
+    context: { operation: string; phase: string; input?: string },
   ): string[] {
     const suggestions: string[] = [];
 
@@ -230,7 +230,7 @@ export class ErrorHandlingContext {
       ErrorType.PARSE_ERROR,
       ErrorType.GENERATION_ERROR,
       ErrorType.VALIDATION_ERROR,
-      ErrorType.TIMEOUT_ERROR
+      ErrorType.TIMEOUT_ERROR,
     ];
 
     return recoverableTypes.includes(type);
@@ -253,7 +253,9 @@ export class ErrorHandlingContext {
         console.error(`  Operation: ${error.context.operation}`);
         console.error(`  Phase: ${error.context.phase}`);
         if (error.location) {
-          console.error(`  Location: Line ${error.location.line}, Column ${error.location.column}`);
+          console.error(
+            `  Location: Line ${error.location.line}, Column ${error.location.column}`,
+          );
         }
         if (error.suggestions.length > 0) {
           console.error(`  Suggestions: ${error.suggestions.join(", ")}`);
@@ -266,7 +268,9 @@ export class ErrorHandlingContext {
         console.error(`  Operation: ${error.context.operation}`);
         console.error(`  Phase: ${error.context.phase}`);
         if (error.location) {
-          console.error(`  Location: Line ${error.location.line}, Column ${error.location.column}`);
+          console.error(
+            `  Location: Line ${error.location.line}, Column ${error.location.column}`,
+          );
           if (error.location.source) {
             console.error(`  Source: ${error.location.source}`);
           }
@@ -277,7 +281,7 @@ export class ErrorHandlingContext {
         if (error.context.stack) {
           console.error(`  Stack: ${error.context.stack}`);
         }
-        console.error(`  Suggestions:`);
+        console.error("  Suggestions:");
         error.suggestions.forEach((suggestion, i) => {
           console.error(`    ${i + 1}. ${suggestion}`);
         });
@@ -291,7 +295,7 @@ export class ErrorHandlingContext {
   async attemptRecovery(
     error: TPEGError,
     recoveryFunction: () => Promise<any>,
-    fallbackData?: any
+    fallbackData?: any,
   ): Promise<RecoveryResult> {
     if (!this.config.enableRecovery || !error.recoverable) {
       return {
@@ -300,7 +304,7 @@ export class ErrorHandlingContext {
         attemptCount: 0,
         timeTaken: 0,
         message: "Recovery not enabled or error not recoverable",
-        warnings: []
+        warnings: [],
       };
     }
 
@@ -315,14 +319,14 @@ export class ErrorHandlingContext {
         error,
         recoveryFunction,
         fallbackData,
-        currentAttempts
+        currentAttempts,
       );
 
       if (attemptResult.success) {
         this.recoveryAttempts.set(errorKey, currentAttempts + 1);
         return {
           ...attemptResult,
-          timeTaken: performance.now() - startTime
+          timeTaken: performance.now() - startTime,
         };
       }
     }
@@ -335,7 +339,7 @@ export class ErrorHandlingContext {
       attemptCount: currentAttempts + 1,
       timeTaken: performance.now() - startTime,
       message: "All recovery strategies failed",
-      warnings: ["Consider manual intervention"]
+      warnings: ["Consider manual intervention"],
     };
   }
 
@@ -347,7 +351,7 @@ export class ErrorHandlingContext {
     error: TPEGError,
     recoveryFunction: () => Promise<any>,
     fallbackData: any,
-    currentAttempts: number
+    currentAttempts: number,
   ): Promise<RecoveryResult> {
     console.log(`🔄 Attempting ${strategy} recovery for ${error.type}...`);
 
@@ -360,19 +364,24 @@ export class ErrorHandlingContext {
             attemptCount: currentAttempts,
             timeTaken: 0,
             message: "Maximum retry attempts exceeded",
-            warnings: []
+            warnings: [],
           };
         }
 
         try {
           // Add small delay before retry to allow system to recover
-          await new Promise(resolve => setTimeout(resolve, 100 * (currentAttempts + 1)));
-          
+          await new Promise((resolve) =>
+            setTimeout(resolve, 100 * (currentAttempts + 1)),
+          );
+
           const result = await Promise.race([
             recoveryFunction(),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error("Recovery timeout")), this.config.timeout)
-            )
+            new Promise((_, reject) =>
+              setTimeout(
+                () => reject(new Error("Recovery timeout")),
+                this.config.timeout,
+              ),
+            ),
           ]);
 
           console.log(`✅ ${strategy} recovery successful`);
@@ -383,7 +392,7 @@ export class ErrorHandlingContext {
             timeTaken: 0,
             message: "Retry successful",
             warnings: [],
-            data: result
+            data: result,
           };
         } catch (retryError) {
           console.log(`❌ ${strategy} recovery failed: ${retryError}`);
@@ -394,7 +403,7 @@ export class ErrorHandlingContext {
             attemptCount: currentAttempts + 1,
             timeTaken: 0,
             message: `Retry failed: ${retryError}`,
-            warnings: []
+            warnings: [],
           };
         }
 
@@ -408,7 +417,7 @@ export class ErrorHandlingContext {
             timeTaken: 0,
             message: "Using fallback data",
             warnings: ["Result may be incomplete"],
-            data: fallbackData
+            data: fallbackData,
           };
         }
         return {
@@ -417,7 +426,7 @@ export class ErrorHandlingContext {
           attemptCount: currentAttempts + 1,
           timeTaken: 0,
           message: "No fallback data available",
-          warnings: []
+          warnings: [],
         };
 
       case RecoveryStrategy.PARTIAL:
@@ -431,7 +440,7 @@ export class ErrorHandlingContext {
             timeTaken: 0,
             message: "Partial recovery with simplified grammar",
             warnings: ["Some features may be disabled"],
-            data: this.createSimplifiedGrammar(error)
+            data: this.createSimplifiedGrammar(error),
           };
         }
         return {
@@ -440,7 +449,7 @@ export class ErrorHandlingContext {
           attemptCount: currentAttempts + 1,
           timeTaken: 0,
           message: "Partial recovery not supported for this error type",
-          warnings: []
+          warnings: [],
         };
 
       default:
@@ -450,7 +459,7 @@ export class ErrorHandlingContext {
           attemptCount: currentAttempts + 1,
           timeTaken: 0,
           message: "Unknown recovery strategy",
-          warnings: []
+          warnings: [],
         };
     }
   }
@@ -458,16 +467,16 @@ export class ErrorHandlingContext {
   /**
    * Creates a simplified grammar for partial recovery
    */
-  private createSimplifiedGrammar(error: TPEGError): any {
+  private createSimplifiedGrammar(_error: TPEGError): any {
     // This is a simplified fallback grammar
     return {
       name: "SimplifiedFallback",
       rules: [
         { name: "grammar", expression: "identifier" },
         { name: "identifier", expression: "[a-zA-Z][a-zA-Z0-9_]*" },
-        { name: "string_literal", expression: "\"[^\"]*\"" }
+        { name: "string_literal", expression: '"[^"]*"' },
       ],
-      annotations: []
+      annotations: [],
     };
   }
 
@@ -496,14 +505,14 @@ export class ErrorHandlingContext {
    * Gets errors by type
    */
   getErrorsByType(type: ErrorType): TPEGError[] {
-    return this.errors.filter(error => error.type === type);
+    return this.errors.filter((error) => error.type === type);
   }
 
   /**
    * Gets errors by severity
    */
   getErrorsBySeverity(severity: ErrorSeverity): TPEGError[] {
-    return this.errors.filter(error => error.severity === severity);
+    return this.errors.filter((error) => error.severity === severity);
   }
 
   /**
@@ -547,7 +556,9 @@ export class ErrorHandlingContext {
         report.push(`     Phase: ${error.context.phase}`);
         report.push(`     Severity: ${error.severity}`);
         if (error.location) {
-          report.push(`     Location: Line ${error.location.line}, Column ${error.location.column}`);
+          report.push(
+            `     Location: Line ${error.location.line}, Column ${error.location.column}`,
+          );
         }
         report.push(`     Suggestions: ${error.suggestions.join(", ")}`);
         report.push("");
@@ -569,7 +580,7 @@ export async function withErrorHandling<T>(
     input?: string;
   },
   errorHandler: ErrorHandlingContext,
-  fallbackData?: T
+  fallbackData?: T,
 ): Promise<T> {
   try {
     const result = await operation();
@@ -581,9 +592,9 @@ export async function withErrorHandling<T>(
       error instanceof Error ? error.message : String(error),
       {
         ...context,
-        ...(error instanceof Error && error.stack && { stack: error.stack })
+        ...(error instanceof Error && error.stack && { stack: error.stack }),
       },
-      error instanceof Error ? error.stack || "" : String(error)
+      error instanceof Error ? error.stack || "" : String(error),
     );
 
     errorHandler.addError(tpegError);
@@ -592,7 +603,7 @@ export async function withErrorHandling<T>(
     const recovery = await errorHandler.attemptRecovery(
       tpegError,
       operation,
-      fallbackData
+      fallbackData,
     );
 
     if (recovery.success) {
@@ -602,11 +613,11 @@ export async function withErrorHandling<T>(
 
     // If fallback data is provided, use it instead of throwing
     if (fallbackData !== undefined) {
-      console.log(`🔄 Using fallback data due to recovery failure`);
+      console.log("🔄 Using fallback data due to recovery failure");
       return fallbackData;
     }
 
     // Re-throw if recovery failed and no fallback
     throw error;
   }
-} 
+}

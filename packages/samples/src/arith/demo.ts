@@ -11,7 +11,7 @@ import {
 
 /**
  * TPEG Arithmetic Calculator Demo
- * 
+ *
  * This demo showcases the arithmetic calculator implementation using TPEG parsers.
  * It demonstrates both direct calculation and AST-based evaluation approaches.
  */
@@ -21,7 +21,7 @@ const args = process.argv.slice(2);
 
 /**
  * Prints usage information for the demo script.
- * 
+ *
  * Shows available commands and examples for using the arithmetic calculator.
  */
 function printUsage() {
@@ -41,10 +41,10 @@ Examples:
 
 /**
  * Calculates and displays the result of an arithmetic expression.
- * 
+ *
  * This function demonstrates both direct calculation and AST-based evaluation,
  * showing that both approaches produce the same result.
- * 
+ *
  * @param expr - The arithmetic expression to calculate
  */
 function calculateExpression(expr: string) {
@@ -73,10 +73,10 @@ function calculateExpression(expr: string) {
 
 /**
  * Displays the AST structure for an arithmetic expression.
- * 
+ *
  * This function parses an expression into an AST and shows its structure,
  * along with the calculated result.
- * 
+ *
  * @param expr - The arithmetic expression to analyze
  */
 function showAST(expr: string) {
@@ -97,7 +97,7 @@ function showAST(expr: string) {
 
 /**
  * Runs an interactive demo with predefined test expressions.
- * 
+ *
  * This function demonstrates the calculator with various arithmetic expressions,
  * showing both basic operations and complex expressions with operator precedence.
  */

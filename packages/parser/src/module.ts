@@ -15,24 +15,24 @@
 
 import type { Parser } from "tpeg-core";
 import {
-  choice,
-  literal,
-  map,
-  seq as sequence,
-  star as zeroOrMore,
-  optional,
-  createImportStatement,
-  createExportDeclaration,
-  createModuleInfo,
-  createQualifiedIdentifier,
-  type ImportStatement,
   type ExportDeclaration,
+  type ImportStatement,
   type ModuleInfo,
   type QualifiedIdentifier,
+  choice,
+  createExportDeclaration,
+  createImportStatement,
+  createModuleInfo,
+  createQualifiedIdentifier,
+  literal,
+  map,
+  optional,
+  seq as sequence,
+  star as zeroOrMore,
 } from "tpeg-core";
+import { GRAMMAR_KEYWORDS, GRAMMAR_SYMBOLS } from "./constants";
 import { identifier } from "./identifier";
 import { stringLiteral } from "./string-literal";
-import { GRAMMAR_KEYWORDS, GRAMMAR_SYMBOLS } from "./constants";
 import { optionalWhitespace, whitespace } from "./whitespace-utils";
 
 // ============================================================================
@@ -62,10 +62,7 @@ const extendsKeyword: Parser<string> = literal("extends");
 /**
  * Parse module path (string literal)
  */
-const modulePath: Parser<string> = map(
-  stringLiteral,
-  (str) => str.value,
-);
+const modulePath: Parser<string> = map(stringLiteral, (str) => str.value);
 
 /**
  * Parse version constraint (string literal)
@@ -78,10 +75,7 @@ const versionConstraint: Parser<string> = map(
 /**
  * Parse module alias (identifier)
  */
-const moduleAlias: Parser<string> = map(
-  identifier,
-  (id) => id.name,
-);
+const moduleAlias: Parser<string> = map(identifier, (id) => id.name);
 
 // ============================================================================
 // Import Statement Parsers
@@ -129,12 +123,7 @@ const simpleImport: Parser<ImportStatement> = map(
     modulePath,
     optional(
       map(
-        sequence(
-          whitespace,
-          asKeyword,
-          whitespace,
-          moduleAlias,
-        ),
+        sequence(whitespace, asKeyword, whitespace, moduleAlias),
         ([, , , alias]) => alias,
       ),
     ),
@@ -153,7 +142,8 @@ const selectiveImport: Parser<ImportStatement> = map(
     whitespace,
     selectiveImportList,
   ),
-  ([, , path, , selective]) => createImportStatement(path, undefined, selective),
+  ([, , path, , selective]) =>
+    createImportStatement(path, undefined, selective),
 );
 
 /**
@@ -170,17 +160,13 @@ const versionedImport: Parser<ImportStatement> = map(
     versionConstraint,
     optional(
       map(
-        sequence(
-          whitespace,
-          asKeyword,
-          whitespace,
-          moduleAlias,
-        ),
+        sequence(whitespace, asKeyword, whitespace, moduleAlias),
         ([, , , alias]) => alias,
       ),
     ),
   ),
-  ([, , path, , , , version, alias]) => createImportStatement(path, alias?.[0], undefined, version),
+  ([, , path, , , , version, alias]) =>
+    createImportStatement(path, alias?.[0], undefined, version),
 );
 
 /**
@@ -275,4 +261,4 @@ export const extendsClause: Parser<string> = map(
     ),
   ),
   ([, , name]) => name,
-); 
+);

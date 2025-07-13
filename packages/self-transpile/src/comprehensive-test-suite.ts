@@ -1,17 +1,21 @@
 /**
  * Comprehensive Test Suite for TPEG Self-Transpilation System
- * 
+ *
  * Provides a complete test suite that validates all components of the
  * self-transpilation system including self-hosting, error handling,
  * performance optimization, iteration optimization, and bootstrap validation.
  */
 
-import { readFileSync, writeFileSync } from "fs";
-import { performance } from "perf_hooks";
-import { selfTranspile } from "./self-transpile";
-import { createOptimizedTranspiler } from "./performance-optimization";
+import { readFileSync, writeFileSync } from "node:fs";
+import { performance } from "node:perf_hooks";
+import {
+  ErrorHandlingContext,
+  ErrorType,
+  withErrorHandling,
+} from "./error-handling";
 import { createIterationOptimizer } from "./iteration-optimization";
-import { ErrorHandlingContext, ErrorType, withErrorHandling } from "./error-handling";
+import { createOptimizedTranspiler } from "./performance-optimization";
+import { selfTranspile } from "./self-transpile";
 
 /**
  * Test category definitions for comprehensive testing
@@ -95,7 +99,7 @@ export interface TestCategoryResult {
 export class ComprehensiveTestSuite {
   private categories: TestCategory[] = [];
   private results: TestSuiteResult | null = null;
-  private startTime: number = 0;
+  private startTime = 0;
   private config: {
     stopOnFirstFailure: boolean;
     verbose: boolean;
@@ -109,9 +113,9 @@ export class ComprehensiveTestSuite {
       verbose: true,
       generateReport: true,
       reportPath: "./test-report.json",
-      ...config
+      ...config,
     };
-    
+
     this.initializeTestCategories();
   }
 
@@ -135,7 +139,7 @@ export class ComprehensiveTestSuite {
             timeout: 10000,
             expectedDuration: 5000,
             criticalFailure: true,
-            testFunction: this.testBasicSelfParse.bind(this)
+            testFunction: this.testBasicSelfParse.bind(this),
           },
           {
             id: "code-generation",
@@ -144,7 +148,7 @@ export class ComprehensiveTestSuite {
             timeout: 15000,
             expectedDuration: 8000,
             criticalFailure: true,
-            testFunction: this.testCodeGeneration.bind(this)
+            testFunction: this.testCodeGeneration.bind(this),
           },
           {
             id: "self-hosting-loop",
@@ -153,7 +157,7 @@ export class ComprehensiveTestSuite {
             timeout: 20000,
             expectedDuration: 12000,
             criticalFailure: true,
-            testFunction: this.testSelfHostingLoop.bind(this)
+            testFunction: this.testSelfHostingLoop.bind(this),
           },
           {
             id: "bootstrap-validation",
@@ -162,9 +166,9 @@ export class ComprehensiveTestSuite {
             timeout: 25000,
             expectedDuration: 15000,
             criticalFailure: false,
-            testFunction: this.testBootstrapValidation.bind(this)
-          }
-        ]
+            testFunction: this.testBootstrapValidation.bind(this),
+          },
+        ],
       },
       {
         id: "error-handling",
@@ -181,7 +185,7 @@ export class ComprehensiveTestSuite {
             timeout: 8000,
             expectedDuration: 3000,
             criticalFailure: false,
-            testFunction: this.testErrorDetection.bind(this)
+            testFunction: this.testErrorDetection.bind(this),
           },
           {
             id: "recovery-mechanisms",
@@ -190,7 +194,7 @@ export class ComprehensiveTestSuite {
             timeout: 12000,
             expectedDuration: 6000,
             criticalFailure: false,
-            testFunction: this.testRecoveryMechanisms.bind(this)
+            testFunction: this.testRecoveryMechanisms.bind(this),
           },
           {
             id: "error-integration",
@@ -199,9 +203,9 @@ export class ComprehensiveTestSuite {
             timeout: 10000,
             expectedDuration: 5000,
             criticalFailure: false,
-            testFunction: this.testErrorIntegration.bind(this)
-          }
-        ]
+            testFunction: this.testErrorIntegration.bind(this),
+          },
+        ],
       },
       {
         id: "performance-optimization",
@@ -218,7 +222,7 @@ export class ComprehensiveTestSuite {
             timeout: 15000,
             expectedDuration: 8000,
             criticalFailure: false,
-            testFunction: this.testBaselinePerformance.bind(this)
+            testFunction: this.testBaselinePerformance.bind(this),
           },
           {
             id: "optimization-features",
@@ -227,7 +231,7 @@ export class ComprehensiveTestSuite {
             timeout: 20000,
             expectedDuration: 12000,
             criticalFailure: false,
-            testFunction: this.testOptimizationFeatures.bind(this)
+            testFunction: this.testOptimizationFeatures.bind(this),
           },
           {
             id: "caching-system",
@@ -236,9 +240,9 @@ export class ComprehensiveTestSuite {
             timeout: 10000,
             expectedDuration: 5000,
             criticalFailure: false,
-            testFunction: this.testCachingSystem.bind(this)
-          }
-        ]
+            testFunction: this.testCachingSystem.bind(this),
+          },
+        ],
       },
       {
         id: "iteration-optimization",
@@ -255,7 +259,7 @@ export class ComprehensiveTestSuite {
             timeout: 15000,
             expectedDuration: 10000,
             criticalFailure: false,
-            testFunction: this.testBatchProcessing.bind(this)
+            testFunction: this.testBatchProcessing.bind(this),
           },
           {
             id: "parallel-execution",
@@ -264,7 +268,7 @@ export class ComprehensiveTestSuite {
             timeout: 18000,
             expectedDuration: 12000,
             criticalFailure: false,
-            testFunction: this.testParallelExecution.bind(this)
+            testFunction: this.testParallelExecution.bind(this),
           },
           {
             id: "memory-management",
@@ -273,9 +277,9 @@ export class ComprehensiveTestSuite {
             timeout: 12000,
             expectedDuration: 8000,
             criticalFailure: false,
-            testFunction: this.testMemoryManagement.bind(this)
-          }
-        ]
+            testFunction: this.testMemoryManagement.bind(this),
+          },
+        ],
       },
       {
         id: "integration-testing",
@@ -292,7 +296,7 @@ export class ComprehensiveTestSuite {
             timeout: 25000,
             expectedDuration: 18000,
             criticalFailure: false,
-            testFunction: this.testCompleteWorkflow.bind(this)
+            testFunction: this.testCompleteWorkflow.bind(this),
           },
           {
             id: "stress-testing",
@@ -301,7 +305,7 @@ export class ComprehensiveTestSuite {
             timeout: 20000,
             expectedDuration: 15000,
             criticalFailure: false,
-            testFunction: this.testStressTesting.bind(this)
+            testFunction: this.testStressTesting.bind(this),
           },
           {
             id: "edge-cases",
@@ -310,10 +314,10 @@ export class ComprehensiveTestSuite {
             timeout: 15000,
             expectedDuration: 10000,
             criticalFailure: false,
-            testFunction: this.testEdgeCases.bind(this)
-          }
-        ]
-      }
+            testFunction: this.testEdgeCases.bind(this),
+          },
+        ],
+      },
     ];
   }
 
@@ -322,12 +326,16 @@ export class ComprehensiveTestSuite {
    */
   async runTestSuite(): Promise<TestSuiteResult> {
     this.startTime = performance.now();
-    
+
     console.log("🧪 TPEG Comprehensive Test Suite");
     console.log("=====================================");
     console.log(`📋 Total Categories: ${this.categories.length}`);
-    console.log(`📋 Total Tests: ${this.categories.reduce((sum, cat) => sum + cat.tests.length, 0)}`);
-    console.log(`⏱️  Estimated Duration: ${this.categories.reduce((sum, cat) => sum + cat.timeout, 0) / 1000}s`);
+    console.log(
+      `📋 Total Tests: ${this.categories.reduce((sum, cat) => sum + cat.tests.length, 0)}`,
+    );
+    console.log(
+      `⏱️  Estimated Duration: ${this.categories.reduce((sum, cat) => sum + cat.timeout, 0) / 1000}s`,
+    );
     console.log("");
 
     const categoryResults: Record<string, TestCategoryResult> = {};
@@ -345,7 +353,7 @@ export class ComprehensiveTestSuite {
       console.log(`📋 Description: ${category.description}`);
       console.log(`⚖️  Weight: ${category.weight}/10`);
       console.log(`⏱️  Timeout: ${category.timeout / 1000}s`);
-      console.log(`🚨 Critical: ${category.critical ? 'Yes' : 'No'}`);
+      console.log(`🚨 Critical: ${category.critical ? "Yes" : "No"}`);
       console.log("─".repeat(50));
 
       const categoryResult = await this.runTestCategory(category);
@@ -357,14 +365,24 @@ export class ComprehensiveTestSuite {
       totalDuration += categoryResult.duration;
       totalMemoryUsage += categoryResult.memoryUsage;
 
-      console.log(`📊 Category Result: ${categoryResult.grade} (${categoryResult.score}/100)`);
-      console.log(`✅ Passed: ${categoryResult.passedTests}/${categoryResult.totalTests}`);
+      console.log(
+        `📊 Category Result: ${categoryResult.grade} (${categoryResult.score}/100)`,
+      );
+      console.log(
+        `✅ Passed: ${categoryResult.passedTests}/${categoryResult.totalTests}`,
+      );
       console.log(`⏱️  Duration: ${categoryResult.duration.toFixed(2)}ms`);
-      console.log(`💾 Memory: ${(categoryResult.memoryUsage / 1024 / 1024).toFixed(2)}MB`);
+      console.log(
+        `💾 Memory: ${(categoryResult.memoryUsage / 1024 / 1024).toFixed(2)}MB`,
+      );
       console.log("");
 
       // Check if we should stop on critical failure
-      if (category.critical && categoryResult.failedTests > 0 && this.config.stopOnFirstFailure) {
+      if (
+        category.critical &&
+        categoryResult.failedTests > 0 &&
+        this.config.stopOnFirstFailure
+      ) {
         console.log("🚨 Critical category failed - stopping test suite");
         shouldStop = true;
       }
@@ -386,8 +404,12 @@ export class ComprehensiveTestSuite {
       overallScore,
       overallGrade,
       categoryResults,
-      summary: this.generateSummary(categoryResults, overallScore, overallGrade),
-      recommendations: this.generateRecommendations(categoryResults)
+      summary: this.generateSummary(
+        categoryResults,
+        overallScore,
+        overallGrade,
+      ),
+      recommendations: this.generateRecommendations(categoryResults),
     };
 
     this.printFinalResults();
@@ -402,7 +424,9 @@ export class ComprehensiveTestSuite {
   /**
    * Run a single test category
    */
-  private async runTestCategory(category: TestCategory): Promise<TestCategoryResult> {
+  private async runTestCategory(
+    category: TestCategory,
+  ): Promise<TestCategoryResult> {
     const testResults: TestResult[] = [];
     const categoryStart = performance.now();
     const startMemory = process.memoryUsage?.()?.heapUsed || 0;
@@ -424,16 +448,18 @@ export class ComprehensiveTestSuite {
       if (testResult.success) {
         passedTests++;
         if (this.config.verbose) {
-          console.log(`    ✅ Passed: ${testResult.grade} (${testResult.score}/100) - ${testResult.duration.toFixed(2)}ms`);
+          console.log(
+            `    ✅ Passed: ${testResult.grade} (${testResult.score}/100) - ${testResult.duration.toFixed(2)}ms`,
+          );
         }
       } else {
         failedTests++;
         if (this.config.verbose) {
           console.log(`    ❌ Failed: ${testResult.errorMessage}`);
         }
-        
+
         if (test.criticalFailure) {
-          console.log(`    🚨 Critical test failed - stopping category`);
+          console.log("    🚨 Critical test failed - stopping category");
           shouldStop = true;
         }
       }
@@ -459,7 +485,7 @@ export class ComprehensiveTestSuite {
       grade: categoryGrade,
       testResults,
       critical: category.critical,
-      warnings: testResults.flatMap(r => r.warnings)
+      warnings: testResults.flatMap((r) => r.warnings),
     };
   }
 
@@ -473,9 +499,9 @@ export class ComprehensiveTestSuite {
     try {
       const result = await Promise.race([
         test.testFunction(),
-        new Promise<TestResult>((_, reject) => 
-          setTimeout(() => reject(new Error("Test timeout")), test.timeout)
-        )
+        new Promise<TestResult>((_, reject) =>
+          setTimeout(() => reject(new Error("Test timeout")), test.timeout),
+        ),
       ]);
 
       const endTime = performance.now();
@@ -486,7 +512,7 @@ export class ComprehensiveTestSuite {
       return {
         ...result,
         duration,
-        memoryUsage
+        memoryUsage,
       };
     } catch (error) {
       const endTime = performance.now();
@@ -503,7 +529,7 @@ export class ComprehensiveTestSuite {
         errorMessage: error instanceof Error ? error.message : String(error),
         score: 0,
         grade: "F",
-        warnings: []
+        warnings: [],
       };
     }
   }
@@ -515,12 +541,12 @@ export class ComprehensiveTestSuite {
     try {
       const selfDefinitionPath = "../parser-sample/examples/tpeg-self.tpeg";
       const grammarSource = readFileSync(selfDefinitionPath, "utf-8");
-      
+
       const result = await selfTranspile(grammarSource, {
         targetLanguage: "typescript",
         includeTypes: true,
         optimize: false,
-        namePrefix: "test_"
+        namePrefix: "test_",
       });
 
       let score = 0;
@@ -545,7 +571,7 @@ export class ComprehensiveTestSuite {
         memoryUsage: 0, // Will be set by runSingleTest
         score,
         grade: this.calculateGrade(score),
-        warnings
+        warnings,
       };
     } catch (error) {
       throw new Error(`Basic self-parse failed: ${error}`);
@@ -556,12 +582,12 @@ export class ComprehensiveTestSuite {
     try {
       const selfDefinitionPath = "../parser-sample/examples/tpeg-self.tpeg";
       const grammarSource = readFileSync(selfDefinitionPath, "utf-8");
-      
+
       const result = await selfTranspile(grammarSource, {
         targetLanguage: "typescript",
         includeTypes: true,
         optimize: true,
-        namePrefix: "codegen_"
+        namePrefix: "codegen_",
       });
 
       let score = 0;
@@ -569,10 +595,11 @@ export class ComprehensiveTestSuite {
 
       if (result.success) {
         score += 40;
-        
+
         // Check code quality metrics
         if (result.code.includes("export")) score += 10;
-        if (result.code.includes("function") || result.code.includes("const")) score += 10;
+        if (result.code.includes("function") || result.code.includes("const"))
+          score += 10;
         if (result.code.includes("grammar")) score += 10;
         if (result.code.length > 2000) score += 10;
         if (result.code.length < 10000) score += 10;
@@ -591,7 +618,7 @@ export class ComprehensiveTestSuite {
         memoryUsage: 0,
         score,
         grade: this.calculateGrade(score),
-        warnings
+        warnings,
       };
     } catch (error) {
       throw new Error(`Code generation failed: ${error}`);
@@ -602,7 +629,7 @@ export class ComprehensiveTestSuite {
     try {
       const selfDefinitionPath = "../parser-sample/examples/tpeg-self.tpeg";
       const grammarSource = readFileSync(selfDefinitionPath, "utf-8");
-      
+
       let score = 0;
       const warnings: string[] = [];
       const maxIterations = 3;
@@ -614,7 +641,7 @@ export class ComprehensiveTestSuite {
           targetLanguage: "typescript",
           includeTypes: true,
           optimize: true,
-          namePrefix: `loop${i}_`
+          namePrefix: `loop${i}_`,
         });
 
         if (!result.success) {
@@ -628,7 +655,7 @@ export class ComprehensiveTestSuite {
           break;
         }
         previousCodeHash = codeHash;
-        
+
         if (i === 0) score += 20; // First iteration success
         if (i === 1) score += 20; // Second iteration success
         if (i === 2) score += 10; // Third iteration success
@@ -648,7 +675,7 @@ export class ComprehensiveTestSuite {
         memoryUsage: 0,
         score,
         grade: this.calculateGrade(score),
-        warnings
+        warnings,
       };
     } catch (error) {
       throw new Error(`Self-hosting loop failed: ${error}`);
@@ -661,18 +688,18 @@ export class ComprehensiveTestSuite {
         {
           name: "Calculator",
           path: "../parser-sample/examples/calculator.tpeg",
-          minScore: 70
+          minScore: 70,
         },
         {
           name: "JSON",
           path: "../parser-sample/examples/json-lite.tpeg",
-          minScore: 70
+          minScore: 70,
         },
         {
           name: "Self-Definition",
           path: "../parser-sample/examples/tpeg-self.tpeg",
-          minScore: 80
-        }
+          minScore: 80,
+        },
       ];
 
       let score = 0;
@@ -686,7 +713,7 @@ export class ComprehensiveTestSuite {
             targetLanguage: "typescript",
             includeTypes: true,
             optimize: true,
-            namePrefix: `bootstrap_${grammar.name.toLowerCase()}_`
+            namePrefix: `bootstrap_${grammar.name.toLowerCase()}_`,
           });
 
           if (result.success) {
@@ -696,7 +723,9 @@ export class ComprehensiveTestSuite {
             warnings.push(`Bootstrap validation failed for ${grammar.name}`);
           }
         } catch (error) {
-          warnings.push(`Bootstrap validation error for ${grammar.name}: ${error}`);
+          warnings.push(
+            `Bootstrap validation error for ${grammar.name}: ${error}`,
+          );
         }
       }
 
@@ -712,7 +741,7 @@ export class ComprehensiveTestSuite {
         memoryUsage: 0,
         score,
         grade: this.calculateGrade(score),
-        warnings
+        warnings,
       };
     } catch (error) {
       throw new Error(`Bootstrap validation failed: ${error}`);
@@ -721,29 +750,29 @@ export class ComprehensiveTestSuite {
 
   private async testErrorDetection(): Promise<TestResult> {
     try {
-      const errorHandler = new ErrorHandlingContext({
+      const _errorHandler = new ErrorHandlingContext({
         maxRetries: 2,
         timeout: 5000,
         enableDiagnostics: true,
-        enableRecovery: true
+        enableRecovery: true,
       });
 
       const testCases = [
         {
           name: "Invalid Grammar",
-          input: "grammar Invalid { rule = \"unclosed",
-          expectedError: true
+          input: 'grammar Invalid { rule = "unclosed',
+          expectedError: true,
         },
         {
           name: "Empty Grammar",
           input: "",
-          expectedError: true
+          expectedError: true,
         },
         {
           name: "Missing Grammar Declaration",
-          input: "rule = \"test\"",
-          expectedError: true
-        }
+          input: 'rule = "test"',
+          expectedError: true,
+        },
       ];
 
       let score = 0;
@@ -755,7 +784,7 @@ export class ComprehensiveTestSuite {
           const result = await selfTranspile(testCase.input, {
             targetLanguage: "typescript",
             includeTypes: true,
-            optimize: false
+            optimize: false,
           });
 
           if (testCase.expectedError && !result.success) {
@@ -788,7 +817,7 @@ export class ComprehensiveTestSuite {
         memoryUsage: 0,
         score,
         grade: this.calculateGrade(score),
-        warnings
+        warnings,
       };
     } catch (error) {
       throw new Error(`Error detection test failed: ${error}`);
@@ -805,19 +834,19 @@ export class ComprehensiveTestSuite {
         async () => {
           const selfDefinitionPath = "../parser-sample/examples/tpeg-self.tpeg";
           const grammarSource = readFileSync(selfDefinitionPath, "utf-8");
-          
+
           return await selfTranspile(grammarSource, {
             targetLanguage: "typescript",
             includeTypes: true,
-            optimize: true
+            optimize: true,
           });
         },
         {
           maxRetries: 3,
           timeout: 10000,
           enableDiagnostics: true,
-          enableRecovery: true
-        }
+          enableRecovery: true,
+        },
       );
 
       if (result.success) {
@@ -826,27 +855,27 @@ export class ComprehensiveTestSuite {
 
       // Test error recovery with fallback
       try {
-        const malformedGrammar = "grammar Malformed { rule = \"unclosed";
+        const malformedGrammar = 'grammar Malformed { rule = "unclosed';
         const fallbackResult = await withErrorHandling(
           async () => {
             return await selfTranspile(malformedGrammar, {
               targetLanguage: "typescript",
               includeTypes: true,
-              optimize: false
+              optimize: false,
             });
           },
           {
             maxRetries: 2,
             timeout: 5000,
             enableDiagnostics: true,
-            enableRecovery: true
-          }
+            enableRecovery: true,
+          },
         );
 
         if (!fallbackResult.success) {
           score += 25; // Good - should fail for malformed grammar
         }
-      } catch (error) {
+      } catch (_error) {
         score += 25; // Good - error was caught
       }
 
@@ -860,7 +889,7 @@ export class ComprehensiveTestSuite {
         memoryUsage: 0,
         score,
         grade: this.calculateGrade(score),
-        warnings
+        warnings,
       };
     } catch (error) {
       throw new Error(`Recovery mechanisms test failed: ${error}`);
@@ -875,17 +904,17 @@ export class ComprehensiveTestSuite {
       // Test error integration with normal operation
       const selfDefinitionPath = "../parser-sample/examples/tpeg-self.tpeg";
       const grammarSource = readFileSync(selfDefinitionPath, "utf-8");
-      
+
       const result = await selfTranspile(grammarSource, {
         targetLanguage: "typescript",
         includeTypes: true,
         optimize: true,
-        namePrefix: "integration_"
+        namePrefix: "integration_",
       });
 
       if (result.success) {
         score += 40;
-        
+
         // Check error handling integration
         if (result.warnings.length >= 0) score += 20; // Has warning system
         if (result.performance.generationTime > 0) score += 20; // Has performance tracking
@@ -900,7 +929,7 @@ export class ComprehensiveTestSuite {
         memoryUsage: 0,
         score,
         grade: this.calculateGrade(score),
-        warnings
+        warnings,
       };
     } catch (error) {
       throw new Error(`Error integration test failed: ${error}`);
@@ -911,7 +940,7 @@ export class ComprehensiveTestSuite {
     try {
       const selfDefinitionPath = "../parser-sample/examples/tpeg-self.tpeg";
       const grammarSource = readFileSync(selfDefinitionPath, "utf-8");
-      
+
       const iterations = 3;
       const times: number[] = [];
       let score = 0;
@@ -919,12 +948,12 @@ export class ComprehensiveTestSuite {
 
       for (let i = 0; i < iterations; i++) {
         const start = performance.now();
-        
+
         const result = await selfTranspile(grammarSource, {
           targetLanguage: "typescript",
           includeTypes: true,
           optimize: false, // Baseline without optimization
-          namePrefix: `baseline${i}_`
+          namePrefix: `baseline${i}_`,
         });
 
         const end = performance.now();
@@ -932,23 +961,30 @@ export class ComprehensiveTestSuite {
         times.push(duration);
 
         if (!result.success) {
-          throw new Error(`Baseline performance test iteration ${i + 1} failed`);
+          throw new Error(
+            `Baseline performance test iteration ${i + 1} failed`,
+          );
         }
       }
 
       const avgTime = times.reduce((sum, time) => sum + time, 0) / times.length;
       const maxTime = Math.max(...times);
       const minTime = Math.min(...times);
-      const consistency = 1 - ((maxTime - minTime) / avgTime);
+      const consistency = 1 - (maxTime - minTime) / avgTime;
 
       // Performance scoring
-      if (avgTime < 15000) score += 40; // Under 15 seconds
-      else if (avgTime < 30000) score += 30; // Under 30 seconds
-      else if (avgTime < 60000) score += 20; // Under 1 minute
+      if (avgTime < 15000)
+        score += 40; // Under 15 seconds
+      else if (avgTime < 30000)
+        score += 30; // Under 30 seconds
+      else if (avgTime < 60000)
+        score += 20; // Under 1 minute
       else score += 10; // Over 1 minute
 
-      if (consistency > 0.8) score += 20; // Good consistency
-      else if (consistency > 0.6) score += 15; // Moderate consistency
+      if (consistency > 0.8)
+        score += 20; // Good consistency
+      else if (consistency > 0.6)
+        score += 15; // Moderate consistency
       else if (consistency > 0.4) score += 10; // Poor consistency
 
       if (minTime < 10000) score += 20; // Fast minimum time
@@ -971,8 +1007,8 @@ export class ComprehensiveTestSuite {
           avgTime: avgTime.toFixed(2),
           minTime: minTime.toFixed(2),
           maxTime: maxTime.toFixed(2),
-          consistency: (consistency * 100).toFixed(1)
-        }
+          consistency: (consistency * 100).toFixed(1),
+        },
       };
     } catch (error) {
       throw new Error(`Baseline performance test failed: ${error}`);
@@ -983,7 +1019,7 @@ export class ComprehensiveTestSuite {
     try {
       const selfDefinitionPath = "../parser-sample/examples/tpeg-self.tpeg";
       const grammarSource = readFileSync(selfDefinitionPath, "utf-8");
-      
+
       let score = 0;
       const warnings: string[] = [];
       const results: { name: string; time: number; success: boolean }[] = [];
@@ -992,18 +1028,18 @@ export class ComprehensiveTestSuite {
       const optimizationConfigs = [
         { name: "No Optimization", optimize: false, memoization: false },
         { name: "Basic Optimization", optimize: true, memoization: false },
-        { name: "Full Optimization", optimize: true, memoization: true }
+        { name: "Full Optimization", optimize: true, memoization: true },
       ];
 
       for (const config of optimizationConfigs) {
         const start = performance.now();
-        
+
         const result = await selfTranspile(grammarSource, {
           targetLanguage: "typescript",
           includeTypes: true,
           optimize: config.optimize,
           enableMemoization: config.memoization,
-          namePrefix: `opt_${config.name.toLowerCase().replace(/\s/g, '_')}_`
+          namePrefix: `opt_${config.name.toLowerCase().replace(/\s/g, "_")}_`,
         });
 
         const end = performance.now();
@@ -1012,7 +1048,7 @@ export class ComprehensiveTestSuite {
         results.push({
           name: config.name,
           time: duration,
-          success: result.success
+          success: result.success,
         });
 
         if (result.success) {
@@ -1024,9 +1060,11 @@ export class ComprehensiveTestSuite {
 
       // Check for performance improvements
       if (results.length >= 2) {
-        const noOptTime = results.find(r => r.name === "No Optimization")?.time || 0;
-        const fullOptTime = results.find(r => r.name === "Full Optimization")?.time || 0;
-        
+        const noOptTime =
+          results.find((r) => r.name === "No Optimization")?.time || 0;
+        const fullOptTime =
+          results.find((r) => r.name === "Full Optimization")?.time || 0;
+
         if (noOptTime > 0 && fullOptTime > 0) {
           const improvement = (noOptTime - fullOptTime) / noOptTime;
           if (improvement > 0.1) score += 15; // 10% improvement
@@ -1037,19 +1075,19 @@ export class ComprehensiveTestSuite {
       return {
         id: "optimization-features",
         name: "Optimization Features",
-        success: results.filter(r => r.success).length >= 2,
+        success: results.filter((r) => r.success).length >= 2,
         duration: 0,
         memoryUsage: 0,
         score,
         grade: this.calculateGrade(score),
         warnings,
         details: {
-          results: results.map(r => ({
+          results: results.map((r) => ({
             name: r.name,
             time: r.time.toFixed(2),
-            success: r.success
-          }))
-        }
+            success: r.success,
+          })),
+        },
       };
     } catch (error) {
       throw new Error(`Optimization features test failed: ${error}`);
@@ -1060,20 +1098,20 @@ export class ComprehensiveTestSuite {
     try {
       const selfDefinitionPath = "../parser-sample/examples/tpeg-self.tpeg";
       const grammarSource = readFileSync(selfDefinitionPath, "utf-8");
-      
+
       let score = 0;
       const warnings: string[] = [];
 
       // Test caching with optimized transpiler
-      const optimizedTranspiler = createOptimizedTranspiler();
-      
+      const _optimizedTranspiler = createOptimizedTranspiler();
+
       // First run (should populate cache)
       const firstStart = performance.now();
       const firstResult = await selfTranspileOptimized(grammarSource, {
         targetLanguage: "typescript",
         includeTypes: true,
         optimize: true,
-        namePrefix: "cache_first_"
+        namePrefix: "cache_first_",
       });
       const firstEnd = performance.now();
       const firstTime = firstEnd - firstStart;
@@ -1090,7 +1128,7 @@ export class ComprehensiveTestSuite {
         targetLanguage: "typescript",
         includeTypes: true,
         optimize: true,
-        namePrefix: "cache_second_"
+        namePrefix: "cache_second_",
       });
       const secondEnd = performance.now();
       const secondTime = secondEnd - secondStart;
@@ -1121,8 +1159,10 @@ export class ComprehensiveTestSuite {
         details: {
           firstTime: firstTime.toFixed(2),
           secondTime: secondTime.toFixed(2),
-          improvement: ((firstTime - secondTime) / firstTime * 100).toFixed(1)
-        }
+          improvement: (((firstTime - secondTime) / firstTime) * 100).toFixed(
+            1,
+          ),
+        },
       };
     } catch (error) {
       throw new Error(`Caching system test failed: ${error}`);
@@ -1133,7 +1173,7 @@ export class ComprehensiveTestSuite {
     try {
       const selfDefinitionPath = "../parser-sample/examples/tpeg-self.tpeg";
       const grammarSource = readFileSync(selfDefinitionPath, "utf-8");
-      
+
       let score = 0;
       const warnings: string[] = [];
 
@@ -1146,25 +1186,25 @@ export class ComprehensiveTestSuite {
         enableProgressiveOptimization: true,
         enablePredictivePreloading: true,
         adaptiveBatchSizing: false,
-        maxMemoryUsage: 512
+        maxMemoryUsage: 512,
       });
 
       const tasks = [
         {
           grammarSource,
           config: { namePrefix: "batch1_", enableMemoization: true },
-          id: "batch1"
+          id: "batch1",
         },
         {
           grammarSource,
           config: { namePrefix: "batch2_", enableMemoization: true },
-          id: "batch2"
+          id: "batch2",
         },
         {
           grammarSource,
           config: { namePrefix: "batch3_", enableMemoization: true },
-          id: "batch3"
-        }
+          id: "batch3",
+        },
       ];
 
       const start = performance.now();
@@ -1198,8 +1238,8 @@ export class ComprehensiveTestSuite {
         details: {
           tasksProcessed: tasks.length,
           successCount,
-          duration: duration.toFixed(2)
-        }
+          duration: duration.toFixed(2),
+        },
       };
     } catch (error) {
       throw new Error(`Batch processing test failed: ${error}`);
@@ -1210,7 +1250,7 @@ export class ComprehensiveTestSuite {
     try {
       const selfDefinitionPath = "../parser-sample/examples/tpeg-self.tpeg";
       const grammarSource = readFileSync(selfDefinitionPath, "utf-8");
-      
+
       let score = 0;
       const warnings: string[] = [];
 
@@ -1220,20 +1260,20 @@ export class ComprehensiveTestSuite {
           targetLanguage: "typescript",
           includeTypes: true,
           optimize: true,
-          namePrefix: "parallel1_"
+          namePrefix: "parallel1_",
         }),
         selfTranspile(grammarSource, {
           targetLanguage: "typescript",
           includeTypes: true,
           optimize: true,
-          namePrefix: "parallel2_"
+          namePrefix: "parallel2_",
         }),
         selfTranspile(grammarSource, {
           targetLanguage: "typescript",
           includeTypes: true,
           optimize: true,
-          namePrefix: "parallel3_"
-        })
+          namePrefix: "parallel3_",
+        }),
       ];
 
       const start = performance.now();
@@ -1247,7 +1287,7 @@ export class ComprehensiveTestSuite {
           successCount++;
           score += 25;
         } else {
-          warnings.push(`Parallel execution failed for a task`);
+          warnings.push("Parallel execution failed for a task");
         }
       }
 
@@ -1267,8 +1307,8 @@ export class ComprehensiveTestSuite {
         details: {
           tasksProcessed: tasks.length,
           successCount,
-          duration: duration.toFixed(2)
-        }
+          duration: duration.toFixed(2),
+        },
       };
     } catch (error) {
       throw new Error(`Parallel execution test failed: ${error}`);
@@ -1279,7 +1319,7 @@ export class ComprehensiveTestSuite {
     try {
       const selfDefinitionPath = "../parser-sample/examples/tpeg-self.tpeg";
       const grammarSource = readFileSync(selfDefinitionPath, "utf-8");
-      
+
       let score = 0;
       const warnings: string[] = [];
 
@@ -1293,7 +1333,7 @@ export class ComprehensiveTestSuite {
           targetLanguage: "typescript",
           includeTypes: true,
           optimize: true,
-          namePrefix: `memory${i}_`
+          namePrefix: `memory${i}_`,
         });
 
         if (result.success) {
@@ -1316,10 +1356,10 @@ export class ComprehensiveTestSuite {
         const firstSnapshot = memorySnapshots[0];
         const lastSnapshot = memorySnapshots[memorySnapshots.length - 1];
         const memoryGrowth = (lastSnapshot - firstSnapshot) / firstSnapshot;
-        
+
         if (memoryGrowth < 0.5) score += 15; // Less than 50% growth
         if (memoryGrowth < 0.2) score += 10; // Less than 20% growth
-        
+
         if (memoryGrowth > 1.0) {
           warnings.push("Potential memory leak detected");
         }
@@ -1336,8 +1376,10 @@ export class ComprehensiveTestSuite {
         warnings,
         details: {
           iterations,
-          memorySnapshots: memorySnapshots.map(m => (m / 1024 / 1024).toFixed(2))
-        }
+          memorySnapshots: memorySnapshots.map((m) =>
+            (m / 1024 / 1024).toFixed(2),
+          ),
+        },
       };
     } catch (error) {
       throw new Error(`Memory management test failed: ${error}`);
@@ -1348,7 +1390,7 @@ export class ComprehensiveTestSuite {
     try {
       const selfDefinitionPath = "../parser-sample/examples/tpeg-self.tpeg";
       const grammarSource = readFileSync(selfDefinitionPath, "utf-8");
-      
+
       let score = 0;
       const warnings: string[] = [];
 
@@ -1360,7 +1402,7 @@ export class ComprehensiveTestSuite {
         targetLanguage: "typescript",
         includeTypes: true,
         optimize: false,
-        namePrefix: "workflow_parse_"
+        namePrefix: "workflow_parse_",
       });
 
       if (parseResult.success) {
@@ -1376,7 +1418,7 @@ export class ComprehensiveTestSuite {
         targetLanguage: "typescript",
         includeTypes: true,
         optimize: true,
-        namePrefix: "workflow_optimized_"
+        namePrefix: "workflow_optimized_",
       });
 
       if (optimizedResult.success) {
@@ -1392,7 +1434,7 @@ export class ComprehensiveTestSuite {
         targetLanguage: "typescript",
         includeTypes: true,
         optimize: true,
-        namePrefix: "workflow_selfhost_"
+        namePrefix: "workflow_selfhost_",
       });
 
       if (selfHostingResult.success) {
@@ -1409,7 +1451,7 @@ export class ComprehensiveTestSuite {
         targetLanguage: "typescript",
         includeTypes: true,
         optimize: true,
-        namePrefix: "workflow_perf_"
+        namePrefix: "workflow_perf_",
       });
       const perfEnd = performance.now();
       const perfTime = perfEnd - perfStart;
@@ -1428,7 +1470,7 @@ export class ComprehensiveTestSuite {
           targetLanguage: "typescript",
           includeTypes: true,
           optimize: false,
-          namePrefix: "workflow_error_"
+          namePrefix: "workflow_error_",
         });
 
         if (!errorResult.success) {
@@ -1438,9 +1480,11 @@ export class ComprehensiveTestSuite {
           warnings.push("Error handling did not catch invalid grammar");
           console.log("      ❌ Step 5: Error handling failed");
         }
-      } catch (error) {
+      } catch (_error) {
         score += 20; // Good - error was caught
-        console.log("      ✅ Step 5: Error handling successful (caught exception)");
+        console.log(
+          "      ✅ Step 5: Error handling successful (caught exception)",
+        );
       }
 
       return {
@@ -1456,8 +1500,8 @@ export class ComprehensiveTestSuite {
           parseSuccess: parseResult.success,
           optimizedSuccess: optimizedResult.success,
           selfHostingSuccess: selfHostingResult.success,
-          performanceTime: perfTime.toFixed(2)
-        }
+          performanceTime: perfTime.toFixed(2),
+        },
       };
     } catch (error) {
       throw new Error(`Complete workflow test failed: ${error}`);
@@ -1471,14 +1515,14 @@ export class ComprehensiveTestSuite {
 
       // Test with large grammar
       const largeGrammar = this.generateLargeGrammar(50); // 50 rules
-      
+
       console.log("      📋 Testing with large grammar (50 rules)...");
-      
+
       const largeResult = await selfTranspile(largeGrammar, {
         targetLanguage: "typescript",
         includeTypes: true,
         optimize: true,
-        namePrefix: "stress_large_"
+        namePrefix: "stress_large_",
       });
 
       if (largeResult.success) {
@@ -1491,14 +1535,14 @@ export class ComprehensiveTestSuite {
 
       // Test with complex nested grammar
       const complexGrammar = this.generateComplexGrammar(20); // 20 complex rules
-      
+
       console.log("      📋 Testing with complex nested grammar...");
-      
+
       const complexResult = await selfTranspile(complexGrammar, {
         targetLanguage: "typescript",
         includeTypes: true,
         optimize: true,
-        namePrefix: "stress_complex_"
+        namePrefix: "stress_complex_",
       });
 
       if (complexResult.success) {
@@ -1511,10 +1555,10 @@ export class ComprehensiveTestSuite {
 
       // Test with rapid iterations
       console.log("      📋 Testing rapid iterations...");
-      
+
       const selfDefinitionPath = "../parser-sample/examples/tpeg-self.tpeg";
       const grammarSource = readFileSync(selfDefinitionPath, "utf-8");
-      
+
       const rapidIterations = 10;
       let rapidSuccessCount = 0;
 
@@ -1523,7 +1567,7 @@ export class ComprehensiveTestSuite {
           targetLanguage: "typescript",
           includeTypes: true,
           optimize: true,
-          namePrefix: `rapid${i}_`
+          namePrefix: `rapid${i}_`,
         });
 
         if (result.success) {
@@ -1541,16 +1585,16 @@ export class ComprehensiveTestSuite {
 
       // Memory stress test
       console.log("      📋 Testing memory stress...");
-      
+
       const memoryStart = process.memoryUsage?.()?.heapUsed || 0;
       const memoryIterations = 5;
-      
+
       for (let i = 0; i < memoryIterations; i++) {
         const result = await selfTranspile(grammarSource, {
           targetLanguage: "typescript",
           includeTypes: true,
           optimize: true,
-          namePrefix: `memory${i}_`
+          namePrefix: `memory${i}_`,
         });
 
         if (!result.success) {
@@ -1561,7 +1605,8 @@ export class ComprehensiveTestSuite {
       const memoryEnd = process.memoryUsage?.()?.heapUsed || 0;
       const memoryGrowth = (memoryEnd - memoryStart) / memoryStart;
 
-      if (memoryGrowth < 2.0) { // Less than 200% growth
+      if (memoryGrowth < 2.0) {
+        // Less than 200% growth
         score += 25;
         console.log("      ✅ Memory stress test successful");
       } else {
@@ -1582,8 +1627,8 @@ export class ComprehensiveTestSuite {
           largeGrammarSuccess: largeResult.success,
           complexGrammarSuccess: complexResult.success,
           rapidIterations: rapidSuccessCount,
-          memoryGrowth: (memoryGrowth * 100).toFixed(1)
-        }
+          memoryGrowth: (memoryGrowth * 100).toFixed(1),
+        },
       };
     } catch (error) {
       throw new Error(`Stress testing failed: ${error}`);
@@ -1599,14 +1644,14 @@ export class ComprehensiveTestSuite {
         {
           name: "Empty grammar",
           input: "",
-          expectedSuccess: false
+          expectedSuccess: false,
         },
         {
           name: "Single rule grammar",
           input: `grammar Single {
             rule = "test"
           }`,
-          expectedSuccess: true
+          expectedSuccess: true,
         },
         {
           name: "Grammar with unicode",
@@ -1614,14 +1659,14 @@ export class ComprehensiveTestSuite {
             rule = "こんにちは"
             number = [０-９]+
           }`,
-          expectedSuccess: true
+          expectedSuccess: true,
         },
         {
           name: "Grammar with very long rule name",
           input: `grammar Long {
             very_long_rule_name_that_goes_on_and_on_and_on_and_on_and_on = "test"
           }`,
-          expectedSuccess: true
+          expectedSuccess: true,
         },
         {
           name: "Grammar with special characters",
@@ -1629,24 +1674,26 @@ export class ComprehensiveTestSuite {
             special = "\\n\\t\\r\\\\\\""
             brackets = "[" [a-z]+ "]"
           }`,
-          expectedSuccess: true
-        }
+          expectedSuccess: true,
+        },
       ];
 
       for (const edgeCase of edgeCases) {
         try {
           console.log(`      📋 Testing edge case: ${edgeCase.name}`);
-          
+
           const result = await selfTranspile(edgeCase.input, {
             targetLanguage: "typescript",
             includeTypes: true,
             optimize: true,
-            namePrefix: `edge_${edgeCase.name.replace(/\s+/g, '_').toLowerCase()}_`
+            namePrefix: `edge_${edgeCase.name.replace(/\s+/g, "_").toLowerCase()}_`,
           });
 
           if (result.success === edgeCase.expectedSuccess) {
             score += 20;
-            console.log(`      ✅ Edge case ${edgeCase.name} handled correctly`);
+            console.log(
+              `      ✅ Edge case ${edgeCase.name} handled correctly`,
+            );
           } else {
             warnings.push(`Edge case ${edgeCase.name} not handled correctly`);
             console.log(`      ❌ Edge case ${edgeCase.name} failed`);
@@ -1654,10 +1701,16 @@ export class ComprehensiveTestSuite {
         } catch (error) {
           if (!edgeCase.expectedSuccess) {
             score += 20; // Good - expected to fail
-            console.log(`      ✅ Edge case ${edgeCase.name} failed as expected`);
+            console.log(
+              `      ✅ Edge case ${edgeCase.name} failed as expected`,
+            );
           } else {
-            warnings.push(`Edge case ${edgeCase.name} threw unexpected error: ${error}`);
-            console.log(`      ❌ Edge case ${edgeCase.name} threw unexpected error`);
+            warnings.push(
+              `Edge case ${edgeCase.name} threw unexpected error: ${error}`,
+            );
+            console.log(
+              `      ❌ Edge case ${edgeCase.name} threw unexpected error`,
+            );
           }
         }
       }
@@ -1673,8 +1726,8 @@ export class ComprehensiveTestSuite {
         warnings,
         details: {
           testedCases: edgeCases.length,
-          passedCases: Math.floor(score / 20)
-        }
+          passedCases: Math.floor(score / 20),
+        },
       };
     } catch (error) {
       throw new Error(`Edge cases test failed: ${error}`);
@@ -1694,137 +1747,175 @@ export class ComprehensiveTestSuite {
 
   private calculateCategoryScore(testResults: TestResult[]): number {
     if (testResults.length === 0) return 0;
-    return testResults.reduce((sum, result) => sum + result.score, 0) / testResults.length;
+    return (
+      testResults.reduce((sum, result) => sum + result.score, 0) /
+      testResults.length
+    );
   }
 
-  private calculateOverallScore(categoryResults: Record<string, TestCategoryResult>): number {
+  private calculateOverallScore(
+    categoryResults: Record<string, TestCategoryResult>,
+  ): number {
     const categories = Object.values(categoryResults);
     if (categories.length === 0) return 0;
-    
+
     let totalWeightedScore = 0;
     let totalWeight = 0;
-    
+
     for (const category of categories) {
-      const categoryDef = this.categories.find(c => c.id === category.categoryId);
+      const categoryDef = this.categories.find(
+        (c) => c.id === category.categoryId,
+      );
       const weight = categoryDef?.weight || 1;
       totalWeightedScore += category.score * weight;
       totalWeight += weight;
     }
-    
+
     return totalWeightedScore / totalWeight;
   }
 
   private generateSummary(
     categoryResults: Record<string, TestCategoryResult>,
     overallScore: number,
-    overallGrade: string
+    overallGrade: string,
   ): string {
     const categories = Object.values(categoryResults);
     const totalTests = categories.reduce((sum, cat) => sum + cat.totalTests, 0);
-    const passedTests = categories.reduce((sum, cat) => sum + cat.passedTests, 0);
-    const failedTests = categories.reduce((sum, cat) => sum + cat.failedTests, 0);
-    
-    const criticalFailures = categories.filter(cat => cat.critical && cat.failedTests > 0);
-    const allWarnings = categories.flatMap(cat => cat.warnings);
-    
-    let summary = `TPEG Self-Transpilation System Test Summary\n`;
-    summary += `==========================================\n`;
+    const passedTests = categories.reduce(
+      (sum, cat) => sum + cat.passedTests,
+      0,
+    );
+    const failedTests = categories.reduce(
+      (sum, cat) => sum + cat.failedTests,
+      0,
+    );
+
+    const criticalFailures = categories.filter(
+      (cat) => cat.critical && cat.failedTests > 0,
+    );
+    const allWarnings = categories.flatMap((cat) => cat.warnings);
+
+    let summary = "TPEG Self-Transpilation System Test Summary\n";
+    summary += "==========================================\n";
     summary += `Overall Grade: ${overallGrade} (${overallScore.toFixed(1)}/100)\n`;
     summary += `Total Tests: ${totalTests} (${passedTests} passed, ${failedTests} failed)\n`;
     summary += `Success Rate: ${((passedTests / totalTests) * 100).toFixed(1)}%\n`;
-    
+
     if (criticalFailures.length > 0) {
-      summary += `\nCRITICAL FAILURES:\n`;
-      criticalFailures.forEach(cat => {
+      summary += "\nCRITICAL FAILURES:\n";
+      criticalFailures.forEach((cat) => {
         summary += `- ${cat.categoryName}: ${cat.failedTests} failed tests\n`;
       });
     }
-    
+
     if (allWarnings.length > 0) {
       summary += `\nWarnings: ${allWarnings.length}\n`;
     }
-    
-    summary += `\nCategory Breakdown:\n`;
-    categories.forEach(cat => {
+
+    summary += "\nCategory Breakdown:\n";
+    categories.forEach((cat) => {
       summary += `- ${cat.categoryName}: ${cat.grade} (${cat.score.toFixed(1)}/100)\n`;
     });
-    
+
     return summary;
   }
 
-  private generateRecommendations(categoryResults: Record<string, TestCategoryResult>): string[] {
+  private generateRecommendations(
+    categoryResults: Record<string, TestCategoryResult>,
+  ): string[] {
     const recommendations: string[] = [];
     const categories = Object.values(categoryResults);
-    
+
     for (const category of categories) {
       if (category.grade === "F") {
-        recommendations.push(`URGENT: Fix critical issues in ${category.categoryName}`);
+        recommendations.push(
+          `URGENT: Fix critical issues in ${category.categoryName}`,
+        );
       } else if (category.grade === "D") {
-        recommendations.push(`HIGH: Improve ${category.categoryName} performance`);
+        recommendations.push(
+          `HIGH: Improve ${category.categoryName} performance`,
+        );
       } else if (category.grade === "C") {
-        recommendations.push(`MEDIUM: Optimize ${category.categoryName} implementation`);
+        recommendations.push(
+          `MEDIUM: Optimize ${category.categoryName} implementation`,
+        );
       }
-      
+
       if (category.warnings.length > 0) {
         recommendations.push(`Review warnings in ${category.categoryName}`);
       }
     }
-    
+
     // General recommendations
     const overallScore = this.calculateOverallScore(categoryResults);
     if (overallScore < 70) {
-      recommendations.push("Consider comprehensive system review and optimization");
+      recommendations.push(
+        "Consider comprehensive system review and optimization",
+      );
     }
-    
+
     const totalTests = categories.reduce((sum, cat) => sum + cat.totalTests, 0);
-    const passedTests = categories.reduce((sum, cat) => sum + cat.passedTests, 0);
+    const passedTests = categories.reduce(
+      (sum, cat) => sum + cat.passedTests,
+      0,
+    );
     const successRate = passedTests / totalTests;
-    
+
     if (successRate < 0.9) {
       recommendations.push("Focus on improving test success rate");
     }
-    
+
     return recommendations;
   }
 
   private printFinalResults(): void {
     if (!this.results) return;
-    
+
     console.log("\n🎯 COMPREHENSIVE TEST SUITE RESULTS");
     console.log("====================================");
-    console.log(`📊 Overall Grade: ${this.results.overallGrade} (${this.results.overallScore.toFixed(1)}/100)`);
+    console.log(
+      `📊 Overall Grade: ${this.results.overallGrade} (${this.results.overallScore.toFixed(1)}/100)`,
+    );
     console.log(`📋 Total Tests: ${this.results.totalTests}`);
     console.log(`✅ Passed: ${this.results.passedTests}`);
     console.log(`❌ Failed: ${this.results.failedTests}`);
-    console.log(`📈 Success Rate: ${((this.results.passedTests / this.results.totalTests) * 100).toFixed(1)}%`);
-    console.log(`⏱️  Total Duration: ${(this.results.totalDuration / 1000).toFixed(2)}s`);
-    console.log(`💾 Total Memory: ${(this.results.totalMemoryUsage / 1024 / 1024).toFixed(2)}MB`);
-    
+    console.log(
+      `📈 Success Rate: ${((this.results.passedTests / this.results.totalTests) * 100).toFixed(1)}%`,
+    );
+    console.log(
+      `⏱️  Total Duration: ${(this.results.totalDuration / 1000).toFixed(2)}s`,
+    );
+    console.log(
+      `💾 Total Memory: ${(this.results.totalMemoryUsage / 1024 / 1024).toFixed(2)}MB`,
+    );
+
     console.log("\n📋 Category Results:");
-    Object.values(this.results.categoryResults).forEach(cat => {
+    Object.values(this.results.categoryResults).forEach((cat) => {
       const status = cat.failedTests === 0 ? "✅" : "❌";
-      console.log(`${status} ${cat.categoryName}: ${cat.grade} (${cat.score.toFixed(1)}/100) - ${cat.passedTests}/${cat.totalTests} passed`);
+      console.log(
+        `${status} ${cat.categoryName}: ${cat.grade} (${cat.score.toFixed(1)}/100) - ${cat.passedTests}/${cat.totalTests} passed`,
+      );
     });
-    
+
     if (this.results.recommendations.length > 0) {
       console.log("\n📋 Recommendations:");
-      this.results.recommendations.forEach(rec => {
+      this.results.recommendations.forEach((rec) => {
         console.log(`- ${rec}`);
       });
     }
-    
-    console.log("\n" + this.results.summary);
+
+    console.log(`\n${this.results.summary}`);
   }
 
   private generateReport(): void {
     if (!this.results) return;
-    
+
     const report = {
       timestamp: new Date().toISOString(),
       results: this.results,
-      config: this.config
+      config: this.config,
     };
-    
+
     writeFileSync(this.config.reportPath, JSON.stringify(report, null, 2));
     console.log(`📊 Test report generated: ${this.config.reportPath}`);
   }
@@ -1833,49 +1924,49 @@ export class ComprehensiveTestSuite {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash; // Convert to 32-bit integer
     }
     return hash.toString(16);
   }
 
   private generateLargeGrammar(ruleCount: number): string {
-    let grammar = `grammar Large {\n`;
+    let grammar = "grammar Large {\n";
     grammar += `  @version: "1.0"\n`;
     grammar += `  @description: "Large grammar for stress testing"\n\n`;
-    
+
     for (let i = 1; i <= ruleCount; i++) {
       grammar += `  rule${i} = "rule${i}" [a-z]* "end${i}"\n`;
     }
-    
-    grammar += `}`;
+
+    grammar += "}";
     return grammar;
   }
 
   private generateComplexGrammar(ruleCount: number): string {
-    let grammar = `grammar Complex {\n`;
+    let grammar = "grammar Complex {\n";
     grammar += `  @version: "1.0"\n`;
     grammar += `  @description: "Complex grammar for stress testing"\n\n`;
-    
+
     for (let i = 1; i <= ruleCount; i++) {
       const complexity = [
         `(rule${i}_part1 / rule${i}_part2) rule${i}_part3*`,
         `rule${i}_prefix (rule${i}_middle+ / rule${i}_alternative) rule${i}_suffix?`,
         `&rule${i}_lookahead rule${i}_main !rule${i}_negative`,
         `[a-z]+ "separator" [0-9]+ ("option1" / "option2" / "option3")`,
-        `(rule${i}_nested (rule${i}_inner / rule${i}_other)*)+`
+        `(rule${i}_nested (rule${i}_inner / rule${i}_other)*)+`,
       ];
-      
+
       const pattern = complexity[i % complexity.length];
       grammar += `  rule${i} = ${pattern}\n`;
-      
+
       // Add supporting rules
       grammar += `  rule${i}_part1 = "part1"\n`;
       grammar += `  rule${i}_part2 = "part2"\n`;
       grammar += `  rule${i}_part3 = "part3"\n`;
     }
-    
-    grammar += `}`;
+
+    grammar += "}";
     return grammar;
   }
 }
@@ -1884,7 +1975,7 @@ export class ComprehensiveTestSuite {
  * Convenience function to run the comprehensive test suite
  */
 export async function runComprehensiveTestSuite(
-  config: Partial<ComprehensiveTestSuite["config"]> = {}
+  config: Partial<ComprehensiveTestSuite["config"]> = {},
 ): Promise<TestSuiteResult> {
   const suite = new ComprehensiveTestSuite(config);
   return await suite.runTestSuite();
@@ -1895,8 +1986,8 @@ export async function runComprehensiveTestSuite(
  */
 async function selfTranspileOptimized(
   grammarSource: string,
-  config: Partial<import("./types").SelfTranspileConfig>
+  config: Partial<import("./types").SelfTranspileConfig>,
 ): Promise<import("./types").SelfTranspileResult> {
   const optimizedTranspiler = createOptimizedTranspiler();
   return await optimizedTranspiler.transpile(grammarSource, config);
-} 
+}

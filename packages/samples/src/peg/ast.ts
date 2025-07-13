@@ -2,7 +2,7 @@ import type { Pos } from "tpeg-core";
 
 /**
  * Base interface for all AST nodes with position information.
- * 
+ *
  * All AST nodes in the PEG parser extend this interface to include
  * position information for error reporting and debugging.
  */
@@ -17,7 +17,7 @@ export type ExprType = Expr["type"];
 
 /**
  * Union type representing all possible expression nodes in the PEG AST.
- * 
+ *
  * This includes all basic expressions like sequences, choices, and literals,
  * as well as more complex expressions like predicates and repetitions.
  */
@@ -38,7 +38,7 @@ export type Expr =
 
 /**
  * Represents a sequence of expressions that must match in order.
- * 
+ *
  * @property type - Always "Sequence"
  * @property value - Array of expressions that must match in sequence
  */
@@ -49,7 +49,7 @@ export type Sequence = BaseNode & {
 
 /**
  * Represents a choice between expressions (ordered choice).
- * 
+ *
  * @property type - Always "Choice"
  * @property value - Array of expressions to try in order
  */
@@ -60,7 +60,7 @@ export type Choice = BaseNode & {
 
 /**
  * Represents an optional expression that may or may not match.
- * 
+ *
  * @property type - Always "Optional"
  * @property value - The expression that is optional
  */
@@ -71,7 +71,7 @@ export type Optional = BaseNode & {
 
 /**
  * Represents a positive lookahead predicate.
- * 
+ *
  * @property type - Always "AndPredicate"
  * @property value - The expression to check without consuming
  */
@@ -82,7 +82,7 @@ export type AndPredicate = BaseNode & {
 
 /**
  * Represents a negative lookahead predicate.
- * 
+ *
  * @property type - Always "NotPredicate"
  * @property value - The expression that must not match
  */
@@ -93,7 +93,7 @@ export type NotPredicate = BaseNode & {
 
 /**
  * Represents a zero-or-more repetition.
- * 
+ *
  * @property type - Always "ZeroOrMore"
  * @property value - The expression to repeat zero or more times
  */
@@ -104,7 +104,7 @@ export type ZeroOrMore = BaseNode & {
 
 /**
  * Represents a one-or-more repetition.
- * 
+ *
  * @property type - Always "OneOrMore"
  * @property value - The expression to repeat one or more times
  */
@@ -115,7 +115,7 @@ export type OneOrMore = BaseNode & {
 
 /**
  * Represents the "any character" expression.
- * 
+ *
  * @property type - Always "AnyChar"
  */
 export type AnyChar = BaseNode & {
@@ -124,7 +124,7 @@ export type AnyChar = BaseNode & {
 
 /**
  * Represents an identifier (rule name).
- * 
+ *
  * @property type - Always "Identifier"
  * @property value - The identifier name
  */
@@ -135,7 +135,7 @@ export type Identifier = BaseNode & {
 
 /**
  * Represents a literal string.
- * 
+ *
  * @property type - Always "Literal"
  * @property value - The literal string value
  */
@@ -146,7 +146,7 @@ export type Literal = BaseNode & {
 
 /**
  * Represents a character class.
- * 
+ *
  * @property type - Always "CharClass"
  * @property value - Array of characters or character ranges
  */
@@ -157,7 +157,7 @@ export type CharClass = BaseNode & {
 
 /**
  * Represents a rule definition.
- * 
+ *
  * @property type - Always "Definition"
  * @property name - The rule name
  * @property expr - The rule's expression
@@ -170,7 +170,7 @@ export type Definition = BaseNode & {
 
 /**
  * Represents a complete grammar.
- * 
+ *
  * @property type - Always "Grammar"
  * @property value - Array of rule definitions
  */
@@ -183,7 +183,7 @@ export type Grammar = BaseNode & {
 
 /**
  * Type guard to check if an expression is a Sequence.
- * 
+ *
  * @param expr - The expression to check
  * @returns True if the expression is a Sequence
  */
@@ -192,7 +192,7 @@ export const isSequence = (expr: Expr): expr is Sequence =>
 
 /**
  * Type guard to check if an expression is a Choice.
- * 
+ *
  * @param expr - The expression to check
  * @returns True if the expression is a Choice
  */
@@ -200,7 +200,7 @@ export const isChoice = (expr: Expr): expr is Choice => expr.type === "Choice";
 
 /**
  * Type guard to check if an expression is an Optional.
- * 
+ *
  * @param expr - The expression to check
  * @returns True if the expression is an Optional
  */
@@ -209,7 +209,7 @@ export const isOptional = (expr: Expr): expr is Optional =>
 
 /**
  * Type guard to check if an expression is an AndPredicate.
- * 
+ *
  * @param expr - The expression to check
  * @returns True if the expression is an AndPredicate
  */
@@ -218,7 +218,7 @@ export const isAndPredicate = (expr: Expr): expr is AndPredicate =>
 
 /**
  * Type guard to check if an expression is a NotPredicate.
- * 
+ *
  * @param expr - The expression to check
  * @returns True if the expression is a NotPredicate
  */
@@ -227,7 +227,7 @@ export const isNotPredicate = (expr: Expr): expr is NotPredicate =>
 
 /**
  * Type guard to check if an expression is a ZeroOrMore.
- * 
+ *
  * @param expr - The expression to check
  * @returns True if the expression is a ZeroOrMore
  */
@@ -236,7 +236,7 @@ export const isZeroOrMore = (expr: Expr): expr is ZeroOrMore =>
 
 /**
  * Type guard to check if an expression is a OneOrMore.
- * 
+ *
  * @param expr - The expression to check
  * @returns True if the expression is a OneOrMore
  */
@@ -245,7 +245,7 @@ export const isOneOrMore = (expr: Expr): expr is OneOrMore =>
 
 /**
  * Type guard to check if an expression is an AnyChar.
- * 
+ *
  * @param expr - The expression to check
  * @returns True if the expression is an AnyChar
  */
@@ -254,7 +254,7 @@ export const isAnyChar = (expr: Expr): expr is AnyChar =>
 
 /**
  * Type guard to check if an expression is an Identifier.
- * 
+ *
  * @param expr - The expression to check
  * @returns True if the expression is an Identifier
  */
@@ -263,7 +263,7 @@ export const isIdentifier = (expr: Expr): expr is Identifier =>
 
 /**
  * Type guard to check if an expression is a Literal.
- * 
+ *
  * @param expr - The expression to check
  * @returns True if the expression is a Literal
  */
@@ -272,7 +272,7 @@ export const isLiteral = (expr: Expr): expr is Literal =>
 
 /**
  * Type guard to check if an expression is a CharClass.
- * 
+ *
  * @param expr - The expression to check
  * @returns True if the expression is a CharClass
  */
@@ -281,7 +281,7 @@ export const isCharClass = (expr: Expr): expr is CharClass =>
 
 /**
  * Type guard to check if an expression is a Definition.
- * 
+ *
  * @param expr - The expression to check
  * @returns True if the expression is a Definition
  */
@@ -290,7 +290,7 @@ export const isDefinition = (expr: Expr): expr is Definition =>
 
 /**
  * Type guard to check if an expression is a Grammar.
- * 
+ *
  * @param expr - The expression to check
  * @returns True if the expression is a Grammar
  */
@@ -301,16 +301,16 @@ export const isGrammar = (expr: Expr): expr is Grammar =>
 
 /**
  * Creates an AST node with the specified type, position, and properties.
- * 
+ *
  * This helper function ensures all AST nodes have consistent structure
  * with proper type information and position data.
- * 
+ *
  * @template T - The specific expression type
  * @param type - The node type
  * @param pos - The position information
  * @param props - Additional properties for the node
  * @returns A properly typed AST node
- * 
+ *
  * @example
  * ```typescript
  * const node = createNode("Literal", pos, { value: "hello" });

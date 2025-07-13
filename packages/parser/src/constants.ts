@@ -130,28 +130,28 @@ export const GRAMMAR_KEYWORDS = {
 export const TRANSFORM_SYMBOLS = {
   // Transform declaration
   TRANSFORM_DECLARATION: "transforms",
-  
+
   // Language specification separator
   LANGUAGE_SEPARATOR: "@",
-  
+
   // Function declaration
   FUNCTION_KEYWORD: "function",
-  
+
   // Parameter and return type separators
   PARAMETER_START: "(",
   PARAMETER_END: ")",
   RETURN_TYPE_SEPARATOR: "->",
-  
+
   // Block delimiters
   TRANSFORM_BLOCK_OPEN: "{",
   TRANSFORM_BLOCK_CLOSE: "}",
-  
+
   // Type annotations
   TYPE_SEPARATOR: ":",
   OPTIONAL_TYPE: "?",
   ARRAY_TYPE: "[]",
   UNION_TYPE: "|",
-  
+
   // Result type
   RESULT_TYPE: "Result",
 } as const;

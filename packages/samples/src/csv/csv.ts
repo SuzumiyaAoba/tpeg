@@ -65,21 +65,21 @@ const csvParser: Parser<string[][]> = sepBy(csvRow, newline);
 
 /**
  * Parse CSV string and return array of string arrays.
- * 
+ *
  * This function parses a CSV string and returns a 2D array where each row
  * is an array of strings representing the CSV fields. The parser handles
  * quoted fields, escaped quotes, and various line endings.
- * 
+ *
  * @param input - The CSV string to parse
  * @returns Array of string arrays representing the CSV data
  * @throws Error when parsing fails
- * 
+ *
  * @example
  * ```typescript
  * const csv = `name,age,city
  * John,30,New York
  * Jane,25,Boston`;
- * 
+ *
  * const result = parseCSV(csv);
  * // Returns: [["name", "age", "city"], ["John", "30", "New York"], ["Jane", "25", "Boston"]]
  * ```
@@ -99,19 +99,19 @@ export const parseCSV = (input: string): string[][] => {
 
 /**
  * Parse CSV with headers and return array of objects.
- * 
+ *
  * This function parses a CSV string and returns an array of objects where
  * the first row is used as headers and subsequent rows become object properties.
- * 
+ *
  * @param input - The CSV string to parse
  * @returns Array of objects with header keys and row values
- * 
+ *
  * @example
  * ```typescript
  * const csv = `name,age,city
  * John,30,New York
  * Jane,25,Boston`;
- * 
+ *
  * const result = parseCSVWithHeaders(csv);
  * // Returns: [
  * //   { name: "John", age: "30", city: "New York" },
@@ -142,21 +142,21 @@ export const parseCSVWithHeaders = (
 
 /**
  * Convert array of objects to CSV string.
- * 
+ *
  * This function takes an array of objects and converts it to a CSV string.
  * The object keys become the header row, and object values become the data rows.
  * Fields containing commas, quotes, or newlines are automatically quoted and escaped.
- * 
+ *
  * @param data - Array of objects to convert to CSV
  * @returns CSV string representation of the data
- * 
+ *
  * @example
  * ```typescript
  * const data = [
  *   { name: "John", age: 30, city: "New York" },
  *   { name: "Jane", age: 25, city: "Boston" }
  * ];
- * 
+ *
  * const csv = arrayToCSV(data);
  * // Returns: "name,age,city\nJohn,30,New York\nJane,25,Boston"
  * ```

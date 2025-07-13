@@ -20,6 +20,7 @@ import { expression } from "./composition";
 import { GRAMMAR_KEYWORDS, GRAMMAR_SYMBOLS } from "./constants";
 import { identifier } from "./identifier";
 import { stringLiteral } from "./string-literal";
+import { transformDefinition } from "./transforms";
 import type {
   Expression,
   GrammarAnnotation,
@@ -33,7 +34,6 @@ import {
   createRuleDefinition,
 } from "./types";
 import { optionalWhitespace, whitespace } from "./whitespace-utils";
-import { transformDefinition } from "./transforms";
 
 /**
  * Bounded expression parser for grammar rules

@@ -7,25 +7,25 @@
 
 import { describe, expect, it } from "bun:test";
 import { parse } from "tpeg-core";
-import {
-  transformDefinition,
-  transformsKeyword,
-  targetLanguage,
-  transformSetName,
-  parameterType,
-  parameterList,
-  returnTypeSpec,
-  functionBody,
-  transformFunction,
-  transformSet,
-  transformFunctions,
-} from "./transforms";
 import type { Pos } from "tpeg-core";
+import {
+  functionBody,
+  parameterList,
+  parameterType,
+  returnTypeSpec,
+  targetLanguage,
+  transformDefinition,
+  transformFunction,
+  transformFunctions,
+  transformSet,
+  transformSetName,
+  transformsKeyword,
+} from "./transforms";
 
 /**
  * Test position for parsing
  */
-const TEST_POS: Pos = { offset: 0, line: 1, column: 1 };
+const _TEST_POS: Pos = { offset: 0, line: 1, column: 1 };
 
 describe("transformsKeyword", () => {
   it("should parse 'transforms' keyword", () => {
@@ -45,7 +45,7 @@ describe("transformsKeyword", () => {
 describe("targetLanguage", () => {
   it("should parse supported languages", () => {
     const languages = ["typescript", "python", "go", "rust", "java", "cpp"];
-    
+
     for (const lang of languages) {
       const result = parse(targetLanguage)(lang);
       expect(result.success).toBe(true);
@@ -164,7 +164,7 @@ describe("transformFunction", () => {
     const input = `number(captures: string) -> Result<number> {
       return { success: true, value: parseInt(captures, 10) };
     }`;
-    
+
     const result = parse(transformFunction)(input);
     expect(result.success).toBe(true);
     if (result.success) {
@@ -189,11 +189,11 @@ describe("transformSet", () => {
         return { success: true, value: captures.left + captures.right };
       }
     }`;
-    
+
     console.log("Input length:", input.length);
     console.log("Character at position 181:", input[181]);
     console.log("Characters around position 181:", input.slice(175, 185));
-    
+
     const result = parse(transformSet)(input);
     console.log("transformSet result:", JSON.stringify(result, null, 2));
     expect(result.success).toBe(true);
@@ -214,7 +214,7 @@ describe("transformDefinition", () => {
         return { success: true, value: parseInt(captures, 10) };
       }
     }`;
-    
+
     const result = parse(transformDefinition)(input);
     expect(result.success).toBe(true);
     if (result.success) {
@@ -235,7 +235,7 @@ describe("transformDefinition", () => {
           return {'success': False, 'error': 'Invalid number format'}
       }
     }`;
-    
+
     const result = parse(transformDefinition)(input);
     expect(result.success).toBe(true);
     if (result.success) {
@@ -244,7 +244,7 @@ describe("transformDefinition", () => {
       expect(result.val.transformSet.functions[0].name).toBe("number");
     }
   });
-}); 
+});
 
 describe("transformFunctions", () => {
   it("should parse multiple functions", () => {
@@ -255,7 +255,7 @@ describe("transformFunctions", () => {
     expression(captures: { left: number, right: number }) -> Result<number> {
       return { success: true, value: captures.left + captures.right };
     }`;
-    
+
     const result = parse(transformFunctions)(input);
     console.log("transformFunctions result:", JSON.stringify(result, null, 2));
     expect(result.success).toBe(true);
@@ -265,4 +265,4 @@ describe("transformFunctions", () => {
       expect(result.val[1].name).toBe("expression");
     }
   });
-}); 
+});

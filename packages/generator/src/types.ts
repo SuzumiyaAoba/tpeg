@@ -11,7 +11,7 @@
  */
 
 // Expression type literals
-export type ExpressionType = 
+export type ExpressionType =
   | "StringLiteral"
   | "CharacterClass"
   | "Identifier"
@@ -166,22 +166,28 @@ export function isQuantified(expr: Expression): expr is Quantified {
   return expr.type === "Quantified";
 }
 
-export function isPositiveLookahead(expr: Expression): expr is PositiveLookahead {
+export function isPositiveLookahead(
+  expr: Expression,
+): expr is PositiveLookahead {
   return expr.type === "PositiveLookahead";
 }
 
-export function isNegativeLookahead(expr: Expression): expr is NegativeLookahead {
+export function isNegativeLookahead(
+  expr: Expression,
+): expr is NegativeLookahead {
   return expr.type === "NegativeLookahead";
 }
 
-export function isLabeledExpression(expr: Expression): expr is LabeledExpression {
+export function isLabeledExpression(
+  expr: Expression,
+): expr is LabeledExpression {
   return expr.type === "LabeledExpression";
 }
 
 // Generic type guard for any expression type
 export function isExpressionType<T extends ExpressionType>(
   expr: Expression,
-  type: T
+  type: T,
 ): expr is Extract<SpecificExpression, { type: T }> {
   return expr.type === type;
 }

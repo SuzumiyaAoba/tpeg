@@ -187,7 +187,7 @@ const demoErrorCases = () => {
       console.log(
         `⚠️  Unexpectedly parsed: ${json} -> ${JSON.stringify(result)}`,
       );
-    } catch (error) {
+    } catch (_error) {
       console.log(`✅ Correctly failed: ${json}`);
     }
     console.log();

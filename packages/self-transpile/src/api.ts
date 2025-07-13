@@ -1,10 +1,10 @@
 /**
  * TPEG Self-Transpilation System - Unified API
- * 
+ *
  * This module provides a unified, high-level API for the complete
  * TPEG self-transpilation system including parsing, code generation,
  * testing, performance optimization, and coverage analysis.
- * 
+ *
  * @version 1.0.0
  * @author SuzumiyaAoba
  * @license MIT
@@ -22,25 +22,25 @@ export * from "./error-handling";
 export * from "./bootstrap-validation";
 
 // Import necessary types and functions for convenience API
-import { readFileSync } from "fs";
-import type { SelfTranspileResult, SelfTranspileConfig } from "./types";
+import { readFileSync } from "node:fs";
 import type { TestSuiteResult } from "./comprehensive-test-suite";
-import type { CoverageAnalysis } from "./test-coverage";
-import { selfTranspile } from "./self-transpile";
 import { runComprehensiveTestSuite } from "./comprehensive-test-suite";
-import { analyzeCoverage } from "./test-coverage";
 import { createOptimizedTranspiler } from "./performance-optimization";
+import { selfTranspile } from "./self-transpile";
+import type { CoverageAnalysis } from "./test-coverage";
+import { analyzeCoverage } from "./test-coverage";
+import type { SelfTranspileConfig, SelfTranspileResult } from "./types";
 
 /**
  * TPEG Self-Transpilation System - Main API Class
- * 
+ *
  * This class provides a high-level, object-oriented interface to the
  * entire TPEG self-transpilation system. It integrates all components
  * and provides convenient methods for common operations.
  */
 export class TPEGSelfTranspilationSystem {
   private config: TPEGSystemConfig;
-  
+
   constructor(config: Partial<TPEGSystemConfig> = {}) {
     this.config = {
       // Default configuration
@@ -53,20 +53,20 @@ export class TPEGSelfTranspilationSystem {
       cacheDirectory: "./cache",
       reportDirectory: "./reports",
       verbose: false,
-      ...config
+      ...config,
     };
   }
 
   /**
    * Parse and transpile a TPEG grammar definition
-   * 
+   *
    * @param grammarSource - The TPEG grammar definition as string
    * @param config - Optional transpilation configuration
    * @returns Promise resolving to transpilation result
    */
   async transpile(
     grammarSource: string,
-    config?: Partial<SelfTranspileConfig>
+    config?: Partial<SelfTranspileConfig>,
   ): Promise<SelfTranspileResult> {
     const finalConfig = {
       targetLanguage: "typescript" as const,
@@ -74,7 +74,7 @@ export class TPEGSelfTranspilationSystem {
       optimize: this.config.enableOptimization,
       enableMemoization: true,
       includeMonitoring: this.config.enablePerformanceMonitoring,
-      ...config
+      ...config,
     };
 
     return await selfTranspile(grammarSource, finalConfig);
@@ -82,7 +82,7 @@ export class TPEGSelfTranspilationSystem {
 
   /**
    * Run comprehensive test suite
-   * 
+   *
    * @param config - Optional test configuration
    * @returns Promise resolving to test results
    */
@@ -96,7 +96,7 @@ export class TPEGSelfTranspilationSystem {
       verbose: this.config.verbose,
       generateReport: true,
       reportPath: `${this.config.reportDirectory}/test-results.json`,
-      ...config
+      ...config,
     };
 
     return await runComprehensiveTestSuite(testConfig);
@@ -104,14 +104,14 @@ export class TPEGSelfTranspilationSystem {
 
   /**
    * Analyze test coverage
-   * 
+   *
    * @param testResults - Test results to analyze coverage for
    * @param config - Optional coverage configuration
    * @returns Promise resolving to coverage analysis
    */
   async analyzeCoverage(
     testResults: TestSuiteResult,
-    config?: any
+    config?: any,
   ): Promise<CoverageAnalysis> {
     if (!this.config.enableCoverage) {
       throw new Error("Coverage analysis is disabled in system configuration");
@@ -123,7 +123,7 @@ export class TPEGSelfTranspilationSystem {
       outputPath: `${this.config.reportDirectory}/coverage-results.json`,
       enableFunctionalCoverage: true,
       enableQualityAnalysis: true,
-      ...config
+      ...config,
     };
 
     return await analyzeCoverage(testResults, coverageConfig);
@@ -131,19 +131,19 @@ export class TPEGSelfTranspilationSystem {
 
   /**
    * Run complete end-to-end workflow
-   * 
+   *
    * This method executes the complete workflow including:
    * 1. Grammar transpilation
    * 2. Testing
    * 3. Coverage analysis
-   * 
+   *
    * @param grammarSource - The TPEG grammar definition
    * @param config - Optional workflow configuration
    * @returns Promise resolving to complete workflow results
    */
   async runCompleteWorkflow(
     grammarSource: string,
-    config?: Partial<WorkflowConfig>
+    config?: Partial<WorkflowConfig>,
   ): Promise<WorkflowResult> {
     const workflowConfig = {
       enableTranspilation: true,
@@ -151,7 +151,7 @@ export class TPEGSelfTranspilationSystem {
       enableCoverage: this.config.enableCoverage,
       stopOnError: false,
       generateReports: true,
-      ...config
+      ...config,
     };
 
     const result: WorkflowResult = {
@@ -161,7 +161,7 @@ export class TPEGSelfTranspilationSystem {
       testing: null,
       coverage: null,
       summary: "",
-      recommendations: []
+      recommendations: [],
     };
 
     try {
@@ -173,7 +173,9 @@ export class TPEGSelfTranspilationSystem {
           name: "Transpilation",
           success: result.transpilation.success,
           duration: result.transpilation.performance.generationTime,
-          message: result.transpilation.success ? "Transpilation completed successfully" : "Transpilation failed"
+          message: result.transpilation.success
+            ? "Transpilation completed successfully"
+            : "Transpilation failed",
         });
 
         if (!result.transpilation.success && workflowConfig.stopOnError) {
@@ -190,7 +192,7 @@ export class TPEGSelfTranspilationSystem {
           name: "Testing",
           success: result.testing.passedTests === result.testing.totalTests,
           duration: result.testing.totalDuration,
-          message: `${result.testing.passedTests}/${result.testing.totalTests} tests passed`
+          message: `${result.testing.passedTests}/${result.testing.totalTests} tests passed`,
         });
 
         if (result.testing.failedTests > 0 && workflowConfig.stopOnError) {
@@ -207,7 +209,7 @@ export class TPEGSelfTranspilationSystem {
           name: "Coverage Analysis",
           success: result.coverage.summary.grade !== "F",
           duration: 0, // Coverage analysis doesn't track duration separately
-          message: `Coverage grade: ${result.coverage.summary.grade} (${result.coverage.summary.score}/100)`
+          message: `Coverage grade: ${result.coverage.summary.grade} (${result.coverage.summary.score}/100)`,
         });
       }
 
@@ -217,14 +219,13 @@ export class TPEGSelfTranspilationSystem {
 
       console.log("✅ Complete workflow finished successfully!");
       return result;
-
     } catch (error) {
       result.success = false;
       result.steps.push({
         name: "Error",
         success: false,
         duration: 0,
-        message: error instanceof Error ? error.message : String(error)
+        message: error instanceof Error ? error.message : String(error),
       });
       return result;
     }
@@ -234,17 +235,18 @@ export class TPEGSelfTranspilationSystem {
    * Generate workflow summary
    */
   private generateWorkflowSummary(result: WorkflowResult): string {
-    const successfulSteps = result.steps.filter(step => step.success).length;
+    const successfulSteps = result.steps.filter((step) => step.success).length;
     const totalSteps = result.steps.length;
-    const successRate = totalSteps > 0 ? (successfulSteps / totalSteps) * 100 : 0;
+    const successRate =
+      totalSteps > 0 ? (successfulSteps / totalSteps) * 100 : 0;
 
-    let summary = `TPEG Self-Transpilation Workflow Summary\n`;
-    summary += `========================================\n`;
-    summary += `Overall Success: ${result.success ? 'YES' : 'NO'}\n`;
+    let summary = "TPEG Self-Transpilation Workflow Summary\n";
+    summary += "========================================\n";
+    summary += `Overall Success: ${result.success ? "YES" : "NO"}\n`;
     summary += `Steps Completed: ${successfulSteps}/${totalSteps} (${successRate.toFixed(1)}%)\n\n`;
 
     for (const step of result.steps) {
-      const status = step.success ? '✅' : '❌';
+      const status = step.success ? "✅" : "❌";
       summary += `${status} ${step.name}: ${step.message}\n`;
     }
 
@@ -262,7 +264,9 @@ export class TPEGSelfTranspilationSystem {
     }
 
     if (result.testing && result.testing.failedTests > 0) {
-      recommendations.push("Address failing tests to improve system reliability");
+      recommendations.push(
+        "Address failing tests to improve system reliability",
+      );
     }
 
     if (result.coverage && result.coverage.summary.grade === "F") {
@@ -270,7 +274,9 @@ export class TPEGSelfTranspilationSystem {
     }
 
     if (recommendations.length === 0) {
-      recommendations.push("System is operating optimally - consider performance optimizations");
+      recommendations.push(
+        "System is operating optimally - consider performance optimizations",
+      );
     }
 
     return recommendations;
@@ -343,7 +349,9 @@ export interface WorkflowResult {
 /**
  * Convenience function to create a new TPEG system instance
  */
-export function createTPEGSystem(config?: Partial<TPEGSystemConfig>): TPEGSelfTranspilationSystem {
+export function createTPEGSystem(
+  config?: Partial<TPEGSystemConfig>,
+): TPEGSelfTranspilationSystem {
   return new TPEGSelfTranspilationSystem(config);
 }
 
@@ -356,38 +364,36 @@ export async function quickTranspile(
     optimize?: boolean;
     includeTypes?: boolean;
     outputPath?: string;
-  }
+  },
 ): Promise<SelfTranspileResult> {
   const system = createTPEGSystem({
     enableOptimization: options?.optimize ?? true,
     enableTesting: false,
     enableCoverage: false,
-    enablePerformanceMonitoring: false
+    enablePerformanceMonitoring: false,
   });
 
   return await system.transpile(grammarSource, {
-    includeTypes: options?.includeTypes ?? true
+    includeTypes: options?.includeTypes ?? true,
   });
 }
 
 /**
  * Quick start function for running tests
  */
-export async function quickTest(
-  options?: {
-    verbose?: boolean;
-    stopOnFailure?: boolean;
-    reportPath?: string;
-  }
-): Promise<TestSuiteResult> {
+export async function quickTest(options?: {
+  verbose?: boolean;
+  stopOnFailure?: boolean;
+  reportPath?: string;
+}): Promise<TestSuiteResult> {
   const system = createTPEGSystem({
     enableTesting: true,
-    verbose: options?.verbose ?? false
+    verbose: options?.verbose ?? false,
   });
 
   return await system.runTests({
     stopOnFirstFailure: options?.stopOnFailure ?? false,
-    reportPath: options?.reportPath
+    reportPath: options?.reportPath,
   });
 }
 
@@ -400,20 +406,20 @@ export async function quickWorkflow(
     enableAll?: boolean;
     stopOnError?: boolean;
     outputDirectory?: string;
-  }
+  },
 ): Promise<WorkflowResult> {
   const system = createTPEGSystem({
     enableOptimization: true,
     enableTesting: options?.enableAll ?? true,
     enableCoverage: options?.enableAll ?? true,
     enablePerformanceMonitoring: options?.enableAll ?? true,
-    outputDirectory: options?.outputDirectory ?? "./output"
+    outputDirectory: options?.outputDirectory ?? "./output",
   });
 
   return await system.runCompleteWorkflow(grammarSource, {
-    stopOnError: options?.stopOnError ?? false
+    stopOnError: options?.stopOnError ?? false,
   });
 }
 
 // Default export for easy importing
-export default TPEGSelfTranspilationSystem; 
+export default TPEGSelfTranspilationSystem;

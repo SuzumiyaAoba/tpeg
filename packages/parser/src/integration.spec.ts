@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { parse, map, sequence, star } from "tpeg-core";
+import { map, parse, sequence, star } from "tpeg-core";
 import { grammarDefinition } from "./grammar";
 import { transformDefinition } from "./transforms";
 import { whitespace } from "./whitespace-utils";
@@ -20,10 +20,7 @@ const tpegFile = map(
     grammarDefinition,
     star(
       map(
-        sequence(
-          star(whitespace),
-          transformDefinition,
-        ),
+        sequence(star(whitespace), transformDefinition),
         ([_, transform]) => transform,
       ),
     ),
@@ -49,31 +46,31 @@ describe("TPEG Integration Tests", () => {
           }
         }
       `;
-      
+
       const result = parse(tpegFile)(input);
-      
+
       expect(result.success).toBe(true);
-      
+
       if (result.success) {
         const grammar = result.val;
-        
+
         // Check grammar structure
         expect(grammar.type).toBe("GrammarDefinition");
         expect(grammar.name).toBe("SimpleGrammar");
-        
+
         // Check annotations
         expect(grammar.annotations).toHaveLength(1);
         expect(grammar.annotations[0].key).toBe("start");
         expect(grammar.annotations[0].value).toBe("expression");
-        
+
         // Check grammar rules
         expect(grammar.rules).toHaveLength(1);
         expect(grammar.rules[0].name).toBe("expression");
-        
+
         // Check transforms
         expect(grammar.transforms).toBeDefined();
         expect(grammar.transforms).toHaveLength(1);
-        const transform = grammar.transforms![0];
+        const transform = grammar.transforms?.[0];
         expect(transform.type).toBe("TransformDefinition");
         expect(transform.transformSet.name).toBe("SimpleTransforms");
         expect(transform.transformSet.targetLanguage).toBe("typescript");
@@ -137,21 +134,21 @@ describe("TPEG Integration Tests", () => {
           }
         }
       `;
-      
+
       const result = parse(tpegFile)(input);
       expect(result.success).toBe(true);
-      
+
       if (result.success) {
         const grammar = result.val;
-        
+
         expect(grammar.type).toBe("GrammarDefinition");
         expect(grammar.name).toBe("ArithmeticCalculator");
         expect(grammar.annotations).toHaveLength(4);
         expect(grammar.rules).toHaveLength(7);
         expect(grammar.transforms).toBeDefined();
         expect(grammar.transforms).toHaveLength(1);
-        
-        const transform = grammar.transforms![0];
+
+        const transform = grammar.transforms?.[0];
         expect(transform.transformSet.name).toBe("ArithmeticEvaluator");
         expect(transform.transformSet.targetLanguage).toBe("typescript");
         expect(transform.transformSet.functions).toHaveLength(3);
@@ -213,27 +210,31 @@ describe("TPEG Integration Tests", () => {
           }
         }
       `;
-      
+
       const result = parse(tpegFile)(input);
       expect(result.success).toBe(true);
-      
+
       if (result.success) {
         const grammar = result.val;
-        
+
         expect(grammar.type).toBe("GrammarDefinition");
         expect(grammar.name).toBe("Calculator");
         expect(grammar.rules).toHaveLength(3);
         expect(grammar.transforms).toBeDefined();
         expect(grammar.transforms).toHaveLength(2);
-        
-        const evaluatorTransform = grammar.transforms![0];
+
+        const evaluatorTransform = grammar.transforms?.[0];
         expect(evaluatorTransform.transformSet.name).toBe("Evaluator");
-        expect(evaluatorTransform.transformSet.targetLanguage).toBe("typescript");
+        expect(evaluatorTransform.transformSet.targetLanguage).toBe(
+          "typescript",
+        );
         expect(evaluatorTransform.transformSet.functions).toHaveLength(2);
-        
-        const astBuilderTransform = grammar.transforms![1];
+
+        const astBuilderTransform = grammar.transforms?.[1];
         expect(astBuilderTransform.transformSet.name).toBe("ASTBuilder");
-        expect(astBuilderTransform.transformSet.targetLanguage).toBe("typescript");
+        expect(astBuilderTransform.transformSet.targetLanguage).toBe(
+          "typescript",
+        );
         expect(astBuilderTransform.transformSet.functions).toHaveLength(2);
       }
     });
@@ -296,26 +297,26 @@ describe("TPEG Integration Tests", () => {
           }
         }
       `;
-      
+
       const result = parse(tpegFile)(input);
-      
+
       expect(result.success).toBe(true);
-      
+
       if (result.success) {
         const grammar = result.val;
-        
+
         expect(grammar.type).toBe("GrammarDefinition");
         expect(grammar.name).toBe("JSONLite");
         expect(grammar.annotations).toHaveLength(2);
         expect(grammar.rules.length).toBeGreaterThan(5);
         expect(grammar.transforms).toBeDefined();
         expect(grammar.transforms).toHaveLength(1);
-        
-        const transform = grammar.transforms![0];
+
+        const transform = grammar.transforms?.[0];
         expect(transform.transformSet.name).toBe("JSONParser");
         expect(transform.transformSet.targetLanguage).toBe("python");
         expect(transform.transformSet.functions).toHaveLength(5);
       }
     });
   });
-}); 
+});

@@ -50,7 +50,7 @@ const parse =
   };
 
 // Implement JSON validation function for testing
-const testJSON = (): { successes: number; failures: number } => {
+const _testJSON = (): { successes: number; failures: number } => {
   // Suppress console output
   const originalConsoleLog = console.log;
   const originalConsoleError = console.error;
@@ -124,7 +124,7 @@ const testJSON = (): { successes: number; failures: number } => {
             } else {
               failures++;
             }
-          } catch (e) {
+          } catch (_e) {
             failures++;
           }
         } else {
