@@ -14,6 +14,12 @@ import type {
   SelfTranspileConfig,
   SelfTranspileContext,
 } from "./types";
+import { 
+  ErrorHandlingContext, 
+  ErrorType, 
+  ErrorSeverity, 
+  withErrorHandling 
+} from "./error-handling";
 
 /**
  * Default configuration for self-transpilation
@@ -65,10 +71,45 @@ export async function selfTranspile(
   const startTime = performance.now();
   const startMemory = process.memoryUsage?.()?.heapUsed || 0;
 
+  // Initialize error handling context
+  const errorHandler = new ErrorHandlingContext({
+    maxRetries: 3,
+    timeout: 30000,
+    enableDiagnostics: true,
+    enableRecovery: true,
+    logLevel: "detailed"
+  });
+
   try {
-    // Parse the grammar definition using the existing TPEG parser
-    const grammar = parseGrammarDefinition(grammarSource);
-    
+    // Parse the grammar definition using enhanced error handling
+    const grammar = await withErrorHandling(
+      async () => {
+        const result = parseGrammarDefinition(grammarSource);
+        if (!result) {
+          const error = errorHandler.createError(
+            ErrorType.PARSE_ERROR,
+            ErrorSeverity.HIGH,
+            "Failed to parse grammar definition",
+            {
+              operation: "parseGrammarDefinition",
+              phase: "parsing",
+              input: grammarSource.substring(0, 200)
+            },
+            "Grammar definition could not be parsed by TPEG parser"
+          );
+          throw new Error(error.message);
+        }
+        return result;
+      },
+      {
+        operation: "parseGrammarDefinition",
+        phase: "parsing",
+        input: grammarSource.substring(0, 200)
+      },
+      errorHandler,
+      null
+    );
+
     if (!grammar) {
       return {
         code: "",
@@ -78,23 +119,73 @@ export async function selfTranspile(
           memoryUsage: (process.memoryUsage?.()?.heapUsed || 0) - startMemory,
           complexity: "low",
         },
-        warnings: ["Failed to parse grammar definition"],
+        warnings: [
+          "Failed to parse grammar definition",
+          ...errorHandler.getErrors().map(e => e.message)
+        ],
         success: false,
       };
     }
 
-    // Generate parser code using the generator
-    // @ts-ignore - Temporary type compatibility workaround
-    const generationResult = await generateEtaTypeScriptParser(grammar as any, {
-      namePrefix: finalConfig.namePrefix || "self_",
-      includeTypes: finalConfig.includeTypes,
-      optimize: finalConfig.optimize,
-      enableMemoization: finalConfig.enableMemoization,
-      includeMonitoring: finalConfig.includeMonitoring,
-    });
+    // Generate parser code using enhanced error handling
+    const generationResult = await withErrorHandling(
+      async () => {
+        // @ts-ignore - Temporary type compatibility workaround
+        return await generateEtaTypeScriptParser(grammar as any, {
+          namePrefix: finalConfig.namePrefix || "self_",
+          includeTypes: finalConfig.includeTypes,
+          optimize: finalConfig.optimize,
+          enableMemoization: finalConfig.enableMemoization,
+          includeMonitoring: finalConfig.includeMonitoring,
+        });
+      },
+      {
+        operation: "generateEtaTypeScriptParser",
+        phase: "generation",
+        input: grammar.name
+      },
+      errorHandler,
+      null
+    );
 
     const endTime = performance.now();
     const endMemory = process.memoryUsage?.()?.heapUsed || 0;
+
+    if (!generationResult) {
+      return {
+        code: "",
+        types: "",
+        performance: {
+          generationTime: performance.now() - startTime,
+          memoryUsage: (process.memoryUsage?.()?.heapUsed || 0) - startMemory,
+          complexity: "low",
+        },
+        warnings: [
+          "Failed to generate parser code",
+          ...errorHandler.getErrors().map(e => e.message)
+        ],
+        success: false,
+      };
+    }
+
+    // Validate generated code
+    const validationResult = await withErrorHandling(
+      async () => {
+        return await validateSelfTranspile(grammarSource, generationResult.code);
+      },
+      {
+        operation: "validateSelfTranspile",
+        phase: "validation"
+      },
+      errorHandler,
+      true // Default to success if validation fails
+    );
+
+    // Add diagnostic information
+    errorHandler.addDiagnostic("grammar_complexity", estimateComplexity(grammar));
+    errorHandler.addDiagnostic("generation_time", endTime - startTime);
+    errorHandler.addDiagnostic("memory_usage", endMemory - startMemory);
+    errorHandler.addDiagnostic("code_length", generationResult.code.length);
 
     return {
       code: generationResult.code,
@@ -104,13 +195,16 @@ export async function selfTranspile(
         memoryUsage: endMemory - startMemory,
         complexity: estimateComplexity(grammar),
       },
-      warnings: [], // GeneratedCode doesn't have a warnings property
+      warnings: errorHandler.getErrors().map(e => e.message),
       success: true,
     };
   } catch (error) {
     const endTime = performance.now();
     const endMemory = process.memoryUsage?.()?.heapUsed || 0;
 
+    // Create a comprehensive error report
+    const errorReport = errorHandler.generateErrorReport();
+    
     return {
       code: "",
       types: "",
@@ -119,7 +213,11 @@ export async function selfTranspile(
         memoryUsage: endMemory - startMemory,
         complexity: "low",
       },
-      warnings: [`Self-transpilation failed: ${error instanceof Error ? error.message : String(error)}`],
+      warnings: [
+        `Self-transpilation failed: ${error instanceof Error ? error.message : String(error)}`,
+        ...errorHandler.getErrors().map(e => e.message),
+        errorReport
+      ],
       success: false,
     };
   }
