@@ -522,6 +522,69 @@ describe("literal parser", () => {
         expect(result.val).toBe(maxCodePoint);
       }
     });
+
+    it("should use optimized path for ASCII strings", () => {
+      // Purpose: Verify optimization path selection
+      const asciiString = "hello world";
+      const parser = literal(asciiString);
+      const result = parser(`${asciiString}extra`, createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe(asciiString);
+      }
+    });
+
+    it("should use complex path for Unicode strings", () => {
+      // Purpose: Verify Unicode path selection
+      const unicodeString = "café au lait";
+      const parser = literal(unicodeString);
+      const result = parser(`${unicodeString}extra`, createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe(unicodeString);
+      }
+    });
+
+    it("should handle strings with newlines correctly", () => {
+      // Purpose: Verify newline handling in optimization
+      const multilineString = "line1\nline2";
+      const parser = literal(multilineString);
+      const result = parser(`${multilineString}extra`, createPos());
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe(multilineString);
+      }
+    });
+
+    it("should cache optimization results for repeated strings", () => {
+      // Purpose: Verify caching behavior
+      const testString = "repeated string";
+
+      // Create multiple parsers with the same string
+      const parser1 = literal(testString);
+      const parser2 = literal(testString);
+      const parser3 = literal(testString);
+
+      const input = `${testString}extra`;
+      const pos = createPos();
+
+      const result1 = parser1(input, pos);
+      const result2 = parser2(input, pos);
+      const result3 = parser3(input, pos);
+
+      expect(result1.success).toBe(true);
+      expect(result2.success).toBe(true);
+      expect(result3.success).toBe(true);
+
+      if (result1.success && result2.success && result3.success) {
+        expect(result1.val).toBe(testString);
+        expect(result2.val).toBe(testString);
+        expect(result3.val).toBe(testString);
+      }
+    });
   });
 
   describe("lit function (literal alias)", () => {

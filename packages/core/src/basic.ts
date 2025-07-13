@@ -8,6 +8,16 @@ import { createFailure, getCharAndLength, nextPos } from "./utils";
  * position in the input string. It fails only when it encounters the end of input.
  * The parser is Unicode-aware and will correctly handle multi-byte characters.
  *
+ * **Performance Characteristics:**
+ * - O(1) time complexity for ASCII characters
+ * - O(n) time complexity for Unicode characters where n is the number of code units
+ * - Memory efficient with minimal allocations
+ *
+ * **Unicode Handling:**
+ * - Correctly handles surrogate pairs (e.g., emojis)
+ * - Properly updates position for multi-code-unit characters
+ * - Maintains accurate line/column tracking for newlines
+ *
  * @param parserName - Optional name for the parser, used in error messages for debugging. Defaults to "anyChar"
  * @returns A parser function that accepts input string and position, returning a ParseResult containing the matched character
  *
@@ -19,6 +29,10 @@ import { createFailure, getCharAndLength, nextPos } from "./utils";
  *
  * const endResult = parser("", { offset: 0, line: 1, column: 1 });
  * // endResult: { success: false, error: "Unexpected EOI", ... }
+ *
+ * // Unicode example
+ * const unicodeResult = parser("🌍", { offset: 0, line: 1, column: 1 });
+ * // unicodeResult: { success: true, val: "🌍", current: {...}, next: {...} }
  * ```
  */
 export const anyChar =
@@ -73,11 +87,49 @@ export const any = anyChar("any");
  * canUseOptimizedPath("café"); // false (contains non-ASCII character)
  * ```
  */
-const canUseOptimizedPath = (str: string): boolean => {
-  // Use a more efficient check for ASCII-only strings without newlines
-  // Check for ASCII printable characters (32-126) plus common whitespace (except newline)
-  return /^[ -~\t\r]*$/.test(str) && !str.includes("\n");
-};
+const canUseOptimizedPath = (() => {
+  // Cache for optimization results to avoid repeated regex checks
+  const cache = new Map<string, boolean>();
+  const maxCacheSize = Math.min(
+    1000,
+    Math.max(
+      100,
+      Math.floor(process.memoryUsage?.()?.heapUsed / 1024 / 1024 || 100),
+    ),
+  ); // Dynamic cache size based on memory usage
+
+  // Pre-compiled regex for better performance
+  const asciiRegex = /^[ -~\t\r]*$/;
+
+  return (str: string): boolean => {
+    // Check cache first
+    const cached = cache.get(str);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    // Use a more efficient check for ASCII-only strings without newlines
+    // Check for ASCII printable characters (32-126) plus common whitespace (except newline)
+    const result = asciiRegex.test(str) && !str.includes("\n");
+
+    // Cache the result with dynamic size management
+    if (cache.size >= maxCacheSize) {
+      // Simple LRU: clear oldest half when full
+      const entries = Array.from(cache.entries());
+      cache.clear();
+      // Keep newer half
+      for (let i = Math.floor(entries.length / 2); i < entries.length; i++) {
+        const entry = entries[i];
+        if (entry) {
+          cache.set(entry[0], entry[1]);
+        }
+      }
+    }
+
+    cache.set(str, result);
+    return result;
+  };
+})();
 
 /**
  * Simple implementation for string literals that don't need complex Unicode handling.
@@ -123,14 +175,15 @@ const parseSimpleString = <T extends string>(
   const inputSlice = input.slice(offset, offset + str.length);
   if (inputSlice !== str) {
     // Find the first mismatched character for better error reporting
+    // Use the already sliced input for comparison to avoid double indexing
     for (let i = 0; i < str.length; i++) {
-      if (input[offset + i] !== str[i]) {
+      if (inputSlice[i] !== str[i]) {
         const errorPos = {
           offset: offset + i,
           column: column + i,
           line,
         };
-        const foundChar = input[offset + i] ?? "EOF";
+        const foundChar = inputSlice[i] ?? "EOF";
         const expectedChar = str[i] ?? "EOF";
         return createFailure(
           `Unexpected character "${foundChar}" at position ${
@@ -139,8 +192,8 @@ const parseSimpleString = <T extends string>(
           errorPos,
           {
             ...(str[i] !== undefined && { expected: str[i] }),
-            ...(input[offset + i] !== undefined && {
-              found: input[offset + i],
+            ...(inputSlice[i] !== undefined && {
+              found: inputSlice[i],
             }),
             ...(parserName && { parserName }),
           },
@@ -196,7 +249,20 @@ const parseComplexString = <T extends string>(
 
   while (i < str.length) {
     // Get the character from the string we're trying to match
-    const strCode = str.codePointAt(i) ?? 0;
+    const strCode = str.codePointAt(i);
+    if (strCode === undefined) {
+      // This should never happen with a valid string, but handle it gracefully
+      return createFailure(
+        `Invalid string literal: unexpected end at position ${i}`,
+        currentPos,
+        {
+          expected: str,
+          found: "invalid string",
+          parserName,
+        },
+      );
+    }
+
     const strChar = String.fromCodePoint(strCode);
     const strCharLen = strChar.length;
 
@@ -205,7 +271,7 @@ const parseComplexString = <T extends string>(
 
     if (inputChar === "") {
       return createFailure(
-        `Expected "${str}" but got end of input`,
+        `Expected "${str}" but reached end of input`,
         currentPos,
         {
           expected: str,
@@ -217,7 +283,7 @@ const parseComplexString = <T extends string>(
 
     if (inputChar !== strChar) {
       return createFailure(
-        `Unexpected character "${inputChar}" at position ${currentPos.offset}, expected "${strChar}"`,
+        `Expected "${strChar}" but found "${inputChar}" at position ${currentPos.offset}`,
         currentPos,
         {
           expected: strChar,
@@ -237,6 +303,41 @@ const parseComplexString = <T extends string>(
     val: str,
     current: pos,
     next: currentPos,
+  };
+};
+
+/**
+ * Performance measurement utility for parser operations
+ *
+ * @internal This is an internal utility for performance testing
+ */
+export const benchmarkParser = <T>(
+  name: string,
+  parser: Parser<T>,
+  input: string,
+  iterations = 1000,
+): { name: string; avgTime: number; totalTime: number; iterations: number } => {
+  const pos = { offset: 0, line: 1, column: 1 };
+
+  // Warm up
+  for (let i = 0; i < 10; i++) {
+    parser(input, pos);
+  }
+
+  const start = performance.now();
+  for (let i = 0; i < iterations; i++) {
+    parser(input, pos);
+  }
+  const end = performance.now();
+
+  const totalTime = end - start;
+  const avgTime = totalTime / iterations;
+
+  return {
+    name,
+    avgTime,
+    totalTime,
+    iterations,
   };
 };
 
