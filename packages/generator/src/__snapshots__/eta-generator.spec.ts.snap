@@ -254,15 +254,15 @@ exports[`EtaTPEGCodeGenerator Snapshot Tests should generate consistent code wit
 `;
 
 exports[`EtaTPEGCodeGenerator Snapshot Tests should generate consistent code with labeled expressions 1`] = `
-"import type { Parser } from "tpeg-core";import { literal } from "tpeg-core";
-export const labeled_labeled: Parser<any> = /* label: test_label */ literal("value");
+"import type { Parser } from "tpeg-core";import { capture, literal } from "tpeg-core";
+export const labeled_labeled: Parser<any> = capture("test_label", literal("value"));
 "
 `;
 
 exports[`EtaTPEGCodeGenerator Snapshot Tests should generate consistent code with labeled expressions 2`] = `
 [
   "import type { Parser } from "tpeg-core";",
-  "import { literal } from "tpeg-core";",
+  "import { capture, literal } from "tpeg-core";",
 ]
 `;
 

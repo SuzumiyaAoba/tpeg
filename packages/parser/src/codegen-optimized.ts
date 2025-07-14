@@ -253,7 +253,10 @@ export class OptimizedTPEGCodeGenerator {
         this.collectUsedCombinators(expr.expression, combinators);
         break;
       case "Group":
+        this.collectUsedCombinators(expr.expression, combinators);
+        break;
       case "LabeledExpression":
+        combinators.add("capture");
         this.collectUsedCombinators(expr.expression, combinators);
         break;
       case "Quantified":
@@ -490,7 +493,7 @@ export class OptimizedTPEGCodeGenerator {
 
   private generateLabeledExpression(expr: LabeledExpression): string {
     const inner = this.generateOptimizedExpression(expr.expression);
-    return `/* label: ${expr.label} */ ${inner}`;
+    return `capture("${expr.label}", ${inner})`;
   }
 
   /**

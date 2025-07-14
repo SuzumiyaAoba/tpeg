@@ -141,12 +141,51 @@ Types are automatically inferred from grammar patterns:
 
 ```tpeg
 // Type inference examples:
-number = digits:[0-9]+              // → captures: { digits: string[] }
+number = digits:[0-9]+              // → captures: { digits: string }
 expression = left:term right:term   // → captures: { left: T, right: T }
 optional = value?                   // → captures: { value?: T }
 repeated = item*                    // → captures: { item: T[] }
 choice = a:first / b:second         // → captures: { a?: T1, b?: T2 }
 group = sign:("+" / "-")           // → captures: { sign: string }
+```
+
+### Capture Implementation
+
+TPEG parsers can capture parsed data in structured format using labeled expressions:
+
+```typescript
+// Basic capture usage examples
+import { capture, captureSequence } from "tpeg-core";
+
+// Single value capture
+const nameParser = capture("name", literal("hello"));
+const result = nameParser("hello", pos);
+// result.val = { name: "hello" }
+
+// Multiple value capture
+const userParser = captureSequence(
+  capture("firstName", literal("John")),
+  literal(" "),
+  capture("lastName", literal("Doe"))
+);
+const result = userParser("John Doe", pos);
+// result.val = { firstName: "John", lastName: "Doe" }
+```
+
+### Code Generation with Captures
+
+Labeled expressions are automatically converted to capture functions in generated code:
+
+```tpeg
+// Grammar definition
+greeting = name:"hello" " " target:"world"
+
+// Generated code
+export const greeting = sequence(
+  capture("name", literal("hello")),
+  literal(" "),
+  capture("target", literal("world"))
+);
 ```
 
 ### Capture Structure Reference Table

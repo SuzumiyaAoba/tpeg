@@ -29,6 +29,7 @@ describe("TPEG Code Generation", () => {
         "TestGrammar",
         [],
         [createRuleDefinition("hello", createStringLiteral("hello"))],
+        [],
       );
 
       const generator = new TPEGCodeGenerator();
@@ -186,7 +187,7 @@ describe("TPEG Code Generation", () => {
       const generator = new TPEGCodeGenerator();
       const result = generator.generateGrammar(grammar);
 
-      expect(result.code).toContain('/* label: value */ literal("test")');
+      expect(result.code).toContain('capture("value", literal("test"))');
     });
 
     test("should handle rule references", () => {

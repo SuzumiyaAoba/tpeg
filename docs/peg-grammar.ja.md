@@ -141,12 +141,51 @@ value:("0x" [0-9a-fA-F]+) // ラベル付き連接グループ
 
 ```tpeg
 // 型推論の例：
-number = digits:[0-9]+              // → キャプチャ: { digits: string[] }
+number = digits:[0-9]+              // → キャプチャ: { digits: string }
 expression = left:term right:term   // → キャプチャ: { left: T, right: T }
 optional = value?                   // → キャプチャ: { value?: T }
 repeated = item*                    // → キャプチャ: { item: T[] }
 choice = a:first / b:second         // → キャプチャ: { a?: T1, b?: T2 }
 group = sign:("+" / "-")           // → キャプチャ: { sign: string }
+```
+
+### キャプチャ機能の実装
+
+TPEGパーサーは、ラベル付き式を使用してパースされたデータを構造化された形式でキャプチャできます：
+
+```typescript
+// 基本的なキャプチャ使用例
+import { capture, captureSequence } from "tpeg-core";
+
+// 単一値のキャプチャ
+const nameParser = capture("name", literal("hello"));
+const result = nameParser("hello", pos);
+// result.val = { name: "hello" }
+
+// 複数値のキャプチャ
+const userParser = captureSequence(
+  capture("firstName", literal("John")),
+  literal(" "),
+  capture("lastName", literal("Doe"))
+);
+const result = userParser("John Doe", pos);
+// result.val = { firstName: "John", lastName: "Doe" }
+```
+
+### コード生成でのキャプチャ
+
+ラベル付き式は生成されるコードで自動的にキャプチャ関数に変換されます：
+
+```tpeg
+// 文法定義
+greeting = name:"hello" " " target:"world"
+
+// 生成されるコード
+export const greeting = sequence(
+  capture("name", literal("hello")),
+  literal(" "),
+  capture("target", literal("world"))
+);
 ```
 
 ### キャプチャ構造参照表

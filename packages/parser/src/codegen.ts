@@ -287,9 +287,7 @@ export class TPEGCodeGenerator {
 
   private generateLabeledExpression(expr: LabeledExpression): string {
     const inner = this.generateExpression(expr.expression);
-    // For now, just generate the inner expression
-    // TODO: Implement capture handling
-    return `/* label: ${expr.label} */ ${inner}`;
+    return `capture("${expr.label}", ${inner})`;
   }
 
   /**
@@ -339,7 +337,10 @@ export class TPEGCodeGenerator {
         this.collectUsedCombinators(expr.expression, combinators);
         break;
       case "Group":
+        this.collectUsedCombinators(expr.expression, combinators);
+        break;
       case "LabeledExpression":
+        combinators.add("capture");
         this.collectUsedCombinators(expr.expression, combinators);
         break;
       case "Quantified": {

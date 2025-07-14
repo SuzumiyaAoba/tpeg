@@ -28,6 +28,9 @@ export * from "./src/transform";
 // Error handling
 export * from "./src/error";
 
+// Capture functionality
+export * from "./src/capture";
+
 // Type inference system
 export * from "./src/type-inference";
 

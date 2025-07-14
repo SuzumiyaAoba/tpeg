@@ -252,6 +252,7 @@ export class EtaTPEGCodeGenerator {
         this.collectUsedCombinators((expr as Group).expression, combinators);
         break;
       case "LabeledExpression":
+        combinators.add("capture");
         this.collectUsedCombinators(
           (expr as LabeledExpression).expression,
           combinators,
@@ -413,7 +414,7 @@ export class EtaTPEGCodeGenerator {
 
   private generateLabeledExpression(expr: LabeledExpression): string {
     const inner = this.generateExpressionCode(expr.expression);
-    return `/* label: ${expr.label} */ ${inner}`;
+    return `capture("${expr.label}", ${inner})`;
   }
 
   /**
