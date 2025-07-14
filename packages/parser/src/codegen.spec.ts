@@ -280,7 +280,7 @@ describe("TPEG Code Generation", () => {
       const result = generator.generateGrammar(grammar);
 
       expect(result.code).toContain('import type { Parser } from "tpeg-core"');
-      expect(result.code).toContain("import { literal,");
+      expect(result.code).toContain('import { literal } from "tpeg-core"');
     });
 
     test("should exclude imports when disabled", () => {

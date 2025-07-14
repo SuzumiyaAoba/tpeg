@@ -257,8 +257,13 @@ export class OptimizedTPEGCodeGenerator {
         this.collectUsedCombinators(expr.expression, combinators);
         break;
       case "Quantified":
-        // For quantified expressions, we might need additional combinators
-        combinators.add("sequence"); // Often used in quantification implementation
+        // Add the quantified combinator for quantified expressions
+        combinators.add("quantified");
+        // Also add basic combinators that might be used as fallbacks
+        combinators.add("zeroOrMore");
+        combinators.add("oneOrMore");
+        combinators.add("optional");
+        combinators.add("choice");
         this.collectUsedCombinators(expr.expression, combinators);
         break;
     }
@@ -459,18 +464,28 @@ export class OptimizedTPEGCodeGenerator {
     const inner = this.generateOptimizedExpression(expr.expression);
 
     if (expr.max === undefined) {
+      // {n,} - at least n
       if (expr.min === 0) return `zeroOrMore(${inner})`;
       if (expr.min === 1) return `oneOrMore(${inner})`;
-      return `/* TODO: implement {${expr.min},} */ oneOrMore(${inner})`;
+      // Use quantified combinator for {n,} where n > 1
+      return `quantified(${inner}, ${expr.min})`;
     }
 
     if (expr.min === expr.max) {
-      if (expr.min === 0) return "/* never matches */ choice()";
+      // {n} - exactly n
+      if (expr.min === 0) return "choice()"; // Never matches - empty choice
       if (expr.min === 1) return inner;
-      return `/* TODO: implement {${expr.min}} */ ${inner}`;
+      // Use quantified combinator for exact repetition {n}
+      return `quantified(${inner}, ${expr.min}, ${expr.max})`;
     }
 
-    return `/* TODO: implement {${expr.min},${expr.max}} */ optional(${inner})`;
+    // {n,m} - between n and m
+    if (expr.min === 0 && expr.max === 1) {
+      return `optional(${inner})`;
+    }
+    
+    // Use quantified combinator for general {n,m} case
+    return `quantified(${inner}, ${expr.min}, ${expr.max})`;
   }
 
   private generateLabeledExpression(expr: LabeledExpression): string {

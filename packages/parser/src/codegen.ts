@@ -75,18 +75,25 @@ export class TPEGCodeGenerator {
     const exports: string[] = [];
     const parts: string[] = [];
 
-    // Add standard imports
-    if (this.options.includeImports) {
-      imports.push('import type { Parser } from "tpeg-core";');
-      imports.push(
-        'import { literal, charClass, choice, sequence, map, zeroOrMore, oneOrMore, optional, andPredicate, notPredicate } from "tpeg-core";',
-      );
-    }
-
+    // Collect used combinators
+    const usedCombinators = new Set<string>();
+    
     // Collect all rule names first
     for (const rule of grammar.rules) {
       this.ruleNames.add(rule.name);
+      this.collectUsedCombinators(rule.pattern, usedCombinators);
     }
+
+    // Add imports based on what's actually used
+    if (this.options.includeImports) {
+      imports.push('import type { Parser } from "tpeg-core";');
+      const combinators = Array.from(usedCombinators).sort();
+      if (combinators.length > 0) {
+        imports.push(`import { ${combinators.join(", ")} } from "tpeg-core";`);
+      }
+    }
+
+
 
     // Generate parser for each rule
     for (const rule of grammar.rules) {
@@ -234,7 +241,7 @@ export class TPEGCodeGenerator {
 
   private generateQuantified(expr: Quantified): string {
     const inner = this.generateExpression(expr.expression);
-    // For now, implement basic quantification using repetition combinators
+    
     if (expr.max === undefined) {
       // {n,} - at least n
       if (expr.min === 0) {
@@ -243,22 +250,29 @@ export class TPEGCodeGenerator {
       if (expr.min === 1) {
         return `oneOrMore(${inner})`;
       }
-      // TODO: Implement exact quantification
-      return `/* TODO: implement {${expr.min},} */ oneOrMore(${inner})`;
+      // Use quantified combinator for {n,} where n > 1
+      return `quantified(${inner}, ${expr.min})`;
     }
+    
     if (expr.min === expr.max) {
       // {n} - exactly n
       if (expr.min === 0) {
-        return "/* never matches */ choice()";
+        return "choice()"; // Never matches - empty choice
       }
       if (expr.min === 1) {
         return inner;
       }
-      // TODO: Implement exact repetition
-      return `/* TODO: implement {${expr.min}} */ ${inner}`;
+      // Use quantified combinator for exact repetition {n}
+      return `quantified(${inner}, ${expr.min}, ${expr.max})`;
     }
+    
     // {n,m} - between n and m
-    return `/* TODO: implement {${expr.min},${expr.max}} */ optional(${inner})`;
+    if (expr.min === 0 && expr.max === 1) {
+      return `optional(${inner})`;
+    }
+    
+    // Use quantified combinator for general {n,m} case
+    return `quantified(${inner}, ${expr.min}, ${expr.max})`;
   }
 
   private generatePositiveLookahead(expr: PositiveLookahead): string {
@@ -276,6 +290,79 @@ export class TPEGCodeGenerator {
     // For now, just generate the inner expression
     // TODO: Implement capture handling
     return `/* label: ${expr.label} */ ${inner}`;
+  }
+
+  /**
+   * Collect all combinators used in an expression
+   */
+  private collectUsedCombinators(
+    expr: Expression,
+    combinators: Set<string>,
+  ): void {
+    switch (expr.type) {
+      case "StringLiteral":
+        combinators.add("literal");
+        break;
+      case "CharacterClass":
+        combinators.add("charClass");
+        break;
+      case "Sequence":
+        combinators.add("sequence");
+        for (const element of expr.elements) {
+          this.collectUsedCombinators(element, combinators);
+        }
+        break;
+      case "Choice":
+        combinators.add("choice");
+        for (const alternative of expr.alternatives) {
+          this.collectUsedCombinators(alternative, combinators);
+        }
+        break;
+      case "Star":
+        combinators.add("zeroOrMore");
+        this.collectUsedCombinators(expr.expression, combinators);
+        break;
+      case "Plus":
+        combinators.add("oneOrMore");
+        this.collectUsedCombinators(expr.expression, combinators);
+        break;
+      case "Optional":
+        combinators.add("optional");
+        this.collectUsedCombinators(expr.expression, combinators);
+        break;
+      case "PositiveLookahead":
+        combinators.add("andPredicate");
+        this.collectUsedCombinators(expr.expression, combinators);
+        break;
+      case "NegativeLookahead":
+        combinators.add("notPredicate");
+        this.collectUsedCombinators(expr.expression, combinators);
+        break;
+      case "Group":
+      case "LabeledExpression":
+        this.collectUsedCombinators(expr.expression, combinators);
+        break;
+      case "Quantified": {
+        const quantified = expr as Quantified;
+        // Add the appropriate combinator based on quantification
+        if (quantified.max === undefined) {
+          if (quantified.min === 0) combinators.add("zeroOrMore");
+          else if (quantified.min === 1) combinators.add("oneOrMore");
+          else combinators.add("quantified");
+        } else if (quantified.min === quantified.max) {
+          if (quantified.min === 0) combinators.add("choice");
+          else if (quantified.min !== 1) combinators.add("quantified");
+        } else {
+          if (quantified.min === 0 && quantified.max === 1) {
+            combinators.add("optional");
+          } else {
+            combinators.add("quantified");
+          }
+        }
+        this.collectUsedCombinators(quantified.expression, combinators);
+        break;
+      }
+    }
   }
 }
 
