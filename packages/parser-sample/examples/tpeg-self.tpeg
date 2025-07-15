@@ -20,7 +20,7 @@ grammar TPEGSelf {
   expression = choice_expr
   choice_expr = sequence_expr ("/" sequence_expr)*
   sequence_expr = labeled_expr*
-  labeled_expr = identifier ":" postfix_expr / postfix_expr
+  labeled_expr = label:identifier ":" expr:postfix_expr / postfix_expr
   postfix_expr = primary_expr repetition_op?
   
   // Primary expressions

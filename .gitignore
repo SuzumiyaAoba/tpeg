@@ -15,6 +15,14 @@ logs
 _.log
 report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
+# test results
+task*-results.json
+task*-coverage-results.json
+task*-runner-results.json
+*-test-results.json
+*-coverage-results.json
+*-runner-results.json
+
 # dotenv environment variable files
 .env
 .env.development.local

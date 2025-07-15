@@ -1,4 +1,4 @@
-import type { Parser } from "tpeg-core";import { charClass, choice, literal, memoize, oneOrMore, sequence, zeroOrMore } from "tpeg-core";
+import type { Parser } from "tpeg-core";import { capture, charClass, choice, literal, memoize, oneOrMore, optional, sequence, zeroOrMore } from "tpeg-core";
 /**
  * Generated TPEG Parser: TPEGSelf
  * 
@@ -10,12 +10,13 @@ export const self_grammar_definition: Parser<any> = memoize(sequence(literal("gr
 // contains recursionexport const self_rule_definition: Parser<any> = memoize(sequence(self_identifier, literal("="), self_expression));
 // contains recursionexport const self_expression: Parser<any> = memoize(self_choice_expr);
 // contains recursionexport const self_choice_expr: Parser<any> = memoize(sequence(self_sequence_expr, zeroOrMore(sequence(literal("/"), self_sequence_expr))));
-// contains recursionexport const self_sequence_expr: Parser<any> = memoize(zeroOrMore(self_primary_expr));
-// contains recursionexport const self_primary_expr: Parser<any> = memoize(choice(self_string_literal, self_character_class, self_identifier, self_any_char, self_group_expr, self_repetition_expr));
+// contains recursionexport const self_sequence_expr: Parser<any> = memoize(zeroOrMore(self_labeled_expr));
+// contains recursionexport const self_labeled_expr: Parser<any> = memoize(choice(sequence(capture("label", self_identifier), literal(":"), capture("expr", self_postfix_expr)), self_postfix_expr));
+// contains recursionexport const self_postfix_expr: Parser<any> = memoize(sequence(self_primary_expr, optional(self_repetition_op)));
+// contains recursionexport const self_primary_expr: Parser<any> = memoize(choice(self_string_literal, self_character_class, self_identifier, self_any_char, self_group_expr));
 // contains recursionexport const self_group_expr: Parser<any> = memoize(sequence(literal("("), self_expression, literal(")")));
-// contains recursionexport const self_repetition_expr: Parser<any> = memoize(sequence(self_primary_atom, self_repetition_op));
-// contains recursionexport const self_repetition_op: Parser<any> = choice(literal("*"), literal("+"), literal("?"));
-export const self_primary_atom: Parser<any> = memoize(choice(self_string_literal, self_character_class, self_identifier, self_any_char, self_group_expr));
+// contains recursionexport const self_repetition_op: Parser<any> = memoize(choice(literal("*"), literal("+"), literal("?"), self_quantified_op));
+// contains recursionexport const self_quantified_op: Parser<any> = memoize(sequence(literal("{"), self_number, optional(sequence(literal(","), optional(self_number))), literal("}")));
 // contains recursionexport const self_string_literal: Parser<any> = memoize(choice(self_double_quoted, self_single_quoted));
 // contains recursionexport const self_double_quoted: Parser<any> = memoize(sequence(literal("\""), self_string_content, literal("\"")));
 // contains recursionexport const self_single_quoted: Parser<any> = memoize(sequence(literal("'"), self_string_content, literal("'")));
