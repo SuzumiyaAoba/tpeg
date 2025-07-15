@@ -1,35 +1,39 @@
 // TPEG Self-Hosting Grammar Definition
-// This grammar defines basic TPEG grammar syntax itself
-// Used for self-transpilation capability
+// This grammar defines TPEG grammar syntax for self-hosting capability
+// Version compatible with current TPEG parser implementation
 
 grammar TPEGSelf {
-  @version: "1.0.0"
+  @version: "2.0.0"
   @description: "TPEG grammar definition for self-hosting"
   @author: "TPEG Team"
   @license: "MIT"
   
   // Main grammar structure
-  grammar = "grammar" identifier "{" rule_list "}"
-  rule_list = (rule_definition)*
+  grammar_definition = "grammar" identifier "{" rule_list "}"
+  rule_list = rule_definition*
   
   // Rule definitions
   rule_definition = identifier "=" expression
+  
+  // Expression hierarchy with correct precedence:
+  // Choice (lowest) -> Sequence -> Labeled -> Postfix -> Primary (highest)
   expression = choice_expr
   choice_expr = sequence_expr ("/" sequence_expr)*
-  sequence_expr = primary_expr*
+  sequence_expr = labeled_expr*
+  labeled_expr = identifier ":" postfix_expr / postfix_expr
+  postfix_expr = primary_expr repetition_op?
   
   // Primary expressions
-  primary_expr = string_literal / character_class / identifier / any_char / group_expr / repetition_expr
+  primary_expr = string_literal / character_class / identifier / any_char / group_expr
   
   // Groups
   group_expr = "(" expression ")"
   
-  // Repetition
-  repetition_expr = primary_atom repetition_op
-  repetition_op = "*" / "+" / "?"
-  primary_atom = string_literal / character_class / identifier / any_char / group_expr
+  // Repetition operators
+  repetition_op = "*" / "+" / "?" / quantified_op
+  quantified_op = "{" number ("," number?)? "}"
   
-  // Basic expressions
+  // String literals with escape sequences
   string_literal = double_quoted / single_quoted
   double_quoted = "\"" string_content "\""
   single_quoted = "'" string_content "'"
@@ -49,4 +53,7 @@ grammar TPEGSelf {
   
   // Numbers
   number = [0-9]+
+  
+  // Whitespace
+  whitespace = [ \t\n\r]*
 } 
