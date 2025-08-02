@@ -29,7 +29,7 @@ export const map =
       };
     }
 
-    return result;
+    return result as ParseFailure;
   };
 
 /**
@@ -61,7 +61,7 @@ export const mapResult =
       };
     }
 
-    return result;
+    return result as ParseFailure;
   };
 
 /**
@@ -87,7 +87,7 @@ export const mapError =
       return result;
     }
 
-    return f(result);
+    return f(result as ParseFailure);
   };
 
 /**
