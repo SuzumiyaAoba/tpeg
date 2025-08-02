@@ -18,7 +18,7 @@ import { createFailure, isFailure } from "./utils";
  * @internal This is an internal optimization detail
  */
 const LOOKAHEAD_SUCCESS_BASE = {
-  success: true as const,
+  success: true,
   val: undefined,
 } as const;
 
@@ -104,7 +104,7 @@ const createSuccessResult = (
  * @since 1.0.0
  */
 export const andPredicate =
-  <T>(parser: Parser<T>, parserName?: string): Parser<undefined> =>
+  <T>(parser: Parser<T>, parserName = "andPredicate"): Parser<undefined> =>
   (input: string, pos) => {
     const result = parser(input, pos);
 
@@ -122,7 +122,7 @@ export const andPredicate =
         result.error.pos,
         {
           ...result.error,
-          parserName: parserName || "andPredicate",
+          parserName,
           context,
         },
       );
@@ -276,7 +276,7 @@ export const assert = andPredicate;
  * @since 1.0.0
  */
 export const notPredicate =
-  <T>(parser: Parser<T>, parserName?: string): Parser<undefined> =>
+  <T>(parser: Parser<T>, parserName = "notPredicate"): Parser<undefined> =>
   (input: string, pos) => {
     const result = parser(input, pos);
 
@@ -288,7 +288,7 @@ export const notPredicate =
       "Negative lookahead failed: expected pattern not to match",
       pos,
       {
-        parserName: parserName || "notPredicate",
+        parserName,
         context: ["in negative lookahead"],
         expected: "pattern not to match",
         found: "matching pattern",

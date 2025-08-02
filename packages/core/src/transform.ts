@@ -29,7 +29,7 @@ export const map =
       };
     }
 
-    return result as ParseFailure;
+    return result;
   };
 
 /**
@@ -61,7 +61,7 @@ export const mapResult =
       };
     }
 
-    return result as ParseFailure;
+    return result;
   };
 
 /**
@@ -87,7 +87,7 @@ export const mapError =
       return result;
     }
 
-    return f(result as ParseFailure);
+    return f(result);
   };
 
 /**
@@ -112,7 +112,7 @@ export const filter =
     parser: Parser<T>,
     predicate: (value: T) => boolean,
     errorMessage: string,
-    parserName?: string,
+    parserName = "filter",
   ): Parser<T> =>
   (input: string, pos) => {
     const result = parser(input, pos);
@@ -125,7 +125,7 @@ export const filter =
       const error: ParseError = {
         message: errorMessage,
         pos: result.current,
-        parserName: parserName || "filter",
+        parserName,
         expected: "value satisfying predicate",
         found: String(result.val),
       };
@@ -136,7 +136,7 @@ export const filter =
       };
     }
 
-    return result as ParseFailure;
+    return result;
   };
 
 /**
@@ -163,5 +163,5 @@ export const tap =
       return result;
     }
 
-    return result as ParseFailure;
+    return result;
   };

@@ -79,7 +79,7 @@ export const opt = optional;
  * @returns Parser<T[]> A parser that returns an array of parsed values (possibly empty).
  */
 export const zeroOrMore =
-  <T>(parser: Parser<T>, parserName?: string): Parser<T[]> =>
+  <T>(parser: Parser<T>, parserName = "zeroOrMore"): Parser<T[]> =>
   (input: string, pos) => {
     const results: T[] = [];
     let currentPos = pos;
@@ -96,7 +96,7 @@ export const zeroOrMore =
         return createInfiniteLoopError(
           input,
           currentPos,
-          parserName || "zeroOrMore",
+          parserName,
         );
       }
 
@@ -135,7 +135,7 @@ export const star = zeroOrMore;
  * @returns Parser<NonEmptyArray<T>> A parser that returns a non-empty array of parsed values.
  */
 export const oneOrMore =
-  <T>(parser: Parser<T>, parserName?: string): Parser<NonEmptyArray<T>> =>
+  <T>(parser: Parser<T>, parserName = "oneOrMore"): Parser<NonEmptyArray<T>> =>
   (input: string, pos) => {
     const results: T[] = [];
     let currentPos = pos;
@@ -153,7 +153,7 @@ export const oneOrMore =
             failure.error.pos,
             {
               ...failure.error,
-              parserName: parserName || "oneOrMore",
+              parserName,
               context: [
                 "in oneOrMore",
                 ...(failure.error.context
@@ -218,7 +218,7 @@ export const quantified =
     parser: Parser<T>,
     min: number,
     max?: number,
-    parserName?: string,
+    parserName = "quantified",
   ): Parser<T[]> =>
   (input: string, pos) => {
     // Validate input parameters early
@@ -226,7 +226,7 @@ export const quantified =
       return createFailure(
         `Invalid quantified range: minimum (${min}) cannot be negative`,
         pos,
-        { parserName: parserName || "quantified" },
+        { parserName },
       );
     }
 
@@ -234,7 +234,7 @@ export const quantified =
       return createFailure(
         `Invalid quantified range: maximum (${max}) cannot be less than minimum (${min})`,
         pos,
-        { parserName: parserName || "quantified" },
+        { parserName },
       );
     }
 
@@ -252,7 +252,7 @@ export const quantified =
           currentPos,
           {
             ...failure.error,
-            parserName: parserName || "quantified",
+            parserName,
             context: [
               `in quantified{${min},${max ?? ""}}`,
               `failed at required repetition ${i + 1}/${min}`,
@@ -271,7 +271,7 @@ export const quantified =
         return createInfiniteLoopError(
           input,
           currentPos,
-          parserName || "quantified",
+          parserName,
           `Repetition: ${i + 1}/${min} (required)`,
         );
       }
@@ -296,7 +296,7 @@ export const quantified =
           return createInfiniteLoopError(
             input,
             currentPos,
-            parserName || "quantified",
+            parserName,
             `Repetition: ${i + 1} (optional)`,
           );
         }
@@ -319,7 +319,7 @@ export const quantified =
           return createInfiniteLoopError(
             input,
             currentPos,
-            parserName || "quantified",
+            parserName,
             `Repetition: ${count + 1} (optional)`,
           );
         }

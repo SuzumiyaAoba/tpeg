@@ -32,13 +32,13 @@ export const sequence = <P extends Parser<unknown>[]>(
   const sequenceParser = (input: string, pos: Pos) => {
     if (parsers.length === 0) {
       return {
-        success: true as const,
+        success: true,
         val: [] as {
           [K in keyof P]: P[K] extends Parser<infer T> ? T : never;
         },
         current: pos,
         next: pos,
-      };
+      } as const;
     }
 
     const result: unknown[] = [];
@@ -296,13 +296,13 @@ export const withDefault =
  * ```
  */
 export const reject =
-  <T>(parser: Parser<T>, parserName?: string): Parser<null> =>
+  <T>(parser: Parser<T>, parserName = "reject"): Parser<null> =>
   (input: string, pos) => {
     const result = parser(input, pos);
 
     if (result.success) {
       return createFailure("Expected parser to fail", pos, {
-        parserName: parserName || "reject",
+        parserName,
         expected: "parser to fail",
       });
     }

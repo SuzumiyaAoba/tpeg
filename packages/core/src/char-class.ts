@@ -77,11 +77,11 @@ export const charClass = (
     for (const spec of charOrRanges) {
       if (matchesSpec(char, charCode, spec)) {
         return {
-          success: true as const,
+          success: true,
           val: char,
           current: pos,
           next: nextPos(char, pos),
-        };
+        } as const;
       }
     }
 
