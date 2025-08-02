@@ -377,7 +377,8 @@ export const advancePos = (str: string, pos: Pos): Pos => {
     } else {
       column++;
     }
-    offset += char.length;
+    // Use the actual character length, not char.length
+    offset += unicodeLength(char);
   }
 
   return { offset, column, line };

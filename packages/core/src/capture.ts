@@ -6,7 +6,7 @@
  * instead of just arrays or raw values.
  */
 
-import type { ParseError, Parser, Pos, ParseSuccess } from "./types";
+import type { ParseError, Parser, Pos, } from "./types";
 import { createFailure, isFailure } from "./utils";
 
 /**

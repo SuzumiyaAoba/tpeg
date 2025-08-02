@@ -30,7 +30,7 @@
     "typecheck:combinator": "cd packages/combinator && bun run typecheck",
     "typecheck:parser": "cd packages/parser && bun run typecheck",
     "typecheck:generator": "cd packages/generator && bun run typecheck",
-    "typecheck:type-inference": "cd packages/type-inference && bun run typecheck",
+    "typecheck:type-inference": "cd packages/type-inference && bun run type-check",
     "build": "bun run build:all",
     "build:all": "bun run build:core && bun run build:ast && bun run build:combinator && bun run build:parser && bun run build:generator && bun run build:type-inference && bun run build:parser-sample",
     "build:core": "cd packages/core && bun run build",

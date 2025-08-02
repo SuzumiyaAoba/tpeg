@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { Parser } from "tpeg-core";
+import type { Parser, Pos } from "tpeg-core";
 import {
   charClass,
   choice,
@@ -326,7 +326,7 @@ describe("tpeg-combinator additional tests", () => {
       expect(isSuccess(result)).toBe(true);
       if (isSuccess(result)) {
         expect(result.val).toHaveProperty("position");
-        expect(result.val.position).toEqual({ offset: 0, line: 1, column: 1 });
+        expect((result.val as { position: any }).position).toEqual({ offset: 0, line: 1, column: 1 });
       }
     });
 
@@ -363,7 +363,7 @@ describe("tpeg-combinator additional tests", () => {
   describe("memoize", () => {
     it("should memoize parser results", () => {
       let calledTimes = 0;
-      const expensiveParser: Parser<string> = (input, pos) => {
+      const expensiveParser: Parser<string> = (input: string, pos: Pos) => {
         calledTimes++;
         return literal("hello")(input, pos);
       };
@@ -519,7 +519,7 @@ describe("Additional coverage tests", () => {
       expect(isSuccess(result)).toBe(true);
       if (isSuccess(result)) {
         expect(result.val).toHaveProperty("position");
-        expect(result.val.position).toEqual({ offset: 0, line: 1, column: 1 });
+        expect((result.val as { position: any }).position).toEqual({ offset: 0, line: 1, column: 1 });
       }
     });
   });
@@ -621,7 +621,7 @@ describe("safeguards against infinite loops", () => {
   it("should detect and prevent infinite loops in repetition parsers", () => {
     // Parser that could cause infinite loops
     // Parser that always succeeds without consuming input
-    const problematicParser: Parser<string> = (_input, pos) => ({
+    const problematicParser: Parser<string> = (_input: string, pos: Pos) => ({
       success: true,
       val: "problematic",
       current: pos,
@@ -679,7 +679,7 @@ describe("safeguards against infinite loops", () => {
 
   it("should handle nested structures", () => {
     // Simple parser that handles a very specific test case
-    const bracketParser: Parser<string> = (input, pos) => {
+    const bracketParser: Parser<string> = (input: string, pos: Pos) => {
       // Check for the exact input pattern
       if (input.slice(pos.offset).startsWith("((x))")) {
         return {
@@ -814,7 +814,7 @@ it("should test withPosition function", () => {
 
 it("should test memoize function properly", () => {
   let callCount = 0;
-  const countingParser: Parser<string> = (input, pos) => {
+  const countingParser: Parser<string> = (input: string, pos: Pos) => {
     callCount++;
     return {
       success: true,
@@ -841,7 +841,7 @@ it("should test memoize function properly", () => {
 
 describe("withPosition edge cases", () => {
   it("should handle failure cases in withPosition", () => {
-    const failingParser: Parser<string> = (_input, pos) => ({
+    const failingParser: Parser<string> = (_input: string, pos: Pos) => ({
       success: false,
       error: { message: "Custom error", pos },
     });
@@ -860,7 +860,7 @@ describe("withPosition edge cases", () => {
   });
 
   it("should handle unusual position changes", () => {
-    const jumpingParser: Parser<string> = (_input, pos) => ({
+    const jumpingParser: Parser<string> = (_input: string, pos: Pos) => ({
       success: true,
       val: "jumped",
       current: pos,
@@ -918,7 +918,7 @@ it("should test sepBy with complex patterns", () => {
   // Test using tokenized version with a proper implementation
   const wordParser = oneOrMore(charClass(["a", "z"]));
   const tokenizedParser = sepBy(
-    map(token(wordParser), (chars) => chars.join("")),
+    map(token(wordParser), (chars: unknown) => (chars as string[]).join("")),
     token(literal(",")),
   );
   const tokenizedResult = tokenizedParser("one, two, three", {
@@ -1150,7 +1150,7 @@ describe("Enhanced error reporting", () => {
     });
 
     it("should preserve existing error messages", () => {
-      const customErrorParser: Parser<string> = (_input, pos) => ({
+      const customErrorParser: Parser<string> = (_input: string, pos: Pos) => ({
         success: false,
         error: { message: "Custom message", pos },
       });

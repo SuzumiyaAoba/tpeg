@@ -357,7 +357,7 @@ describe("Module System Integration Tests", () => {
     it("should handle multiple modules efficiently", () => {
       // Test with multiple modules
       const moduleCount = 10;
-      const modules: any[] = [];
+      const modules: ModuleFile[] = [];
 
       for (let i = 0; i < moduleCount; i++) {
         const moduleFile = {

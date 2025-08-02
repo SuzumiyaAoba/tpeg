@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
 import {
-  type ParseSuccess,
   andPredicate,
   anyChar,
   charClass,
@@ -265,7 +264,7 @@ describe("tpeg-combinator", () => {
       it("should transform the result of a parser using a mapping function that receives the whole ParseSuccess object", () => {
         const parser = mapResult(
           literal("hello"),
-          (result: ParseSuccess<string>) => {
+          (result: any) => {
             return {
               val: result.val.toUpperCase(),
               offset: result.next.offset,
