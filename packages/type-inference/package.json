@@ -1,0 +1,27 @@
+{
+  "name": "@tpeg/type-inference",
+  "version": "0.1.0",
+  "description": "Type inference system for TPEG grammar definitions",
+  "main": "index.ts",
+  "types": "index.ts",
+  "scripts": {
+    "test": "bun test",
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tpeg/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "tpeg",
+    "parser",
+    "type-inference",
+    "typescript",
+    "grammar"
+  ],
+  "author": "TPEG Team",
+  "license": "MIT"
+} 

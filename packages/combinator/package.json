@@ -19,6 +19,6 @@
     "benchmark": "bun test benchmark.spec.ts"
   },
   "dependencies": {
-    "tpeg-core": "workspace:*"
+    "@tpeg/core": "workspace:*"
   }
 }

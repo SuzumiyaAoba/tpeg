@@ -25,7 +25,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "tpeg-core": "workspace:*",
+    "@tpeg/core": "workspace:*",
     "tpeg-parser": "workspace:*"
   },
   "devDependencies": {

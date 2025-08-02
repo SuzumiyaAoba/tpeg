@@ -9,7 +9,7 @@ import type {
   Expression,
   GrammarDefinition,
   RuleDefinition,
-} from "./grammar-types";
+} from "@tpeg/core";
 import {
   type GrammarTypeInference,
   type InferredType,
@@ -131,9 +131,18 @@ export class TypeIntegrationEngine {
     typeInference: GrammarTypeInference,
   ): TypedRuleDefinition {
     const inferredType = typeInference.ruleTypes.get(rule.name);
-    if (!inferredType) {
-      throw new Error(`No type information found for rule: ${rule.name}`);
-    }
+    
+    // If no type information found, create a default type
+    const defaultType: InferredType = {
+      typeString: "unknown",
+      nullable: false,
+      isArray: false,
+      baseType: "unknown",
+      imports: [],
+      documentation: `No type information available for rule ${rule.name}`,
+    };
+
+    const finalInferredType = inferredType || defaultType;
 
     // Check for circular dependencies
     const hasCircularDependency = typeInference.circularDependencies.some(
@@ -145,7 +154,7 @@ export class TypeIntegrationEngine {
 
     return {
       ...rule,
-      inferredType,
+      inferredType: finalInferredType,
       hasCircularDependency,
       dependencies,
     };
@@ -242,7 +251,7 @@ export class TypeIntegrationEngine {
     );
     typeDefinitions.push("  /** Union of all parser result types */");
     typeDefinitions.push(
-      `  export type ParserResult = ${resultTypes.join(" | ")};`,
+      `  export type ParserResult = ${resultTypes.length > 0 ? resultTypes.join(" | ") : "never"};`,
     );
 
     // Close namespace if specified

@@ -21,7 +21,7 @@
   "license": "MIT",
   "dependencies": {
     "eta": "^3.4.0",
-    "tpeg-core": "workspace:*"
+    "@tpeg/core": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

@@ -3,7 +3,7 @@
  */
 
 import { beforeEach, describe, expect, it } from "bun:test";
-import type { GrammarDefinition } from "./grammar-types";
+import type { GrammarDefinition } from "@tpeg/core";
 import {
   createAnyChar,
   createCharRange,
@@ -17,7 +17,7 @@ import {
   createSequence,
   createStar,
   createStringLiteral,
-} from "./grammar-types";
+} from "@tpeg/core";
 import {
   TypeInferenceEngine,
   type TypeInferenceOptions,

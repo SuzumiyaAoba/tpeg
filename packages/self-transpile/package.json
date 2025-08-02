@@ -19,7 +19,7 @@
   "author": "SuzumiyaAoba",
   "license": "MIT",
   "dependencies": {
-    "tpeg-core": "workspace:*",
+    "@tpeg/core": "workspace:*",
     "tpeg-parser": "workspace:*",
     "tpeg-generator": "workspace:*"
   },

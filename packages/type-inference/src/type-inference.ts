@@ -42,7 +42,7 @@ import type {
   Sequence,
   Star,
   StringLiteral,
-} from "./grammar-types";
+} from "@tpeg/core";
 
 /**
  * Represents an inferred TypeScript type for a parser result

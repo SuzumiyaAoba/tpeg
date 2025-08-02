@@ -22,6 +22,6 @@
   },
   "dependencies": {
     "tpeg-combinator": "workspace:*",
-    "tpeg-core": "workspace:*"
+    "@tpeg/core": "workspace:*"
   }
 }

@@ -11,6 +11,4 @@ export * from "./lookahead";
 export * from "./repetition";
 export * from "./test-utils";
 export * from "./transform";
-export * from "./type-inference";
-export * from "./type-integration";
 export * from "./utils"; 

@@ -1,5 +1,5 @@
 {
-  "name": "tpeg-core",
+  "name": "@tpeg/core",
   "type": "module",
   "version": "0.1.0",
   "main": "dist/index.js",
