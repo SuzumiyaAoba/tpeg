@@ -342,9 +342,9 @@ const validateAndNormalizeOptions = (
   );
   const validatedLocale = validateLocale(locale);
 
-  // Merge messages with type safety - use enhanced messages by default
+  // Merge messages with type safety - use default messages by default
   const baseMessages =
-    validatedLocale === "ja" ? ENHANCED_MESSAGES_JA : ENHANCED_MESSAGES_EN;
+    validatedLocale === "ja" ? DEFAULT_MESSAGES_JA : DEFAULT_MESSAGES_EN;
   const mergedMessages: I18nMessages = { ...baseMessages, ...messages };
 
   return {

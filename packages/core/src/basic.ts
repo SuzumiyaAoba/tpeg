@@ -30,7 +30,7 @@ import { createFailure, getCharAndLength, nextPos } from "./utils";
  *
  * // End of input handling
  * const endResult = parser("", { offset: 0, line: 1, column: 1 });
- * // endResult: { success: false, error: "Unexpected end of input", ... }
+ * // endResult: { success: false, error: "Unexpected EOI", ... }
  *
  * // Unicode support
  * const unicodeResult = parser("🌍", { offset: 0, line: 1, column: 1 });
@@ -78,7 +78,7 @@ export const anyChar =
     const [char] = getCharAndLength(input, pos.offset);
 
     if (!char) {
-      return createFailure("Unexpected end of input", pos, {
+      return createFailure("Unexpected EOI", pos, {
         expected: "any character",
         found: "end of input",
         parserName,
