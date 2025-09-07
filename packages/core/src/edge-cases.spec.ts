@@ -222,11 +222,14 @@ describe("Edge Cases and Stress Tests", () => {
 
   describe("Parser Composition Edge Cases", () => {
     it("should handle deeply nested parser compositions", () => {
-      // Create a deeply nested parser
-      let parser = sequence(literal("a"), literal("b"));
-      for (let i = 0; i < 99; i++) {
-        parser = sequence(parser, literal("b"));
+      // Create a deeply nested parser without accumulating tuple types
+      const parts: Array<ReturnType<typeof literal>> = [literal("a")];
+      for (let i = 0; i < 100; i++) {
+        parts.push(literal("b"));
       }
+      const parser = sequence(
+        ...(parts as unknown as import("./types").Parser<unknown>[]),
+      );
 
       const input = `a${"b".repeat(100)}`;
       const result = parser(input, createPos());
@@ -244,11 +247,13 @@ describe("Edge Cases and Stress Tests", () => {
         alternatives.push(literal(`option${i}`));
       }
 
-      const parser = choice(...alternatives);
+      const parser = choice(
+        ...(alternatives as unknown as import("./types").Parser<string>[]),
+      );
 
       // Test with the last alternative
       const input = "option999";
-      const result = parser?.(input, createPos());
+      const result = parser(input, createPos());
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -336,7 +341,8 @@ describe("Edge Cases and Stress Tests", () => {
         const input = `pattern${i % parsers.length}extra`;
         const pos = createPos();
 
-        const result = parser?.(input, pos);
+        if (!parser) throw new Error("parser is undefined");
+        const result = parser(input, pos);
         expect(result.success).toBe(true);
       }
 

@@ -123,9 +123,7 @@ export const parsers = {
       m.mapError(
         parser,
         (e: import("./types").ParseFailure): import("./types").ParseFailure =>
-          fn(e as unknown as import("./types").ParseError) as unknown as import(
-            "./types",
-          ).ParseFailure,
+          (fn(e as unknown as import("./types").ParseError) as unknown) as import("./types").ParseFailure,
       ),
     ),
   filter: <T>(
