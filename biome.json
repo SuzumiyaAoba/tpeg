@@ -39,7 +39,7 @@
       },
       "complexity": {
         "noForEach": "warn",
-        "useLiteralKeys": "warn"
+        "useLiteralKeys": "off"
       }
     }
   },
