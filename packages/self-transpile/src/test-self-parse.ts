@@ -6,9 +6,9 @@
  */
 
 import { readFileSync } from "node:fs";
-import { parse } from "tpeg-core";
-import type { GrammarDefinition, RuleDefinition } from "tpeg-core";
-import { grammarDefinition } from "tpeg-parser";
+import { parse } from "@SuzumiyaAoba/core";
+import type { GrammarDefinition, RuleDefinition } from "@SuzumiyaAoba/core";
+import { grammarDefinition } from "@SuzumiyaAoba/parser";
 import { selfTranspile } from "./self-transpile";
 
 async function testSelfParse() {
@@ -26,7 +26,7 @@ async function testSelfParse() {
       `📄 First 200 characters: ${grammarSource.substring(0, 200)}...`,
     );
 
-    // Test direct parsing with tpeg-parser
+    // Test direct parsing with @SuzumiyaAoba/parser
     console.log("\n🔍 Testing direct parsing with grammarDefinition parser...");
     const parser = parse(grammarDefinition);
     const parseResult = parser(grammarSource);

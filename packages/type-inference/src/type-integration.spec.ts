@@ -11,7 +11,7 @@ import {
   createPlus,
   createRuleDefinition,
   createStringLiteral,
-} from "@tpeg/core";
+} from "@suzumiyaaoba/tpeg-core";
 import {
   TypeIntegrationEngine,
 } from "./type-integration";
@@ -32,16 +32,16 @@ describe("TypeIntegrationEngine", () => {
 
       // Debug: Check if grammar is created correctly
       expect(grammar.rules).toHaveLength(2);
-      expect(grammar.rules[0].name).toBe("greeting");
-      expect(grammar.rules[1].name).toBe("number");
+      expect(grammar.rules[0]?.name).toBe("greeting");
+      expect(grammar.rules[1]?.name).toBe("number");
 
       const typedGrammar = engine.createTypedGrammar(grammar);
 
       expect(typedGrammar.rules).toHaveLength(2);
-      expect(typedGrammar.rules[0].name).toBe("greeting");
-      expect(typedGrammar.rules[0].inferredType.typeString).toBe('"hello"');
-      expect(typedGrammar.rules[1].name).toBe("number");
-      expect(typedGrammar.rules[1].inferredType.typeString).toBe("string");
+      expect(typedGrammar.rules[0]?.name).toBe("greeting");
+      expect(typedGrammar.rules[0]?.inferredType.typeString).toBe('"hello"');
+      expect(typedGrammar.rules[1]?.name).toBe("number");
+      expect(typedGrammar.rules[1]?.inferredType.typeString).toBe("string");
     });
 
     it("should detect dependencies correctly", () => {
@@ -78,8 +78,8 @@ describe("TypeIntegrationEngine", () => {
       const typedGrammar = engine.createTypedGrammar(grammar);
 
       expect(typedGrammar.typeInference.circularDependencies.length).toBeGreaterThan(0);
-      expect(typedGrammar.rules[0].hasCircularDependency).toBe(true);
-      expect(typedGrammar.rules[1].hasCircularDependency).toBe(true);
+      expect(typedGrammar.rules[0]?.hasCircularDependency).toBe(true);
+      expect(typedGrammar.rules[1]?.hasCircularDependency).toBe(true);
     });
 
     it("should generate parser interface", () => {

@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { type Parser, parse } from "tpeg-core";
+import { type Parser, parse } from "@suzumiyaaoba/tpeg-core";
 
 // Helper function for easier testing
 const testParse = <T>(parser: Parser<T>, input: string) => parse(parser)(input);

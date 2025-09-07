@@ -2,7 +2,7 @@
  * Types for TPEG self-transpilation system
  */
 
-import type { GrammarDefinition } from "tpeg-core";
+import type { GrammarDefinition } from "@SuzumiyaAoba/core";
 
 /**
  * Generic configuration object with string keys

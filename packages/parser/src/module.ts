@@ -13,7 +13,7 @@
  * - Qualified identifiers: module.rule
  */
 
-import type { Parser } from "tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   type ExportDeclaration,
   type ImportStatement,
@@ -27,7 +27,7 @@ import {
   optional,
   seq as sequence,
   star as zeroOrMore,
-} from "tpeg-core";
+} from "@suzumiyaaoba/tpeg-core";
 import { GRAMMAR_SYMBOLS } from "./constants";
 import { identifier } from "./identifier";
 import { stringLiteral } from "./string-literal";

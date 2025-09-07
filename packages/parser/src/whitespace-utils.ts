@@ -5,7 +5,7 @@
  * to eliminate duplication and ensure consistent behavior.
  */
 
-import type { Parser } from "tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   choice,
   literal,
@@ -14,7 +14,7 @@ import {
   optional,
   seq,
   star as zeroOrMore,
-} from "tpeg-core";
+} from "@suzumiyaaoba/tpeg-core";
 
 import { WHITESPACE_CHARS } from "./constants";
 

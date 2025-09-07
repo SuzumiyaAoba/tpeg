@@ -14,7 +14,7 @@ import {
   identifier,
   stringLiteral,
   tpegExpression,
-} from "tpeg-parser";
+} from "@SuzumiyaAoba/parser";
 
 console.log("📁 TPEG Parser File-Based Demo\n");
 

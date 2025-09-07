@@ -68,7 +68,7 @@ describe("Capture Integration Tests", () => {
 
       expect(result.code).toContain('capture("message"');
       expect(result.code).toContain('literal("hello")');
-      expect(result.imports).toContain('import { capture, literal } from "tpeg-core";');
+      expect(result.imports).toContain('import { capture, literal } from "@suzumiyaaoba/tpeg-core";');
     });
 
     it("should generate optimized code with captures", () => {
@@ -283,7 +283,7 @@ describe("Capture Integration Tests", () => {
         includeImports: true,
       });
 
-      expect(result.imports).toContain('import { capture, literal } from "tpeg-core";');
+      expect(result.imports).toContain('import { capture, literal } from "@suzumiyaaoba/tpeg-core";');
     });
 
     it("should not include capture in imports when no labeled expressions are present", () => {

@@ -5,7 +5,7 @@
  * Based on docs/peg-grammar.md specification.
  */
 
-import type { Parser } from "tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   charClass,
   choice,
@@ -14,7 +14,7 @@ import {
   oneOrMore,
   optional,
   seq,
-} from "tpeg-core";
+} from "@suzumiyaaoba/tpeg-core";
 import type { AnyChar, CharRange, CharacterClass } from "./types";
 
 /**

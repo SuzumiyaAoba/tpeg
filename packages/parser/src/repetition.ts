@@ -13,7 +13,7 @@
  * - expr{n,} (n or more times)
  */
 
-import type { Parser } from "tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   charClass,
   choice,
@@ -22,7 +22,7 @@ import {
   oneOrMore,
   optional,
   seq,
-} from "tpeg-core";
+} from "@suzumiyaaoba/tpeg-core";
 import type { Expression, Optional, Plus, Quantified, Star } from "./types";
 
 /**

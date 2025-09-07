@@ -9,7 +9,7 @@ import type {
   Expression,
   GrammarDefinition,
   RuleDefinition,
-} from "@tpeg/core";
+} from "@suzumiyaaoba/tpeg-core";
 import {
   type GrammarTypeInference,
   type InferredType,

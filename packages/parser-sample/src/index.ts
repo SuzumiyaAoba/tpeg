@@ -14,10 +14,10 @@ export {
   ruleDefinition,
   stringLiteral,
   tpegExpression,
-} from "tpeg-parser";
+} from "@SuzumiyaAoba/parser";
 
 // Re-export core parsing utilities
-export { parse } from "tpeg-core";
+export { parse } from "@SuzumiyaAoba/core";
 
 // Demo functions for programmatic use
 // Helper function to run demo scripts

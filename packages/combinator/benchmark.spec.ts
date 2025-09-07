@@ -1,6 +1,6 @@
 import { describe, it } from "bun:test";
-import type { Parser, Pos } from "tpeg-core";
-import { any, charClass, lit } from "tpeg-core";
+import type { Parser, Pos } from "@suzumiyaaoba/tpeg-core";
+import { any, charClass, lit } from "@suzumiyaaoba/tpeg-core";
 
 const EMOJI = "😊";
 const SURROGATE = "𝄞"; // U+1D11E

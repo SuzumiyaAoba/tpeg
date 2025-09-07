@@ -1,5 +1,5 @@
 {
-  "name": "tpeg-self-transpile",
+  "name": "@suzumiyaaoba/tpeg-self-transpile",
   "version": "0.1.0",
   "description": "Self-transpilation system for TPEG grammar definitions",
   "main": "./dist/index.js",
@@ -19,9 +19,9 @@
   "author": "SuzumiyaAoba",
   "license": "MIT",
   "dependencies": {
-    "@tpeg/core": "workspace:*",
-    "tpeg-parser": "workspace:*",
-    "tpeg-generator": "workspace:*"
+    "@suzumiyaaoba/tpeg-core": "workspace:*",
+    "@suzumiyaaoba/tpeg-parser": "workspace:*",
+    "@suzumiyaaoba/tpeg-generator": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

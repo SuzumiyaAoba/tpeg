@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "bun:test";
-import type { ImportStatement } from "tpeg-core";
+import type { ImportStatement } from "@suzumiyaaoba/tpeg-core";
 import { type FileSystemInterface, ModuleResolver } from "./module-resolver.js";
 import { NamespaceManager } from "./namespace-manager.js";
 import { VersionManager } from "./version-manager.js";

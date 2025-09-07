@@ -9,7 +9,7 @@ import {
   plus,
   seq,
   star,
-} from "tpeg-core";
+} from "@SuzumiyaAoba/core";
 
 /**
  * End of file parser.

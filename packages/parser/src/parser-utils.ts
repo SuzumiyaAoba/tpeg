@@ -5,7 +5,7 @@
  * and reduce code duplication throughout the parser implementation.
  */
 
-import type { Parser } from "tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 
 /**
  * Extract the first element from an optional array result, or return a default value
@@ -81,5 +81,5 @@ export const fail =
     },
   });
 
-// Array utilities are now imported from tpeg-core
-export { isEmptyArray, isNonEmptyArray } from "tpeg-core";
+// Array utilities are now imported from @suzumiyaaoba/tpeg-core
+export { isEmptyArray, isNonEmptyArray } from "@suzumiyaaoba/tpeg-core";

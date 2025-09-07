@@ -1,5 +1,5 @@
 {
-  "name": "@tpeg/type-inference",
+  "name": "@suzumiyaaoba/tpeg-type-inference",
   "version": "0.1.0",
   "description": "Type inference system for TPEG grammar definitions",
   "main": "index.ts",
@@ -10,18 +10,12 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@tpeg/core": "workspace:*"
+    "@suzumiyaaoba/tpeg-core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.0.0"
   },
-  "keywords": [
-    "tpeg",
-    "parser",
-    "type-inference",
-    "typescript",
-    "grammar"
-  ],
+  "keywords": ["tpeg", "parser", "type-inference", "typescript", "grammar"],
   "author": "TPEG Team",
   "license": "MIT"
-} 
+}

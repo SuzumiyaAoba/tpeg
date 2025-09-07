@@ -1,5 +1,5 @@
 {
-  "name": "tpeg-parser",
+  "name": "@suzumiyaaoba/tpeg-parser",
   "version": "0.1.0",
   "type": "module",
   "description": "TPEG Grammar Parser - implements parsing functionality for TPEG grammar syntax",
@@ -21,8 +21,8 @@
   },
   "keywords": ["parser", "peg", "tpeg", "grammar", "parsing", "typescript"],
   "dependencies": {
-    "@tpeg/core": "workspace:*",
-    "tpeg-combinator": "workspace:*"
+    "@suzumiyaaoba/tpeg-core": "workspace:*",
+    "@suzumiyaaoba/tpeg-combinator": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

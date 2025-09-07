@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { Pos } from "tpeg-core";
+import type { Pos } from "@suzumiyaaoba/tpeg-core";
 import { characterClass } from "./character-class";
 import { identifier } from "./identifier";
 import {

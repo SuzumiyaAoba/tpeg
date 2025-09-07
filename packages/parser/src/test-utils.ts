@@ -12,8 +12,8 @@ import type {
   ParseSuccess,
   Parser,
   Pos as Position,
-} from "tpeg-core";
-import { parse } from "tpeg-core";
+} from "@suzumiyaaoba/tpeg-core";
+import { parse } from "@suzumiyaaoba/tpeg-core";
 import type { Expression } from "./types";
 
 /**

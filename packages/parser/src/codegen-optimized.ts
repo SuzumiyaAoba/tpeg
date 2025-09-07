@@ -183,7 +183,7 @@ export class OptimizedTPEGCodeGenerator {
     const imports = [];
 
     // Core imports
-    imports.push('import type { Parser } from "tpeg-core";');
+    imports.push('import type { Parser } from "@suzumiyaaoba/tpeg-core";');
 
     // Analyze which combinators are actually needed
     const usedCombinators = new Set<string>();
@@ -199,12 +199,12 @@ export class OptimizedTPEGCodeGenerator {
       analysis.estimatedParseComplexity !== "low"
     ) {
       usedCombinators.add("memoize");
-      imports.push('import { memoize } from "tpeg-combinator";');
+      imports.push('import { memoize } from "@suzumiyaaoba/tpeg-combinator";');
     }
 
     // Generate optimized combinator import
     const combinators = Array.from(usedCombinators).sort();
-    imports.push(`import { ${combinators.join(", ")} } from "tpeg-core";`);
+    imports.push(`import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`);
 
     return imports;
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parse } from "tpeg-core";
+import { parse } from "@SuzumiyaAoba/core";
 import { expression, runDemo, term } from "./error-demo";
 
 describe("Error Demo", () => {

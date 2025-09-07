@@ -1,4 +1,4 @@
-import type { Parser } from "tpeg-core";import { capture, charClass, choice, literal, memoize, oneOrMore, optional, sequence, zeroOrMore } from "tpeg-core";
+import type { Parser } from "@SuzumiyaAoba/core";import { capture, charClass, choice, literal, memoize, oneOrMore, optional, sequence, zeroOrMore } from "@SuzumiyaAoba/core";
 /**
  * Generated TPEG Parser: TPEGSelf
  * 
@@ -29,4 +29,5 @@ export const self_identifier: Parser<any> = memoize(sequence(self_ident_start, z
 export const self_ident_continue: Parser<any> = charClass([{ from: "a", to: "z" }, { from: "A", to: "Z" }, { from: "0", to: "9" }, "_"]);
 export const self_number: Parser<any> = oneOrMore(charClass([{ from: "0", to: "9" }]));
 export const self_whitespace: Parser<any> = zeroOrMore(charClass([" ", "	", "
-", ""]));
+", "
+"]));

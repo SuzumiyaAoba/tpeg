@@ -156,7 +156,7 @@ export class EtaTPEGCodeGenerator {
 
     if (this.options.includeImports) {
       // Core imports
-      imports.push('import type { Parser } from "tpeg-core";');
+      imports.push('import type { Parser } from "@SuzumiyaAoba/core";');
 
       // Analyze which combinators are actually needed
       const usedCombinators = new Set<string>();
@@ -176,7 +176,7 @@ export class EtaTPEGCodeGenerator {
 
       // Generate combinator import
       const combinators = Array.from(usedCombinators).sort();
-      imports.push(`import { ${combinators.join(", ")} } from "tpeg-core";`);
+      imports.push(`import { ${combinators.join(", ")} } from "@SuzumiyaAoba/core";`);
     }
 
     return imports;
@@ -192,7 +192,7 @@ export class EtaTPEGCodeGenerator {
 
     if (this.options.includeMonitoring) {
       imports.push(
-        'import { globalPerformanceMonitor } from "tpeg-generator";',
+        'import { globalPerformanceMonitor } from "@SuzumiyaAoba/generator";',
       );
     }
 

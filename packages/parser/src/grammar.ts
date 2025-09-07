@@ -8,14 +8,14 @@
  * - Comment handling (// and /// documentation)
  */
 
-import type { Parser } from "tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   choice,
   literal,
   map,
   seq as sequence,
   star as zeroOrMore,
-} from "tpeg-core";
+} from "@suzumiyaaoba/tpeg-core";
 import { expression } from "./composition";
 import { GRAMMAR_KEYWORDS, GRAMMAR_SYMBOLS } from "./constants";
 import { identifier } from "./identifier";

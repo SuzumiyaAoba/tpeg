@@ -97,7 +97,7 @@ describe("quantified expression code generation", () => {
       ]);
 
       const result = generator.generateGrammar(grammar);
-      expect(result.imports).toContain('import { literal, quantified } from "tpeg-core";');
+      expect(result.imports).toContain('import { literal, quantified } from "@suzumiyaaoba/tpeg-core";');
     });
 
     it("should include appropriate combinators for optimized cases", () => {
@@ -108,7 +108,7 @@ describe("quantified expression code generation", () => {
       ]);
 
       const result = generator.generateGrammar(grammar);
-      expect(result.imports).toContain('import { literal, oneOrMore, optional, zeroOrMore } from "tpeg-core";');
+      expect(result.imports).toContain('import { literal, oneOrMore, optional, zeroOrMore } from "@suzumiyaaoba/tpeg-core";');
     });
   });
 }); 

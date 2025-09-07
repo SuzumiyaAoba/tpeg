@@ -6,7 +6,7 @@
  * Note: Template literals (`template`) are planned for future extension
  */
 
-import type { Parser } from "tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   anyChar,
   charClass,
@@ -16,7 +16,7 @@ import {
   notPredicate,
   seq,
   zeroOrMore,
-} from "tpeg-core";
+} from "@suzumiyaaoba/tpeg-core";
 import type { StringLiteral } from "./types";
 
 /**

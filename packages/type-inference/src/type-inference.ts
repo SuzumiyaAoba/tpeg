@@ -42,7 +42,7 @@ import type {
   Sequence,
   Star,
   StringLiteral,
-} from "@tpeg/core";
+} from "@suzumiyaaoba/tpeg-core";
 
 /**
  * Represents an inferred TypeScript type for a parser result

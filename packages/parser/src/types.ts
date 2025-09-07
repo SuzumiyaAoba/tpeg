@@ -2,7 +2,7 @@
  * TPEG Grammar Parser Types
  *
  * Type definitions for TPEG basic syntax elements based on docs/peg-grammar.md specification.
- * Re-exports shared types from tpeg-core and adds parser-specific types.
+ * Re-exports shared types from @suzumiyaaoba/tpeg-core and adds parser-specific types.
  */
 
 // Import and re-export all shared grammar types from core
@@ -26,7 +26,7 @@ import type {
   Sequence,
   Star,
   StringLiteral,
-} from "tpeg-core";
+} from "@suzumiyaaoba/tpeg-core";
 
 export type {
   StringLiteral,

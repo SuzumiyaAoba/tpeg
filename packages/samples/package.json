@@ -1,5 +1,5 @@
 {
-  "name": "tpeg-samples",
+  "name": "@suzumiyaaoba/tpeg-samples",
   "version": "0.0.1",
   "license": "MIT",
   "private": true,
@@ -21,7 +21,7 @@
     "build:types": "tsc --emitDeclarationOnly --skipLibCheck --declaration --outDir ./dist"
   },
   "dependencies": {
-    "tpeg-combinator": "workspace:*",
-    "@tpeg/core": "workspace:*"
+    "@suzumiyaaoba/tpeg-combinator": "workspace:*",
+    "@suzumiyaaoba/tpeg-core": "workspace:*"
   }
 }

@@ -9,8 +9,8 @@
  * - !expr (negative lookahead) - succeeds if expr does not match
  */
 
-import type { Parser } from "tpeg-core";
-import { choice, literal } from "tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
+import { choice, literal } from "@suzumiyaaoba/tpeg-core";
 import type { Expression, NegativeLookahead, PositiveLookahead } from "./types";
 
 /**

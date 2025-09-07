@@ -13,8 +13,8 @@
  * 6. Choice: expr1 / expr2 / expr3
  */
 
-import { recursive } from "tpeg-combinator";
-import type { Parser } from "tpeg-core";
+import { recursive } from "@tpeg/combinator";
+import type { Parser } from "@tpeg/core";
 import {
   charClass,
   choice,
@@ -23,7 +23,7 @@ import {
   oneOrMore,
   seq,
   zeroOrMore,
-} from "tpeg-core";
+} from "@tpeg/core";
 import { characterClass } from "./character-class";
 import { identifier } from "./identifier";
 import { withOptionalLabel } from "./label";

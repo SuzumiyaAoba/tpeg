@@ -1,5 +1,5 @@
 {
-  "name": "tpeg-combinator",
+  "name": "@suzumiyaaoba/tpeg-combinator",
   "version": "0.0.2",
   "license": "MIT",
   "module": "index.ts",
@@ -19,6 +19,6 @@
     "benchmark": "bun test benchmark.spec.ts"
   },
   "dependencies": {
-    "@tpeg/core": "workspace:*"
+    "@suzumiyaaoba/tpeg-core": "workspace:*"
   }
 }

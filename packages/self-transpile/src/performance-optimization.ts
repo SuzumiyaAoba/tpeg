@@ -6,8 +6,8 @@
  */
 
 import { performance } from "node:perf_hooks";
-import type { GrammarDefinition, RuleDefinition } from "tpeg-core";
-import { generateEtaTypeScriptParser } from "tpeg-generator";
+import type { GrammarDefinition, RuleDefinition } from "@SuzumiyaAoba/core";
+import { generateEtaTypeScriptParser } from "@SuzumiyaAoba/generator";
 import type {
   ExpressionNode,
   PerformanceStats,
@@ -254,8 +254,8 @@ export class OptimizedSelfTranspiler {
    */
   private parseGrammarOptimized(source: string): GrammarDefinition | null {
     try {
-      const { grammarDefinition } = require("tpeg-parser");
-      const { parse } = require("tpeg-core");
+      const { grammarDefinition } = require("@SuzumiyaAoba/parser");
+const { parse } = require("@SuzumiyaAoba/core");
 
       const parser = parse(grammarDefinition);
       const result = parser(source);

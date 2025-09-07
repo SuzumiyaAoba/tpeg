@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { Pos } from "tpeg-core";
+import type { Pos } from "@suzumiyaaoba/tpeg-core";
 import { expression } from "./composition";
 import type {
   Choice,

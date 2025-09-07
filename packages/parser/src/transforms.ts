@@ -11,7 +11,7 @@
  * - Result type specifications
  */
 
-import type { Parser } from "tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   choice,
   literal,
@@ -19,7 +19,7 @@ import {
   seq as sequence,
   star,
   star as zeroOrMore,
-} from "tpeg-core";
+} from "@suzumiyaaoba/tpeg-core";
 import {
   GRAMMAR_KEYWORDS,
   SUPPORTED_LANGUAGES,

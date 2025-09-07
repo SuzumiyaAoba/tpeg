@@ -8,8 +8,8 @@
  * allowing structured access to parsing results.
  */
 
-import type { Parser } from "tpeg-core";
-import { literal, map, seq } from "tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
+import { literal, map, seq } from "@suzumiyaaoba/tpeg-core";
 import { identifier } from "./identifier";
 import type { Expression, LabeledExpression } from "./types";
 

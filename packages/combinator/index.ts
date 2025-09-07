@@ -4,7 +4,7 @@ import type {
   ParseResult,
   Parser,
   Pos,
-} from "tpeg-core";
+} from "@suzumiyaaoba/tpeg-core";
 import {
   any,
   anyChar,
@@ -20,7 +20,7 @@ import {
   optional,
   seq,
   zeroOrMore,
-} from "tpeg-core";
+} from "@suzumiyaaoba/tpeg-core";
 
 /**
  * Parser that consumes characters until a condition is met.

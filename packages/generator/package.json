@@ -1,5 +1,5 @@
 {
-  "name": "tpeg-generator",
+  "name": "@suzumiyaaoba/tpeg-generator",
   "version": "0.1.0",
   "description": "Code generation system for TPEG parsers with template-based output",
   "main": "./dist/index.js",
@@ -21,7 +21,7 @@
   "license": "MIT",
   "dependencies": {
     "eta": "^3.4.0",
-    "@tpeg/core": "workspace:*"
+    "@suzumiyaaoba/tpeg-core": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

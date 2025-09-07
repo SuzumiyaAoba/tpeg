@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { number, quotedString, sepBy, token } from "tpeg-combinator";
-import { literal, parse } from "tpeg-core";
+import { number, quotedString, sepBy, token } from "@SuzumiyaAoba/combinator";
+import { literal, parse } from "@SuzumiyaAoba/core";
 
 describe("TPEG Samples Integration Tests", () => {
   describe("JSON Parser Integration", () => {

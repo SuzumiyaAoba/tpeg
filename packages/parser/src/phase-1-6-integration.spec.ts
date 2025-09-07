@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { type Parser, parse } from "tpeg-core";
+import { type Parser, parse } from "@suzumiyaaoba/tpeg-core";
 import {
   documentationComment,
   grammarAnnotation,

@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { literal } from "tpeg-core";
+import { literal } from "@suzumiyaaoba/tpeg-core";
 import {
   applyLookahead,
   createNegativeLookahead,

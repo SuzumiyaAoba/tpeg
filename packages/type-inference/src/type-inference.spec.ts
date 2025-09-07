@@ -3,7 +3,7 @@
  */
 
 import { beforeEach, describe, expect, it } from "bun:test";
-import type { GrammarDefinition } from "@tpeg/core";
+import type { Expression, GrammarDefinition } from "@suzumiyaaoba/tpeg-core";
 import {
   createAnyChar,
   createCharRange,
@@ -21,7 +21,7 @@ import {
   createPositiveLookahead,
   createNegativeLookahead,
   createLabeledExpression,
-} from "@tpeg/core";
+} from "@suzumiyaaoba/tpeg-core";
 import {
   TypeInferenceEngine,
   type TypeInferenceOptions,
@@ -417,13 +417,13 @@ describe("TypeInferenceEngine", () => {
       
       // Create an invalid expression type
       const invalidExpression = {
-        type: "InvalidType" as any,
+        type: "InvalidType" as never,
         value: "test"
-      };
+      } as unknown;
       
       // This should not throw but return a default type
       expect(() => {
-        engine.inferExpressionType(invalidExpression as any);
+        engine.inferExpressionType(invalidExpression as Expression);
       }).not.toThrow();
     });
   });

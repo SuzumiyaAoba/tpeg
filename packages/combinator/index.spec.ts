@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { Parser, Pos } from "tpeg-core";
+import type { Parser, Pos } from "@suzumiyaaoba/tpeg-core";
 import {
   charClass,
   choice,
@@ -10,7 +10,7 @@ import {
   parse,
   seq,
   zeroOrMore,
-} from "tpeg-core";
+} from "@suzumiyaaoba/tpeg-core";
 import {
   EOF,
   alphaNum,
@@ -35,7 +35,7 @@ import {
   withPosition,
 } from "./index";
 
-describe("tpeg-combinator additional tests", () => {
+describe("@SuzumiyaAoba/combinator additional tests", () => {
   describe("EOF", () => {
     it("should succeed at the end of input", () => {
       const result = parse(EOF)("");
@@ -326,7 +326,11 @@ describe("tpeg-combinator additional tests", () => {
       expect(isSuccess(result)).toBe(true);
       if (isSuccess(result)) {
         expect(result.val).toHaveProperty("position");
-        expect((result.val as { position: any }).position).toEqual({ offset: 0, line: 1, column: 1 });
+        expect((result.val as { position: { offset: number; line: number; column: number } }).position).toEqual({
+          offset: 0,
+          line: 1,
+          column: 1,
+        });
       }
     });
 
@@ -519,7 +523,11 @@ describe("Additional coverage tests", () => {
       expect(isSuccess(result)).toBe(true);
       if (isSuccess(result)) {
         expect(result.val).toHaveProperty("position");
-        expect((result.val as { position: any }).position).toEqual({ offset: 0, line: 1, column: 1 });
+        expect((result.val as { position: { offset: number; line: number; column: number } }).position).toEqual({
+          offset: 0,
+          line: 1,
+          column: 1,
+        });
       }
     });
   });

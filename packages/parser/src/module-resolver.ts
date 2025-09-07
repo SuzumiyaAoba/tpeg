@@ -16,7 +16,7 @@ import type {
   ImportStatement,
   ModuleFile,
   QualifiedIdentifier,
-} from "tpeg-core";
+} from "@suzumiyaaoba/tpeg-core";
 import { importStatement } from "./module";
 
 // ============================================================================

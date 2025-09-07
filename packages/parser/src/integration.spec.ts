@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { map, parse, sequence, star } from "tpeg-core";
+import { map, parse, sequence, star } from "@suzumiyaaoba/tpeg-core";
 import { grammarDefinition } from "./grammar";
 import { transformDefinition } from "./transforms";
 import { whitespace } from "./whitespace-utils";

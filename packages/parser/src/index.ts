@@ -47,7 +47,7 @@ export {
   type OptimizedGeneratedCode,
 } from "./codegen-optimized";
 
-// NOTE: Eta template-based code generation moved to tpeg-generator package
+// NOTE: Eta template-based code generation moved to @SuzumiyaAoba/generator package
 
 // Export performance utilities
 export {
@@ -62,14 +62,14 @@ export {
 } from "./performance-utils";
 
 // Re-export core parsers that might be useful
-export { choice, seq, map, optional, zeroOrMore, oneOrMore } from "tpeg-core";
+export { choice, seq, map, optional, zeroOrMore, oneOrMore } from "@suzumiyaaoba/tpeg-core";
 
 // Re-export combinator parsers for backward compatibility
 // Note: sepBy and sepBy1 are stable exports, token may have compatibility issues
-export { sepBy, sepBy1 } from "tpeg-combinator";
+export { sepBy, sepBy1 } from "@suzumiyaaoba/tpeg-combinator";
 
-import type { Parser } from "tpeg-core";
-import { choice as coreChoice } from "tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
+import { choice as coreChoice } from "@suzumiyaaoba/tpeg-core";
 import { characterClass } from "./character-class";
 import { expression } from "./composition";
 import { identifier } from "./identifier";

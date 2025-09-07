@@ -12,7 +12,7 @@ import {
   generateTypeScriptParser,
   globalPerformanceMonitor,
   grammarDefinition,
-} from "tpeg-parser";
+} from "@SuzumiyaAoba/parser";
 
 console.log("🚀 TPEG Performance Comparison Demo\n");
 

@@ -86,10 +86,10 @@ export class TPEGCodeGenerator {
 
     // Add imports based on what's actually used
     if (this.options.includeImports) {
-      imports.push('import type { Parser } from "tpeg-core";');
+      imports.push('import type { Parser } from "@suzumiyaaoba/tpeg-core";');
       const combinators = Array.from(usedCombinators).sort();
       if (combinators.length > 0) {
-        imports.push(`import { ${combinators.join(", ")} } from "tpeg-core";`);
+        imports.push(`import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`);
       }
     }
 

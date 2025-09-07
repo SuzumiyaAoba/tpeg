@@ -8,7 +8,7 @@
 
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { generateTypeScriptParser, grammarDefinition } from "tpeg-parser";
+import { generateTypeScriptParser, grammarDefinition } from "@SuzumiyaAoba/parser";
 
 const EXAMPLES_DIR = join(import.meta.dir, "../examples");
 

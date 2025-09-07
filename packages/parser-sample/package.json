@@ -1,5 +1,5 @@
 {
-  "name": "tpeg-parser-sample",
+  "name": "@suzumiyaaoba/tpeg-parser-sample",
   "version": "0.1.0",
   "description": "Sample demonstrating TPEG parser capabilities",
   "type": "module",
@@ -25,8 +25,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tpeg/core": "workspace:*",
-    "tpeg-parser": "workspace:*"
+    "@suzumiyaaoba/tpeg-core": "workspace:*",
+    "@suzumiyaaoba/tpeg-parser": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

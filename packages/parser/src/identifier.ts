@@ -5,8 +5,8 @@
  * Based on docs/peg-grammar.md specification.
  */
 
-import type { Parser } from "tpeg-core";
-import { charClass, map, seq, zeroOrMore } from "tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
+import { charClass, map, seq, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
 import type { Identifier } from "./types";
 
 /**

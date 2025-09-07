@@ -6,8 +6,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { parse } from "tpeg-core";
-import type { Pos } from "tpeg-core";
+import { parse } from "@suzumiyaaoba/tpeg-core";
+import type { Pos } from "@suzumiyaaoba/tpeg-core";
 import {
   parameterList,
   parameterType,

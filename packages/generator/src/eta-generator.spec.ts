@@ -146,8 +146,8 @@ describe("EtaTPEGCodeGenerator", () => {
 
       const result = await generator.generateGrammar(grammar);
 
-      expect(result.code).toContain('import type { Parser } from "tpeg-core";');
-      expect(result.code).toContain('import { literal } from "tpeg-core";');
+      expect(result.code).toContain('import type { Parser } from "@SuzumiyaAoba/core";');
+expect(result.code).toContain('import { literal } from "@SuzumiyaAoba/core";');
       expect(result.code).toContain(
         'export const test_hello: Parser<any> = literal("world");',
       );

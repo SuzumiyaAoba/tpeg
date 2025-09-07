@@ -1,6 +1,6 @@
-import { parse } from "tpeg-core";
-import type { GrammarDefinition } from "tpeg-core";
-import { generateEtaTypeScriptParser } from "tpeg-generator";
+import { parse } from "@SuzumiyaAoba/core";
+import type { GrammarDefinition } from "@SuzumiyaAoba/core";
+import { generateEtaTypeScriptParser } from "@SuzumiyaAoba/generator";
 import {
   ErrorHandlingContext,
   ErrorSeverity,
@@ -230,7 +230,7 @@ export async function selfTranspile(
 function parseGrammarDefinition(source: string): GrammarDefinition | null {
   try {
     // Import the grammar parser dynamically to avoid circular dependencies
-    const { grammarDefinition } = require("tpeg-parser");
+    const { grammarDefinition } = require("@SuzumiyaAoba/parser");
 
     const parser = parse(grammarDefinition);
     const result = parser(source);
