@@ -474,6 +474,56 @@ export const unicodeLength = (str: string): number => {
 };
 
 /**
+ * Calculates the number of grapheme clusters (user-perceived characters) in a string.
+ *
+ * This function uses the Intl.Segmenter API to properly count grapheme clusters,
+ * which are the units that users perceive as single characters. This is different
+ * from unicodeLength which counts code points, and from str.length which counts
+ * code units.
+ *
+ * Grapheme clusters handle complex cases like:
+ * - Emoji with skin tone modifiers (👨‍👩‍👧‍👦 = 1 grapheme, 7 code points)
+ * - Combining characters (é = 1 grapheme, 2 code points)
+ * - Zero-width joiners (ZWJ) sequences
+ *
+ * @param str - The string to count graphemes in
+ * @returns The number of grapheme clusters in the string
+ *
+ * @example
+ * ```typescript
+ * unicodeGraphemeLength("Hello");           // 5
+ * unicodeGraphemeLength("🌍");              // 1
+ * unicodeGraphemeLength("👨‍👩‍👧‍👦");        // 1 (family emoji)
+ * unicodeGraphemeLength("café");            // 4 (é is 1 grapheme)
+ * unicodeGraphemeLength("Hello 🌍 World");  // 13
+ * unicodeGraphemeLength("");                // 0
+ * ```
+ */
+export const unicodeGraphemeLength = (str: string): number => {
+  if (!str) return 0;
+
+  try {
+    // biome-ignore lint/suspicious/noExplicitAny: Intl.Segmenter is not in TypeScript types yet
+    const segmenter = new (Intl as any).Segmenter("en", {
+      granularity: "grapheme",
+    });
+    const segments = segmenter.segment(str);
+    let count = 0;
+    for (const _ of segments) {
+      count++;
+    }
+    return count;
+  } catch (error) {
+    // Fallback to unicodeLength if Intl.Segmenter is not available
+    console.warn(
+      "Intl.Segmenter not available, falling back to unicodeLength:",
+      error,
+    );
+    return unicodeLength(str);
+  }
+};
+
+/**
  * Checks if a character is a whitespace character.
  *
  * This function uses a regular expression to check if a character
