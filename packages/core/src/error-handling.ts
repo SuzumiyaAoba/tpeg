@@ -1,4 +1,4 @@
-import type { ParseError, ParseResult, Pos } from "./types";
+import type { ParseError, ParseFailure, ParseResult, Pos } from "./types";
 
 /**
  * Error severity levels for better error categorization and handling.
@@ -23,15 +23,25 @@ export enum ErrorCategory {
 /**
  * Enhanced error information with additional context and metadata.
  */
-export interface EnhancedParseError extends ParseError {
+export interface EnhancedParseError {
+  /** Basic error message */
+  message: string;
+  /** Position where error occurred */
+  pos: Pos;
+  /** What was expected at this position */
+  expected?: string | string[];
+  /** What was actually found */
+  found?: string;
+  /** Name of the parser that caused the error */
+  parserName?: string;
+  /** Additional context information */
+  context?: string | string[] | Record<string, unknown>;
   /** Error severity level */
   severity: ErrorSeverity;
   /** Error category for classification */
   category: ErrorCategory;
   /** Suggested recovery actions */
   suggestions?: string[];
-  /** Additional context information */
-  context?: Record<string, unknown>;
   /** Error code for programmatic handling */
   code?: string;
   /** Whether this error is recoverable */
@@ -155,10 +165,18 @@ export class ErrorHandler {
     this.errorHistory.push(error);
 
     const strategy = this.selectRecoveryStrategy(error, context);
-    const result = this.executeRecoveryStrategy(strategy, error, input, pos, context);
+    const result = this.executeRecoveryStrategy(
+      strategy,
+      error,
+      input,
+      pos,
+      context,
+    );
 
     if (this.config.logRecovery) {
-      console.log(`Recovery attempt ${attempts + 1}: ${strategy} - ${result.success ? "SUCCESS" : "FAILED"}`);
+      console.log(
+        `Recovery attempt ${attempts + 1}: ${strategy} - ${result.success ? "SUCCESS" : "FAILED"}`,
+      );
     }
 
     return result;
@@ -172,8 +190,8 @@ export class ErrorHandler {
     context?: Record<string, unknown>,
   ): RecoveryStrategy {
     // Use context to determine strategy
-    if (context?.suggestedStrategy) {
-      return context.suggestedStrategy as RecoveryStrategy;
+    if (context?.["suggestedStrategy"]) {
+      return context["suggestedStrategy"] as RecoveryStrategy;
     }
 
     // Default strategy selection based on error category
@@ -197,17 +215,17 @@ export class ErrorHandler {
   private executeRecoveryStrategy(
     strategy: RecoveryStrategy,
     error: EnhancedParseError,
-    input: string,
-    pos: Pos,
+    _input: string,
+    _pos: Pos,
     context?: Record<string, unknown>,
   ): RecoveryResult {
     switch (strategy) {
       case RecoveryStrategy.SKIP:
-        return this.skipError(error, input, pos);
+        return this.skipError(error, _input, _pos);
       case RecoveryStrategy.REPLACE:
-        return this.replaceError(error, input, pos, context);
+        return this.replaceError(error, context);
       case RecoveryStrategy.RETRY:
-        return this.retryError(error, input, pos);
+        return this.retryError(error, _input, _pos);
       case RecoveryStrategy.IGNORE:
         return this.ignoreError(error);
       default:
@@ -223,13 +241,13 @@ export class ErrorHandler {
    * Skips the problematic input and continues parsing.
    */
   private skipError(
-    error: EnhancedParseError,
+    _error: EnhancedParseError,
     input: string,
     pos: Pos,
   ): RecoveryResult {
     // Find the next safe position to continue parsing
     const nextPos = this.findNextSafePosition(input, pos);
-    
+
     return {
       success: true,
       strategy: RecoveryStrategy.SKIP,
@@ -244,12 +262,10 @@ export class ErrorHandler {
    */
   private replaceError(
     error: EnhancedParseError,
-    input: string,
-    pos: Pos,
     context?: Record<string, unknown>,
   ): RecoveryResult {
     const fallback = this.generateFallbackValue(error, context);
-    
+
     return {
       success: true,
       strategy: RecoveryStrategy.REPLACE,
@@ -263,9 +279,9 @@ export class ErrorHandler {
    * Retries the parsing operation.
    */
   private retryError(
-    error: EnhancedParseError,
-    input: string,
-    pos: Pos,
+    _error: EnhancedParseError,
+    _input: string,
+    _pos: Pos,
   ): RecoveryResult {
     // For retry, we return success but indicate that retry should be attempted
     return {
@@ -279,7 +295,7 @@ export class ErrorHandler {
   /**
    * Ignores the error and continues.
    */
-  private ignoreError(error: EnhancedParseError): RecoveryResult {
+  private ignoreError(_error: EnhancedParseError): RecoveryResult {
     return {
       success: true,
       strategy: RecoveryStrategy.IGNORE,
@@ -293,16 +309,26 @@ export class ErrorHandler {
    */
   private findNextSafePosition(input: string, pos: Pos): Pos {
     let currentPos = { ...pos };
-    
+
     // Skip until we find a safe character (whitespace, newline, or common delimiter)
     while (currentPos.offset < input.length) {
       const char = input[currentPos.offset];
-      if (char === " " || char === "\n" || char === "\t" || char === "," || char === ";") {
+      if (
+        char === " " ||
+        char === "\n" ||
+        char === "\t" ||
+        char === "," ||
+        char === ";"
+      ) {
         break;
       }
-      currentPos = { ...currentPos, offset: currentPos.offset + 1, column: currentPos.column + 1 };
+      currentPos = {
+        ...currentPos,
+        offset: currentPos.offset + 1,
+        column: currentPos.column + 1,
+      };
     }
-    
+
     return currentPos;
   }
 
@@ -311,7 +337,7 @@ export class ErrorHandler {
    */
   private generateFallbackValue(
     error: EnhancedParseError,
-    context?: Record<string, unknown>,
+    _context?: Record<string, unknown>,
   ): unknown {
     // Generate appropriate fallback based on expected type
     if (error.expected) {
@@ -322,7 +348,7 @@ export class ErrorHandler {
         if (error.expected.includes("object")) return {};
       }
     }
-    
+
     // Default fallback
     return null;
   }
@@ -330,36 +356,41 @@ export class ErrorHandler {
   /**
    * Generates helpful suggestions for error recovery.
    */
-  private generateSuggestions(error: ParseError, category: ErrorCategory): string[] {
+  private generateSuggestions(
+    error: ParseError,
+    category: ErrorCategory,
+  ): string[] {
     const suggestions: string[] = [];
-    
+
     switch (category) {
       case ErrorCategory.SYNTAX:
         if (error.expected) {
-          suggestions.push(`Expected: ${Array.isArray(error.expected) ? error.expected.join(" or ") : error.expected}`);
+          suggestions.push(
+            `Expected: ${Array.isArray(error.expected) ? error.expected.join(" or ") : error.expected}`,
+          );
         }
         if (error.found) {
           suggestions.push(`Found: ${error.found}`);
         }
         suggestions.push("Check syntax and ensure proper formatting");
         break;
-      
+
       case ErrorCategory.SEMANTIC:
         suggestions.push("Verify the input matches the expected format");
         suggestions.push("Check for missing or extra characters");
         break;
-      
+
       case ErrorCategory.RESOURCE:
         suggestions.push("Try again with a smaller input");
         suggestions.push("Check available memory and system resources");
         break;
-      
+
       case ErrorCategory.SYSTEM:
         suggestions.push("Restart the application");
         suggestions.push("Check system resources and permissions");
         break;
     }
-    
+
     return suggestions;
   }
 
@@ -392,7 +423,7 @@ export class ErrorHandler {
     for (const error of this.errorHistory) {
       errorsByCategory[error.category]++;
       errorsBySeverity[error.severity]++;
-      
+
       if (error.recoverable) {
         recoveryAttempts++;
         // This is a simplified calculation - in practice you'd track actual recovery results
@@ -404,7 +435,8 @@ export class ErrorHandler {
       totalErrors: this.errorHistory.length,
       errorsByCategory,
       errorsBySeverity,
-      recoverySuccessRate: recoveryAttempts > 0 ? recoverySuccesses / recoveryAttempts : 0,
+      recoverySuccessRate:
+        recoveryAttempts > 0 ? recoverySuccesses / recoveryAttempts : 0,
     };
   }
 
@@ -434,7 +466,9 @@ export class ErrorHandler {
 /**
  * Creates a new error handler with the specified configuration.
  */
-export function createErrorHandler(config?: Partial<ErrorHandlingConfig>): ErrorHandler {
+export function createErrorHandler(
+  config?: Partial<ErrorHandlingConfig>,
+): ErrorHandler {
   return new ErrorHandler(config);
 }
 
@@ -446,30 +480,34 @@ export function withErrorHandling<T>(
   errorHandler: ErrorHandler,
   severity: ErrorSeverity = ErrorSeverity.MEDIUM,
   category: ErrorCategory = ErrorCategory.SYNTAX,
-): (input: string, pos: Pos) => ParseResult<T> {
-  return (input: string, pos: Pos) => {
-    const result = parser(input, pos);
-    
+): (_input: string, _pos: Pos) => ParseResult<T> {
+  return (_input: string, _pos: Pos) => {
+    const result = parser(_input, _pos);
+
     if (!result.success) {
       const enhancedError = errorHandler.createEnhancedError(
-        result.error,
+        (result as ParseFailure).error,
         severity,
         category,
       );
-      
-      const recovery = errorHandler.attemptRecovery(enhancedError, input, pos);
-      
+
+      const recovery = errorHandler.attemptRecovery(
+        enhancedError,
+        _input,
+        _pos,
+      );
+
       if (recovery.success && recovery.value) {
         // Return a modified result with the recovered value
         return {
           success: true,
           val: recovery.value as T,
-          current: pos,
-          next: pos, // Recovery typically doesn't advance position
+          current: _pos,
+          next: _pos, // Recovery typically doesn't advance position
         };
       }
     }
-    
+
     return result;
   };
-} 
+}
