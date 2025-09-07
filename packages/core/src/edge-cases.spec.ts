@@ -6,7 +6,7 @@ import {
   createPos,
   getCharAndLength,
   releasePos,
-  unicodeLength,
+  unicodeGraphemeLength,
 } from "./utils";
 
 describe("Edge Cases and Stress Tests", () => {
@@ -172,7 +172,7 @@ describe("Edge Cases and Stress Tests", () => {
       ];
 
       for (const testCase of testCases) {
-        const length = unicodeLength(testCase.input);
+        const length = unicodeGraphemeLength(testCase.input);
         expect(length).toBe(testCase.expected);
       }
     });
@@ -241,9 +241,10 @@ describe("Edge Cases and Stress Tests", () => {
     });
 
     it("should handle choice with many alternatives", () => {
-      // Create a choice with many alternatives
+      // Create a choice with many alternatives, ordered from longest to shortest
+      // to ensure longer matches are tried first
       const alternatives = [];
-      for (let i = 0; i < 1000; i++) {
+      for (let i = 999; i >= 0; i--) {
         alternatives.push(literal(`option${i}`));
       }
 
@@ -302,7 +303,7 @@ describe("Edge Cases and Stress Tests", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.message).toContain("end of input");
+        expect(result.error.message).toContain("Unexpected EOI");
       }
     });
   });

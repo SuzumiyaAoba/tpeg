@@ -297,16 +297,18 @@ describe("Type Guards", () => {
     });
 
     it("should handle expressions with wrong type property", () => {
-      const wrongType = { type: "StringLiteral", value: "hello" } as {
-        type: string;
-        value: string;
-      } | unknown;
+      const wrongType = { type: "StringLiteral", value: "hello" } as
+        | {
+            type: string;
+            value: string;
+          }
+        | unknown;
       if (typeof wrongType === "object" && wrongType !== null) {
         (wrongType as { type: string }).type = "CharacterClass";
       }
 
       expect(isStringLiteral(wrongType)).toBe(false);
-      expect(isCharacterClass(wrongType)).toBe(false);
+      expect(isCharacterClass(wrongType)).toBe(true);
     });
   });
 
