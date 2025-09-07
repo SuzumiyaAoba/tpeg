@@ -1,19 +1,19 @@
 import { describe, expect, it } from "bun:test";
+import { literal } from "./basic";
 import {
-  createErrorHandler,
   ErrorCategory,
   ErrorSeverity,
   RecoveryStrategy,
+  createErrorHandler,
   withErrorHandling,
 } from "./error-handling";
-import { literal } from "./basic";
 
 describe("Error Handling", () => {
   describe("ErrorHandler", () => {
     it("should create an error handler with default configuration", () => {
       const handler = createErrorHandler();
       const config = handler.getConfig();
-      
+
       expect(config.maxRecoveryAttempts).toBe(3);
       expect(config.enableRecovery).toBe(true);
       expect(config.defaultStrategy).toBe(RecoveryStrategy.SKIP);
@@ -26,7 +26,7 @@ describe("Error Handling", () => {
         defaultStrategy: RecoveryStrategy.ABORT,
       });
       const config = handler.getConfig();
-      
+
       expect(config.maxRecoveryAttempts).toBe(5);
       expect(config.enableRecovery).toBe(false);
       expect(config.defaultStrategy).toBe(RecoveryStrategy.ABORT);
@@ -40,14 +40,14 @@ describe("Error Handling", () => {
         expected: "string",
         found: "number",
       };
-      
+
       const enhancedError = handler.createEnhancedError(
         baseError,
         ErrorSeverity.HIGH,
         ErrorCategory.SYNTAX,
         { code: "TEST_ERROR" },
       );
-      
+
       expect(enhancedError.severity).toBe(ErrorSeverity.HIGH);
       expect(enhancedError.category).toBe(ErrorCategory.SYNTAX);
       expect(enhancedError.code).toBe("TEST_ERROR");
@@ -65,9 +65,13 @@ describe("Error Handling", () => {
         ErrorSeverity.LOW,
         ErrorCategory.SYNTAX,
       );
-      
-      const recovery = handler.attemptRecovery(enhancedError, "test input", { offset: 0, column: 0, line: 1 });
-      
+
+      const recovery = handler.attemptRecovery(enhancedError, "test input", {
+        offset: 0,
+        column: 0,
+        line: 1,
+      });
+
       expect(recovery.success).toBe(true);
       expect(recovery.strategy).toBe(RecoveryStrategy.SKIP);
     });
@@ -82,9 +86,13 @@ describe("Error Handling", () => {
         ErrorSeverity.CRITICAL,
         ErrorCategory.SYSTEM,
       );
-      
-      const recovery = handler.attemptRecovery(enhancedError, "test input", { offset: 0, column: 0, line: 1 });
-      
+
+      const recovery = handler.attemptRecovery(enhancedError, "test input", {
+        offset: 0,
+        column: 0,
+        line: 1,
+      });
+
       expect(recovery.success).toBe(false);
       expect(recovery.strategy).toBe(RecoveryStrategy.ABORT);
     });
@@ -99,20 +107,28 @@ describe("Error Handling", () => {
         ErrorSeverity.LOW,
         ErrorCategory.SYNTAX,
       );
-      
+
       // First attempt should succeed
-      const recovery1 = handler.attemptRecovery(enhancedError, "test input", { offset: 0, column: 0, line: 1 });
+      const recovery1 = handler.attemptRecovery(enhancedError, "test input", {
+        offset: 0,
+        column: 0,
+        line: 1,
+      });
       expect(recovery1.success).toBe(true);
-      
+
       // Second attempt should fail due to max attempts
-      const recovery2 = handler.attemptRecovery(enhancedError, "test input", { offset: 0, column: 0, line: 1 });
+      const recovery2 = handler.attemptRecovery(enhancedError, "test input", {
+        offset: 0,
+        column: 0,
+        line: 1,
+      });
       expect(recovery2.success).toBe(false);
       expect(recovery2.message).toContain("Maximum recovery attempts exceeded");
     });
 
     it("should track error statistics correctly", () => {
       const handler = createErrorHandler();
-      
+
       // Create and attempt recovery for various errors
       const errors = [
         { severity: ErrorSeverity.LOW, category: ErrorCategory.SYNTAX },
@@ -120,7 +136,7 @@ describe("Error Handling", () => {
         { severity: ErrorSeverity.HIGH, category: ErrorCategory.RESOURCE },
         { severity: ErrorSeverity.CRITICAL, category: ErrorCategory.SYSTEM },
       ];
-      
+
       for (const errorInfo of errors) {
         const enhancedError = handler.createEnhancedError(
           {
@@ -130,12 +146,16 @@ describe("Error Handling", () => {
           errorInfo.severity,
           errorInfo.category,
         );
-        
-        handler.attemptRecovery(enhancedError, "test input", { offset: 0, column: 0, line: 1 });
+
+        handler.attemptRecovery(enhancedError, "test input", {
+          offset: 0,
+          column: 0,
+          line: 1,
+        });
       }
-      
+
       const stats = handler.getErrorStats();
-      
+
       expect(stats.totalErrors).toBe(4);
       expect(stats.errorsByCategory[ErrorCategory.SYNTAX]).toBe(1);
       expect(stats.errorsByCategory[ErrorCategory.SEMANTIC]).toBe(1);
@@ -149,7 +169,7 @@ describe("Error Handling", () => {
 
     it("should clear error history", () => {
       const handler = createErrorHandler();
-      
+
       const enhancedError = handler.createEnhancedError(
         {
           message: "Test error",
@@ -158,24 +178,28 @@ describe("Error Handling", () => {
         ErrorSeverity.LOW,
         ErrorCategory.SYNTAX,
       );
-      
-      handler.attemptRecovery(enhancedError, "test input", { offset: 0, column: 0, line: 1 });
-      
+
+      handler.attemptRecovery(enhancedError, "test input", {
+        offset: 0,
+        column: 0,
+        line: 1,
+      });
+
       expect(handler.getErrorStats().totalErrors).toBe(1);
-      
+
       handler.clearHistory();
-      
+
       expect(handler.getErrorStats().totalErrors).toBe(0);
     });
 
     it("should update configuration", () => {
       const handler = createErrorHandler();
-      
+
       handler.updateConfig({
         maxRecoveryAttempts: 10,
         enableRecovery: false,
       });
-      
+
       const config = handler.getConfig();
       expect(config.maxRecoveryAttempts).toBe(10);
       expect(config.enableRecovery).toBe(false);
@@ -193,13 +217,19 @@ describe("Error Handling", () => {
         ErrorSeverity.LOW,
         ErrorCategory.SYNTAX,
       );
-      
-      const recovery = handler.attemptRecovery(enhancedError, "test input", { offset: 0, column: 0, line: 1 });
-      
+
+      const recovery = handler.attemptRecovery(enhancedError, "test input", {
+        offset: 0,
+        column: 0,
+        line: 1,
+      });
+
       expect(recovery.success).toBe(true);
       expect(recovery.strategy).toBe(RecoveryStrategy.SKIP);
       expect(recovery.value).toBeDefined();
-      expect(recovery.warnings).toContain("Some input was skipped during recovery");
+      expect(recovery.warnings).toContain(
+        "Some input was skipped during recovery",
+      );
     });
 
     it("should replace errors with fallback values", () => {
@@ -213,13 +243,19 @@ describe("Error Handling", () => {
         ErrorSeverity.MEDIUM,
         ErrorCategory.SEMANTIC,
       );
-      
-      const recovery = handler.attemptRecovery(enhancedError, "test input", { offset: 0, column: 0, line: 1 });
-      
+
+      const recovery = handler.attemptRecovery(enhancedError, "test input", {
+        offset: 0,
+        column: 0,
+        line: 1,
+      });
+
       expect(recovery.success).toBe(true);
       expect(recovery.strategy).toBe(RecoveryStrategy.REPLACE);
       expect(recovery.value).toBe(0); // Fallback for number
-      expect(recovery.warnings).toContain("Original value was replaced during recovery");
+      expect(recovery.warnings).toContain(
+        "Original value was replaced during recovery",
+      );
     });
 
     it("should ignore errors when configured", () => {
@@ -232,11 +268,16 @@ describe("Error Handling", () => {
         ErrorSeverity.LOW,
         ErrorCategory.SYNTAX,
       );
-      
+
       // Mock context to suggest ignore strategy
       const context = { suggestedStrategy: RecoveryStrategy.IGNORE };
-      const recovery = handler.attemptRecovery(enhancedError, "test input", { offset: 0, column: 0, line: 1 }, context);
-      
+      const recovery = handler.attemptRecovery(
+        enhancedError,
+        "test input",
+        { offset: 0, column: 0, line: 1 },
+        context,
+      );
+
       expect(recovery.success).toBe(true);
       expect(recovery.strategy).toBe(RecoveryStrategy.IGNORE);
       expect(recovery.warnings).toContain("Error was ignored during recovery");
@@ -248,7 +289,7 @@ describe("Error Handling", () => {
       const handler = createErrorHandler();
       const parser = literal("hello");
       const wrappedParser = withErrorHandling(parser, handler);
-      
+
       expect(typeof wrappedParser).toBe("function");
     });
 
@@ -256,9 +297,13 @@ describe("Error Handling", () => {
       const handler = createErrorHandler();
       const parser = literal("hello");
       const wrappedParser = withErrorHandling(parser, handler);
-      
-      const result = wrappedParser("hello world", { offset: 0, column: 0, line: 1 });
-      
+
+      const result = wrappedParser("hello world", {
+        offset: 0,
+        column: 0,
+        line: 1,
+      });
+
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe("hello");
@@ -268,10 +313,15 @@ describe("Error Handling", () => {
     it("should attempt recovery for failed results", () => {
       const handler = createErrorHandler();
       const parser = literal("hello");
-      const wrappedParser = withErrorHandling(parser, handler, ErrorSeverity.LOW, ErrorCategory.SYNTAX);
-      
+      const wrappedParser = withErrorHandling(
+        parser,
+        handler,
+        ErrorSeverity.LOW,
+        ErrorCategory.SYNTAX,
+      );
+
       const result = wrappedParser("world", { offset: 0, column: 0, line: 1 });
-      
+
       // The parser should fail, but recovery might provide a fallback
       // This test verifies the error handling is invoked
       // Note: Recovery might succeed and return a fallback value
@@ -293,9 +343,11 @@ describe("Error Handling", () => {
         ErrorSeverity.MEDIUM,
         ErrorCategory.SYNTAX,
       );
-      
+
       expect(enhancedError.category).toBe(ErrorCategory.SYNTAX);
-      expect(enhancedError.suggestions).toContain("Check syntax and ensure proper formatting");
+      expect(enhancedError.suggestions).toContain(
+        "Check syntax and ensure proper formatting",
+      );
     });
 
     it("should handle semantic errors appropriately", () => {
@@ -308,9 +360,11 @@ describe("Error Handling", () => {
         ErrorSeverity.HIGH,
         ErrorCategory.SEMANTIC,
       );
-      
+
       expect(enhancedError.category).toBe(ErrorCategory.SEMANTIC);
-      expect(enhancedError.suggestions).toContain("Verify the input matches the expected format");
+      expect(enhancedError.suggestions).toContain(
+        "Verify the input matches the expected format",
+      );
     });
 
     it("should handle resource errors appropriately", () => {
@@ -323,9 +377,11 @@ describe("Error Handling", () => {
         ErrorSeverity.HIGH,
         ErrorCategory.RESOURCE,
       );
-      
+
       expect(enhancedError.category).toBe(ErrorCategory.RESOURCE);
-      expect(enhancedError.suggestions).toContain("Try again with a smaller input");
+      expect(enhancedError.suggestions).toContain(
+        "Try again with a smaller input",
+      );
     });
 
     it("should handle system errors appropriately", () => {
@@ -338,7 +394,7 @@ describe("Error Handling", () => {
         ErrorSeverity.CRITICAL,
         ErrorCategory.SYSTEM,
       );
-      
+
       expect(enhancedError.category).toBe(ErrorCategory.SYSTEM);
       expect(enhancedError.suggestions).toContain("Restart the application");
     });
@@ -355,9 +411,13 @@ describe("Error Handling", () => {
         ErrorSeverity.LOW,
         ErrorCategory.SYNTAX,
       );
-      
-      const recovery = handler.attemptRecovery(enhancedError, "", { offset: 0, column: 0, line: 1 });
-      
+
+      const recovery = handler.attemptRecovery(enhancedError, "", {
+        offset: 0,
+        column: 0,
+        line: 1,
+      });
+
       expect(recovery.success).toBe(true);
     });
 
@@ -371,9 +431,14 @@ describe("Error Handling", () => {
         ErrorSeverity.LOW,
         ErrorCategory.SYNTAX,
       );
-      
-      const recovery = handler.attemptRecovery(enhancedError, "test input", { offset: 0, column: 0, line: 1 }, undefined);
-      
+
+      const recovery = handler.attemptRecovery(
+        enhancedError,
+        "test input",
+        { offset: 0, column: 0, line: 1 },
+        undefined,
+      );
+
       expect(recovery.success).toBe(true);
     });
 
@@ -387,11 +452,15 @@ describe("Error Handling", () => {
         ErrorSeverity.LOW,
         ErrorCategory.SYNTAX,
       );
-      
-      const recovery = handler.attemptRecovery(enhancedError, "test input", { offset: 0, column: 0, line: 1 });
-      
+
+      const recovery = handler.attemptRecovery(enhancedError, "test input", {
+        offset: 0,
+        column: 0,
+        line: 1,
+      });
+
       expect(recovery.success).toBe(false);
       expect(recovery.message).toContain("Recovery not enabled");
     });
   });
-}); 
+});

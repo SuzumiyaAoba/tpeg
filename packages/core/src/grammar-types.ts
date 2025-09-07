@@ -1129,3 +1129,254 @@ export const createModuleFile = (
   if (moduleInfo !== undefined) result.moduleInfo = moduleInfo;
   return result;
 };
+
+// ============================================================================
+// Type Guards for Enhanced Type Safety
+// ============================================================================
+
+/**
+ * Type guard to check if an expression is a StringLiteral.
+ *
+ * @param expr - The expression to check
+ * @returns True if the expression is a StringLiteral
+ *
+ * @example
+ * ```typescript
+ * if (isStringLiteral(expr)) {
+ *   // expr is now typed as StringLiteral
+ *   console.log(expr.value);
+ * }
+ * ```
+ */
+export const isStringLiteral = (expr: unknown): expr is StringLiteral => {
+  return (
+    typeof expr === "object" &&
+    expr !== null &&
+    (expr as { type?: unknown }).type === "StringLiteral"
+  );
+};
+
+/**
+ * Type guard to check if an expression is a CharacterClass.
+ *
+ * @param expr - The expression to check
+ * @returns True if the expression is a CharacterClass
+ */
+export const isCharacterClass = (expr: unknown): expr is CharacterClass => {
+  return (
+    typeof expr === "object" &&
+    expr !== null &&
+    (expr as { type?: unknown }).type === "CharacterClass"
+  );
+};
+
+/**
+ * Type guard to check if an expression is an Identifier.
+ *
+ * @param expr - The expression to check
+ * @returns True if the expression is an Identifier
+ */
+export const isIdentifier = (expr: unknown): expr is Identifier => {
+  return (
+    typeof expr === "object" &&
+    expr !== null &&
+    (expr as { type?: unknown }).type === "Identifier"
+  );
+};
+
+/**
+ * Type guard to check if an expression is a QualifiedIdentifier.
+ *
+ * @param expr - The expression to check
+ * @returns True if the expression is a QualifiedIdentifier
+ */
+export const isQualifiedIdentifier = (
+  expr: unknown,
+): expr is QualifiedIdentifier => {
+  return (
+    typeof expr === "object" &&
+    expr !== null &&
+    (expr as { type?: unknown }).type === "QualifiedIdentifier"
+  );
+};
+
+/**
+ * Type guard to check if an expression is an AnyChar.
+ *
+ * @param expr - The expression to check
+ * @returns True if the expression is an AnyChar
+ */
+export const isAnyChar = (expr: unknown): expr is AnyChar => {
+  return (
+    typeof expr === "object" &&
+    expr !== null &&
+    (expr as { type?: unknown }).type === "AnyChar"
+  );
+};
+
+/**
+ * Type guard to check if an expression is a Sequence.
+ *
+ * @param expr - The expression to check
+ * @returns True if the expression is a Sequence
+ */
+export const isSequence = (expr: unknown): expr is Sequence => {
+  return (
+    typeof expr === "object" &&
+    expr !== null &&
+    (expr as { type?: unknown }).type === "Sequence"
+  );
+};
+
+/**
+ * Type guard to check if an expression is a Choice.
+ *
+ * @param expr - The expression to check
+ * @returns True if the expression is a Choice
+ */
+export const isChoice = (expr: unknown): expr is Choice => {
+  return (
+    typeof expr === "object" &&
+    expr !== null &&
+    (expr as { type?: unknown }).type === "Choice"
+  );
+};
+
+/**
+ * Type guard to check if an expression is a Group.
+ *
+ * @param expr - The expression to check
+ * @returns True if the expression is a Group
+ */
+export const isGroup = (expr: unknown): expr is Group => {
+  return (
+    typeof expr === "object" &&
+    expr !== null &&
+    (expr as { type?: unknown }).type === "Group"
+  );
+};
+
+/**
+ * Type guard to check if an expression is a Star.
+ *
+ * @param expr - The expression to check
+ * @returns True if the expression is a Star
+ */
+export const isStar = (expr: unknown): expr is Star => {
+  return (
+    typeof expr === "object" &&
+    expr !== null &&
+    (expr as { type?: unknown }).type === "Star"
+  );
+};
+
+/**
+ * Type guard to check if an expression is a Plus.
+ *
+ * @param expr - The expression to check
+ * @returns True if the expression is a Plus
+ */
+export const isPlus = (expr: unknown): expr is Plus => {
+  return (
+    typeof expr === "object" &&
+    expr !== null &&
+    (expr as { type?: unknown }).type === "Plus"
+  );
+};
+
+/**
+ * Type guard to check if an expression is an Optional.
+ *
+ * @param expr - The expression to check
+ * @returns True if the expression is an Optional
+ */
+export const isOptional = (expr: unknown): expr is Optional => {
+  return (
+    typeof expr === "object" &&
+    expr !== null &&
+    (expr as { type?: unknown }).type === "Optional"
+  );
+};
+
+/**
+ * Type guard to check if an expression is a Quantified.
+ *
+ * @param expr - The expression to check
+ * @returns True if the expression is a Quantified
+ */
+export const isQuantified = (expr: unknown): expr is Quantified => {
+  return (
+    typeof expr === "object" &&
+    expr !== null &&
+    (expr as { type?: unknown }).type === "Quantified"
+  );
+};
+
+/**
+ * Type guard to check if an expression is a PositiveLookahead.
+ *
+ * @param expr - The expression to check
+ * @returns True if the expression is a PositiveLookahead
+ */
+export const isPositiveLookahead = (
+  expr: unknown,
+): expr is PositiveLookahead => {
+  return (
+    typeof expr === "object" &&
+    expr !== null &&
+    (expr as { type?: unknown }).type === "PositiveLookahead"
+  );
+};
+
+/**
+ * Type guard to check if an expression is a NegativeLookahead.
+ *
+ * @param expr - The expression to check
+ * @returns True if the expression is a NegativeLookahead
+ */
+export const isNegativeLookahead = (
+  expr: unknown,
+): expr is NegativeLookahead => {
+  return (
+    typeof expr === "object" &&
+    expr !== null &&
+    (expr as { type?: unknown }).type === "NegativeLookahead"
+  );
+};
+
+/**
+ * Type guard to check if an expression is a LabeledExpression.
+ *
+ * @param expr - The expression to check
+ * @returns True if the expression is a LabeledExpression
+ */
+export const isLabeledExpression = (
+  expr: unknown,
+): expr is LabeledExpression => {
+  return (
+    typeof expr === "object" &&
+    expr !== null &&
+    (expr as { type?: unknown }).type === "LabeledExpression"
+  );
+};
+
+/**
+ * Type guard to check if a grammar definition is a ModularGrammarDefinition.
+ *
+ * @param grammar - The grammar definition to check
+ * @returns True if the grammar is a ModularGrammarDefinition
+ */
+export const isModularGrammarDefinition = (
+  grammar: GrammarDefinition | ModularGrammarDefinition,
+): grammar is ModularGrammarDefinition =>
+  grammar.type === "ModularGrammarDefinition";
+
+/**
+ * Type guard to check if a grammar definition is a standard GrammarDefinition.
+ *
+ * @param grammar - The grammar definition to check
+ * @returns True if the grammar is a standard GrammarDefinition
+ */
+export const isStandardGrammarDefinition = (
+  grammar: GrammarDefinition | ModularGrammarDefinition,
+): grammar is GrammarDefinition => grammar.type === "GrammarDefinition";

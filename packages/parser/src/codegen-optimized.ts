@@ -204,7 +204,9 @@ export class OptimizedTPEGCodeGenerator {
 
     // Generate optimized combinator import
     const combinators = Array.from(usedCombinators).sort();
-    imports.push(`import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`);
+    imports.push(
+      `import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`,
+    );
 
     return imports;
   }
@@ -486,7 +488,7 @@ export class OptimizedTPEGCodeGenerator {
     if (expr.min === 0 && expr.max === 1) {
       return `optional(${inner})`;
     }
-    
+
     // Use quantified combinator for general {n,m} case
     return `quantified(${inner}, ${expr.min}, ${expr.max})`;
   }

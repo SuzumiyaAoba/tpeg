@@ -62,7 +62,14 @@ export {
 } from "./performance-utils";
 
 // Re-export core parsers that might be useful
-export { choice, seq, map, optional, zeroOrMore, oneOrMore } from "@suzumiyaaoba/tpeg-core";
+export {
+  choice,
+  seq,
+  map,
+  optional,
+  zeroOrMore,
+  oneOrMore,
+} from "@suzumiyaaoba/tpeg-core";
 
 // Re-export combinator parsers for backward compatibility
 // Note: sepBy and sepBy1 are stable exports, token may have compatibility issues

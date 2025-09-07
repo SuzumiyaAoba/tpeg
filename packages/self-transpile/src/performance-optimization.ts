@@ -255,7 +255,7 @@ export class OptimizedSelfTranspiler {
   private parseGrammarOptimized(source: string): GrammarDefinition | null {
     try {
       const { grammarDefinition } = require("@SuzumiyaAoba/parser");
-const { parse } = require("@SuzumiyaAoba/core");
+      const { parse } = require("@SuzumiyaAoba/core");
 
       const parser = parse(grammarDefinition);
       const result = parser(source);

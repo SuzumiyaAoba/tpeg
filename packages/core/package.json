@@ -12,7 +12,11 @@
     }
   },
   "scripts": {
-    "test": "bun test src/basic.spec.ts src/char-class.spec.ts src/combinators.spec.ts src/error.spec.ts src/integration.spec.ts src/lookahead.spec.ts src/repetition.spec.ts src/transform.spec.ts src/utils.spec.ts",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "test:coverage": "bun test --coverage",
+    "test:ci": "bun test --reporter=verbose --bail",
+    "test:grep": "bun test --grep",
     "typecheck": "tsc --noEmit",
     "build": "bun run build:types && bun build --target=node ./index.ts --outdir=./dist",
     "build:types": "tsc ./index.ts --declaration --outDir ./dist/ --emitDeclarationOnly --skipLibCheck"

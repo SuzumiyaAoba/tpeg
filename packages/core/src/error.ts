@@ -65,6 +65,32 @@ const DEFAULT_MESSAGES_JA: I18nMessages = {
 } as const;
 
 /**
+ * Enhanced error message templates with more user-friendly messages.
+ */
+const ENHANCED_MESSAGES_EN: I18nMessages = {
+  parseError: "Parsing failed at line {line}, column {column}",
+  context: "In {context}",
+  parser: "While parsing {parser}",
+  expected: "Expected {expected}",
+  found: "But found {found}",
+  error: "Error: {message}",
+  source: "Source code:",
+} as const;
+
+/**
+ * Enhanced Japanese message templates with more user-friendly messages.
+ */
+const ENHANCED_MESSAGES_JA: I18nMessages = {
+  parseError: "行 {line}, 列 {column} でパースに失敗しました",
+  context: "{context} の中で",
+  parser: "{parser} を解析中に",
+  expected: "{expected} を期待していました",
+  found: "しかし {found} が見つかりました",
+  error: "エラー: {message}",
+  source: "ソースコード:",
+} as const;
+
+/**
  * Supported locales for internationalization.
  *
  * Currently supports English and Japanese. Can be extended
@@ -316,9 +342,9 @@ const validateAndNormalizeOptions = (
   );
   const validatedLocale = validateLocale(locale);
 
-  // Merge messages with type safety
+  // Merge messages with type safety - use enhanced messages by default
   const baseMessages =
-    validatedLocale === "ja" ? DEFAULT_MESSAGES_JA : DEFAULT_MESSAGES_EN;
+    validatedLocale === "ja" ? ENHANCED_MESSAGES_JA : ENHANCED_MESSAGES_EN;
   const mergedMessages: I18nMessages = { ...baseMessages, ...messages };
 
   return {

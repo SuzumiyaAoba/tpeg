@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  type ParseSuccess,
   andPredicate,
   anyChar,
   charClass,
@@ -14,7 +15,6 @@ import {
   parse,
   sequence,
   zeroOrMore,
-  type ParseSuccess,
 } from "@suzumiyaaoba/tpeg-core";
 
 describe("@SuzumiyaAoba/combinator", () => {
@@ -263,12 +263,15 @@ describe("@SuzumiyaAoba/combinator", () => {
 
     describe("mapResult(parser, f)", () => {
       it("should transform the result of a parser using a mapping function that receives the whole ParseSuccess object", () => {
-        const parser = mapResult(literal("hello"), (result: ParseSuccess<string>) => {
-          return {
-            val: result.val.toUpperCase(),
-            offset: result.next.offset,
-          };
-        });
+        const parser = mapResult(
+          literal("hello"),
+          (result: ParseSuccess<string>) => {
+            return {
+              val: result.val.toUpperCase(),
+              offset: result.next.offset,
+            };
+          },
+        );
         const successResult = parse(parser)("hello");
         expect(successResult.success).toBe(true);
         if (successResult.success) {

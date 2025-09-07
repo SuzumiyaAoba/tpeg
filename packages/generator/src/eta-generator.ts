@@ -176,7 +176,9 @@ export class EtaTPEGCodeGenerator {
 
       // Generate combinator import
       const combinators = Array.from(usedCombinators).sort();
-      imports.push(`import { ${combinators.join(", ")} } from "@SuzumiyaAoba/core";`);
+      imports.push(
+        `import { ${combinators.join(", ")} } from "@SuzumiyaAoba/core";`,
+      );
     }
 
     return imports;

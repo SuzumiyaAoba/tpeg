@@ -77,7 +77,7 @@ export class TPEGCodeGenerator {
 
     // Collect used combinators
     const usedCombinators = new Set<string>();
-    
+
     // Collect all rule names first
     for (const rule of grammar.rules) {
       this.ruleNames.add(rule.name);
@@ -89,11 +89,11 @@ export class TPEGCodeGenerator {
       imports.push('import type { Parser } from "@suzumiyaaoba/tpeg-core";');
       const combinators = Array.from(usedCombinators).sort();
       if (combinators.length > 0) {
-        imports.push(`import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`);
+        imports.push(
+          `import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`,
+        );
       }
     }
-
-
 
     // Generate parser for each rule
     for (const rule of grammar.rules) {
@@ -241,7 +241,7 @@ export class TPEGCodeGenerator {
 
   private generateQuantified(expr: Quantified): string {
     const inner = this.generateExpression(expr.expression);
-    
+
     if (expr.max === undefined) {
       // {n,} - at least n
       if (expr.min === 0) {
@@ -253,7 +253,7 @@ export class TPEGCodeGenerator {
       // Use quantified combinator for {n,} where n > 1
       return `quantified(${inner}, ${expr.min})`;
     }
-    
+
     if (expr.min === expr.max) {
       // {n} - exactly n
       if (expr.min === 0) {
@@ -265,12 +265,12 @@ export class TPEGCodeGenerator {
       // Use quantified combinator for exact repetition {n}
       return `quantified(${inner}, ${expr.min}, ${expr.max})`;
     }
-    
+
     // {n,m} - between n and m
     if (expr.min === 0 && expr.max === 1) {
       return `optional(${inner})`;
     }
-    
+
     // Use quantified combinator for general {n,m} case
     return `quantified(${inner}, ${expr.min}, ${expr.max})`;
   }

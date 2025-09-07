@@ -6,7 +6,7 @@
  * instead of just arrays or raw values.
  */
 
-import type { ParseError, Parser, Pos, } from "./types";
+import type { ParseError, Parser, Pos } from "./types";
 import { createFailure, isFailure } from "./utils";
 
 /**
@@ -40,13 +40,13 @@ export const capture = <T>(
 ): Parser<{ [K in typeof label]: T }> => {
   return (input: string, pos: Pos) => {
     const result = parser(input, pos);
-    
+
     if (isFailure(result)) {
       return result;
     }
 
     const capturedValue = { [label]: result.val } as { [K in typeof label]: T };
-    
+
     return {
       success: true as const,
       val: capturedValue,
@@ -71,13 +71,13 @@ export const capture = <T>(
  */
 export const mergeCaptures = (captures: unknown[]): CapturedValue => {
   const result: CapturedValue = {};
-  
+
   for (const capture of captures) {
     if (capture && typeof capture === "object" && !Array.isArray(capture)) {
       Object.assign(result, capture);
     }
   }
-  
+
   return result;
 };
 
@@ -102,7 +102,9 @@ export const mergeCaptures = (captures: unknown[]): CapturedValue => {
  */
 export const captureSequence = <P extends Parser<unknown>[]>(
   ...parsers: P
-): Parser<CapturedValue | { [K in keyof P]: P[K] extends Parser<infer T> ? T : never }> => {
+): Parser<
+  CapturedValue | { [K in keyof P]: P[K] extends Parser<infer T> ? T : never }
+> => {
   return (input: string, pos: Pos) => {
     if (parsers.length === 0) {
       return {
@@ -134,9 +136,13 @@ export const captureSequence = <P extends Parser<unknown>[]>(
       currentPos = result.next;
 
       // Check if this result is a captured value (object with string keys)
-      if (result.val && typeof result.val === "object" && !Array.isArray(result.val)) {
+      if (
+        result.val &&
+        typeof result.val === "object" &&
+        !Array.isArray(result.val)
+      ) {
         const keys = Object.keys(result.val);
-        if (keys.length > 0 && keys.every(key => typeof key === "string")) {
+        if (keys.length > 0 && keys.every((key) => typeof key === "string")) {
           hasCaptures = true;
         }
       }
@@ -156,7 +162,9 @@ export const captureSequence = <P extends Parser<unknown>[]>(
     // Otherwise, return as a regular sequence tuple
     return {
       success: true as const,
-      val: results as { [K in keyof P]: P[K] extends Parser<infer T> ? T : never },
+      val: results as {
+        [K in keyof P]: P[K] extends Parser<infer T> ? T : never;
+      },
       current: pos,
       next: currentPos,
     };
@@ -229,7 +237,7 @@ export const isCapturedValue = (value: unknown): value is CapturedValue => {
     value !== null &&
     typeof value === "object" &&
     !Array.isArray(value) &&
-    Object.keys(value).every(key => typeof key === "string")
+    Object.keys(value).every((key) => typeof key === "string")
   );
 };
 
@@ -250,6 +258,9 @@ export const getCaptureLabels = (value: CapturedValue): string[] => {
  * @param label The label to retrieve
  * @returns The captured value for the given label
  */
-export const getCapturedValue = <T>(value: CapturedValue, label: string): T | undefined => {
+export const getCapturedValue = <T>(
+  value: CapturedValue,
+  label: string,
+): T | undefined => {
   return value[label] as T | undefined;
-}; 
+};

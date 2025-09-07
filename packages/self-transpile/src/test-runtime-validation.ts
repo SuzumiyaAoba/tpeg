@@ -99,7 +99,8 @@ export const parseStringLiteral = self_string_literal;
 
     // Validate code structure
     const hasValidImports =
-      result.code.includes("import") && result.code.includes("@SuzumiyaAoba/core");
+      result.code.includes("import") &&
+      result.code.includes("@SuzumiyaAoba/core");
     const hasValidExports = exportedParsers.length > 0;
     const hasMemoization = result.code.includes("memoize");
     const hasRecursionComments = result.code.includes("// contains recursion");

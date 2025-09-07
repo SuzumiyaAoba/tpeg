@@ -326,7 +326,13 @@ describe("@SuzumiyaAoba/combinator additional tests", () => {
       expect(isSuccess(result)).toBe(true);
       if (isSuccess(result)) {
         expect(result.val).toHaveProperty("position");
-        expect((result.val as { position: { offset: number; line: number; column: number } }).position).toEqual({
+        expect(
+          (
+            result.val as {
+              position: { offset: number; line: number; column: number };
+            }
+          ).position,
+        ).toEqual({
           offset: 0,
           line: 1,
           column: 1,
@@ -523,7 +529,13 @@ describe("Additional coverage tests", () => {
       expect(isSuccess(result)).toBe(true);
       if (isSuccess(result)) {
         expect(result.val).toHaveProperty("position");
-        expect((result.val as { position: { offset: number; line: number; column: number } }).position).toEqual({
+        expect(
+          (
+            result.val as {
+              position: { offset: number; line: number; column: number };
+            }
+          ).position,
+        ).toEqual({
           offset: 0,
           line: 1,
           column: 1,

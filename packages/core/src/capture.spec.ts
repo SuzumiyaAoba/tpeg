@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { literal } from "./basic";
 import {
+  type CapturedValue,
   capture,
   captureChoice,
   captureSequence,
@@ -8,7 +9,6 @@ import {
   getCapturedValue,
   isCapturedValue,
   mergeCaptures,
-  type CapturedValue,
 } from "./capture";
 import { choice, sequence } from "./combinators";
 import { createPos } from "./utils";
@@ -48,11 +48,7 @@ describe("capture", () => {
 
   describe("mergeCaptures", () => {
     it("should merge multiple captured objects", () => {
-      const captures = [
-        { name: "hello" },
-        { value: 42 },
-        { active: true },
-      ];
+      const captures = [{ name: "hello" }, { value: 42 }, { active: true }];
 
       const merged = mergeCaptures(captures);
       expect(merged).toEqual({
@@ -264,10 +260,7 @@ describe("capture", () => {
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.val).toEqual([
-          { first: "a" },
-          { second: "b" },
-        ]);
+        expect(result.val).toEqual([{ first: "a" }, { second: "b" }]);
       }
     });
 
@@ -324,7 +317,7 @@ describe("capture", () => {
 
     it("should preserve capture structure through multiple levels", () => {
       const protocol = captureChoice(
-        capture("https", literal("https")),  // Put longer match first
+        capture("https", literal("https")), // Put longer match first
         capture("http", literal("http")),
       );
 
@@ -345,4 +338,4 @@ describe("capture", () => {
       }
     });
   });
-}); 
+});

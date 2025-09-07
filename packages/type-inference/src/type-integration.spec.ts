@@ -12,9 +12,7 @@ import {
   createRuleDefinition,
   createStringLiteral,
 } from "@suzumiyaaoba/tpeg-core";
-import {
-  TypeIntegrationEngine,
-} from "./type-integration";
+import { TypeIntegrationEngine } from "./type-integration";
 
 describe("TypeIntegrationEngine", () => {
   let engine: TypeIntegrationEngine;
@@ -25,10 +23,17 @@ describe("TypeIntegrationEngine", () => {
 
   describe("Basic Type Integration", () => {
     it("should create typed grammar with type information", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("greeting", createStringLiteral("hello", '"')),
-        createRuleDefinition("number", createCharacterClass([createCharRange("0", "9")])),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition("greeting", createStringLiteral("hello", '"')),
+          createRuleDefinition(
+            "number",
+            createCharacterClass([createCharRange("0", "9")]),
+          ),
+        ],
+      );
 
       // Debug: Check if grammar is created correctly
       expect(grammar.rules).toHaveLength(2);
@@ -45,55 +50,83 @@ describe("TypeIntegrationEngine", () => {
     });
 
     it("should detect dependencies correctly", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("digit", createCharacterClass([createCharRange("0", "9")])),
-        createRuleDefinition("number", createPlus(createIdentifier("digit"))),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "digit",
+            createCharacterClass([createCharRange("0", "9")]),
+          ),
+          createRuleDefinition("number", createPlus(createIdentifier("digit"))),
+        ],
+      );
 
       const typedGrammar = engine.createTypedGrammar(grammar);
 
-      const numberRule = typedGrammar.rules.find(r => r.name === "number");
+      const numberRule = typedGrammar.rules.find((r) => r.name === "number");
       expect(numberRule?.dependencies).toContain("digit");
     });
 
     it("should generate type definitions", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("greeting", createStringLiteral("hello", '"')),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition("greeting", createStringLiteral("hello", '"'))],
+      );
 
       const typedGrammar = engine.createTypedGrammar(grammar);
 
-      expect(typedGrammar.typeDefinitions).toContain("export type GreetingResult");
+      expect(typedGrammar.typeDefinitions).toContain(
+        "export type GreetingResult",
+      );
       expect(typedGrammar.typeDefinitions).toContain('"hello"');
     });
   });
 
   describe("Advanced Type Integration", () => {
     it("should handle circular dependencies", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("a", createIdentifier("b")),
-        createRuleDefinition("b", createIdentifier("a")),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition("a", createIdentifier("b")),
+          createRuleDefinition("b", createIdentifier("a")),
+        ],
+      );
 
       const typedGrammar = engine.createTypedGrammar(grammar);
 
-      expect(typedGrammar.typeInference.circularDependencies.length).toBeGreaterThan(0);
+      expect(
+        typedGrammar.typeInference.circularDependencies.length,
+      ).toBeGreaterThan(0);
       expect(typedGrammar.rules[0]?.hasCircularDependency).toBe(true);
       expect(typedGrammar.rules[1]?.hasCircularDependency).toBe(true);
     });
 
     it("should generate parser interface", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("greeting", createStringLiteral("hello", '"')),
-        createRuleDefinition("number", createCharacterClass([createCharRange("0", "9")])),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition("greeting", createStringLiteral("hello", '"')),
+          createRuleDefinition(
+            "number",
+            createCharacterClass([createCharRange("0", "9")]),
+          ),
+        ],
+      );
 
       const typedGrammar = engine.createTypedGrammar(grammar);
       const parserInterface = engine.generateParserInterface(typedGrammar);
 
       expect(parserInterface).toContain("export interface TestGrammarParser");
-      expect(parserInterface).toContain("greeting(input: string): ParseResult<GreetingResult>");
-      expect(parserInterface).toContain("number(input: string): ParseResult<NumberResult>");
+      expect(parserInterface).toContain(
+        "greeting(input: string): ParseResult<GreetingResult>",
+      );
+      expect(parserInterface).toContain(
+        "number(input: string): ParseResult<NumberResult>",
+      );
     });
   });
 
@@ -104,12 +137,16 @@ describe("TypeIntegrationEngine", () => {
         includeDocumentation: true,
       });
 
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("greeting", createStringLiteral("hello", '"')),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition("greeting", createStringLiteral("hello", '"'))],
+      );
 
       const typedGrammar = engine.createTypedGrammar(grammar);
-      expect(typedGrammar.typeDefinitions).toContain("export type GreetingResult");
+      expect(typedGrammar.typeDefinitions).toContain(
+        "export type GreetingResult",
+      );
     });
 
     it("should generate type guards when enabled", () => {
@@ -117,20 +154,26 @@ describe("TypeIntegrationEngine", () => {
         generateTypeGuards: true,
       });
 
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("greeting", createStringLiteral("hello", '"')),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition("greeting", createStringLiteral("hello", '"'))],
+      );
 
       const typedGrammar = engine.createTypedGrammar(grammar);
-      expect(typedGrammar.typeDefinitions).toContain("export function isGreetingResult");
+      expect(typedGrammar.typeDefinitions).toContain(
+        "export function isGreetingResult",
+      );
     });
   });
 
   describe("Utility Methods", () => {
     it("should get type info for specific rule", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("greeting", createStringLiteral("hello", '"')),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition("greeting", createStringLiteral("hello", '"'))],
+      );
 
       const typedGrammar = engine.createTypedGrammar(grammar);
       const typeInfo = engine.getTypeInfo(typedGrammar, "greeting");
@@ -139,10 +182,14 @@ describe("TypeIntegrationEngine", () => {
     });
 
     it("should check circular dependencies", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("a", createIdentifier("b")),
-        createRuleDefinition("b", createIdentifier("a")),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition("a", createIdentifier("b")),
+          createRuleDefinition("b", createIdentifier("a")),
+        ],
+      );
 
       const typedGrammar = engine.createTypedGrammar(grammar);
       const hasCircular = engine.hasCircularDependency(typedGrammar, "a");
@@ -151,10 +198,17 @@ describe("TypeIntegrationEngine", () => {
     });
 
     it("should get dependencies for rule", () => {
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("digit", createCharacterClass([createCharRange("0", "9")])),
-        createRuleDefinition("number", createPlus(createIdentifier("digit"))),
-      ]);
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "digit",
+            createCharacterClass([createCharRange("0", "9")]),
+          ),
+          createRuleDefinition("number", createPlus(createIdentifier("digit"))),
+        ],
+      );
 
       const typedGrammar = engine.createTypedGrammar(grammar);
       const dependencies = engine.getDependencies(typedGrammar, "number");
@@ -162,4 +216,4 @@ describe("TypeIntegrationEngine", () => {
       expect(dependencies).toContain("digit");
     });
   });
-}); 
+});

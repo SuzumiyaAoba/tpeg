@@ -131,7 +131,7 @@ export class TypeIntegrationEngine {
     typeInference: GrammarTypeInference,
   ): TypedRuleDefinition {
     const inferredType = typeInference.ruleTypes.get(rule.name);
-    
+
     // If no type information found, create a default type
     const defaultType: InferredType = {
       typeString: "unknown",

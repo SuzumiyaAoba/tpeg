@@ -93,11 +93,7 @@ export const zeroOrMore =
 
       // Check for infinite loop (position doesn't advance)
       if (result.next.offset === currentPos.offset) {
-        return createInfiniteLoopError(
-          input,
-          currentPos,
-          parserName,
-        );
+        return createInfiniteLoopError(input, currentPos, parserName);
       }
 
       results.push(result.val);

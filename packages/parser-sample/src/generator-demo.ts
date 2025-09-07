@@ -8,7 +8,10 @@
  * 3. Showing the generated output
  */
 
-import { generateTypeScriptParser, grammarDefinition } from "@SuzumiyaAoba/parser";
+import {
+  generateTypeScriptParser,
+  grammarDefinition,
+} from "@SuzumiyaAoba/parser";
 
 console.log("🏗️  TPEG Parser Generation Demo\n");
 

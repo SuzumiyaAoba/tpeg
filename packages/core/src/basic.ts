@@ -23,16 +23,53 @@ import { createFailure, getCharAndLength, nextPos } from "./utils";
  *
  * @example
  * ```typescript
+ * // Basic usage
  * const parser = anyChar();
  * const result = parser("hello", { offset: 0, line: 1, column: 1 });
  * // result: { success: true, val: "h", current: {...}, next: {...} }
  *
+ * // End of input handling
  * const endResult = parser("", { offset: 0, line: 1, column: 1 });
- * // endResult: { success: false, error: "Unexpected EOI", ... }
+ * // endResult: { success: false, error: "Unexpected end of input", ... }
  *
- * // Unicode example
+ * // Unicode support
  * const unicodeResult = parser("🌍", { offset: 0, line: 1, column: 1 });
  * // unicodeResult: { success: true, val: "🌍", current: {...}, next: {...} }
+ *
+ * // Custom parser name for debugging
+ * const customParser = anyChar("character");
+ * const debugResult = customParser("", { offset: 0, line: 1, column: 1 });
+ * // debugResult.error.parserName === "character"
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Real-world usage: parsing user input
+ * const userInput = "Hello 🌍 World!";
+ * let pos = { offset: 0, line: 1, column: 1 };
+ *
+ * const charParser = anyChar("user input character");
+ * const result = charParser(userInput, pos);
+ *
+ * if (result.success) {
+ *   console.log(`Found character: ${result.val}`);
+ *   pos = result.next; // Update position for next parsing
+ * }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Integration with other parsers
+ * import { sequence, literal } from "./combinators";
+ *
+ * const greetingParser = sequence(
+ *   literal("Hello"),
+ *   anyChar("space or punctuation"),
+ *   anyChar("next character")
+ * );
+ *
+ * const result = greetingParser("Hello! How are you?", { offset: 0, line: 1, column: 1 });
+ * // result.val will be ["Hello", "!", " "]
  * ```
  */
 export const anyChar =
@@ -41,7 +78,7 @@ export const anyChar =
     const [char] = getCharAndLength(input, pos.offset);
 
     if (!char) {
-      return createFailure("Unexpected EOI", pos, {
+      return createFailure("Unexpected end of input", pos, {
         expected: "any character",
         found: "end of input",
         parserName,
@@ -88,15 +125,9 @@ export const any = anyChar("any");
  * ```
  */
 const canUseOptimizedPath = (() => {
-  // Cache for optimization results to avoid repeated regex checks
+  // Simplified cache with fixed size for better performance
   const cache = new Map<string, boolean>();
-  const maxCacheSize = Math.min(
-    1000,
-    Math.max(
-      100,
-      Math.floor(process.memoryUsage?.()?.heapUsed / 1024 / 1024 || 100),
-    ),
-  ); // Dynamic cache size based on memory usage
+  const MAX_CACHE_SIZE = 1000; // Fixed size for simplicity and predictability
 
   // Pre-compiled regex for better performance
   const asciiRegex = /^[ -~\t\r]*$/;
@@ -112,18 +143,9 @@ const canUseOptimizedPath = (() => {
     // Check for ASCII printable characters (32-126) plus common whitespace (except newline)
     const result = asciiRegex.test(str) && !str.includes("\n");
 
-    // Cache the result with dynamic size management
-    if (cache.size >= maxCacheSize) {
-      // Simple LRU: clear oldest half when full
-      const entries = Array.from(cache.entries());
+    // Simple cache management: clear when full
+    if (cache.size >= MAX_CACHE_SIZE) {
       cache.clear();
-      // Keep newer half
-      for (let i = Math.floor(entries.length / 2); i < entries.length; i++) {
-        const entry = entries[i];
-        if (entry) {
-          cache.set(entry[0], entry[1]);
-        }
-      }
     }
 
     cache.set(str, result);
@@ -376,6 +398,36 @@ export const benchmarkParser = <T>(
  * // Failure case
  * const failResult = helloParser("hi there", { offset: 0, line: 1, column: 1 });
  * // failResult: { success: false, error: "Unexpected character...", ... }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Programming language keyword parsing
+ * const keywords = ["function", "const", "let", "var", "if", "else"];
+ * const keywordParsers = keywords.map(kw => literal(kw, `keyword:${kw}`));
+ *
+ * const functionParser = keywordParsers[0];
+ * const result = functionParser("function myFunc() {}", { offset: 0, line: 1, column: 1 });
+ * // result: { success: true, val: "function", ... }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Multi-line string parsing
+ * const multilineParser = literal("line1\nline2");
+ * const result = multilineParser("line1\nline2\nline3", { offset: 0, line: 1, column: 1 });
+ * // result: { success: true, val: "line1\nline2", next: { line: 3, column: 0, ... } }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Performance optimization example
+ * const asciiParser = literal("hello world"); // Uses optimized path
+ * const unicodeParser = literal("こんにちは"); // Uses Unicode path
+ *
+ * // Both work correctly, but ASCII strings are faster
+ * const asciiResult = asciiParser("hello world extra", { offset: 0, line: 1, column: 1 });
+ * const unicodeResult = unicodeParser("こんにちは世界", { offset: 0, line: 1, column: 1 });
  * ```
  */
 export const literal = <T extends string>(

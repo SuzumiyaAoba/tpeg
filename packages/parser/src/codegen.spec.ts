@@ -280,8 +280,12 @@ describe("TPEG Code Generation", () => {
       });
       const result = generator.generateGrammar(grammar);
 
-      expect(result.code).toContain('import type { Parser } from "@suzumiyaaoba/tpeg-core"');
-expect(result.code).toContain('import { literal } from "@suzumiyaaoba/tpeg-core"');
+      expect(result.code).toContain(
+        'import type { Parser } from "@suzumiyaaoba/tpeg-core"',
+      );
+      expect(result.code).toContain(
+        'import { literal } from "@suzumiyaaoba/tpeg-core"',
+      );
     });
 
     test("should exclude imports when disabled", () => {

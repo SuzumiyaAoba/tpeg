@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { anyChar, literal } from "./basic";
 import {
   advancePos,
   createFailure,
@@ -6,17 +7,16 @@ import {
   extractValue,
   getCharAndLength,
   isEmptyArray,
+  isFailure,
+  isNewline,
   isNonEmptyArray,
   isSuccess,
-  isFailure,
+  isWhitespace,
   nextPos,
   parse,
   safeExtractValue,
   unicodeLength,
-  isWhitespace,
-  isNewline,
 } from "./utils";
-import { anyChar, literal } from "./basic";
 
 describe("Utils", () => {
   describe("Array utilities", () => {
@@ -271,7 +271,9 @@ describe("Utils", () => {
             pos: { offset: 0, column: 0, line: 1 },
           },
         } as const;
-        expect(() => extractValue(failure)).toThrow("Parse failed: Parse failed");
+        expect(() => extractValue(failure)).toThrow(
+          "Parse failed: Parse failed",
+        );
       });
     });
 
@@ -356,7 +358,9 @@ describe("Utils", () => {
     it("should handle null/undefined gracefully", () => {
       // These functions should handle edge cases without throwing
       expect(() => createPos()).not.toThrow();
-      expect(() => createFailure("test", { offset: 0, column: 0, line: 1 })).not.toThrow();
+      expect(() =>
+        createFailure("test", { offset: 0, column: 0, line: 1 }),
+      ).not.toThrow();
     });
 
     it("should handle Unicode surrogate pairs correctly", () => {

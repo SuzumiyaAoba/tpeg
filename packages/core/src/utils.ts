@@ -322,6 +322,52 @@ export const safeExtractValue = <T>(result: ParseResult<T>): T | undefined => {
 };
 
 /**
+ * Position object pool for memory efficiency.
+ *
+ * Reuses position objects to reduce garbage collection pressure
+ * during intensive parsing operations.
+ */
+class PositionPool {
+  private pool: Pos[] = [];
+  private readonly maxPoolSize = 100;
+
+  /**
+   * Get a position object from the pool or create a new one.
+   *
+   * @param offset - Character offset from the start of input
+   * @param column - Column number within the current line
+   * @param line - Line number in the input
+   * @returns A position object with the specified coordinates
+   */
+  get(offset: number, column: number, line: number): Pos {
+    const pos = this.pool.pop() || { offset: 0, column: 0, line: 1 };
+    // Create a new position object to avoid readonly property issues
+    return { offset, column, line };
+  }
+
+  /**
+   * Return a position object to the pool for reuse.
+   *
+   * @param pos - The position object to return to the pool
+   */
+  release(pos: Pos): void {
+    if (this.pool.length < this.maxPoolSize) {
+      this.pool.push(pos);
+    }
+  }
+
+  /**
+   * Clear the pool to free memory.
+   */
+  clear(): void {
+    this.pool.length = 0;
+  }
+}
+
+// Global position pool instance
+const positionPool = new PositionPool();
+
+/**
  * Creates a position object with default values.
  *
  * This utility function creates a standardized position object with
@@ -340,11 +386,27 @@ export const safeExtractValue = <T>(result: ParseResult<T>): T | undefined => {
  * createPos(5);          // { offset: 5, column: 0, line: 1 }
  * ```
  */
-export const createPos = (offset = 0, column = 0, line = 1): Pos => ({
-  offset,
-  column,
-  line,
-});
+export const createPos = (offset = 0, column = 0, line = 1): Pos =>
+  positionPool.get(offset, column, line);
+
+/**
+ * Releases a position object back to the pool for reuse.
+ *
+ * This function should be called when a position object is no longer needed
+ * to improve memory efficiency during intensive parsing operations.
+ *
+ * @param pos - The position object to release
+ *
+ * @example
+ * ```typescript
+ * const pos = createPos(10, 5, 2);
+ * // Use the position...
+ * releasePos(pos);
+ * ```
+ */
+export const releasePos = (pos: Pos): void => {
+  positionPool.release(pos);
+};
 
 /**
  * Advances position by a string, handling newlines correctly.

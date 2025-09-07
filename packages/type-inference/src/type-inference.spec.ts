@@ -11,16 +11,16 @@ import {
   createChoice,
   createGrammarDefinition,
   createIdentifier,
+  createLabeledExpression,
+  createNegativeLookahead,
   createOptional,
   createPlus,
+  createPositiveLookahead,
+  createQuantified,
   createRuleDefinition,
   createSequence,
   createStar,
   createStringLiteral,
-  createQuantified,
-  createPositiveLookahead,
-  createNegativeLookahead,
-  createLabeledExpression,
 } from "@suzumiyaaoba/tpeg-core";
 import {
   TypeInferenceEngine,
@@ -326,42 +326,58 @@ describe("TypeInferenceEngine", () => {
   describe("Edge Cases and Error Handling", () => {
     it("should handle quantified expressions with min === max === 1", () => {
       const engine = new TypeInferenceEngine();
-      const quantified = createQuantified(createStringLiteral("hello", '"'), 1, 1);
-      
+      const quantified = createQuantified(
+        createStringLiteral("hello", '"'),
+        1,
+        1,
+      );
+
       const result = engine.inferExpressionType(quantified);
-      
+
       expect(result.typeString).toBe('"hello"');
       expect(result.isArray).toBe(false);
     });
 
     it("should handle quantified expressions with min === 0", () => {
       const engine = new TypeInferenceEngine();
-      const quantified = createQuantified(createStringLiteral("hello", '"'), 0, 1);
-      
+      const quantified = createQuantified(
+        createStringLiteral("hello", '"'),
+        0,
+        1,
+      );
+
       const result = engine.inferExpressionType(quantified);
-      
+
       expect(result.typeString).toBe('"hello"[] | undefined');
       expect(result.nullable).toBe(true);
     });
 
     it("should handle quantified expressions with array types disabled", () => {
       const engine = new TypeInferenceEngine({ inferArrayTypes: false });
-      const quantified = createQuantified(createStringLiteral("hello", '"'), 0, 5);
-      
+      const quantified = createQuantified(
+        createStringLiteral("hello", '"'),
+        0,
+        5,
+      );
+
       const result = engine.inferExpressionType(quantified);
-      
+
       expect(result.typeString).toBe("string | undefined");
       expect(result.isArray).toBe(false);
     });
 
     it("should handle lookahead expressions correctly", () => {
       const engine = new TypeInferenceEngine();
-      const positiveLookahead = createPositiveLookahead(createStringLiteral("hello", '"'));
-      const negativeLookahead = createNegativeLookahead(createStringLiteral("world", '"'));
-      
+      const positiveLookahead = createPositiveLookahead(
+        createStringLiteral("hello", '"'),
+      );
+      const negativeLookahead = createNegativeLookahead(
+        createStringLiteral("world", '"'),
+      );
+
       const positiveResult = engine.inferExpressionType(positiveLookahead);
       const negativeResult = engine.inferExpressionType(negativeLookahead);
-      
+
       expect(positiveResult.typeString).toBe("void");
       expect(positiveResult.baseType).toBe("void");
       expect(negativeResult.typeString).toBe("void");
@@ -370,43 +386,50 @@ describe("TypeInferenceEngine", () => {
 
     it("should handle labeled expressions correctly", () => {
       const engine = new TypeInferenceEngine();
-      const labeled = createLabeledExpression("value", createStringLiteral("hello", '"'));
-      
+      const labeled = createLabeledExpression(
+        "value",
+        createStringLiteral("hello", '"'),
+      );
+
       const result = engine.inferExpressionType(labeled);
-      
+
       expect(result.typeString).toBe('"hello"');
       expect(result.documentation).toContain("Labeled expression: value");
     });
 
     it("should apply custom type mappings", () => {
       const customMappings = new Map([
-        ['"hello"', 'CustomHelloType'],
-        ['string', 'CustomStringType']
+        ['"hello"', "CustomHelloType"],
+        ["string", "CustomStringType"],
       ]);
-      
+
       const engine = new TypeInferenceEngine({
-        customTypeMappings: customMappings
+        customTypeMappings: customMappings,
       });
-      
+
       const stringLiteral = createStringLiteral("hello", '"');
       const charClass = createCharacterClass([createCharRange("0", "9")]);
-      
+
       const literalResult = engine.inferExpressionType(stringLiteral);
       const charClassResult = engine.inferExpressionType(charClass);
-      
-      expect(literalResult.typeString).toBe('CustomHelloType');
-      expect(charClassResult.typeString).toBe('CustomStringType');
+
+      expect(literalResult.typeString).toBe("CustomHelloType");
+      expect(charClassResult.typeString).toBe("CustomStringType");
     });
 
     it("should handle recursion depth limits", () => {
       const engine = new TypeInferenceEngine({ maxRecursionDepth: 1 });
-      const grammar = createGrammarDefinition("TestGrammar", [], [
-        createRuleDefinition("a", createIdentifier("b")),
-        createRuleDefinition("b", createIdentifier("a")),
-      ]);
-      
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition("a", createIdentifier("b")),
+          createRuleDefinition("b", createIdentifier("a")),
+        ],
+      );
+
       const result = engine.inferGrammarTypes(grammar);
-      
+
       // Should handle recursion gracefully
       expect(result.ruleTypes.size).toBe(2);
       expect(result.circularDependencies.length).toBeGreaterThan(0);
@@ -414,13 +437,13 @@ describe("TypeInferenceEngine", () => {
 
     it("should handle unknown expression types gracefully", () => {
       const engine = new TypeInferenceEngine();
-      
+
       // Create an invalid expression type
       const invalidExpression = {
         type: "InvalidType" as never,
-        value: "test"
+        value: "test",
       } as unknown;
-      
+
       // This should not throw but return a default type
       expect(() => {
         engine.inferExpressionType(invalidExpression as Expression);
@@ -432,10 +455,10 @@ describe("TypeInferenceEngine", () => {
     it("should cache identical expressions", () => {
       const engine = new TypeInferenceEngine({ enableCaching: true });
       const expression = createStringLiteral("hello", '"');
-      
+
       const result1 = engine.inferExpressionType(expression);
       const result2 = engine.inferExpressionType(expression);
-      
+
       expect(result1).toEqual(result2);
     });
 
@@ -443,10 +466,10 @@ describe("TypeInferenceEngine", () => {
       const engine = new TypeInferenceEngine({ enableCaching: true });
       const expression1 = createStringLiteral("hello", '"');
       const expression2 = createStringLiteral("world", '"');
-      
+
       const result1 = engine.inferExpressionType(expression1);
       const result2 = engine.inferExpressionType(expression2);
-      
+
       expect(result1.typeString).toBe('"hello"');
       expect(result2.typeString).toBe('"world"');
     });
