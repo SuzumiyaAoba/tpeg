@@ -119,13 +119,15 @@ export const parsers = {
     parser: import("./types").Parser<T>,
     fn: (error: import("./types").ParseError) => import("./types").ParseError,
   ) =>
-    import("./transform").then((m) =>
-      m.mapError(
-        parser,
-        (e: import("./types").ParseFailure): import("./types").ParseFailure =>
-          (fn(e as unknown as import("./types").ParseError) as unknown) as import("./types").ParseFailure,
-      ),
-    ),
+    import("./transform").then((m) => {
+      const adapter = (
+        e: import("./types").ParseFailure,
+      ): import("./types").ParseFailure => {
+        const result = fn(e as unknown as import("./types").ParseError);
+        return result as unknown as import("./types").ParseFailure;
+      };
+      return m.mapError(parser, adapter);
+    }),
   filter: <T>(
     parser: import("./types").Parser<T>,
     predicate: (val: T) => boolean,
