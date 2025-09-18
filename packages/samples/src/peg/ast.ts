@@ -1,4 +1,4 @@
-import type { Pos } from "@SuzumiyaAoba/core";
+import type { Pos } from "@suzumiyaaoba/tpeg-core";
 
 /**
  * Base interface for all AST nodes with position information.

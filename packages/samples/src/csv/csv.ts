@@ -1,5 +1,5 @@
-import { newline, sepBy, takeUntil } from "@SuzumiyaAoba/combinator";
-import type { Parser } from "@SuzumiyaAoba/core";
+import { newline, sepBy, takeUntil } from "@suzumiyaaoba/tpeg-combinator";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   any,
   choice,
@@ -9,7 +9,7 @@ import {
   parse,
   seq,
   zeroOrMore,
-} from "@SuzumiyaAoba/core";
+} from "@suzumiyaaoba/tpeg-core";
 
 /**
  * CSV Parser Sample

@@ -5,7 +5,7 @@ import {
   quotedString,
   recursive,
   token,
-} from "@SuzumiyaAoba/combinator";
+} from "@suzumiyaaoba/tpeg-combinator";
 import {
   type ParseResult,
   type Parser,
@@ -16,7 +16,7 @@ import {
   optional,
   seq,
   zeroOrMore,
-} from "@SuzumiyaAoba/core";
+} from "@suzumiyaaoba/tpeg-core";
 
 // Export Parser type
 export type { Parser };

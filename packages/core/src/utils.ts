@@ -327,45 +327,7 @@ export const safeExtractValue = <T>(result: ParseResult<T>): T | undefined => {
  * Reuses position objects to reduce garbage collection pressure
  * during intensive parsing operations.
  */
-class PositionPool {
-  private pool: Pos[] = [];
-  private readonly maxPoolSize = 100;
-
-  /**
-   * Get a position object from the pool or create a new one.
-   *
-   * @param offset - Character offset from the start of input
-   * @param column - Column number within the current line
-   * @param line - Line number in the input
-   * @returns A position object with the specified coordinates
-   */
-  get(offset: number, column: number, line: number): Pos {
-    const pos = this.pool.pop() || { offset: 0, column: 0, line: 1 };
-    // Create a new position object to avoid readonly property issues
-    return { offset, column, line };
-  }
-
-  /**
-   * Return a position object to the pool for reuse.
-   *
-   * @param pos - The position object to return to the pool
-   */
-  release(pos: Pos): void {
-    if (this.pool.length < this.maxPoolSize) {
-      this.pool.push(pos);
-    }
-  }
-
-  /**
-   * Clear the pool to free memory.
-   */
-  clear(): void {
-    this.pool.length = 0;
-  }
-}
-
-// Global position pool instance
-const positionPool = new PositionPool();
+// Position pooling removed for simplicity and minimal overhead of small objects
 
 /**
  * Creates a position object with default values.
@@ -386,8 +348,11 @@ const positionPool = new PositionPool();
  * createPos(5);          // { offset: 5, column: 0, line: 1 }
  * ```
  */
-export const createPos = (offset = 0, column = 0, line = 1): Pos =>
-  positionPool.get(offset, column, line);
+export const createPos = (offset = 0, column = 0, line = 1): Pos => ({
+  offset,
+  column,
+  line,
+});
 
 /**
  * Releases a position object back to the pool for reuse.
@@ -404,8 +369,8 @@ export const createPos = (offset = 0, column = 0, line = 1): Pos =>
  * releasePos(pos);
  * ```
  */
-export const releasePos = (pos: Pos): void => {
-  positionPool.release(pos);
+export const releasePos = (_pos: Pos): void => {
+  // no-op
 };
 
 /**
@@ -439,8 +404,8 @@ export const advancePos = (str: string, pos: Pos): Pos => {
     } else {
       column++;
     }
-    // Use the actual character length, not char.length
-    offset += unicodeLength(char);
+    // Advance by code units to keep offset aligned with string indexing
+    offset += char.length;
   }
 
   return { offset, column, line };
@@ -566,5 +531,5 @@ export const isWhitespace = (char: string): boolean => {
  * ```
  */
 export const isNewline = (char: string): boolean => {
-  return char === "\n" || char === "\r" || char === "\r\n";
+  return char === "\n" || char === "\r";
 };

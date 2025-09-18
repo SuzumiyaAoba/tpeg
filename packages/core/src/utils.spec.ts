@@ -128,7 +128,7 @@ describe("Utils", () => {
       it("should handle mixed ASCII and Unicode", () => {
         const pos = { offset: 0, column: 0, line: 1 };
         const next = advancePos("Hello🌍World", pos);
-        expect(next).toEqual({ offset: 11, column: 11, line: 1 });
+        expect(next).toEqual({ offset: 12, column: 11, line: 1 });
       });
 
       it("should handle empty string", () => {
@@ -177,7 +177,8 @@ describe("Utils", () => {
       it("should identify newline characters", () => {
         expect(isNewline("\n")).toBe(true);
         expect(isNewline("\r")).toBe(true);
-        expect(isNewline("\r\n")).toBe(true);
+        // CRLF is two characters and should be evaluated per char
+        expect(isNewline("\r\n")).toBe(false);
       });
 
       it("should reject non-newline characters", () => {

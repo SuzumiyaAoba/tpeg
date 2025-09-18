@@ -94,7 +94,7 @@ const createSuccessResult = (
  *
  * // Example 4: Error case demonstration
  * const parser = andPredicate(literal("hello"));
- * const result = parser("world", { offset: 0, line: 1, column: 1 });
+* const result = parser("world", { offset: 0, line: 1, column: 0 });
  * // result.success === false, detailed error context preserved
  * ```
  *
@@ -266,7 +266,7 @@ export const assert = andPredicate;
  *
  * // Example 5: Success case demonstration
  * const parser = notPredicate(literal("hello"));
- * const result = parser("world", { offset: 0, line: 1, column: 1 });
+* const result = parser("world", { offset: 0, line: 1, column: 0 });
  * // result.success === true because "world" doesn't start with "hello"
  * ```
  *

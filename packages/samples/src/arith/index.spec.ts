@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createPos } from "@SuzumiyaAoba/core";
+import { createPos } from "@suzumiyaaoba/tpeg-core";
 import { Grammar } from "./index";
 
 const START = {

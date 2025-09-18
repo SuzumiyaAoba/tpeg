@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import type { ParseResult, Pos } from "@SuzumiyaAoba/core";
+import type { ParseResult, Pos } from "@suzumiyaaoba/tpeg-core";
 import { jsonParser, parseJSON } from "./json";
 import type { JSONObject, Parser } from "./json";
 

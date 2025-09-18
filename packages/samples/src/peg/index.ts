@@ -12,7 +12,7 @@ import {
   not,
   opt,
   seq,
-} from "@SuzumiyaAoba/core";
+} from "@suzumiyaaoba/tpeg-core";
 import type { Expr } from "./ast";
 import { octalDigitsToChar } from "./utils";
 

@@ -26,5 +26,6 @@
     "@types/bun": "latest"
   },
   "description": "Core types and utilities for tpeg PEG parser",
-  "license": "MIT"
+  "license": "MIT",
+  "sideEffects": false
 }

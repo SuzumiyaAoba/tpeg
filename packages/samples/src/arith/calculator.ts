@@ -10,7 +10,7 @@ import {
   parse,
   seq,
   star,
-} from "@SuzumiyaAoba/core";
+} from "@suzumiyaaoba/tpeg-core";
 
 // =============================================================================
 // 1. Basic Token Parsers

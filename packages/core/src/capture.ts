@@ -30,7 +30,7 @@ export type CaptureResult<T> = T extends CapturedValue ? T : never;
  * @example
  * ```typescript
  * const nameParser = capture("name", literal("hello"));
- * const result = nameParser("hello", { offset: 0, line: 1, column: 1 });
+ * const result = nameParser("hello", { offset: 0, line: 1, column: 0 });
  * // result.val = { name: "hello" }
  * ```
  */
@@ -96,7 +96,7 @@ export const mergeCaptures = (captures: unknown[]): CapturedValue => {
  *   capture("name", literal("hello")),
  *   capture("value", literal("world"))
  * );
- * const result = parser("helloworld", { offset: 0, line: 1, column: 1 });
+ * const result = parser("helloworld", { offset: 0, line: 1, column: 0 });
  * // result.val = { name: "hello", value: "world" }
  * ```
  */
@@ -186,9 +186,9 @@ export const captureSequence = <P extends Parser<unknown>[]>(
  *   capture("name", literal("hello")),
  *   capture("value", literal("world"))
  * );
- * const result1 = parser("hello", { offset: 0, line: 1, column: 1 });
+ * const result1 = parser("hello", { offset: 0, line: 1, column: 0 });
  * // result1.val = { name: "hello" }
- * const result2 = parser("world", { offset: 0, line: 1, column: 1 });
+ * const result2 = parser("world", { offset: 0, line: 1, column: 0 });
  * // result2.val = { value: "world" }
  * ```
  */
