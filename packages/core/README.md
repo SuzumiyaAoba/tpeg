@@ -14,7 +14,7 @@ Core parsing functionality for TPEG (Typed Parser Expression Grammar) library.
 ## Installation
 
 ```bash
-bun add tpeg-core
+bun add @suzumiyaaoba/tpeg-core
 ```
 
 ## Basic Usage
@@ -22,28 +22,28 @@ bun add tpeg-core
 ### Simple Parsers
 
 ```typescript
-import { literal, charClass, anyChar } from "tpeg-core";
+import { literal, charClass, anyChar } from "@suzumiyaaoba/tpeg-core";
 
 // Parse literal strings
 const hello = literal("hello");
-const result = hello("hello world", { offset: 0, line: 1, column: 1 });
+const result = hello("hello world", { offset: 0, line: 1, column: 0 });
 // result.val = "hello"
 
 // Parse character classes
 const digit = charClass("0-9");
-const digitResult = digit("5abc", { offset: 0, line: 1, column: 1 });
+const digitResult = digit("5abc", { offset: 0, line: 1, column: 0 });
 // digitResult.val = "5"
 
 // Parse any character
-const any = anyChar;
-const anyResult = any("x", { offset: 0, line: 1, column: 1 });
+const any = anyChar();
+const anyResult = any("x", { offset: 0, line: 1, column: 0 });
 // anyResult.val = "x"
 ```
 
 ### Combinators
 
 ```typescript
-import { sequence, choice, zeroOrMore, oneOrMore, optional } from "tpeg-core";
+import { sequence, choice, zeroOrMore, oneOrMore, optional } from "@suzumiyaaoba/tpeg-core";
 
 // Sequence: match multiple parsers in order
 const greeting = sequence(literal("hello"), literal(" "), literal("world"));
@@ -66,7 +66,7 @@ const digitsResult = digits("123abc", pos);
 The capture system allows you to structure parsed data with meaningful labels:
 
 ```typescript
-import { capture, captureSequence, captureChoice } from "tpeg-core";
+import { capture, captureSequence, captureChoice } from "@suzumiyaaoba/tpeg-core";
 
 // Basic capture
 const nameParser = capture("name", literal("John"));
@@ -96,7 +96,7 @@ const greetingResult = greetingParser("Hello", pos);
 #### HTTP Request Parser with Captures
 
 ```typescript
-import { capture, captureSequence, literal, charClass, oneOrMore, choice } from "tpeg-core";
+import { capture, captureSequence, literal, charClass, oneOrMore, choice } from "@suzumiyaaoba/tpeg-core";
 
 const method = capture("method", choice(
   literal("GET"),
@@ -162,7 +162,7 @@ const result = keyValue('"name":"John"', pos);
 ## Error Handling
 
 ```typescript
-import { parse } from "tpeg-core";
+import { parse } from "@suzumiyaaoba/tpeg-core";
 
 const parser = sequence(literal("hello"), literal(" "), literal("world"));
 const result = parse(parser)("hello there");

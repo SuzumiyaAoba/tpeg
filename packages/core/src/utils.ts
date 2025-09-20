@@ -1,5 +1,6 @@
 import type {
   NonEmptyArray,
+  ParseError,
   ParseFailure,
   ParseResult,
   ParseSuccess,
@@ -157,7 +158,7 @@ export const nextPos = (char: string, { offset, column, line }: Pos): Pos => {
 export const createFailure = (
   message: string,
   pos: Pos,
-  options?: Omit<import("./types").ParseError, "message" | "pos">,
+  options?: Omit<ParseError, "message" | "pos">,
 ): ParseFailure => {
   return {
     success: false,
@@ -480,10 +481,14 @@ export const unicodeGraphemeLength = (str: string): number => {
     return count;
   } catch (error) {
     // Fallback to unicodeLength if Intl.Segmenter is not available
-    console.warn(
-      "Intl.Segmenter not available, falling back to unicodeLength:",
-      error,
-    );
+    const silenceWarn =
+      (globalThis as any).process?.env?.["TPEG_SILENCE_SEGMENTER_WARN"];
+    if (!silenceWarn) {
+      console.warn(
+        "Intl.Segmenter not available, falling back to unicodeLength:",
+        error,
+      );
+    }
     return unicodeLength(str);
   }
 };

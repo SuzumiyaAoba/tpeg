@@ -1,8 +1,8 @@
 // Re-export all types and functions from grammar-types.ts
 export * from "./grammar-types";
 
-// Re-export all types and functions from other modules
-export * from "./basic";
+// Re-export public surface from other modules (avoid exporting internals like benchmarkParser)
+export { any, anyChar, lit, literal } from "./basic";
 export * from "./capture";
 export * from "./char-class";
 export * from "./combinators";

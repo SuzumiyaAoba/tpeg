@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist", "index.ts", "src", "README.md", "package.json"],
+  "files": ["dist", "README.md", "package.json"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -18,7 +18,7 @@
     "test:ci": "bun test --reporter=verbose --bail",
     "test:grep": "bun test --grep",
     "typecheck": "tsc --noEmit",
-    "build": "bun run build:types && bun build --target=node ./index.ts --outdir=./dist",
+    "build": "bun run build:types && bun build --target=node --sourcemap ./index.ts --outdir=./dist",
     "build:types": "tsc --project ./tsconfig.json"
   },
   "dependencies": {},

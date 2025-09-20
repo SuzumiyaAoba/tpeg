@@ -681,7 +681,13 @@ export const formatParseError = (
     showLineNumbers,
   } = normalizedOptions;
 
-  const color = createColorHelper(colorize);
+  // Auto-detect colorize if not explicitly provided (TTY-aware)
+  const effectiveColorize =
+    typeof options.colorize === "boolean"
+      ? options.colorize
+      : Boolean((globalThis as any).process?.stdout?.isTTY);
+
+  const color = createColorHelper(effectiveColorize);
   const { pos, message, expected, found, parserName, context } = error;
   const { line, column } = pos;
 

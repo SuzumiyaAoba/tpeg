@@ -147,6 +147,7 @@ export const choice = <T extends unknown[]>(
     }
 
     const errors: ParseError[] = [];
+    let farthestError: ParseError | null = null;
 
     for (let i = 0; i < parsers.length; i++) {
       const parser = parsers[i];
@@ -163,12 +164,32 @@ export const choice = <T extends unknown[]>(
 
       if (isFailure(result)) {
         errors.push(result.error);
+        // Track farthest error by offset, tie-break by expected richness
+        if (
+          !farthestError ||
+          result.error.pos.offset > farthestError.pos.offset ||
+          (result.error.pos.offset === farthestError.pos.offset &&
+            (Array.isArray(result.error.expected)
+              ? result.error.expected.length
+              : result.error.expected
+                ? 1
+                : 0) >
+              (Array.isArray(farthestError.expected)
+                ? farthestError.expected.length
+                : farthestError.expected
+                  ? 1
+                  : 0))
+        ) {
+          farthestError = result.error;
+        }
       }
     }
 
-    // Performance optimization: Use Set for deduplication
+    // Aggregate expectations from farthest position only
+    const targetOffset = farthestError?.pos.offset ?? pos.offset;
     const expectedSet = new Set<string>();
     for (const error of errors) {
+      if (error.pos.offset !== targetOffset) continue;
       if (error.expected) {
         if (Array.isArray(error.expected)) {
           for (const exp of error.expected) {
@@ -181,7 +202,7 @@ export const choice = <T extends unknown[]>(
     }
 
     const expected = Array.from(expectedSet);
-    const found = errors[0]?.found;
+    const found = farthestError?.found;
 
     const customMessage = `None of the parsers matched. ${
       expected.length > 0
@@ -189,7 +210,7 @@ export const choice = <T extends unknown[]>(
         : "No expectations provided"
     }`;
 
-    return createFailure(customMessage, pos, {
+    return createFailure(customMessage, farthestError?.pos ?? pos, {
       parserName: "choice",
       ...(expected.length > 0 && { expected }),
       ...(found !== undefined && { found }),
