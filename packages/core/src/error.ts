@@ -685,7 +685,12 @@ export const formatParseError = (
   const effectiveColorize =
     typeof options.colorize === "boolean"
       ? options.colorize
-      : Boolean((globalThis as any).process?.stdout?.isTTY);
+      : (() => {
+          const g = globalThis as unknown as {
+            process?: { stdout?: { isTTY?: boolean } };
+          };
+          return Boolean(g.process?.stdout?.isTTY);
+        })();
 
   const color = createColorHelper(effectiveColorize);
   const { pos, message, expected, found, parserName, context } = error;

@@ -481,8 +481,10 @@ export const unicodeGraphemeLength = (str: string): number => {
     return count;
   } catch (error) {
     // Fallback to unicodeLength if Intl.Segmenter is not available
-    const silenceWarn =
-      (globalThis as any).process?.env?.["TPEG_SILENCE_SEGMENTER_WARN"];
+    const silenceWarn = (() => {
+      const g = globalThis as unknown as { process?: { env?: Record<string, string | undefined> } };
+      return g.process?.env?.["TPEG_SILENCE_SEGMENTER_WARN"];
+    })();
     if (!silenceWarn) {
       console.warn(
         "Intl.Segmenter not available, falling back to unicodeLength:",
