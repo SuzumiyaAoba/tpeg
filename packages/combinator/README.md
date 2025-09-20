@@ -14,9 +14,9 @@ Parser combinators built on top of tpeg-core. This package provides high-level p
 ## Installation
 
 ```bash
-npm install tpeg-combinator
+npm install @suzumiyaaoba/tpeg-combinator
 # or
-bun add tpeg-combinator
+bun add @suzumiyaaoba/tpeg-combinator
 ```
 
 ## Quick Start
@@ -32,7 +32,7 @@ import {
   number,
   sepBy,
   memoize
-} from "tpeg-combinator";
+} from "@suzumiyaaoba/tpeg-combinator";
 
 // Simple parser for "hello" or "world"
 const helloOrWorld = choice(literal("hello"), literal("world"));
@@ -52,7 +52,7 @@ console.log(result);
 Parses a JavaScript/JSON-style double-quoted string with escape sequences.
 
 ```typescript
-import { quotedString, parse } from "tpeg-combinator";
+import { quotedString, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const result = parse(quotedString, '"Hello, \\"world\\"!"');
 // Result: { success: true, val: 'Hello, "world"!' }
@@ -62,7 +62,7 @@ const result = parse(quotedString, '"Hello, \\"world\\"!"');
 Parses a single-quoted string.
 
 ```typescript
-import { singleQuotedString, parse } from "tpeg-combinator";
+import { singleQuotedString, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const result = parse(singleQuotedString, "'Hello, world!'");
 // Result: { success: true, val: 'Hello, world!' }
@@ -72,7 +72,7 @@ const result = parse(singleQuotedString, "'Hello, world!'");
 Parses a string with either single or double quotes.
 
 ```typescript
-import { anyQuotedString, parse } from "tpeg-combinator";
+import { anyQuotedString, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const result1 = parse(anyQuotedString, '"double quoted"');
 const result2 = parse(anyQuotedString, "'single quoted'");
@@ -82,7 +82,7 @@ const result2 = parse(anyQuotedString, "'single quoted'");
 Consumes characters until a condition is met.
 
 ```typescript
-import { takeUntil, literal, parse } from "tpeg-combinator";
+import { takeUntil, literal, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const parser = takeUntil(literal(","));
 const result = parse(parser, "hello,world");
@@ -93,7 +93,7 @@ const result = parse(parser, "hello,world");
 Matches content between two parsers.
 
 ```typescript
-import { between, literal, parse } from "tpeg-combinator";
+import { between, literal, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const parser = between(literal("("), literal(")"));
 const result = parse(parser, "(content)");
@@ -106,7 +106,7 @@ const result = parse(parser, "(content)");
 Parses text that matches a regular expression.
 
 ```typescript
-import { regex, parse } from "tpeg-combinator";
+import { regex, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const emailParser = regex(/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/);
 const result = parse(emailParser, "user@example.com");
@@ -116,7 +116,7 @@ const result = parse(emailParser, "user@example.com");
 Parses and returns all capture groups from a regex match.
 
 ```typescript
-import { regexGroups, parse } from "tpeg-combinator";
+import { regexGroups, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const parser = regexGroups(/^(\d+)-(\d+)-(\d+)$/);
 const result = parse(parser, "2023-12-25");
@@ -129,7 +129,7 @@ const result = parse(parser, "2023-12-25");
 Parses a JavaScript/JSON-style number including fractions and exponents.
 
 ```typescript
-import { number, parse } from "tpeg-combinator";
+import { number, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const result1 = parse(number, "123");
 const result2 = parse(number, "3.14");
@@ -140,7 +140,7 @@ const result3 = parse(number, "1.23e-4");
 Parses an integer number.
 
 ```typescript
-import { int, parse } from "tpeg-combinator";
+import { int, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const result = parse(int, "42");
 // Result: { success: true, val: 42 }
@@ -152,7 +152,7 @@ const result = parse(int, "42");
 Parses values separated by a delimiter (zero or more).
 
 ```typescript
-import { sepBy, literal, number, parse } from "tpeg-combinator";
+import { sepBy, literal, number, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const parser = sepBy(number, literal(","));
 const result = parse(parser, "1,2,3,4");
@@ -163,7 +163,7 @@ const result = parse(parser, "1,2,3,4");
 Parses values separated by a delimiter (one or more).
 
 ```typescript
-import { sepBy1, literal, number, parse } from "tpeg-combinator";
+import { sepBy1, literal, number, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const parser = sepBy1(number, literal(","));
 const result = parse(parser, "1,2,3");
@@ -187,7 +187,7 @@ const result = parse(parser, "1, 2, 3,");
 Provides custom error messages.
 
 ```typescript
-import { labeled, literal, parse } from "tpeg-combinator";
+import { labeled, literal, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const parser = labeled(literal("hello"), "Expected 'hello'");
 const result = parse(parser, "world");
@@ -198,7 +198,7 @@ const result = parse(parser, "world");
 Creates detailed error reports with input excerpts.
 
 ```typescript
-import { withDetailedError, literal, parse } from "tpeg-combinator";
+import { withDetailedError, literal, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const parser = withDetailedError(literal("hello"), "hello_parser");
 const result = parse(parser, "world");
@@ -209,7 +209,7 @@ const result = parse(parser, "world");
 Tracks line and column for better error reporting.
 
 ```typescript
-import { withPosition, literal, parse } from "tpeg-combinator";
+import { withPosition, literal, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const parser = withPosition(literal("hello"));
 const result = parse(parser, "world");
@@ -222,7 +222,7 @@ const result = parse(parser, "world");
 Creates a memoized version of a parser with cache size control.
 
 ```typescript
-import { memoize, literal, parse } from "tpeg-combinator";
+import { memoize, literal, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const parser = memoize(literal("hello"), { cacheSize: 100 });
 const result = parse(parser, "hello");
@@ -232,12 +232,14 @@ const result = parse(parser, "hello");
 Creates a recursive parser.
 
 ```typescript
-import { recursive, choice, literal, seq, parse } from "tpeg-combinator";
+import { recursive, choice, literal, seq, parse } from "@suzumiyaaoba/tpeg-combinator";
 
-const expression = recursive();
-expression.define = choice(
-  literal("x"),
-  seq(literal("("), expression, literal(")"))
+const [expression, setExpression] = recursive<string>();
+setExpression(
+  choice(
+    literal("x"),
+    seq(literal("("), expression, literal(")"))
+  )
 );
 
 const result = parse(expression, "((x))");
@@ -247,7 +249,7 @@ const result = parse(expression, "((x))");
 Logs parsing process for debugging.
 
 ```typescript
-import { debug, literal, parse } from "tpeg-combinator";
+import { debug, literal, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const parser = debug(literal("hello"), "hello_debug");
 const result = parse(parser, "hello");
@@ -260,7 +262,7 @@ const result = parse(parser, "hello");
 Wraps a parser to consume whitespace before and after.
 
 ```typescript
-import { token, literal, parse } from "tpeg-combinator";
+import { token, literal, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const parser = token(literal("hello"));
 const result = parse(parser, "  hello  ");
@@ -271,7 +273,7 @@ const result = parse(parser, "  hello  ");
 Consumes whitespace characters.
 
 ```typescript
-import { whitespace, parse } from "tpeg-combinator";
+import { whitespace, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const result = parse(whitespace, "   \t\n");
 // Consumes all whitespace characters
@@ -281,7 +283,7 @@ const result = parse(whitespace, "   \t\n");
 Consumes zero or more whitespace characters.
 
 ```typescript
-import { spaces, parse } from "tpeg-combinator";
+import { spaces, parse } from "@suzumiyaaoba/tpeg-combinator";
 
 const result = parse(spaces, "   \t\n");
 // Consumes optional whitespace
@@ -300,7 +302,7 @@ import {
   number, 
   literal,
   parse 
-} from "tpeg-combinator";
+} from "@suzumiyaaoba/tpeg-combinator";
 
 const jsonValue = choice(
   quotedString,
@@ -329,7 +331,7 @@ import {
   regex, 
   choice, 
   parse 
-} from "tpeg-combinator";
+} from "@suzumiyaaoba/tpeg-combinator";
 
 const csvField = choice(
   quotedString,

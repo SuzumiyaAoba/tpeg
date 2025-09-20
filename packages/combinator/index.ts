@@ -21,6 +21,7 @@ import {
   seq,
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
+export { parse } from "@suzumiyaaoba/tpeg-core";
 
 /**
  * Parser that consumes characters until a condition is met.
@@ -59,7 +60,7 @@ import {
  * @returns Parser<string> A parser that returns all consumed characters as a string
  */
 export const takeUntil =
-  <T>(condition: Parser<T>, parserName?: string): Parser<string> =>
+  <T>(condition: Parser<T>, _parserName?: string): Parser<string> =>
   (input: string, pos: Pos) => {
     // Ensure pos is properly defined
     const startPos = pos || { offset: 0, line: 1, column: 1 };
@@ -90,9 +91,7 @@ export const takeUntil =
       next: currentPos,
     } as const;
 
-    return parserName
-      ? withDetailedError(() => result, parserName)(input, pos)
-      : result;
+    return result;
   };
 
 /**
@@ -143,15 +142,12 @@ export const between =
     // Ensure pos is properly defined
     const startPos = pos || { offset: 0, line: 1, column: 1 };
 
-    const parser = map(
+    const base = map(
       seq(open, takeUntil(close), close),
       ([_, content]) => content,
     );
-    const result = parser(input, startPos);
-
-    return parserName
-      ? withDetailedError(() => result, parserName)(input, pos)
-      : result;
+    const parser = parserName ? withDetailedError(base, parserName) : base;
+    return parser(input, startPos);
   };
 
 /**
@@ -456,9 +452,9 @@ export const commaSeparated1 = <T>(
  * ```
  *
  * @remarks
- * - Caches results based on input position and length
- * - Uses LRU-like eviction when cache size limit is reached
- * - Cache key includes offset, line, column, and input length
+ * - Caches results per input string based on position (offset/line/column)
+ * - Uses FIFO-like eviction per input when cache size limit is reached
+ * - Cache key within input includes offset, line, and column
  * - Memory usage is proportional to maxCacheSize
  * - Performance improvement is most noticeable with recursive parsers
  * - Default cache size is 1000 entries
@@ -473,28 +469,35 @@ export const memoize = <T>(
   options: { maxCacheSize?: number; parserName?: string } = {},
 ): Parser<T> => {
   const { maxCacheSize = 1000, parserName } = options;
-  const cache = new Map<string, ParseResult<T>>();
+  // Cache per input string to avoid collisions across different inputs of the same length
+  const cacheByInput = new Map<string, Map<string, ParseResult<T>>>();
 
   const memoizedParser: Parser<T> = (input: string, pos: Pos) => {
-    // More efficient cache key generation
-    const key = `${pos.offset}:${pos.line}:${pos.column}:${input.length}`;
+    // Position-based key within the same input
+    const posKey = `${pos.offset}:${pos.line}:${pos.column}`;
 
-    const cached = cache.get(key);
+    let inner = cacheByInput.get(input);
+    if (!inner) {
+      inner = new Map<string, ParseResult<T>>();
+      cacheByInput.set(input, inner);
+    }
+
+    const cached = inner.get(posKey);
     if (cached) {
       return cached;
     }
 
     const result = parser(input, pos);
 
-    // Implement cache size limit with LRU-like behavior
-    if (cache.size >= maxCacheSize) {
-      const firstKey = cache.keys().next().value;
+    // Implement per-input cache size limit with FIFO-like eviction
+    if (inner.size >= maxCacheSize) {
+      const firstKey = inner.keys().next().value;
       if (firstKey) {
-        cache.delete(firstKey);
+        inner.delete(firstKey);
       }
     }
 
-    cache.set(key, result);
+    inner.set(posKey, result);
     return result;
   };
 
@@ -884,12 +887,27 @@ export const debug = <T>(
     if (result.success && logSuccess) {
       customLogger(`[DEBUG ${name}] SUCCESS`);
       if (logResult) {
-        customLogger(`[DEBUG ${name}] Result:`, result.val);
+        const valStr = (() => {
+          try {
+            return JSON.stringify(result.val);
+          } catch {
+            return String(result.val);
+          }
+        })();
+        customLogger(`[DEBUG ${name}] Result: ${valStr}`);
       }
     } else if (!result.success && logFailure) {
       customLogger(`[DEBUG ${name}] FAILURE`);
       if (logResult) {
-        customLogger(`[DEBUG ${name}] Error:`, (result as ParseFailure).error);
+        const err = (result as ParseFailure).error;
+        const errStr = (() => {
+          try {
+            return JSON.stringify(err);
+          } catch {
+            return String(err?.message ?? err);
+          }
+        })();
+        customLogger(`[DEBUG ${name}] Error: ${errStr}`);
       }
     }
 
@@ -1287,16 +1305,19 @@ export const withDetailedError = <T>(
       const enhancedError = { ...failure.error };
       enhancedError.parserName = parserName;
 
-      // First character at error position
+      // First character at the failure's error position
+      const failurePos = failure.error.pos ?? pos;
       const found =
-        pos.offset < input.length ? (input[pos.offset] ?? "EOF") : "EOF";
+        failurePos.offset < input.length
+          ? (input[failurePos.offset] ?? "EOF")
+          : "EOF";
 
       enhancedError.found = found;
 
       // Add context information for better error reporting
-      if (pos.offset < input.length) {
-        const contextStart = Math.max(0, pos.offset - 5);
-        const contextEnd = Math.min(input.length, pos.offset + 5);
+      if (failurePos.offset < input.length) {
+        const contextStart = Math.max(0, failurePos.offset - 5);
+        const contextEnd = Math.min(input.length, failurePos.offset + 5);
         enhancedError.context = input.substring(contextStart, contextEnd);
       }
 
@@ -1401,7 +1422,7 @@ export const whitespace = charClass(" ", "\t", "\n", "\r");
  *
  * @returns Parser<string> A parser that returns consumed whitespace characters
  */
-export const spaces = zeroOrMore(whitespace);
+export const spaces = map(zeroOrMore(whitespace), (chars) => chars.join(""));
 
 /**
  * Parser for matching a JavaScript/JSON-style string with escape sequences.
@@ -1514,9 +1535,12 @@ export const singleQuotedString: Parser<string> = (() => {
     ),
   );
 
-  return map(
-    seq(literal("'"), zeroOrMore(stringChar), literal("'")),
-    ([_, chars]) => chars.join(""),
+  return labeled(
+    map(
+      seq(literal("'"), zeroOrMore(stringChar), literal("'")),
+      ([_, chars]) => chars.join(""),
+    ),
+    "Expected valid single-quoted string",
   );
 })();
 
