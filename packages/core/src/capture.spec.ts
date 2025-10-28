@@ -11,10 +11,9 @@ import {
   mergeCaptures,
 } from "./capture";
 import { choice, sequence } from "./combinators";
-import { createPos } from "./utils";
 
 describe("capture", () => {
-  const pos = createPos();
+  const pos = { offset: 0, column: 0, line: 1 };
 
   describe("basic capture functionality", () => {
     it("should capture a simple value with a label", () => {
