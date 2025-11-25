@@ -34,10 +34,10 @@ export type CaptureResult<T> = T extends CapturedValue ? T : never;
  * // result.val = { name: "hello" }
  * ```
  */
-export const capture = <T>(
-  label: string,
+export const capture = <T, L extends string>(
+  label: L,
   parser: Parser<T>,
-): Parser<{ [K in typeof label]: T }> => {
+): Parser<{ [K in L]: T }> => {
   return (input: string, pos: Pos) => {
     const result = parser(input, pos);
 
@@ -45,7 +45,7 @@ export const capture = <T>(
       return result;
     }
 
-    const capturedValue = { [label]: result.val } as { [K in typeof label]: T };
+    const capturedValue = { [label]: result.val } as { [K in L]: T };
 
     return {
       success: true as const,
@@ -141,10 +141,7 @@ export const captureSequence = <P extends Parser<unknown>[]>(
         typeof result.val === "object" &&
         !Array.isArray(result.val)
       ) {
-        const keys = Object.keys(result.val);
-        if (keys.length > 0 && keys.every((key) => typeof key === "string")) {
-          hasCaptures = true;
-        }
+        hasCaptures = true;
       }
     }
 
@@ -236,8 +233,7 @@ export const isCapturedValue = (value: unknown): value is CapturedValue => {
   return (
     value !== null &&
     typeof value === "object" &&
-    !Array.isArray(value) &&
-    Object.keys(value).every((key) => typeof key === "string")
+    !Array.isArray(value)
   );
 };
 
