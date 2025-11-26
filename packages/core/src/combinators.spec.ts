@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { lit } from "./basic";
-import { choice, reject, seq, sequence, withDefault } from "./combinators";
+import { choice, maybe, reject, seq, sequence, withDefault } from "./combinators";
 import type { Pos } from "./types";
+import { createFailure } from "./utils";
 
 describe("seq", () => {
   it("should parse a sequence of parsers", () => {
@@ -30,6 +31,17 @@ describe("seq", () => {
     if (result.success) {
       expect(result.val).toEqual([]);
       expect(result.next).toEqual(pos);
+    }
+  });
+
+  it("should fail if a parser is undefined", () => {
+    const input = "a";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    // @ts-ignore
+    const result = seq(lit("a"), undefined)(input, pos);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.message).toContain("Parser at index 1 is undefined");
     }
   });
 });
@@ -70,6 +82,39 @@ describe("choice", () => {
     const result = choice()(input, pos);
     expect(result.success).toBe(false);
   });
+
+  it("should fail if a parser is undefined", () => {
+    const input = "b";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    // @ts-ignore
+    const result = choice(lit("a"), undefined)(input, pos);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.message).toContain("Parser at index 1 is undefined");
+    }
+  });
+
+  it("should aggregate expected values from failures", () => {
+    const input = "d";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = choice(lit("a"), lit("b"))(input, pos);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.expected).toEqual(["a", "b"]);
+    }
+  });
+
+  it("should handle nested expected arrays in failures", () => {
+    const input = "d";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const parserWithNestedExpected = (_: string, pos: Pos) =>
+      createFailure("fail", pos, { expected: ["x", "y"] });
+    const result = choice(lit("a"), parserWithNestedExpected)(input, pos);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.expected).toEqual(["a", "x", "y"]);
+    }
+  });
 });
 
 describe("sequence", () => {
@@ -81,6 +126,30 @@ describe("sequence", () => {
     if (result.success) {
       expect(result.val).toEqual(["a", "b", "c"]);
       expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
+    }
+  });
+});
+
+describe("maybe", () => {
+  it("should return the result if parser succeeds", () => {
+    const input = "a";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = maybe(lit("a"))(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("a");
+      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
+    }
+  });
+
+  it("should return null if parser fails", () => {
+    const input = "b";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = maybe(lit("a"))(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBeNull();
+      expect(result.next).toEqual(pos);
     }
   });
 });
