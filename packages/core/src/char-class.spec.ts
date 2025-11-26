@@ -167,4 +167,36 @@ describe("charClass", () => {
       expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
     }
   });
+
+  // Surrogate pair tests
+  it("should handle surrogate pair characters (emoji)", () => {
+    const input = "🌍";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = charClass("🌍")(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("🌍");
+      expect(result.next).toEqual({ offset: 2, column: 1, line: 1 });
+    }
+  });
+
+  it("should handle surrogate pair range", () => {
+    const input = "😁";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    // Range from 😀 (1F600) to 🤣 (1F923)
+    const result = charClass(["😀", "🤣"])(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("😁");
+      expect(result.next).toEqual({ offset: 2, column: 1, line: 1 });
+    }
+  });
+
+  it("should fail for character outside surrogate pair range", () => {
+    const input = "🤤"; // 1F924 (outside range)
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    // Range from 😀 (1F600) to 🤣 (1F923)
+    const result = charClass(["😀", "🤣"])(input, pos);
+    expect(result.success).toBe(false);
+  });
 });

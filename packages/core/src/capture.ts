@@ -230,11 +230,7 @@ export const captureChoice = <T extends unknown[]>(
  * @returns True if the value is a captured value
  */
 export const isCapturedValue = (value: unknown): value is CapturedValue => {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    !Array.isArray(value)
-  );
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 };
 
 /**
