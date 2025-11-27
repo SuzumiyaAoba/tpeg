@@ -6,13 +6,27 @@ import { beforeEach, describe, expect, it } from "bun:test";
 import {
   createCharRange,
   createCharacterClass,
+  createChoice,
   createGrammarDefinition,
+  createGroup,
   createIdentifier,
+  createLabeledExpression,
+  createNegativeLookahead,
+  createOptional,
   createPlus,
+  createPositiveLookahead,
+  createQuantified,
   createRuleDefinition,
+  createSequence,
+  createStar,
   createStringLiteral,
+  type GrammarDefinition,
 } from "@suzumiyaaoba/tpeg-core";
-import { TypeIntegrationEngine } from "./type-integration";
+import {
+  TypeIntegrationEngine,
+  type TypeIntegrationOptions,
+  type TypedGrammarDefinition,
+} from "./type-integration";
 
 describe("TypeIntegrationEngine", () => {
   let engine: TypeIntegrationEngine;
@@ -22,36 +36,57 @@ describe("TypeIntegrationEngine", () => {
   });
 
   describe("Basic Type Integration", () => {
-    it("should create typed grammar with type information", () => {
-      const grammar = createGrammarDefinition(
+    it("should create typed grammar with complete type information", () => {
+      const grammar: GrammarDefinition = createGrammarDefinition(
         "TestGrammar",
         [],
         [
           createRuleDefinition("greeting", createStringLiteral("hello", '"')),
           createRuleDefinition(
             "number",
-            createCharacterClass([createCharRange("0", "9")]),
+            createPlus(createCharacterClass([createCharRange("0", "9")])),
           ),
         ],
       );
 
-      // Debug: Check if grammar is created correctly
-      expect(grammar.rules).toHaveLength(2);
-      expect(grammar.rules[0]?.name).toBe("greeting");
-      expect(grammar.rules[1]?.name).toBe("number");
+      const typedGrammar = engine.createTypedGrammar(grammar);
+
+      expect(typedGrammar.name).toBe("TestGrammar");
+      expect(typedGrammar.rules).toHaveLength(2);
+      expect(typedGrammar.typeInference).toBeDefined();
+      expect(typedGrammar.typeDefinitions).toBeDefined();
+      expect(typedGrammar.imports).toBeDefined();
+    });
+
+    it("should generate correct TypeScript type definitions", () => {
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "SimpleGrammar",
+        [],
+        [
+          createRuleDefinition("literal", createStringLiteral("test", '"')),
+          createRuleDefinition(
+            "optional",
+            createOptional(createStringLiteral("maybe", '"')),
+          ),
+        ],
+      );
 
       const typedGrammar = engine.createTypedGrammar(grammar);
 
-      expect(typedGrammar.rules).toHaveLength(2);
-      expect(typedGrammar.rules[0]?.name).toBe("greeting");
-      expect(typedGrammar.rules[0]?.inferredType.typeString).toBe('"hello"');
-      expect(typedGrammar.rules[1]?.name).toBe("number");
-      expect(typedGrammar.rules[1]?.inferredType.typeString).toBe("string");
+      expect(typedGrammar.typeDefinitions).toContain(
+        'export type LiteralResult = "test";',
+      );
+      expect(typedGrammar.typeDefinitions).toContain(
+        'export type OptionalResult = "maybe" | undefined;',
+      );
+      expect(typedGrammar.typeDefinitions).toContain(
+        "export type ParserResult = LiteralResult | OptionalResult;",
+      );
     });
 
-    it("should detect dependencies correctly", () => {
-      const grammar = createGrammarDefinition(
-        "TestGrammar",
+    it("should detect rule dependencies correctly", () => {
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "DependentGrammar",
         [],
         [
           createRuleDefinition(
@@ -59,60 +94,237 @@ describe("TypeIntegrationEngine", () => {
             createCharacterClass([createCharRange("0", "9")]),
           ),
           createRuleDefinition("number", createPlus(createIdentifier("digit"))),
+          createRuleDefinition(
+            "expression",
+            createSequence([
+              createIdentifier("number"),
+              createStringLiteral("+", '"'),
+              createIdentifier("number"),
+            ]),
+          ),
         ],
       );
 
       const typedGrammar = engine.createTypedGrammar(grammar);
 
+      const digitRule = typedGrammar.rules.find((r) => r.name === "digit");
       const numberRule = typedGrammar.rules.find((r) => r.name === "number");
-      expect(numberRule?.dependencies).toContain("digit");
+      const expressionRule = typedGrammar.rules.find(
+        (r) => r.name === "expression",
+      );
+
+      expect(digitRule?.dependencies).toEqual([]);
+      expect(numberRule?.dependencies).toEqual(["digit"]);
+      expect(expressionRule?.dependencies).toEqual(["number"]);
     });
 
-    it("should generate type definitions", () => {
-      const grammar = createGrammarDefinition(
+    it("should detect dependencies in nested expressions", () => {
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "NestedDepsGrammar",
+        [],
+        [
+          createRuleDefinition("dep", createStringLiteral("val", '"')),
+          createRuleDefinition(
+            "complex",
+            createSequence([
+              createGroup(createIdentifier("dep")),
+              createQuantified(createIdentifier("dep"), 1, 2),
+              createPositiveLookahead(createIdentifier("dep")),
+              createNegativeLookahead(createIdentifier("dep")),
+              createLabeledExpression("label", createIdentifier("dep")),
+            ]),
+          ),
+        ],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+      const complexRule = typedGrammar.rules.find((r) => r.name === "complex");
+
+      expect(complexRule?.dependencies).toEqual(["dep"]);
+    });
+
+    it("should detect circular dependencies", () => {
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "CircularGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "a",
+            createSequence([
+              createIdentifier("b"),
+              createStringLiteral("end", '"'),
+            ]),
+          ),
+          createRuleDefinition(
+            "b",
+            createChoice([
+              createIdentifier("a"),
+              createStringLiteral("base", '"'),
+            ]),
+          ),
+        ],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+
+      const ruleA = typedGrammar.rules.find((r) => r.name === "a");
+      const ruleB = typedGrammar.rules.find((r) => r.name === "b");
+
+      expect(ruleA?.hasCircularDependency).toBe(true);
+      expect(ruleB?.hasCircularDependency).toBe(true);
+      expect(
+        typedGrammar.typeInference.circularDependencies.length,
+      ).toBeGreaterThan(0);
+    });
+  });
+
+  describe("Type Integration Options", () => {
+    it("should respect type namespace option", () => {
+      const options: Partial<TypeIntegrationOptions> = {
+        typeNamespace: "MyGrammar",
+      };
+      const engine = new TypeIntegrationEngine(options);
+
+      const grammar: GrammarDefinition = createGrammarDefinition(
         "TestGrammar",
         [],
-        [createRuleDefinition("greeting", createStringLiteral("hello", '"'))],
+        [createRuleDefinition("test", createStringLiteral("value", '"'))],
       );
 
       const typedGrammar = engine.createTypedGrammar(grammar);
 
       expect(typedGrammar.typeDefinitions).toContain(
-        "export type GreetingResult",
+        "export namespace MyGrammar {",
       );
-      expect(typedGrammar.typeDefinitions).toContain('"hello"');
+      expect(typedGrammar.typeDefinitions).toContain("}");
     });
-  });
 
-  describe("Advanced Type Integration", () => {
-    it("should handle circular dependencies", () => {
-      const grammar = createGrammarDefinition(
+    it("should generate type guards when enabled", () => {
+      const options: Partial<TypeIntegrationOptions> = {
+        generateTypeGuards: true,
+      };
+      const engine = new TypeIntegrationEngine(options);
+
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition("test", createStringLiteral("value", '"'))],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+
+      expect(typedGrammar.typeDefinitions).toContain(
+        "export function isTestResult(value: unknown): value is TestResult",
+      );
+      expect(typedGrammar.typeDefinitions).toContain(
+        'return typeof value === "string" && value === "value";',
+      );
+    });
+
+    it("should include documentation when enabled", () => {
+      const options: Partial<TypeIntegrationOptions> = {
+        includeDocumentation: true,
+      };
+      const engine = new TypeIntegrationEngine(options);
+
+      const grammar: GrammarDefinition = createGrammarDefinition(
         "TestGrammar",
         [],
         [
-          createRuleDefinition("a", createIdentifier("b")),
-          createRuleDefinition("b", createIdentifier("a")),
+          createRuleDefinition("documented", createStringLiteral("value", '"')),
+          createRuleDefinition("dependent", createIdentifier("documented")),
         ],
       );
 
       const typedGrammar = engine.createTypedGrammar(grammar);
 
-      expect(
-        typedGrammar.typeInference.circularDependencies.length,
-      ).toBeGreaterThan(0);
-      expect(typedGrammar.rules[0]?.hasCircularDependency).toBe(true);
-      expect(typedGrammar.rules[1]?.hasCircularDependency).toBe(true);
+      expect(typedGrammar.typeDefinitions).toContain("/**");
+      expect(typedGrammar.typeDefinitions).toContain("String literal");
+      expect(typedGrammar.typeDefinitions).toContain(
+        "Dependencies: documented",
+      );
     });
 
-    it("should generate parser interface", () => {
-      const grammar = createGrammarDefinition(
+    it("should handle strict types option", () => {
+      const options: Partial<TypeIntegrationOptions> = {
+        strictTypes: true,
+      };
+      const engine = new TypeIntegrationEngine(options);
+
+      const grammar: GrammarDefinition = createGrammarDefinition(
         "TestGrammar",
         [],
+        [createRuleDefinition("test", createStringLiteral("value", '"'))],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+
+      // With strict types, we shouldn't see 'any' or 'unknown' unless necessary
+      expect(typedGrammar.typeDefinitions).not.toContain("any");
+    });
+  });
+
+  describe("Utility Methods", () => {
+    let typedGrammar: TypedGrammarDefinition;
+
+    beforeEach(() => {
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "UtilGrammar",
+        [],
         [
-          createRuleDefinition("greeting", createStringLiteral("hello", '"')),
+          createRuleDefinition("base", createStringLiteral("base", '"')),
+          createRuleDefinition("derived", createIdentifier("base")),
+          createRuleDefinition("circular1", createIdentifier("circular2")),
+          createRuleDefinition("circular2", createIdentifier("circular1")),
+        ],
+      );
+
+      typedGrammar = engine.createTypedGrammar(grammar);
+    });
+
+    it("should get type information for specific rules", () => {
+      const baseType = engine.getTypeInfo(typedGrammar, "base");
+      const derivedType = engine.getTypeInfo(typedGrammar, "derived");
+      const unknownType = engine.getTypeInfo(typedGrammar, "unknown");
+
+      expect(baseType?.typeString).toBe('"base"');
+      expect(derivedType?.typeString).toBe('"base"');
+      expect(unknownType).toBeUndefined();
+    });
+
+    it("should detect circular dependencies for specific rules", () => {
+      expect(engine.hasCircularDependency(typedGrammar, "base")).toBe(false);
+      expect(engine.hasCircularDependency(typedGrammar, "derived")).toBe(false);
+      expect(engine.hasCircularDependency(typedGrammar, "circular1")).toBe(
+        true,
+      );
+      expect(engine.hasCircularDependency(typedGrammar, "circular2")).toBe(
+        true,
+      );
+    });
+
+    it("should get dependencies for specific rules", () => {
+      const baseDeps = engine.getDependencies(typedGrammar, "base");
+      const derivedDeps = engine.getDependencies(typedGrammar, "derived");
+
+      expect(baseDeps).toEqual([]);
+      expect(derivedDeps).toEqual(["base"]);
+    });
+  });
+
+  describe("Parser Interface Generation", () => {
+    it("should generate complete parser interface", () => {
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "ParserGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "identifier",
+            createCharacterClass([createCharRange("a", "z")]),
+          ),
           createRuleDefinition(
             "number",
-            createCharacterClass([createCharRange("0", "9")]),
+            createPlus(createCharacterClass([createCharRange("0", "9")])),
           ),
         ],
       );
@@ -120,70 +332,21 @@ describe("TypeIntegrationEngine", () => {
       const typedGrammar = engine.createTypedGrammar(grammar);
       const parserInterface = engine.generateParserInterface(typedGrammar);
 
-      expect(parserInterface).toContain("export interface TestGrammarParser");
       expect(parserInterface).toContain(
-        "greeting(input: string): ParseResult<GreetingResult>",
+        "export interface ParserGrammarParser {",
       );
       expect(parserInterface).toContain(
-        "number(input: string): ParseResult<NumberResult>",
+        "identifier(input: string): ParseResult<IdentifierResult>;",
       );
-    });
-  });
-
-  describe("Configuration Options", () => {
-    it("should respect strict types option", () => {
-      const engine = new TypeIntegrationEngine({
-        strictTypes: true,
-        includeDocumentation: true,
-      });
-
-      const grammar = createGrammarDefinition(
-        "TestGrammar",
-        [],
-        [createRuleDefinition("greeting", createStringLiteral("hello", '"'))],
+      expect(parserInterface).toContain(
+        "number(input: string): ParseResult<NumberResult>;",
       );
-
-      const typedGrammar = engine.createTypedGrammar(grammar);
-      expect(typedGrammar.typeDefinitions).toContain(
-        "export type GreetingResult",
-      );
+      expect(parserInterface).toContain("}");
     });
 
-    it("should generate type guards when enabled", () => {
-      const engine = new TypeIntegrationEngine({
-        generateTypeGuards: true,
-      });
-
-      const grammar = createGrammarDefinition(
-        "TestGrammar",
-        [],
-        [createRuleDefinition("greeting", createStringLiteral("hello", '"'))],
-      );
-
-      const typedGrammar = engine.createTypedGrammar(grammar);
-      expect(typedGrammar.typeDefinitions).toContain(
-        "export function isGreetingResult",
-      );
-    });
-  });
-
-  describe("Utility Methods", () => {
-    it("should get type info for specific rule", () => {
-      const grammar = createGrammarDefinition(
-        "TestGrammar",
-        [],
-        [createRuleDefinition("greeting", createStringLiteral("hello", '"'))],
-      );
-
-      const typedGrammar = engine.createTypedGrammar(grammar);
-      const typeInfo = engine.getTypeInfo(typedGrammar, "greeting");
-
-      expect(typeInfo?.typeString).toBe('"hello"');
-    });
-
-    it("should check circular dependencies", () => {
-      const grammar = createGrammarDefinition(
-        "TestGrammar",
+    it("should include warnings for circular dependencies in interface", () => {
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "CircularGrammar",
         [],
         [
           createRuleDefinition("a", createIdentifier("b")),
@@ -192,28 +355,68 @@ describe("TypeIntegrationEngine", () => {
       );
 
       const typedGrammar = engine.createTypedGrammar(grammar);
-      const hasCircular = engine.hasCircularDependency(typedGrammar, "a");
+      const parserInterface = engine.generateParserInterface(typedGrammar);
 
-      expect(hasCircular).toBe(true);
+      expect(parserInterface).toContain(
+        "@warning This rule has circular dependencies",
+      );
     });
+  });
 
-    it("should get dependencies for rule", () => {
-      const grammar = createGrammarDefinition(
-        "TestGrammar",
+  describe("Complex Type Scenarios", () => {
+    it("should handle nested complex expressions", () => {
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "ComplexGrammar",
         [],
         [
           createRuleDefinition(
-            "digit",
-            createCharacterClass([createCharRange("0", "9")]),
+            "element",
+            createChoice([
+              createStringLiteral("a", '"'),
+              createStringLiteral("b", '"'),
+            ]),
           ),
-          createRuleDefinition("number", createPlus(createIdentifier("digit"))),
+          createRuleDefinition("list", createStar(createIdentifier("element"))),
+          createRuleDefinition(
+            "optionalList",
+            createOptional(createIdentifier("list")),
+          ),
         ],
       );
 
       const typedGrammar = engine.createTypedGrammar(grammar);
-      const dependencies = engine.getDependencies(typedGrammar, "number");
 
-      expect(dependencies).toContain("digit");
+      const elementType = engine.getTypeInfo(typedGrammar, "element");
+      const listType = engine.getTypeInfo(typedGrammar, "list");
+      const optionalListType = engine.getTypeInfo(typedGrammar, "optionalList");
+
+      expect(elementType?.typeString).toBe('"a" | "b"');
+      expect(listType?.typeString).toBe('("a" | "b")[]');
+      expect(optionalListType?.typeString).toBe('(("a" | "b")[]) | undefined');
+    });
+
+    it("should convert rule names to PascalCase for types", () => {
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "NamingGrammar",
+        [],
+        [
+          createRuleDefinition("snake_case", createStringLiteral("test", '"')),
+          createRuleDefinition("kebab-case", createStringLiteral("test", '"')),
+          createRuleDefinition("camelCase", createStringLiteral("test", '"')),
+        ],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+
+      expect(typedGrammar.typeDefinitions).toContain(
+        "export type SnakeCaseResult",
+      );
+      expect(typedGrammar.typeDefinitions).toContain(
+        "export type KebabCaseResult",
+      );
+      expect(typedGrammar.typeDefinitions).toContain(
+        "export type CamelCaseResult",
+      );
     });
   });
 });

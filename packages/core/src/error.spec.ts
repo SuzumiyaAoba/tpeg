@@ -207,6 +207,7 @@ describe("reportParseError", () => {
     spy.mockRestore();
   });
 
+
   it("should pass options to formatParseError", () => {
     const input = "xyz";
     const result = parse(lit("abc"))(input);
@@ -221,5 +222,74 @@ describe("reportParseError", () => {
     expect(errorMessage).not.toContain("\x1b[31m"); // No ANSI color codes
 
     spy.mockRestore();
+  });
+});
+
+describe("Complex Error Formatting Scenarios", () => {
+  it("should handle multi-byte characters in source context correctly", () => {
+    const input = "あいうえお\nかきくけこ";
+    const error: ParseError = {
+      message: "Unexpected character",
+      pos: { offset: 8, line: 2, column: 2 }, // 'く' (index 2 in line 2)
+    };
+
+    const result = formatParseError(error, input, {
+      contextLines: 1,
+      highlightErrors: true,
+      colorize: false,
+    });
+
+    // Should contain the line with the error
+    expect(result).toContain("かきくけこ");
+    // Should point to the correct character 'く'
+    // 'か' (2 width) + 'き' (2 width) = 4 spaces offset
+    // The pointer line should have spaces followed by ^
+    const lines = result.split("\n");
+    const pointerLine = lines[lines.length - 1];
+    expect(pointerLine).toContain("    ^");
+  });
+
+  it("should truncate long lines correctly with multi-byte characters", () => {
+    const longLine = "あ".repeat(100);
+    const input = longLine;
+    const error: ParseError = {
+      message: "Error",
+      pos: { offset: 0, line: 1, column: 0 },
+    };
+
+    const result = formatParseError(error, input, {
+      maxLineLength: 10,
+      colorize: false,
+    });
+
+    // Should be truncated
+    expect(result).toContain("...");
+    // Should not contain the full line
+    expect(result).not.toContain(longLine);
+    // Should contain the start of the line
+    expect(result).toContain("あああ");
+  });
+
+  it("should handle mixed width characters in pointer alignment", () => {
+    // 'a' (1) + 'あ' (2) + 'b' (1) = error at 'b' should be offset by 3
+    const input = "aあb";
+    const error: ParseError = {
+      message: "Error",
+      pos: { offset: 2, line: 1, column: 2 },
+    };
+
+    const result = formatParseError(error, input, {
+      colorize: false,
+      highlightErrors: true,
+    });
+
+    const lines = result.split("\n");
+    const pointerLine = lines[lines.length - 1];
+    // "a" (1) + "あ" (2) = 3 spaces
+    // plus line number prefix "1 | " (4 chars) -> total 7 spaces
+    // But wait, line number width depends on total lines. Here 1 line -> width 1.
+    // "1 | " -> 4 chars.
+    // So 4 + 3 = 7 spaces.
+    expect(pointerLine).toContain("       ^");
   });
 });

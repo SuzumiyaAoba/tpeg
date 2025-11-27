@@ -4,15 +4,23 @@ import {
   createCharacterClass,
   createCharRange,
   createChoice,
+  createExportDeclaration,
+  createGrammarAnnotation,
+  createGrammarDefinition,
   createGroup,
   createIdentifier,
+  createImportStatement,
   createLabeledExpression,
+  createModularGrammarDefinition,
+  createModuleFile,
+  createModuleInfo,
   createNegativeLookahead,
   createOptional,
   createPlus,
   createPositiveLookahead,
   createQualifiedIdentifier,
   createQuantified,
+  createRuleDefinition,
   createSequence,
   createStar,
   createStringLiteral,
@@ -233,6 +241,208 @@ describe("Grammar Types Factory Functions", () => {
         type: "LabeledExpression",
         label: "label",
         expression: expr,
+      });
+    });
+  });
+  describe("createGrammarAnnotation", () => {
+    it("should create a grammar annotation", () => {
+      const node = createGrammarAnnotation("version", "1.0.0");
+      expect(node).toEqual({
+        type: "GrammarAnnotation",
+        key: "version",
+        value: "1.0.0",
+      });
+    });
+  });
+
+  describe("createRuleDefinition", () => {
+    it("should create a rule definition without documentation", () => {
+      const expr = createStringLiteral("a", '"');
+      const node = createRuleDefinition("myRule", expr);
+      expect(node).toEqual({
+        type: "RuleDefinition",
+        name: "myRule",
+        pattern: expr,
+      });
+    });
+
+    it("should create a rule definition with documentation", () => {
+      const expr = createStringLiteral("a", '"');
+      const docs = ["Doc comment"];
+      const node = createRuleDefinition("myRule", expr, docs);
+      expect(node).toEqual({
+        type: "RuleDefinition",
+        name: "myRule",
+        pattern: expr,
+        documentation: docs,
+      });
+    });
+  });
+
+  describe("createGrammarDefinition", () => {
+    it("should create a grammar definition", () => {
+      const node = createGrammarDefinition("MyGrammar");
+      expect(node).toEqual({
+        type: "GrammarDefinition",
+        name: "MyGrammar",
+        annotations: [],
+        rules: [],
+        transforms: [],
+      });
+    });
+  });
+
+  describe("Module System Factory Functions", () => {
+    describe("createImportStatement", () => {
+      it("should create a simple import statement", () => {
+        const node = createImportStatement("path/to/module");
+        expect(node).toEqual({
+          type: "ImportStatement",
+          modulePath: "path/to/module",
+        });
+      });
+
+      it("should create an import statement with alias", () => {
+        const node = createImportStatement("path/to/module", "myAlias");
+        expect(node).toEqual({
+          type: "ImportStatement",
+          modulePath: "path/to/module",
+          alias: "myAlias",
+        });
+      });
+
+      it("should create an import statement with selective imports", () => {
+        const node = createImportStatement(
+          "path/to/module",
+          undefined,
+          ["Rule1", "Rule2"],
+        );
+        expect(node).toEqual({
+          type: "ImportStatement",
+          modulePath: "path/to/module",
+          selective: ["Rule1", "Rule2"],
+        });
+      });
+
+      it("should create an import statement with version", () => {
+        const node = createImportStatement(
+          "path/to/module",
+          undefined,
+          undefined,
+          "1.0.0",
+        );
+        expect(node).toEqual({
+          type: "ImportStatement",
+          modulePath: "path/to/module",
+          version: "1.0.0",
+        });
+      });
+    });
+
+    describe("createExportDeclaration", () => {
+      it("should create an export declaration", () => {
+        const rules = ["Rule1", "Rule2"];
+        const node = createExportDeclaration(rules);
+        expect(node).toEqual({
+          type: "ExportDeclaration",
+          rules,
+        });
+      });
+    });
+
+    describe("createModuleInfo", () => {
+      it("should create module info with all fields", () => {
+        const node = createModuleInfo(
+          "MyNamespace",
+          ["dep1"],
+          ["conflict1"],
+          "1.0.0",
+        );
+        expect(node).toEqual({
+          type: "ModuleInfo",
+          namespace: "MyNamespace",
+          dependencies: ["dep1"],
+          conflicts: ["conflict1"],
+          version: "1.0.0",
+        });
+      });
+
+      it("should create empty module info", () => {
+        const node = createModuleInfo();
+        expect(node).toEqual({
+          type: "ModuleInfo",
+        });
+      });
+    });
+
+    describe("createModularGrammarDefinition", () => {
+      it("should create a modular grammar definition", () => {
+        const node = createModularGrammarDefinition("MyGrammar");
+        expect(node).toEqual({
+          type: "ModularGrammarDefinition",
+          name: "MyGrammar",
+          annotations: [],
+          rules: [],
+          transforms: [],
+        });
+      });
+
+      it("should create a modular grammar definition with all fields", () => {
+        const imports = [createImportStatement("mod")];
+        const exports = createExportDeclaration(["Rule1"]);
+        const moduleInfo = createModuleInfo("NS");
+        const node = createModularGrammarDefinition(
+          "MyGrammar",
+          [],
+          [],
+          [],
+          imports,
+          exports,
+          moduleInfo,
+          "ParentGrammar",
+        );
+        expect(node).toEqual({
+          type: "ModularGrammarDefinition",
+          name: "MyGrammar",
+          annotations: [],
+          rules: [],
+          transforms: [],
+          imports,
+          exports,
+          moduleInfo,
+          extends: "ParentGrammar",
+        });
+      });
+    });
+
+    describe("createModuleFile", () => {
+      it("should create a module file", () => {
+        const node = createModuleFile("path/to/file.tpeg");
+        expect(node).toEqual({
+          type: "ModuleFile",
+          filePath: "path/to/file.tpeg",
+          imports: [],
+          grammars: [],
+        });
+      });
+
+      it("should create a module file with content", () => {
+        const imports = [createImportStatement("mod")];
+        const grammars = [createGrammarDefinition("G")];
+        const moduleInfo = createModuleInfo("NS");
+        const node = createModuleFile(
+          "path/to/file.tpeg",
+          imports,
+          grammars,
+          moduleInfo,
+        );
+        expect(node).toEqual({
+          type: "ModuleFile",
+          filePath: "path/to/file.tpeg",
+          imports,
+          grammars,
+          moduleInfo,
+        });
       });
     });
   });
