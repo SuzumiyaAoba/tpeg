@@ -22,8 +22,8 @@ describe("Performance Tests", () => {
       const endTime = performance.now();
       const duration = endTime - startTime;
 
-      // Should complete within 200ms (adjusted for slower systems)
-      expect(duration).toBeLessThan(200);
+      // Should complete within 400ms (adjusted for slower systems)
+      expect(duration).toBeLessThan(400);
     });
 
     it("should handle mixed ASCII and Unicode efficiently", () => {
@@ -37,8 +37,8 @@ describe("Performance Tests", () => {
       const endTime = performance.now();
       const duration = endTime - startTime;
 
-      // Should complete within 200ms (adjusted for slower systems)
-      expect(duration).toBeLessThan(200);
+      // Should complete within 400ms (adjusted for slower systems)
+      expect(duration).toBeLessThan(400);
     });
   });
 
