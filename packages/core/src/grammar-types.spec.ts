@@ -337,6 +337,22 @@ describe("Grammar Types Factory Functions", () => {
           version: "1.0.0",
         });
       });
+
+      it("should create an import statement with all options", () => {
+        const node = createImportStatement(
+          "path/to/module",
+          "myAlias",
+          ["Rule1"],
+          "1.0.0",
+        );
+        expect(node).toEqual({
+          type: "ImportStatement",
+          modulePath: "path/to/module",
+          alias: "myAlias",
+          selective: ["Rule1"],
+          version: "1.0.0",
+        });
+      });
     });
 
     describe("createExportDeclaration", () => {
@@ -371,6 +387,14 @@ describe("Grammar Types Factory Functions", () => {
         const node = createModuleInfo();
         expect(node).toEqual({
           type: "ModuleInfo",
+        });
+      });
+
+      it("should create module info with only namespace", () => {
+        const node = createModuleInfo("MyNamespace");
+        expect(node).toEqual({
+          type: "ModuleInfo",
+          namespace: "MyNamespace",
         });
       });
     });
@@ -411,6 +435,25 @@ describe("Grammar Types Factory Functions", () => {
           exports,
           moduleInfo,
           extends: "ParentGrammar",
+        });
+      });
+
+      it("should create a modular grammar definition with only imports", () => {
+        const imports = [createImportStatement("mod")];
+        const node = createModularGrammarDefinition(
+          "MyGrammar",
+          [],
+          [],
+          [],
+          imports,
+        );
+        expect(node).toEqual({
+          type: "ModularGrammarDefinition",
+          name: "MyGrammar",
+          annotations: [],
+          rules: [],
+          transforms: [],
+          imports,
         });
       });
     });
