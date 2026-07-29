@@ -11,7 +11,7 @@ import {
   grammarDefinition,
   stringLiteral,
   tpegExpression,
-} from "@SuzumiyaAoba/parser";
+} from "@suzumiyaaoba/tpeg-parser";
 
 console.log("🚀 TPEG Parser Complete Demo");
 console.log("============================\n");

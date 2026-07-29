@@ -1,13 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import { parse } from "@suzumiyaaoba/tpeg-core";
+import { literal } from "@suzumiyaaoba/tpeg-core";
 import {
-  takeUntil,
+  anyQuotedString,
   between,
   quotedString,
   singleQuotedString,
-  anyQuotedString,
+  takeUntil,
 } from "./string";
-import { literal } from "@suzumiyaaoba/tpeg-core";
 
 describe("string combinators", () => {
   describe("takeUntil", () => {

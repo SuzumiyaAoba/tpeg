@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parse } from "@suzumiyaaoba/tpeg-core";
+import { literal } from "@suzumiyaaoba/tpeg-core";
 import {
   EOF,
   alpha,
@@ -14,7 +15,6 @@ import {
   token,
   whitespace,
 } from "./primitive";
-import { literal } from "@suzumiyaaoba/tpeg-core";
 
 describe("primitive combinators", () => {
   describe("whitespace", () => {

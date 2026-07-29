@@ -6,14 +6,14 @@
  * including string literals, character classes, identifiers, and composition operators.
  */
 
-import type { Parser } from "@SuzumiyaAoba/core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   basicSyntax,
   characterClass,
   identifier,
   stringLiteral,
   tpegExpression,
-} from "@SuzumiyaAoba/parser";
+} from "@suzumiyaaoba/tpeg-parser";
 
 console.log("🎯 TPEG Parser Basic Demo\n");
 

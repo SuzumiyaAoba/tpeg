@@ -207,7 +207,6 @@ describe("reportParseError", () => {
     spy.mockRestore();
   });
 
-
   it("should pass options to formatParseError", () => {
     const input = "xyz";
     const result = parse(lit("abc"))(input);

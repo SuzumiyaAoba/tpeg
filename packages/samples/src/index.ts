@@ -100,6 +100,10 @@ const main = async () => {
   }
 
   const sampleName = args[0];
+  if (sampleName === undefined) {
+    showHelp();
+    return;
+  }
   await runSample(sampleName);
 };
 

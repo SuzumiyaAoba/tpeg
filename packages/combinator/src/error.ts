@@ -1,8 +1,4 @@
-import type {
-  ParseFailure,
-  Parser,
-  Pos,
-} from "@suzumiyaaoba/tpeg-core";
+import type { ParseFailure, Parser, Pos } from "@suzumiyaaoba/tpeg-core";
 
 /**
  * Creates a parser with detailed error reporting that includes context and position information.

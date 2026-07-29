@@ -1,8 +1,4 @@
-import type {
-  ParseResult,
-  Parser,
-  Pos,
-} from "@suzumiyaaoba/tpeg-core";
+import type { ParseResult, Parser, Pos } from "@suzumiyaaoba/tpeg-core";
 import { withDetailedError } from "./error";
 
 /**

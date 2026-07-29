@@ -3,5 +3,11 @@
   "compilerOptions": {
     "emitDeclarationOnly": true
   },
-  "exclude": ["dist", "node_modules", "**/*.spec.ts", "*.type-test.ts", "test-types.ts"]
+  "exclude": [
+    "dist",
+    "node_modules",
+    "**/*.spec.ts",
+    "*.type-test.ts",
+    "test-types.ts"
+  ]
 }

@@ -16,7 +16,6 @@ import {
   parse,
   safeExtractValue,
   unicodeLength,
-
 } from "./utils";
 
 describe("Utils", () => {
@@ -377,5 +376,3 @@ describe("Utils", () => {
     });
   });
 });
-
-

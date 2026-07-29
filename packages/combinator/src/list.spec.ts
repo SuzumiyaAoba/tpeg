@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { parse } from "@suzumiyaaoba/tpeg-core";
-import { sepBy, sepBy1, commaSeparated, commaSeparated1 } from "./list";
 import { literal } from "@suzumiyaaoba/tpeg-core";
+import { commaSeparated, commaSeparated1, sepBy, sepBy1 } from "./list";
 
 describe("list combinators", () => {
   describe("sepBy", () => {
@@ -64,10 +64,10 @@ describe("list combinators", () => {
     it("should fail on trailing comma if not allowed", () => {
       const parser = commaSeparated(literal("a"), false);
       const result = parse(parser)("a, a, ");
-      
+
       // If allowTrailing is false, nonEmpty fails because of notPredicate(comma) at the third item.
       // Then choice(nonEmpty, empty) will try 'empty'.
-      // 'empty' also fails because it starts with 'notPredicate(valueParser)', 
+      // 'empty' also fails because it starts with 'notPredicate(valueParser)',
       // but valueParser matches the first 'a'.
       // So the whole parser fails.
       expect(result.success).toBe(false);

@@ -4,6 +4,7 @@
 
 import { beforeEach, describe, expect, it } from "bun:test";
 import {
+  type GrammarDefinition,
   createCharRange,
   createCharacterClass,
   createChoice,
@@ -20,7 +21,6 @@ import {
   createSequence,
   createStar,
   createStringLiteral,
-  type GrammarDefinition,
 } from "@suzumiyaaoba/tpeg-core";
 import {
   TypeIntegrationEngine,

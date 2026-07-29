@@ -1,7 +1,4 @@
-import type {
-  NonEmptyArray,
-  Parser,
-} from "@suzumiyaaoba/tpeg-core";
+import type { NonEmptyArray, Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   choice,
   literal,

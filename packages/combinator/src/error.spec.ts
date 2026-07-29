@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { parse } from "@suzumiyaaoba/tpeg-core";
-import { withDetailedError, labeled, labeledWithContext } from "./error";
 import { literal } from "@suzumiyaaoba/tpeg-core";
+import { labeled, labeledWithContext, withDetailedError } from "./error";
 
 describe("error combinators", () => {
   describe("withDetailedError", () => {

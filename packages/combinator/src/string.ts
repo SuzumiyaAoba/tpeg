@@ -1,7 +1,4 @@
-import type {
-  Parser,
-  Pos,
-} from "@suzumiyaaoba/tpeg-core";
+import type { Parser, Pos } from "@suzumiyaaoba/tpeg-core";
 import {
   anyChar,
   choice,
@@ -110,9 +107,8 @@ export const quotedString: Parser<string> = (() => {
   );
 
   return labeled(
-    map(
-      seq(literal('"'), zeroOrMore(stringChar), literal('"')),
-      ([_, chars]) => chars.join(""),
+    map(seq(literal('"'), zeroOrMore(stringChar), literal('"')), ([_, chars]) =>
+      chars.join(""),
     ),
     "Expected valid double-quoted string",
   );
@@ -155,9 +151,8 @@ export const singleQuotedString: Parser<string> = (() => {
   );
 
   return labeled(
-    map(
-      seq(literal("'"), zeroOrMore(stringChar), literal("'")),
-      ([_, chars]) => chars.join(""),
+    map(seq(literal("'"), zeroOrMore(stringChar), literal("'")), ([_, chars]) =>
+      chars.join(""),
     ),
     "Expected valid single-quoted string",
   );

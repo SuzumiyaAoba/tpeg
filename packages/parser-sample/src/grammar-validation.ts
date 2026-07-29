@@ -11,7 +11,7 @@ import { join } from "node:path";
 import {
   generateTypeScriptParser,
   grammarDefinition,
-} from "@SuzumiyaAoba/parser";
+} from "@suzumiyaaoba/tpeg-parser";
 
 const EXAMPLES_DIR = join(import.meta.dir, "../examples");
 

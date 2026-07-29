@@ -1,13 +1,14 @@
 import { describe, expect, it } from "bun:test";
+import type { Pos } from "@suzumiyaaoba/tpeg-core";
 import { parse } from "@suzumiyaaoba/tpeg-core";
-import { memoize, recursive, withPosition } from "./logic";
 import { literal } from "@suzumiyaaoba/tpeg-core";
+import { memoize, recursive, withPosition } from "./logic";
 
 describe("logic combinators", () => {
   describe("memoize", () => {
     it("should cache results", () => {
       let callCount = 0;
-      const parser = (input: string, pos: any) => {
+      const parser = (input: string, pos: Pos) => {
         callCount++;
         return literal("a")(input, pos);
       };
@@ -22,7 +23,7 @@ describe("logic combinators", () => {
 
     it("should evict from cache when full", () => {
       let callCount = 0;
-      const parser = (input: string, pos: any) => {
+      const parser = (input: string, pos: Pos) => {
         callCount++;
         const char = input[pos.offset];
         if (char === undefined) {
@@ -51,7 +52,7 @@ describe("logic combinators", () => {
           if (resultRest.success) {
             return {
               success: true,
-              val: "a" + resultRest.val,
+              val: `a${resultRest.val}`,
               current: pos,
               next: resultRest.next,
             };

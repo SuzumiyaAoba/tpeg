@@ -3,14 +3,6 @@ import type { ParseResult, Pos } from "@suzumiyaaoba/tpeg-core";
 import { jsonParser, parseJSON } from "./json";
 import type { JSONObject, Parser } from "./json";
 
-// Type for extended global object for testing
-interface ExtendedGlobal {
-  jsonParser?: typeof jsonParser;
-  require?: {
-    main: { id: string };
-  };
-}
-
 // Extend Global type
 declare global {
   var jsonParserMock: typeof jsonParser | undefined;
@@ -23,118 +15,6 @@ const parse =
     const pos: Pos = { offset: 0, line: 1, column: 1 };
     return parser(input, pos);
   };
-
-// Implement JSON validation function for testing
-const _testJSON = (): { successes: number; failures: number } => {
-  // Suppress console output
-  const originalConsoleLog = console.log;
-  const originalConsoleError = console.error;
-
-  let successes = 0;
-  let failures = 0;
-
-  // Mock to capture console output
-  const logs: string[] = [];
-  console.log = (msg: unknown) => {
-    logs.push(String(msg));
-  };
-  console.error = () => {};
-
-  try {
-    // Basic test cases
-    const testCases = [
-      // Basic values
-      '"test string"',
-      "123.45",
-      "true",
-      "false",
-      "null",
-      // Arrays
-      "[]",
-      '["a", 1, true]',
-      // Objects
-      "{}",
-      '{"a": 1, "b": "string", "c": true}',
-      '{"a": [1, 2], "b": {"c": 3}}',
-      // Complex examples
-      `
-      {
-        "name": "John Doe",
-        "age": 30,
-        "isActive": true,
-        "address": {
-          "street": "123 Main St",
-          "city": "Anytown"
-        },
-        "hobbies": ["reading", "cycling", "coding"]
-      }
-      `,
-      // Examples with escaped characters
-      '{"escaped": "Line 1\\nLine 2\\tTabbed\\r\\nWindows line"}',
-      // Nested arrays and objects
-      '[1, [2, 3], {"key": [4, {"nested": 5}]}]',
-    ];
-
-    // Run all test cases
-    for (const testCase of testCases) {
-      const parsed = parseJSON(testCase);
-
-      // Special null check
-      if (testCase.trim() === "null") {
-        if (parsed === null) {
-          successes++;
-        } else {
-          failures++;
-        }
-      } else {
-        if (parsed !== null) {
-          try {
-            // Stringify as JSON and parse again to compare
-            const jsonString = JSON.stringify(parsed);
-            const expectedObj = JSON.parse(testCase);
-            const expectedString = JSON.stringify(expectedObj);
-
-            if (jsonString === expectedString) {
-              successes++;
-            } else {
-              failures++;
-            }
-          } catch (_e) {
-            failures++;
-          }
-        } else {
-          failures++;
-        }
-      }
-    }
-
-    // Test invalid JSON
-    const invalidCases = [
-      '{invalid: "json"}',
-      '{"missing": }',
-      '{"unclosed": "string}',
-      "[1, 2,]", // Trailing comma
-      '{"key": undefined}', // JavaScript value but not JSON
-    ];
-
-    for (const invalidCase of invalidCases) {
-      const parsed = parseJSON(invalidCase);
-
-      // Expect null
-      if (parsed === null) {
-        successes++;
-      } else {
-        failures++;
-      }
-    }
-
-    return { successes, failures };
-  } finally {
-    // Restore original console functions
-    console.log = originalConsoleLog;
-    console.error = originalConsoleError;
-  }
-};
 
 // Tests for jsonParser functionality
 describe("jsonParser", () => {
@@ -308,23 +188,23 @@ describe("jsonParser", () => {
       !Array.isArray(complexResult.val)
     ) {
       const val = complexResult.val as JSONObject;
-      if (Array.isArray(val.users)) {
-        expect(Array.isArray(val.users)).toBe(true);
-        expect(val.users.length).toBe(2);
-        const firstUser = val.users[0];
+      if (Array.isArray(val["users"])) {
+        expect(Array.isArray(val["users"])).toBe(true);
+        expect(val["users"].length).toBe(2);
+        const firstUser = val["users"][0];
         if (
           typeof firstUser === "object" &&
           firstUser !== null &&
           !Array.isArray(firstUser)
         ) {
-          expect((firstUser as JSONObject).name).toBe("John");
-          expect((firstUser as JSONObject).skills).toEqual([
+          expect((firstUser as JSONObject)["name"]).toBe("John");
+          expect((firstUser as JSONObject)["skills"]).toEqual([
             "JavaScript",
             "TypeScript",
           ]);
         }
       }
-      expect(val.count).toBe(2);
+      expect(val["count"]).toBe(2);
     }
   });
 

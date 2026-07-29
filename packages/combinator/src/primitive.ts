@@ -1,6 +1,4 @@
-import type {
-  Parser,
-} from "@suzumiyaaoba/tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   any,
   charClass,
@@ -13,7 +11,7 @@ import {
   seq,
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
-import { withDetailedError, labeled } from "./error";
+import { labeled, withDetailedError } from "./error";
 
 /**
  * Parser that matches a single whitespace character (space, tab, newline, carriage return).

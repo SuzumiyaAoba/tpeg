@@ -7,7 +7,7 @@
   "scripts": {
     "test": "bun test",
     "build": "tsc",
-    "type-check": "tsc --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@suzumiyaaoba/tpeg-core": "workspace:*"

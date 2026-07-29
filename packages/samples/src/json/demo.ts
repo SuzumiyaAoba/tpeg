@@ -128,14 +128,14 @@ const demoComplexStructures = () => {
 
     // Demonstrate accessing nested data
     if (typeof result === "object" && result !== null && "users" in result) {
-      const users = result.users as Array<Record<string, unknown>>;
+      const users = result["users"] as Array<Record<string, unknown>>;
       console.log("Accessing nested data:");
       const firstUser = users[0] as Record<string, unknown>;
       const secondUser = users[1] as Record<string, unknown>;
-      console.log(`First user name: ${firstUser?.name}`);
-      const metadata = secondUser?.metadata as Record<string, unknown>;
-      const preferences = metadata?.preferences as Record<string, unknown>;
-      console.log(`Second user theme: ${preferences?.theme}`);
+      console.log(`First user name: ${firstUser?.["name"]}`);
+      const metadata = secondUser?.["metadata"] as Record<string, unknown>;
+      const preferences = metadata?.["preferences"] as Record<string, unknown>;
+      console.log(`Second user theme: ${preferences?.["theme"]}`);
       console.log();
     }
   } catch (error) {

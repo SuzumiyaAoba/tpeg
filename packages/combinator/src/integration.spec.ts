@@ -9,11 +9,7 @@ import {
   seq,
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
-import {
-  between,
-  recursive,
-  token,
-} from "./index";
+import { between, recursive, token } from "./index";
 
 describe("combinator integration tests", () => {
   it("should detect and prevent infinite loops in repetition parsers", () => {
@@ -70,7 +66,9 @@ describe("combinator integration tests", () => {
         seq(term, zeroOrMore(seq(choice(literal("+"), literal("-")), term))),
         ([first, rest]) => {
           return rest.reduce((acc, [op, val]) => {
-            return op === "+" ? (acc as number) + (val as number) : (acc as number) - (val as number);
+            return op === "+"
+              ? (acc as number) + (val as number)
+              : (acc as number) - (val as number);
           }, first as number);
         },
       ),

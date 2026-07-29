@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import {
   createAnyChar,
-  createCharacterClass,
   createCharRange,
+  createCharacterClass,
   createChoice,
   createExportDeclaration,
   createGrammarAnnotation,
@@ -312,11 +312,10 @@ describe("Grammar Types Factory Functions", () => {
       });
 
       it("should create an import statement with selective imports", () => {
-        const node = createImportStatement(
-          "path/to/module",
-          undefined,
-          ["Rule1", "Rule2"],
-        );
+        const node = createImportStatement("path/to/module", undefined, [
+          "Rule1",
+          "Rule2",
+        ]);
         expect(node).toEqual({
           type: "ImportStatement",
           modulePath: "path/to/module",

@@ -23,6 +23,7 @@ export * from "./utils";
  * Namespaced parsers for better API organization.
  */
 import { any, anyChar, lit, literal } from "./basic";
+import { capture, captureChoice, captureSequence } from "./capture";
 import { charClass } from "./char-class";
 import {
   choice,
@@ -32,12 +33,13 @@ import {
   sequence,
   withDefault,
 } from "./combinators";
-import { oneOrMore, optional, quantified, zeroOrMore } from "./repetition";
+import { formatParseError, formatParseResult, reportParseError } from "./error";
 import { and, andPredicate, not, notPredicate } from "./lookahead";
-import { capture, captureChoice, captureSequence } from "./capture";
-import { map, mapError, mapResult, filter, tap } from "./transform";
+import { oneOrMore, optional, quantified, zeroOrMore } from "./repetition";
+import { filter, map, mapError, mapResult, tap } from "./transform";
 import {
   advancePos,
+  createFailure,
   createPos,
   extractValue,
   getCharAndLength,
@@ -52,13 +54,7 @@ import {
   releasePos,
   safeExtractValue,
   unicodeLength,
-  createFailure,
 } from "./utils";
-import {
-  formatParseError,
-  formatParseResult,
-  reportParseError,
-} from "./error";
 export const parsers = {
   // Basic parsers
   any,

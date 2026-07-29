@@ -1,6 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import { lit } from "./basic";
-import { choice, maybe, reject, seq, sequence, withDefault } from "./combinators";
+import {
+  choice,
+  maybe,
+  reject,
+  seq,
+  sequence,
+  withDefault,
+} from "./combinators";
 import type { Pos } from "./types";
 import { createFailure } from "./utils";
 

@@ -6,7 +6,7 @@
  * including annotations, rule definitions, and complete grammar blocks.
  */
 
-import type { Parser } from "@SuzumiyaAoba/core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   documentationComment,
   grammarAnnotation,
@@ -14,7 +14,7 @@ import {
   quotedString,
   ruleDefinition,
   singleLineComment,
-} from "@SuzumiyaAoba/parser";
+} from "@suzumiyaaoba/tpeg-parser";
 
 console.log("📚 TPEG Grammar Definition Demo (Phase 1.6)\n");
 

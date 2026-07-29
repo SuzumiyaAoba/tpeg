@@ -11,7 +11,7 @@
 import {
   generateTypeScriptParser,
   grammarDefinition,
-} from "@SuzumiyaAoba/parser";
+} from "@suzumiyaaoba/tpeg-parser";
 
 console.log("🏗️  TPEG Parser Generation Demo\n");
 
