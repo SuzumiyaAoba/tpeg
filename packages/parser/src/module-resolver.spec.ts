@@ -10,6 +10,7 @@ import {
   type FileSystemInterface,
   ModuleResolutionError,
   ModuleResolver,
+  NodeFileSystem,
   createModuleResolver,
 } from "./module-resolver";
 
@@ -270,6 +271,18 @@ describe("Module Resolution Engine", () => {
       expect(error.cycle).toEqual(cycle);
       expect(error.message).toContain("Circular dependency detected");
       expect(error).toBeInstanceOf(ModuleResolutionError);
+    });
+  });
+
+  describe("NodeFileSystem", () => {
+    it("resolves a relative path against a base directory without using require()", () => {
+      // NodeFileSystem is exported as "type": "module", so any use of the
+      // CommonJS `require` function here would throw under real Node.js ESM
+      // (Bun happens to polyfill it, which is why a bug here could pass
+      // under `bun test` while still breaking real Node consumers).
+      const fs = new NodeFileSystem();
+      expect(fs.resolve("/a/b", "../c/d.tpeg")).toBe("/a/c/d.tpeg");
+      expect(fs.resolve("/a/b", "./sibling.tpeg")).toBe("/a/b/sibling.tpeg");
     });
   });
 });

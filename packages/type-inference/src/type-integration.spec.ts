@@ -221,6 +221,60 @@ describe("TypeIntegrationEngine", () => {
       );
     });
 
+    it("should generate a guard that requires undefined for lookahead (void) results", () => {
+      const options: Partial<TypeIntegrationOptions> = {
+        generateTypeGuards: true,
+      };
+      const engine = new TypeIntegrationEngine(options);
+
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "test",
+            createPositiveLookahead(createStringLiteral("value", '"')),
+          ),
+        ],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+
+      // Lookaheads never produce a value, so the guard must check for
+      // undefined, not reject it -- the generic fallback used to emit
+      // the opposite condition here.
+      expect(typedGrammar.typeDefinitions).toContain(
+        "return value === undefined;",
+      );
+      expect(typedGrammar.typeDefinitions).not.toContain(
+        "return value !== undefined;",
+      );
+    });
+
+    it("should generate an object-shaped guard for labeled expression results", () => {
+      const options: Partial<TypeIntegrationOptions> = {
+        generateTypeGuards: true,
+      };
+      const engine = new TypeIntegrationEngine(options);
+
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "test",
+            createLabeledExpression("label", createStringLiteral("value", '"')),
+          ),
+        ],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+
+      expect(typedGrammar.typeDefinitions).toContain(
+        'return typeof value === "object" && value !== null;',
+      );
+    });
+
     it("should include documentation when enabled", () => {
       const options: Partial<TypeIntegrationOptions> = {
         includeDocumentation: true,

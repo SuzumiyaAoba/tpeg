@@ -286,8 +286,15 @@ export class TypeIntegrationEngine {
       guardImplementation = `return typeof value === "string";`;
     } else if (inferredType.isArray) {
       guardImplementation = "return Array.isArray(value);";
+    } else if (inferredType.baseType === "object") {
+      guardImplementation = `return typeof value === "object" && value !== null;`;
+    } else if (inferredType.baseType === "void") {
+      // Lookaheads (inferLookaheadType) never produce a value, so the
+      // runtime result actually is undefined -- unlike the generic
+      // fallback below, "!== undefined" would be backwards here.
+      guardImplementation = "return value === undefined;";
     } else {
-      // TODO: Enhance type guard for union and tuple types
+      // TODO: Enhance type guard for union types
       guardImplementation = "return value !== undefined;";
     }
 

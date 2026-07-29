@@ -338,7 +338,10 @@ describe("TypeInferenceEngine", () => {
       expect(result.isArray).toBe(false);
     });
 
-    it("should handle quantified expressions with min === 0", () => {
+    it("should handle quantified expressions with min === 0 as a plain array, never undefined", () => {
+      // quantified(x, 0, 1) always returns T[] -- an empty array when
+      // nothing matches -- never undefined. Only Optional (`?`) can
+      // produce undefined.
       const engine = new TypeInferenceEngine();
       const quantified = createQuantified(
         createStringLiteral("hello", '"'),
@@ -348,8 +351,8 @@ describe("TypeInferenceEngine", () => {
 
       const result = engine.inferExpressionType(quantified);
 
-      expect(result.typeString).toBe('"hello"[] | undefined');
-      expect(result.nullable).toBe(true);
+      expect(result.typeString).toBe('"hello"[]');
+      expect(result.nullable).toBe(false);
     });
 
     it("should handle quantified expressions with array types disabled", () => {
@@ -362,7 +365,8 @@ describe("TypeInferenceEngine", () => {
 
       const result = engine.inferExpressionType(quantified);
 
-      expect(result.typeString).toBe("string | undefined");
+      expect(result.typeString).toBe("string");
+      expect(result.nullable).toBe(false);
       expect(result.isArray).toBe(false);
     });
 
@@ -384,7 +388,10 @@ describe("TypeInferenceEngine", () => {
       expect(negativeResult.baseType).toBe("void");
     });
 
-    it("should handle labeled expressions correctly", () => {
+    it("should wrap the inner type in an object keyed by the label, matching capture()'s runtime shape", () => {
+      // capture(label, parser) (packages/core/src/capture.ts) returns
+      // Parser<{ [label]: T }>, not Parser<T> -- the inferred type must
+      // match that, not just the inner expression's bare type.
       const engine = new TypeInferenceEngine();
       const labeled = createLabeledExpression(
         "value",
@@ -393,7 +400,7 @@ describe("TypeInferenceEngine", () => {
 
       const result = engine.inferExpressionType(labeled);
 
-      expect(result.typeString).toBe('"hello"');
+      expect(result.typeString).toBe('{ value: "hello" }');
       expect(result.documentation).toContain("Labeled expression: value");
     });
 

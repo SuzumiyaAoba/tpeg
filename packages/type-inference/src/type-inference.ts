@@ -785,7 +785,11 @@ export class TypeInferenceEngine {
    * Infer type for quantified expressions
    *
    * Handles various quantification patterns including exact counts,
-   * ranges, and optional repetitions.
+   * ranges, and optional repetitions. Note that `quantified()`
+   * (packages/core/src/repetition.ts) always returns `T[]`, including for
+   * `{0,n}` / `{0,}` -- an empty array on zero matches, never `undefined`.
+   * Only the PEG `?` operator (`Optional`, handled by inferOptionalType)
+   * actually produces a possibly-`undefined` result.
    *
    * @param expression - Quantified expression
    * @returns Inferred type for quantified expression
@@ -798,21 +802,34 @@ export class TypeInferenceEngine {
       return innerType;
     }
 
-    // If min === 0, it's optional
-    const isOptional = expression.min === 0;
-    const baseTypeString = this.options.inferArrayTypes
-      ? `${innerType.typeString}[]`
-      : "string";
+    const documentation = this.options.generateDocumentation
+      ? `Quantified expression: {${expression.min},${expression.max ?? ""}}`
+      : undefined;
+
+    if (!this.options.inferArrayTypes) {
+      return {
+        typeString: "string",
+        nullable: false,
+        isArray: false,
+        baseType: "string",
+        imports: innerType.imports,
+        documentation,
+      };
+    }
+
+    // Handle parentheses for complex union types, matching Star/Plus.
+    const needsParens = innerType.typeString.includes(" | ");
+    const elementType = needsParens
+      ? `(${innerType.typeString})`
+      : innerType.typeString;
 
     return {
-      typeString: isOptional ? `${baseTypeString} | undefined` : baseTypeString,
-      nullable: isOptional,
-      isArray: this.options.inferArrayTypes,
+      typeString: `${elementType}[]`,
+      nullable: false,
+      isArray: true,
       baseType: innerType.baseType,
       imports: innerType.imports,
-      documentation: this.options.generateDocumentation
-        ? `Quantified expression: {${expression.min},${expression.max || ""}}`
-        : undefined,
+      documentation,
     };
   }
 
@@ -844,19 +861,30 @@ export class TypeInferenceEngine {
   /**
    * Infer type for labeled expressions
    *
-   * Simply delegates to the inner expression's type inference.
+   * The `capture(label, parser)` combinator (packages/core/src/capture.ts)
+   * that code generation emits for a labeled expression wraps the inner
+   * value in an object keyed by the label -- `Parser<{ [label]: T }>`, not
+   * `Parser<T>`. The inferred type must match that actual runtime shape,
+   * particularly because `inferSequenceType` builds a tuple type from each
+   * element's inferred type as-is: a bare inner type here would produce a
+   * tuple slot type that doesn't match what a sequence containing this
+   * labeled expression actually produces at runtime.
    *
    * @param expression - Labeled expression
-   * @returns Inferred type for the labeled expression
+   * @returns Inferred type for the labeled expression, wrapped in an object
+   *   keyed by the label
    */
   private inferLabeledExpressionType(
     expression: LabeledExpression,
   ): InferredType {
-    // For labeled expressions, we infer the type of the inner expression
     const innerType = this.inferExpressionType(expression.expression);
 
     return {
-      ...innerType,
+      typeString: `{ ${expression.label}: ${innerType.typeString} }`,
+      nullable: false,
+      isArray: false,
+      baseType: "object",
+      imports: innerType.imports,
       documentation: this.options.generateDocumentation
         ? `Labeled expression: ${expression.label}`
         : undefined,

@@ -12,6 +12,7 @@
  * - Version constraint validation
  */
 
+import { resolve as resolvePath } from "node:path";
 import type {
   ImportStatement,
   ModuleFile,
@@ -370,8 +371,7 @@ export class NodeFileSystem implements FileSystemInterface {
   }
 
   resolve(basePath: string, relativePath: string): string {
-    const path = require("node:path");
-    return path.resolve(basePath, relativePath);
+    return resolvePath(basePath, relativePath);
   }
 }
 
