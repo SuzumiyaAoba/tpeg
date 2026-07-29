@@ -4,31 +4,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-TPEG is a TypeScript library for building parsers using Parsing Expression Grammars (PEGs). The project is structured as a monorepo with multiple packages:
+TPEG is a TypeScript library for building parsers using Parsing Expression Grammars (PEGs). The project is structured as a monorepo (`packages/*`, Bun workspaces) with these packages:
 
-- **tpeg-core**: Core PEG parsing types and utilities with type inference system
-- **tpeg-combinator**: Parser combinators built on tpeg-core  
-- **tpeg-ast**: Abstract Syntax Tree building and manipulation tools (using unist ecosystem)
-- **tpeg-parser**: TPEG grammar parser implementation 
+- **tpeg-core**: Core PEG parsing types, primitives and utilities. No dependency on any other package here.
+- **tpeg-combinator**: Higher-level parser combinators built on tpeg-core, split into modules (`primitive`, `string`, `list`, `logic`, `error`, `debug`) re-exported from `packages/combinator/src/index.ts`.
+- **tpeg-ast**: Abstract Syntax Tree building and manipulation tools (using the unist ecosystem)
+- **tpeg-type-inference**: Type inference and type-safe-grammar integration for TPEG grammar definitions (`TypeInferenceEngine`, `TypeIntegrationEngine`). A separate package from tpeg-core.
+- **tpeg-parser**: Parser for TPEG's own grammar definition syntax, built on tpeg-core + tpeg-combinator
 - **tpeg-generator**: Code generation system with template-based output using Eta templates
-- **tpeg-parser-sample**: Comprehensive demo samples showcasing parser capabilities
-- **tpeg-samples**: Legacy example parsers (JSON, CSV, arithmetic, PEG grammar)
+- **tpeg-parser-sample**: Runnable demos of the grammar parser and generator
+- **tpeg-samples**: Legacy example parsers (JSON, CSV, arithmetic, PEG grammar), built directly on tpeg-core/tpeg-combinator
+
+For exact current counts (packages, files, tests), don't trust prose — run the commands in this file (`find packages -name "*.spec.ts" | wc -l`, `bun test`, etc.); they drift with every commit and this file doesn't get updated in lockstep.
 
 ## Development Commands
 
 ### Build System
 ```bash
-# Build all packages
+# Build all packages, in dependency order
 bun run build
 
 # Build individual packages
 bun run build:core
-bun run build:ast  
+bun run build:ast
 bun run build:combinator
 bun run build:parser
 bun run build:generator
+bun run build:type-inference
 bun run build:parser-sample
+bun run build:samples
 ```
+
+Cross-package type resolution (e.g. `tpeg-combinator` importing types from `tpeg-core`) depends on each dependency's `dist/` existing — a package's `dist/index.d.ts` is what `tsc` resolves against for a workspace dependency. If you `bun run typecheck` on a package whose dependencies haven't been built yet, `tsc` can fall back to that dependency's raw `src/`, checked under *your* package's compiler options instead of its own (this is why CI runs `build` before `typecheck`).
 
 ### Testing
 ```bash
@@ -47,14 +54,19 @@ cd packages/core && bun test
 
 ### Code Quality
 ```bash
-# Lint and format with Biome
-bun run lint
-bun run check
-bun run fix
+# Read-only checks (what CI runs) -- do not modify files
+bun run lint      # biome lint
+bun run check     # biome check (lint + format + import order); this is the CI gate
 
-# Type checking
+# Writes to files -- local use only
+bun run fix       # biome check --fix --unsafe
+bun run format    # biome format --write
+
+# Type checking (all 8 packages with a package.json)
 bun run typecheck
 ```
+
+CI order is `check` → `build` → `typecheck` → `test` (see `.github/workflows/ci.yml`); run the same sequence locally before pushing if you want to catch what CI will catch.
 
 ### Demo and Sample Parsers
 ```bash
@@ -87,45 +99,54 @@ The parsing system follows a functional approach with these key concepts:
 
 ### Package Dependencies
 ```
-tpeg-core (no dependencies, includes type inference system)
+tpeg-core (no workspace dependencies)
+    ├── tpeg-ast (also depends on unist ecosystem: @types/unist, unist-builder)
     ├── tpeg-combinator (depends on tpeg-core)
-    ├── tpeg-ast (depends on unist ecosystem: @types/unist, unist-builder)
-    ├── tpeg-parser (depends on tpeg-core, tpeg-combinator)
+    │   └── tpeg-samples (depends on tpeg-core, tpeg-combinator) [legacy]
     ├── tpeg-generator (depends on tpeg-core, eta templates)
-    ├── tpeg-parser-sample (depends on tpeg-core, tpeg-parser)
-    └── tpeg-samples (depends on tpeg-core, tpeg-combinator) [legacy]
+    ├── tpeg-type-inference (depends on tpeg-core)
+    └── tpeg-parser (depends on tpeg-core, tpeg-combinator)
+        └── tpeg-parser-sample (depends on tpeg-core, tpeg-parser)
 ```
 
-### Current Development Phase
-The project has completed Phase 3.1 with parser generation system implementation. Recent achievements:
-- **Phase 3.1 Complete**: Implemented comprehensive parser generation system with type inference
-- **Code Generation**: Added tpeg-generator package with Eta template-based code generation
-- **Type Inference System**: Advanced type inference for parser combinators and generated code
-- **Parser Sample Framework**: Comprehensive demo system in tpeg-parser-sample package
-- **Monorepo Structure**: 7 packages with ~192 TypeScript files and 40 test files
-- **Full Test Coverage**: All tests passing with comprehensive integration testing
-- Key files: 
-  - `packages/generator/src/`: Code generation implementation
-  - `packages/parser-sample/src/`: Demo and validation systems
-  - `packages/parser/src/`: TPEG grammar parser implementation
-- Grammar specification: `docs/peg-grammar.md`
+### Architecture Notes
+- The grammar parser (`packages/parser/src/`) implements TPEG's own grammar definition syntax; the spec it follows is `docs/peg-grammar.md`.
+- Code generation (`packages/generator/src/`) turns a parsed grammar into a standalone TypeScript parser using Eta templates, with optimized and base template variants.
+- Type inference for grammar definitions (`TypeInferenceEngine`, `TypeIntegrationEngine`) lives in its own package, `packages/type-inference/src/`, not in `tpeg-core` — see the migration note below for the correct import.
+- `packages/parser-sample/src/` holds runnable demos of the grammar parser and generator; `packages/samples/` is a separate, older set of hand-written example parsers (JSON, CSV, arithmetic, PEG) that predates the grammar parser and doesn't depend on it.
+- A previous `self-transpile` package (using TPEG to parse its own grammar) was removed; the parser combinator implementation was subsequently split from one large file into the current `primitive`/`string`/`list`/`logic`/`error`/`debug` modules under `packages/combinator/src/`.
 
-#### Production Ready Features
-- **Type-safe parser generation** with comprehensive TypeScript types
-- **Automatic documentation** generation with JSDoc comments  
-- **Performance optimized** with caching and efficient algorithms
-- **Error handling** with graceful degradation and meaningful messages
+### Migration note: type inference moved out of tpeg-core
+`TypeInferenceEngine` and `TypeIntegrationEngine` live in `packages/type-inference/`, not `tpeg-core`. Import from `@suzumiyaaoba/tpeg-type-inference`:
+
+```typescript
+import { TypeInferenceEngine, TypeIntegrationEngine } from '@suzumiyaaoba/tpeg-type-inference';
+
+const typeInference = new TypeInferenceEngine({
+  inferArrayTypes: true,
+  inferUnionTypes: true,
+  generateDocumentation: true
+});
+
+const typeIntegration = new TypeIntegrationEngine({
+  strictTypes: true,
+  generateTypeGuards: true,
+  typeNamespace: 'MyGrammar'
+});
+
+const typedGrammar = typeIntegration.createTypedGrammar(grammar);
+const typeDefinitions = typedGrammar.typeDefinitions;
+```
 
 ### Testing Strategy
-- Comprehensive test suite with 40 test files across 7 packages (~192 TypeScript files total)
-- Unit tests for individual parsers and utilities (*.spec.ts)
+- Unit tests for individual parsers and utilities (`*.spec.ts`, colocated with source under each package's `src/`)
 - Integration tests for parser combinations and advanced features
 - Type inference system integration tests
 - Code generation and template system tests
 - Sample parser implementation tests (JSON, CSV, arithmetic)
 - Performance benchmarks in tpeg-combinator
 - Grammar validation and error handling tests
-- Achieved comprehensive test coverage across all packages
+- Run `bun run test` for current pass/fail counts and `bun run test:coverage` for current coverage — don't rely on numbers written here.
 
 ## Code Style and Development Guidelines
 
@@ -136,7 +157,7 @@ The project has completed Phase 3.1 with parser generation system implementation
 - Be explicit about types and leverage type narrowing
 
 ### Code Quality
-- Uses Biome for formatting and linting (`bun run lint`, `bun run check`, `bun run fix`)
+- Uses Biome for formatting and linting — see "Code Quality" under Development Commands above for which scripts are read-only vs. which write
 - Double quotes for strings, space indentation
 - ESM modules throughout
 - Keep functions small and focused on single responsibility
@@ -170,71 +191,10 @@ The project has completed Phase 3.1 with parser generation system implementation
 - Use descriptive commit messages with types: feat, fix, docs, style, refactor, test, chore
 - Create GitHub Issues for features and bugs, link commits with "Fixes #123"
 - Use feature branches with descriptive names
-- Add AI assistance signature to PRs: `*This Pull Request was created with assistance from Claude 4 Sonnet*`
+- Note AI assistance in PR descriptions when applicable, naming the actual model used (don't hardcode a model name here — it will be wrong within a few months)
 
-## Recent Major Changes (2025-07-01)
+## Notes for AI Assistants
 
-### Phase 3.1: Parser Generation System (Latest)
-Major milestone with comprehensive parser generation capabilities:
-
-#### Key Additions
-- **tpeg-generator Package**: Complete code generation system using Eta templates
-  - Template-based parser generation with optimized and base variants
-  - Performance utilities and type-safe code generation
-  - Supports both memoized and optimized parser output patterns
-
-- **tpeg-parser-sample Package**: Comprehensive demonstration framework
-  - Grammar validation and parsing demonstrations
-  - File-based parser examples with TPEG grammar files
-  - Performance benchmarking and generator integration demos
-
-- **Type Inference System**: Advanced type inference for parser combinators
-  - Intelligent type narrowing and inference for generated parsers
-  - Integration with existing parser combinator architecture
-  - Comprehensive test coverage for type inference scenarios
-
-#### Enhanced Package Structure
-- **7 Total Packages**: Core, combinator, AST, parser, generator, parser-sample, samples (legacy)
-- **~192 TypeScript Files**: Substantial codebase growth with robust architecture
-- **40 Test Files**: Comprehensive testing across all packages and integration points
-- **Eta Template System**: Professional-grade code generation with template inheritance
-
-#### Recent Improvements
-- Resolved all Biome linting errors across the monorepo
-- Fixed TypeScript module resolution issues in monorepo configuration
-- Enhanced build system with individual package build targets
-- Comprehensive demo system showcasing parser capabilities
-
-### Previous Phase 1.1: Parser Combinator Refactoring
-Earlier foundational work that established current architecture:
-
-#### Migration Guide (Still Relevant)
-```typescript
-import { TypeInferenceEngine, TypeIntegrationEngine } from 'tpeg-core';
-
-const typeInference = new TypeInferenceEngine({
-  inferArrayTypes: true,
-  inferUnionTypes: true,
-  generateDocumentation: true
-});
-
-const typeIntegration = new TypeIntegrationEngine({
-  strictTypes: true,
-  generateTypeGuards: true,
-  typeNamespace: 'MyGrammar'
-});
-
-const typedGrammar = typeIntegration.createTypedGrammar(grammar);
-const typeDefinitions = typedGrammar.typeDefinitions;
-```
-
-#### Breaking Changes
-- Parser imports now use direct constants instead of function calls
-- Exception: Complex parsers with circular dependencies remain functions (e.g., `expression()`)
-
-#### CI/Quality Improvements
-- **Linting Compliance**: Full Biome linting compliance with all rules passing
-- **Code Review**: Addressed all feedback with enhanced type safety and documentation
-- **Test Coverage**: Maintained 683/683 tests passing with new type inference functionality
-- **Module Resolution**: Resolved TypeScript configuration issues across monorepo packages
-- CI pipeline fully green and stable
+- **Don't trust historical narrative sections (including previous versions of this file) over the repository itself.** Package lists, dependency trees, counts, and "current status" claims go stale between edits of this file and reality. When in doubt, `grep`/`find`/run the command rather than citing prose here.
+- **Don't cite this file's git history or past "Recent Changes" as project status.** `git log` is the authoritative record of what changed and when; this file should describe the current state, not a changelog.
+- For current CI status, check the [Actions tab](https://github.com/SuzumiyaAoba/tpeg/actions) rather than trusting a claim written here.

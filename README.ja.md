@@ -2,6 +2,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+English version: [README.md](./README.md)
+
 > **注意**: このプロジェクトは現在開発中（アルファ版）です。APIは変更される可能性があるため、本番環境での使用には注意してください。
 
 TPEGは、Parsing Expression Grammar（PEG）を使用してパーサーを構築するためのTypeScriptライブラリです。コード生成機能を備えた柔軟なパースソリューションを提供する複数のパッケージで構成されています。
@@ -27,7 +29,7 @@ TPEGは以下のパッケージで構成されるモノレポです：
 PEGパースのためのコア型とユーティリティ。
 
 ```bash
-npm install tpeg-core
+npm install @suzumiyaaoba/tpeg-core
 ```
 
 ### tpeg-combinator
@@ -35,7 +37,7 @@ npm install tpeg-core
 tpeg-coreの上に構築されたパーサーコンビネーター。
 
 ```bash
-npm install tpeg-combinator
+npm install @suzumiyaaoba/tpeg-combinator
 ```
 
 ### tpeg-ast
@@ -43,7 +45,15 @@ npm install tpeg-combinator
 抽象構文木の構築と操作のためのツール。
 
 ```bash
-npm install tpeg-ast
+npm install @suzumiyaaoba/tpeg-ast
+```
+
+### tpeg-type-inference
+
+TPEG文法定義のための型推論システム。
+
+```bash
+npm install @suzumiyaaoba/tpeg-type-inference
 ```
 
 ### tpeg-parser
@@ -51,7 +61,7 @@ npm install tpeg-ast
 完全な繰り返し演算子サポートを持つTPEG構文のPEG文法パーサー。
 
 ```bash
-npm install tpeg-parser
+npm install @suzumiyaaoba/tpeg-parser
 ```
 
 ### tpeg-generator
@@ -59,7 +69,7 @@ npm install tpeg-parser
 TPEGパーサーのためのテンプレートベースのコード生成システム。
 
 ```bash
-npm install tpeg-generator
+npm install @suzumiyaaoba/tpeg-generator
 ```
 
 ### tpeg-samples
@@ -67,7 +77,7 @@ npm install tpeg-generator
 様々なユースケースを実証するサンプルパーサー。
 
 ```bash
-npm install tpeg-samples
+npm install @suzumiyaaoba/tpeg-samples
 ```
 
 ### tpeg-parser-sample
@@ -75,7 +85,7 @@ npm install tpeg-samples
 パーサーパッケージのサンプル実装と例。
 
 ```bash
-npm install tpeg-parser-sample
+npm install @suzumiyaaoba/tpeg-parser-sample
 ```
 
 ## 使用例
@@ -128,7 +138,7 @@ const helloOrWorld = choice(literal("hello"), literal("world"));
 const parser = seq(helloOrWorld, zeroOrMore(seq(literal(" "), helloOrWorld)));
 
 // テキストをパース
-const result = parse(parser, "hello world hello");
+const result = parse(parser)("hello world hello");
 console.log(result);
 ```
 
@@ -169,21 +179,25 @@ console.log(result.code); // 生成されたTypeScriptパーサーコード
 
 ### 文字列パース
 
-- `quotedString()`: JavaScript/JSONスタイルの二重引用符付き文字列をパース
-- `singleQuotedString()`: 単一引用符付き文字列をパース
-- `anyQuotedString()`: 単一または二重引用符の文字列をパース
+- `quotedString`: JavaScript/JSONスタイルの二重引用符付き文字列にマッチするパーサー
+- `singleQuotedString`: 単一引用符付き文字列にマッチするパーサー
+- `anyQuotedString`: 単一または二重引用符の文字列にマッチするパーサー
 - `takeUntil(condition)`: 条件が満たされるまで文字を消費
 - `between(open, close)`: 2つのパーサー間のコンテンツにマッチ
 
-### パターンマッチング
+### 文字クラスと基本パーサー
 
-- `regex(pattern)`: 正規表現にマッチするテキストをパース
-- `regexGroups(pattern)`: 正規表現マッチからすべてのキャプチャグループをパースして返す
+- `alpha` / `letter`: アルファベット1文字にマッチ
+- `digit`: 数字1文字にマッチ
+- `alphaNum`: 英数字1文字にマッチ
+- `identifier`: 識別子（英字またはアンダースコアで始まり、英数字またはアンダースコアが続く）にマッチ
+- `EOF`: 入力の終端にマッチ
+- `startOfLine()` / `endOfLine()`: 行頭・行末（または入力終端）にマッチ
 
 ### 数値パース
 
-- `number()`: 分数と指数を含むJavaScript/JSONスタイルの数値をパース
-- `int()`: 整数をパース
+- `number`: 小数・指数表記を含むJavaScript/JSONスタイルの数値にマッチするパーサー
+- `int`: 整数にマッチするパーサー
 
 ### リストパース
 
@@ -208,9 +222,8 @@ console.log(result.code); // 生成されたTypeScriptパーサーコード
 ### 空白とトークン
 
 - `token(parser)`: 前後の空白を消費するパーサーをラップ
-- `whitespace`: 空白文字を消費
-- `spaces`: 0回以上の空白文字を消費
-- `newline`: 任意の改行シーケンスにマッチ
+- `whitespace`: 空白文字1文字（スペース・タブ・改行・復帰）にマッチ
+- `spaces`: 0回以上の空白文字にマッチし、消費した文字列を返す
 
 ## テスト
 
@@ -246,13 +259,13 @@ generatorパッケージには、コード生成が一貫した期待される�
 
 ```bash
 # コアパッケージをインストール
-npm install tpeg-core
+npm install @suzumiyaaoba/tpeg-core
 
 # またはbunで
-bun add tpeg-core
+bun add @suzumiyaaoba/tpeg-core
 
 # オプションで追加パッケージをインストール
-npm install tpeg-combinator tpeg-ast tpeg-generator
+npm install @suzumiyaaoba/tpeg-combinator @suzumiyaaoba/tpeg-ast @suzumiyaaoba/tpeg-generator
 ```
 
 ## 開発
@@ -264,6 +277,12 @@ cd tpeg
 
 # 依存関係をインストール
 bun install
+
+# コードチェック（read-only、CIと同じ）
+bun run check
+
+# 型チェック
+bun run typecheck
 
 # すべてのパッケージをビルド
 bun run build
@@ -277,6 +296,8 @@ bun run test:coverage
 # 開発中のテストを監視
 bun run test:watch
 ```
+
+`lint`/`check` は読み取り専用（CIで実行されるもの）で、`fix`/`format` はファイルを書き換えるローカル開発用です。詳細やパッケージ単位のスクリプトは [`CLAUDE.md`](./CLAUDE.md) を参照してください。
 
 ## ドキュメント
 
