@@ -22,7 +22,6 @@
     "sourceMap": true,
     "removeComments": false,
     "importHelpers": true,
-    "downlevelIteration": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": false,
     "resolveJsonModule": true,

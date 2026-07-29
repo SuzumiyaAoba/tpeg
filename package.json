@@ -8,7 +8,7 @@
     "@types/bun": "latest"
   },
   "peerDependencies": {
-    "typescript": "^5.8.2"
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "husky": "^9.1.7"

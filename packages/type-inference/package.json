@@ -13,7 +13,7 @@
     "@suzumiyaaoba/tpeg-core": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "^7.0.2"
   },
   "keywords": ["tpeg", "parser", "type-inference", "typescript", "grammar"],
   "author": "TPEG Team",

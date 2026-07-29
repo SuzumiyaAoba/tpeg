@@ -10,14 +10,13 @@
     "allowJs": true,
 
     // Bundler mode
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "noEmit": true,
 
     // Best practices
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
-
-    "baseUrl": "."
+    "types": ["bun"]
   },
   "exclude": ["./dist/"]
 }
