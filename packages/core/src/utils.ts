@@ -136,6 +136,12 @@ export const nextPos = (char: string, { offset, column, line }: Pos): Pos => {
  * necessary error information. It's used throughout the parsing system
  * to provide consistent error reporting.
  *
+ * `message` and `pos` always win over same-named keys in `options`. This
+ * matters for callers that build a wrapper error by spreading a child
+ * error's fields (`{ ...childError, parserName: "sequence" }`) while also
+ * passing their own, more contextual `message`/`pos` explicitly -- the
+ * explicit arguments are the ones that end up on the returned error.
+ *
  * @param message - Human-readable error message describing the failure
  * @param pos - Position where the error occurred
  * @param options - Additional error information (expected, found, parserName, context)
@@ -163,9 +169,9 @@ export const createFailure = (
   return {
     success: false,
     error: {
+      ...options,
       message,
       pos,
-      ...options,
     },
   };
 };

@@ -486,6 +486,20 @@ describe("quantified", () => {
     }
   });
 
+  it("should report the child parser's failure position, not the repetition's start", () => {
+    // Repetition 1 matches "abc" at offset 0-3. Repetition 2 (required)
+    // starts at offset 3 but the mismatch inside it ("aXc" vs "abc") is at
+    // offset 4, one character into that repetition -- the reported position
+    // should point at the actual mismatch, not the repetition's start.
+    const parser = quantified(lit("abc"), 2);
+    const result = parser("abcaXc", { offset: 0, line: 1, column: 0 });
+
+    expect(isFailure(result)).toBe(true);
+    if (isFailure(result)) {
+      expect(result.error.pos.offset).toBe(4);
+    }
+  });
+
   it("should validate parameters at construction time", () => {
     // An invalid range is a grammar authoring error, not a parse failure,
     // so it is reported eagerly when the parser is built.

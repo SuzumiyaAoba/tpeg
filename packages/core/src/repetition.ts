@@ -243,8 +243,8 @@ export const quantified = <T>(
       if (!result.success) {
         const failure = result as ParseFailure;
         return createFailure(
-          `quantified parser failed at required repetition ${i + 1}/${min}`,
-          currentPos,
+          `quantified parser failed at required repetition ${i + 1}/${min}: ${failure.error.message}`,
+          failure.error.pos,
           {
             ...failure.error,
             parserName,
