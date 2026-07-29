@@ -54,7 +54,6 @@ export {
   hashString,
   stringInterner,
   createCharClassLookup,
-  PositionTracker,
   analyzeExpressionComplexity,
   analyzeGrammarPerformance,
   PerformanceMonitor,

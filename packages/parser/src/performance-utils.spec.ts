@@ -108,4 +108,64 @@ describe("analyzeGrammarPerformance recursion detection", () => {
       analysis.optimizationSuggestions.some((s) => s.includes("'Digit'")),
     ).toBe(false);
   });
+
+  it("does not warn about left recursion for an ordinary right-recursive rule", () => {
+    // Expr = "a" Expr / "a"  -- the self-reference only occurs after "a" has
+    // already been consumed, so this is safe right recursion, not left
+    // recursion.
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "Expr",
+          createChoice([
+            createSequence([
+              createStringLiteral("a", '"'),
+              createIdentifier("Expr"),
+            ]),
+            createStringLiteral("a", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const analysis = analyzeGrammarPerformance(grammar);
+
+    expect(
+      analysis.optimizationSuggestions.some((s) =>
+        s.includes("left recursion"),
+      ),
+    ).toBe(false);
+  });
+
+  it("warns about left recursion when a rule references itself before consuming any input", () => {
+    // Expr = Expr "a" / "a"  -- the self-reference is the first element of
+    // the sequence, so it's tried at the same position with nothing
+    // consumed: classic left recursion, which loops forever in a PEG parser.
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "Expr",
+          createChoice([
+            createSequence([
+              createIdentifier("Expr"),
+              createStringLiteral("a", '"'),
+            ]),
+            createStringLiteral("a", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const analysis = analyzeGrammarPerformance(grammar);
+
+    expect(
+      analysis.optimizationSuggestions.some(
+        (s) => s.includes("'Expr'") && s.includes("left recursion"),
+      ),
+    ).toBe(true);
+  });
 });
