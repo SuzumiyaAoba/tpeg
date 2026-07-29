@@ -323,14 +323,6 @@ export const safeExtractValue = <T>(result: ParseResult<T>): T | undefined => {
 };
 
 /**
- * Position object pool for memory efficiency.
- *
- * Reuses position objects to reduce garbage collection pressure
- * during intensive parsing operations.
- */
-// Position pooling removed for simplicity and minimal overhead of small objects
-
-/**
  * Creates a position object with default values.
  *
  * This utility function creates a standardized position object with
@@ -354,25 +346,6 @@ export const createPos = (offset = 0, column = 0, line = 1): Pos => ({
   column,
   line,
 });
-
-/**
- * Releases a position object back to the pool for reuse.
- *
- * This function should be called when a position object is no longer needed
- * to improve memory efficiency during intensive parsing operations.
- *
- * @param pos - The position object to release
- *
- * @example
- * ```typescript
- * const pos = createPos(10, 5, 2);
- * // Use the position...
- * releasePos(pos);
- * ```
- */
-export const releasePos = (_pos: Pos): void => {
-  // no-op
-};
 
 /**
  * Advances position by a string, handling newlines correctly.
@@ -469,8 +442,7 @@ export const unicodeGraphemeLength = (str: string): number => {
   if (!str) return 0;
 
   try {
-    // biome-ignore lint/suspicious/noExplicitAny: Intl.Segmenter is not in TypeScript types yet
-    const segmenter = new (Intl as any).Segmenter("en", {
+    const segmenter = new Intl.Segmenter("en", {
       granularity: "grapheme",
     });
     const segments = segmenter.segment(str);
@@ -516,8 +488,10 @@ export const unicodeGraphemeLength = (str: string): number => {
  * isWhitespace("1");   // false
  * ```
  */
+const WHITESPACE_REGEX = /\s/;
+
 export const isWhitespace = (char: string): boolean => {
-  return /\s/.test(char);
+  return WHITESPACE_REGEX.test(char);
 };
 
 /**

@@ -2,12 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { anyChar, literal } from "./basic";
 import { choice, sequence } from "./combinators";
 import { zeroOrMore } from "./repetition";
-import {
-  createPos,
-  getCharAndLength,
-  releasePos,
-  unicodeGraphemeLength,
-} from "./utils";
+import { createPos, getCharAndLength, unicodeGraphemeLength } from "./utils";
 
 describe("Edge Cases and Stress Tests", () => {
   describe("Very Large Input Handling", () => {
@@ -75,12 +70,6 @@ describe("Edge Cases and Stress Tests", () => {
 
         const result = parser(input, pos);
         expect(result.success).toBe(true);
-
-        // Release position objects
-        releasePos(pos);
-        if (result.success) {
-          releasePos(result.next);
-        }
       }
 
       // Force garbage collection if available
@@ -95,27 +84,14 @@ describe("Edge Cases and Stress Tests", () => {
       expect(memoryIncrease).toBeLessThan(50 * 1024 * 1024);
     });
 
-    it("should handle position pool correctly", () => {
+    it("should create many position objects without corrupting their values", () => {
       const positions: ReturnType<typeof createPos>[] = [];
 
-      // Create many positions
       for (let i = 0; i < 1000; i++) {
         positions.push(createPos(i, i % 100, Math.floor(i / 100) + 1));
       }
 
-      // Release all positions
       for (const pos of positions) {
-        releasePos(pos);
-      }
-
-      // Create new positions - should reuse from pool
-      const newPositions: ReturnType<typeof createPos>[] = [];
-      for (let i = 0; i < 100; i++) {
-        newPositions.push(createPos(i, i, i + 1));
-      }
-
-      // All positions should be valid
-      for (const pos of newPositions) {
         expect(pos.offset).toBeGreaterThanOrEqual(0);
         expect(pos.column).toBeGreaterThanOrEqual(0);
         expect(pos.line).toBeGreaterThanOrEqual(1);

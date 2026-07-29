@@ -51,7 +51,6 @@ import {
   isWhitespace,
   nextPos,
   parse,
-  releasePos,
   safeExtractValue,
   unicodeLength,
 } from "./utils";
@@ -107,7 +106,6 @@ export const utils = {
 
   // Position utilities
   createPos,
-  releasePos,
   nextPos,
   advancePos,
 
