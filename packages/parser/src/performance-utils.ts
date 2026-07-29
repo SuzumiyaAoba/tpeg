@@ -194,25 +194,29 @@ export class PositionTracker {
 /**
  * Expression complexity analyzer for optimization decisions
  * Helps determine when to apply memoization or other optimizations
+ *
+ * Whether the rule this expression belongs to is (directly or indirectly)
+ * recursive cannot be determined from the expression tree alone: a genuinely
+ * recursive PEG rule refers to itself (or a rule that refers back to it) by
+ * name through an `Identifier` node, not by containing a repeated object
+ * instance. Resolving that requires the full grammar's rule map, which this
+ * function doesn't have -- so recursion is computed once per grammar by
+ * {@link analyzeGrammarPerformance} (via a proper dependency-graph cycle
+ * check) and passed in here.
  */
-export function analyzeExpressionComplexity(expr: Expression): {
+export function analyzeExpressionComplexity(
+  expr: Expression,
+  hasRecursion = false,
+): {
   depth: number;
   nodeCount: number;
   hasRecursion: boolean;
   estimatedComplexity: "low" | "medium" | "high";
 } {
-  const visited = new Set<Expression>();
   let maxDepth = 0;
   let nodeCount = 0;
-  let hasRecursion = false;
 
   function analyze(expr: Expression, depth: number): void {
-    if (visited.has(expr)) {
-      hasRecursion = true;
-      return;
-    }
-
-    visited.add(expr);
     nodeCount++;
     maxDepth = Math.max(maxDepth, depth);
 
@@ -279,8 +283,24 @@ export function analyzeGrammarPerformance(grammar: GrammarDefinition): {
   const optimizationSuggestions: string[] = [];
   let maxComplexity: "low" | "medium" | "high" = "low";
 
+  // Build the rule dependency graph once, then find every rule that's part
+  // of a reference cycle -- direct (A -> A) or indirect (A -> B -> A). This
+  // is the only way to know a rule is genuinely recursive: recursion in a
+  // PEG grammar happens through name references between rules, not through
+  // repeated object instances within a single expression tree.
+  const ruleDependencies = new Map<string, Set<string>>();
   for (const rule of grammar.rules) {
-    const complexity = analyzeExpressionComplexity(rule.pattern);
+    const dependencies = new Set<string>();
+    collectRuleDependencies(rule.pattern, dependencies);
+    ruleDependencies.set(rule.name, dependencies);
+  }
+  const recursiveRuleNames = findRecursiveRuleNames(ruleDependencies);
+
+  for (const rule of grammar.rules) {
+    const complexity = analyzeExpressionComplexity(
+      rule.pattern,
+      recursiveRuleNames.has(rule.name),
+    );
     ruleComplexity.set(rule.name, complexity);
 
     if (complexity.estimatedComplexity === "high") {
@@ -302,23 +322,10 @@ export function analyzeGrammarPerformance(grammar: GrammarDefinition): {
     }
   }
 
-  // Check for potential left recursion
-  const ruleDependencies = new Map<string, Set<string>>();
-  for (const rule of grammar.rules) {
-    ruleDependencies.set(rule.name, new Set());
-    const dependencies = ruleDependencies.get(rule.name);
-    if (dependencies) {
-      collectRuleDependencies(rule.pattern, dependencies);
-    }
-  }
-
-  // Detect cycles (potential left recursion)
-  for (const [ruleName, dependencies] of ruleDependencies) {
-    if (dependencies.has(ruleName)) {
-      optimizationSuggestions.push(
-        `Rule '${ruleName}' may have left recursion - this can cause infinite loops`,
-      );
-    }
+  for (const ruleName of recursiveRuleNames) {
+    optimizationSuggestions.push(
+      `Rule '${ruleName}' may have left recursion - this can cause infinite loops`,
+    );
   }
 
   if (grammar.rules.length > 50) {
@@ -372,6 +379,40 @@ function collectRuleDependencies(
       collectRuleDependencies(expr.expression, dependencies);
       break;
   }
+}
+
+/**
+ * Finds every rule name that is part of a reference cycle in the given
+ * dependency graph, whether direct (A -> A) or indirect (A -> B -> ... -> A).
+ * References to names outside the graph (e.g. rules imported from another
+ * module) are not tracked as dependencies and can't participate in a cycle.
+ */
+function findRecursiveRuleNames(
+  dependencies: Map<string, Set<string>>,
+): Set<string> {
+  const recursive = new Set<string>();
+
+  const canReach = (
+    from: string,
+    target: string,
+    visited: Set<string>,
+  ): boolean => {
+    for (const next of dependencies.get(from) ?? []) {
+      if (next === target) return true;
+      if (visited.has(next)) continue;
+      visited.add(next);
+      if (canReach(next, target, visited)) return true;
+    }
+    return false;
+  };
+
+  for (const ruleName of dependencies.keys()) {
+    if (canReach(ruleName, ruleName, new Set())) {
+      recursive.add(ruleName);
+    }
+  }
+
+  return recursive;
 }
 
 /**

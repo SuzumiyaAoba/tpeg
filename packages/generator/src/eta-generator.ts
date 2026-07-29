@@ -81,7 +81,9 @@ export class EtaTPEGCodeGenerator {
 
     const performanceAnalysis = analyzeGrammarPerformance(grammar);
 
-    // Collect all rule names for reference resolution
+    // Reset per-instance state so a reused generator doesn't leak rule
+    // names from a previous grammar into this one's identifier resolution.
+    this.ruleNames.clear();
     for (const rule of grammar.rules) {
       this.ruleNames.add(rule.name);
     }
@@ -156,7 +158,7 @@ export class EtaTPEGCodeGenerator {
 
     if (this.options.includeImports) {
       // Core imports
-      imports.push('import type { Parser } from "@SuzumiyaAoba/core";');
+      imports.push('import type { Parser } from "@suzumiyaaoba/tpeg-core";');
 
       // Analyze which combinators are actually needed
       const usedCombinators = new Set<string>();
@@ -166,18 +168,32 @@ export class EtaTPEGCodeGenerator {
         this.collectUsedCombinators(rule.pattern, usedCombinators);
       }
 
-      // Add memoization import if needed
-      if (
+      // memoize lives in tpeg-combinator, not tpeg-core, so it gets its own
+      // import line rather than being folded into usedCombinators below --
+      // tpeg-core doesn't export it.
+      //
+      // Whether to import it must match shouldMemoize's own per-rule check
+      // exactly (estimatedComplexity === "high" || hasRecursion). The
+      // coarser grammar-level estimatedParseComplexity can stay "low" even
+      // when a single small rule is genuinely recursive, which would skip
+      // this import while a rule's generated code still called memoize().
+      const anyRuleMemoized =
         this.options.enableMemoization &&
-        _analysis.estimatedParseComplexity !== "low"
-      ) {
-        usedCombinators.add("memoize");
+        Array.from(_analysis.ruleComplexity.values()).some(
+          (complexity) =>
+            complexity.estimatedComplexity === "high" ||
+            complexity.hasRecursion,
+        );
+      if (anyRuleMemoized) {
+        imports.push(
+          'import { memoize } from "@suzumiyaaoba/tpeg-combinator";',
+        );
       }
 
       // Generate combinator import
       const combinators = Array.from(usedCombinators).sort();
       imports.push(
-        `import { ${combinators.join(", ")} } from "@SuzumiyaAoba/core";`,
+        `import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`,
       );
     }
 
@@ -194,7 +210,7 @@ export class EtaTPEGCodeGenerator {
 
     if (this.options.includeMonitoring) {
       imports.push(
-        'import { globalPerformanceMonitor } from "@SuzumiyaAoba/generator";',
+        'import { globalPerformanceMonitor } from "@suzumiyaaoba/tpeg-generator";',
       );
     }
 
