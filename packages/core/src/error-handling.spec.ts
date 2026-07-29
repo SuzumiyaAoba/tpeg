@@ -51,8 +51,25 @@ describe("Error Handling", () => {
       expect(enhancedError.severity).toBe(ErrorSeverity.HIGH);
       expect(enhancedError.category).toBe(ErrorCategory.SYNTAX);
       expect(enhancedError.code).toBe("TEST_ERROR");
-      expect(enhancedError.recoverable).toBe(true);
+      // HIGH exceeds the default MEDIUM recovery threshold
+      expect(enhancedError.recoverable).toBe(false);
       expect(enhancedError.suggestions).toBeDefined();
+    });
+
+    it("should mark errors recoverable only up to the recovery threshold", () => {
+      const handler = createErrorHandler();
+      const baseError = {
+        message: "Test error",
+        pos: { offset: 0, column: 0, line: 1 },
+      };
+      const recoverableFor = (severity: ErrorSeverity) =>
+        handler.createEnhancedError(baseError, severity).recoverable;
+
+      // Default threshold is MEDIUM, and severities are ordered LOW < MEDIUM < HIGH < CRITICAL
+      expect(recoverableFor(ErrorSeverity.LOW)).toBe(true);
+      expect(recoverableFor(ErrorSeverity.MEDIUM)).toBe(true);
+      expect(recoverableFor(ErrorSeverity.HIGH)).toBe(false);
+      expect(recoverableFor(ErrorSeverity.CRITICAL)).toBe(false);
     });
 
     it("should attempt recovery for recoverable errors", () => {
@@ -127,7 +144,11 @@ describe("Error Handling", () => {
     });
 
     it("should track error statistics correctly", () => {
-      const handler = createErrorHandler();
+      // Raise the threshold so every severity is recoverable and therefore
+      // recorded in the error history, exercising the aggregation itself.
+      const handler = createErrorHandler({
+        recoveryThreshold: ErrorSeverity.CRITICAL,
+      });
 
       // Create and attempt recovery for various errors
       const errors = [
@@ -327,6 +348,36 @@ describe("Error Handling", () => {
       // Note: Recovery might succeed and return a fallback value
       expect(typeof result).toBe("object");
       expect("success" in result).toBe(true);
+    });
+
+    it("should advance past skipped input and yield no value on SKIP recovery", () => {
+      const handler = createErrorHandler({
+        defaultStrategy: RecoveryStrategy.SKIP,
+        logRecovery: false,
+      });
+      const wrappedParser = withErrorHandling(
+        literal("hello"),
+        handler,
+        ErrorSeverity.LOW,
+        ErrorCategory.SYNTAX,
+      );
+
+      const result = wrappedParser("world hello", {
+        offset: 0,
+        column: 0,
+        line: 1,
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        // SKIP discards the problematic input, so there is no parsed value.
+        // Callers must not dereference `val` after a skip recovery.
+        expect(result.val).toBeUndefined();
+        // Position advances to the next safe character rather than staying put,
+        // so the caller does not re-parse the same failing input.
+        expect(result.next.offset).toBe(5);
+        expect(result.current.offset).toBe(0);
+      }
     });
   });
 

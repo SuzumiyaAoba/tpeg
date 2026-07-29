@@ -55,12 +55,14 @@ describe("mapError", () => {
     const pos: Pos = { offset: 0, column: 0, line: 1 };
     const result = mapError(lit("abc"), (error) => ({
       ...error,
-      error: { ...error.error, message: "Custom error message" },
+      message: "Custom error message",
     }))(input, pos);
 
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toBe("Custom error message");
+      // Untouched fields are preserved by the spread
+      expect(result.error.parserName).toBe("literal");
     }
   });
 
@@ -69,7 +71,7 @@ describe("mapError", () => {
     const pos: Pos = { offset: 0, column: 0, line: 1 };
     const result = mapError(lit("abc"), (error) => ({
       ...error,
-      error: { ...error.error, message: "This shouldn't be called" },
+      message: "This shouldn't be called",
     }))(input, pos);
 
     expect(result.success).toBe(true);

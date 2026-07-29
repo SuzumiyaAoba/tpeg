@@ -19,29 +19,6 @@ const classToString = (charOrRange: CharClassSpec): string => {
 };
 
 /**
- * Checks if a character matches a single character class specification
- * @param char The character to test
- * @param charCode The character's Unicode code point
- * @param spec The character class specification
- * @returns true if the character matches the specification
- */
-const matchesSpec = (
-  char: string,
-  charCode: number,
-  spec: CharClassSpec,
-): boolean => {
-  if (typeof spec === "string") {
-    return char === spec;
-  }
-
-  const [start, end] = spec;
-  const startCode = start.codePointAt(0) ?? 0;
-  const endCode = end.codePointAt(0) ?? 0;
-
-  return charCode >= startCode && charCode <= endCode;
-};
-
-/**
  * Parser that matches a character against a set of characters or character ranges.
  *
  * @param charOrRanges Array of characters or character ranges to match against
@@ -56,6 +33,16 @@ export const charClass = (
   ...charOrRanges: NonEmptyArray<CharClassSpec>
 ): Parser<string> => {
   const expected = charOrRanges.map(classToString).join(", ");
+
+  // Pre-compile character specifications into code points for high performance
+  const compiledSpecs = charOrRanges.map((spec) => {
+    if (typeof spec === "string") {
+      return { isSingle: true, char: spec } as const;
+    }
+    const startCode = spec[0].codePointAt(0) ?? 0;
+    const endCode = spec[1].codePointAt(0) ?? 0;
+    return { isSingle: false, start: startCode, end: endCode } as const;
+  });
 
   const charClassParser = (input: string, pos: Pos) => {
     const [char] = getCharAndLength(input, pos.offset);
@@ -74,15 +61,26 @@ export const charClass = (
 
     const charCode = char.codePointAt(0) ?? 0;
 
-    // Check if the character matches any of the given specifications
-    for (const spec of charOrRanges) {
-      if (matchesSpec(char, charCode, spec)) {
-        return {
-          success: true,
-          val: char,
-          current: pos,
-          next: nextPos(char, pos),
-        } as const;
+    // Check if the character matches any of the compiled specifications
+    for (const spec of compiledSpecs) {
+      if (spec.isSingle) {
+        if (char === spec.char) {
+          return {
+            success: true,
+            val: char,
+            current: pos,
+            next: nextPos(char, pos),
+          } as const;
+        }
+      } else {
+        if (charCode >= spec.start && charCode <= spec.end) {
+          return {
+            success: true,
+            val: char,
+            current: pos,
+            next: nextPos(char, pos),
+          } as const;
+        }
       }
     }
 

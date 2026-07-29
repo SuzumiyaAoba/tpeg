@@ -486,26 +486,16 @@ describe("quantified", () => {
     }
   });
 
-  it("should validate parameters", () => {
-    // Test negative minimum
-    const parser1 = quantified(lit("a"), -1, 3);
-    const result1 = parser1("a", { offset: 0, line: 1, column: 0 });
-    expect(isFailure(result1)).toBe(true);
-    if (isFailure(result1)) {
-      expect(result1.error.message).toContain(
-        "minimum (-1) cannot be negative",
-      );
-    }
+  it("should validate parameters at construction time", () => {
+    // An invalid range is a grammar authoring error, not a parse failure,
+    // so it is reported eagerly when the parser is built.
+    expect(() => quantified(lit("a"), -1, 3)).toThrow(
+      "minimum (-1) cannot be negative",
+    );
 
-    // Test max < min
-    const parser2 = quantified(lit("a"), 5, 3);
-    const result2 = parser2("a", { offset: 0, line: 1, column: 0 });
-    expect(isFailure(result2)).toBe(true);
-    if (isFailure(result2)) {
-      expect(result2.error.message).toContain(
-        "maximum (3) cannot be less than minimum (5)",
-      );
-    }
+    expect(() => quantified(lit("a"), 5, 3)).toThrow(
+      "maximum (3) cannot be less than minimum (5)",
+    );
   });
 
   it("should detect infinite loops", () => {

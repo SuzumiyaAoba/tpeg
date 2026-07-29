@@ -79,7 +79,7 @@ export const mapResult =
  *   // Provides a custom error message for digit parsing
  */
 export const mapError =
-  <T>(parser: Parser<T>, f: (error: ParseFailure) => ParseFailure): Parser<T> =>
+  <T>(parser: Parser<T>, f: (error: ParseError) => ParseError): Parser<T> =>
   (input: string, pos) => {
     const result = parser(input, pos);
 
@@ -87,7 +87,10 @@ export const mapError =
       return result;
     }
 
-    return f(result as ParseFailure);
+    return {
+      success: false,
+      error: f(result.error),
+    };
   };
 
 /**

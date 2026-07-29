@@ -2,12 +2,18 @@ import type { ParseError, ParseFailure, ParseResult, Pos } from "./types";
 
 /**
  * Error severity levels for better error categorization and handling.
+ *
+ * The values are numeric and strictly increasing so that severities can be
+ * compared with the relational operators, which is how a severity is tested
+ * against {@link ErrorHandlingConfig.recoveryThreshold}. String values would
+ * compare lexicographically instead, making every severity compare as being at
+ * or below `"medium"`.
  */
 export enum ErrorSeverity {
-  LOW = "low",
-  MEDIUM = "medium",
-  HIGH = "high",
-  CRITICAL = "critical",
+  LOW = 0,
+  MEDIUM = 1,
+  HIGH = 2,
+  CRITICAL = 3,
 }
 
 /**
@@ -497,13 +503,22 @@ export function withErrorHandling<T>(
         _pos,
       );
 
-      if (recovery.success && recovery.value) {
+      if (recovery.success) {
+        const nextPos =
+          recovery.value &&
+          typeof recovery.value === "object" &&
+          "nextPosition" in recovery.value
+            ? (recovery.value as { nextPosition: Pos }).nextPosition
+            : _pos;
+
         // Return a modified result with the recovered value
         return {
           success: true,
-          val: recovery.value as T,
+          val: (recovery.strategy === RecoveryStrategy.SKIP
+            ? undefined
+            : recovery.value) as T,
           current: _pos,
-          next: _pos, // Recovery typically doesn't advance position
+          next: nextPos,
         };
       }
     }

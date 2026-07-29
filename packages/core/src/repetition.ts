@@ -208,32 +208,31 @@ export const plus = oneOrMore;
  * @param max Maximum number of repetitions (inclusive, undefined for unbounded)
  * @param parserName Optional name for error reporting and debugging
  * @returns Parser<T[]> A parser that returns an array of parsed values with the specified count.
+ * @throws {Error} If the range is invalid (`min` is negative, or `max` is less
+ *   than `min`). An invalid range is a grammar authoring error rather than a
+ *   parse failure, so it is reported eagerly when the parser is constructed
+ *   instead of when it is applied to input.
  */
-export const quantified =
-  <T>(
-    parser: Parser<T>,
-    min: number,
-    max?: number,
-    parserName = "quantified",
-  ): Parser<T[]> =>
-  (input: string, pos) => {
-    // Validate input parameters early
-    if (min < 0) {
-      return createFailure(
-        `Invalid quantified range: minimum (${min}) cannot be negative`,
-        pos,
-        { parserName },
-      );
-    }
+export const quantified = <T>(
+  parser: Parser<T>,
+  min: number,
+  max?: number,
+  parserName = "quantified",
+): Parser<T[]> => {
+  // Validate input parameters early
+  if (min < 0) {
+    throw new Error(
+      `Invalid quantified range: minimum (${min}) cannot be negative`,
+    );
+  }
 
-    if (max !== undefined && max < min) {
-      return createFailure(
-        `Invalid quantified range: maximum (${max}) cannot be less than minimum (${min})`,
-        pos,
-        { parserName },
-      );
-    }
+  if (max !== undefined && max < min) {
+    throw new Error(
+      `Invalid quantified range: maximum (${max}) cannot be less than minimum (${min})`,
+    );
+  }
 
+  return (input: string, pos) => {
     const results: T[] = [];
     let currentPos = pos;
     let count = 0;
@@ -333,3 +332,4 @@ export const quantified =
       next: currentPos,
     };
   };
+};

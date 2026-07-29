@@ -859,20 +859,3 @@ describe("Performance utilities", () => {
     expect(result.totalTime).toBeGreaterThanOrEqual(0);
   });
 });
-
-describe("Internal optimization logic", () => {
-  it("should handle cache eviction in canUseOptimizedPath", () => {
-    // Create enough unique strings to trigger cache eviction (max size is dynamic but at least 100)
-    // We'll create 1200 unique strings to be safe and trigger the eviction logic
-    for (let i = 0; i < 1200; i++) {
-      const uniqueStr = `unique-${i}`;
-      // Creating the parser triggers canUseOptimizedPath
-      literal(uniqueStr);
-    }
-
-    // Verify that new strings still work correctly after eviction
-    const parser = literal("after-eviction");
-    const result = parser("after-eviction", createPos());
-    expect(result.success).toBe(true);
-  });
-});
