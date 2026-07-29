@@ -119,8 +119,8 @@ export const alphaNum = charClass(["a", "z"], ["A", "Z"], ["0", "9"]);
 /**
  * Parser that matches the start of input or start of a line.
  */
-export const startOfLine = (): Parser<null> => (_input: string, pos) => {
-  if (pos.offset === 0) {
+export const startOfLine = (): Parser<null> => (input: string, pos) => {
+  if (pos.offset === 0 || input[pos.offset - 1] === "\n") {
     return {
       success: true,
       val: null,

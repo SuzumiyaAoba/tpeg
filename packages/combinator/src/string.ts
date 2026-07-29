@@ -16,6 +16,12 @@ import { labeled, withDetailedError } from "./error";
  * Parser that consumes characters until a condition is met.
  *
  * Checks the condition parser at each position and consumes characters until the condition succeeds.
+ *
+ * The matched text is sliced directly from `input` rather than built up
+ * character by character. On engines where substrings can retain a reference
+ * to their parent string's buffer, a small token extracted from a very large
+ * document may keep that whole document alive in memory for as long as the
+ * token is reachable.
  */
 export const takeUntil =
   <T>(condition: Parser<T>, _parserName?: string): Parser<string> =>
@@ -23,7 +29,6 @@ export const takeUntil =
     const startPos = pos || { offset: 0, line: 1, column: 1 };
 
     let currentPos = startPos;
-    const chars: string[] = [];
 
     while (currentPos.offset < input.length) {
       const condResult = condition(input, currentPos);
@@ -31,21 +36,18 @@ export const takeUntil =
         break;
       }
 
-      const [char, _len] = getCharAndLength(input, currentPos.offset);
+      const [char] = getCharAndLength(input, currentPos.offset);
       if (!char) break;
 
-      chars.push(char);
       currentPos = nextPos(char, currentPos);
     }
 
-    const result = {
+    return {
       success: true,
-      val: chars.join(""),
+      val: input.slice(startPos.offset, currentPos.offset),
       current: startPos,
       next: currentPos,
     } as const;
-
-    return result;
   };
 
 /**
@@ -53,22 +55,22 @@ export const takeUntil =
  *
  * Efficiently extracts content between opening and closing parsers.
  */
-export const between =
-  <O, C>(
-    open: Parser<O>,
-    close: Parser<C>,
-    parserName?: string,
-  ): Parser<string> =>
-  (input: string, pos: Pos) => {
-    const startPos = pos || { offset: 0, line: 1, column: 1 };
+export const between = <O, C>(
+  open: Parser<O>,
+  close: Parser<C>,
+  parserName?: string,
+): Parser<string> => {
+  const base = map(
+    seq(open, takeUntil(close), close),
+    ([_, content]) => content,
+  );
+  const parser = parserName ? withDetailedError(base, parserName) : base;
 
-    const base = map(
-      seq(open, takeUntil(close), close),
-      ([_, content]) => content,
-    );
-    const parser = parserName ? withDetailedError(base, parserName) : base;
+  return (input: string, pos: Pos) => {
+    const startPos = pos || { offset: 0, line: 1, column: 1 };
     return parser(input, startPos);
   };
+};
 
 /**
  * Parser for matching a double-quoted string with escape sequence support.

@@ -39,6 +39,26 @@ describe("logic combinators", () => {
 
       expect(callCount).toBe(3);
     });
+
+    it("should bound the number of distinct inputs tracked, not just positions within one input", () => {
+      let callCount = 0;
+      const parser = (input: string, pos: Pos) => {
+        callCount++;
+        const char = input[pos.offset];
+        if (char === undefined) {
+          return { success: false, error: { message: "EOF", pos } } as const;
+        }
+        return literal(char)(input, pos);
+      };
+      const memoized = memoize(parser, { maxCacheSize: 1 });
+      const pos = { offset: 0, line: 1, column: 1 };
+
+      memoized("a", pos); // tracks input "a"
+      memoized("b", pos); // tracks input "b", evicts input "a"
+      memoized("a", pos); // input "a" was evicted from the outer cache -> cache miss
+
+      expect(callCount).toBe(3);
+    });
   });
 
   describe("recursive", () => {
@@ -97,6 +117,25 @@ describe("logic combinators", () => {
       const parser = withPosition(literal("abc"));
       const result = parse(parser)("def");
       expect(result.success).toBe(false);
+    });
+
+    it("should tag failures with parserName when provided", () => {
+      const parser = withPosition(literal("abc"), "abcWithPosition");
+      const result = parse(parser)("def");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.parserName).toBe("abcWithPosition");
+      }
+    });
+
+    it("should still return value and position when parserName is provided", () => {
+      const parser = withPosition(literal("abc"), "abcWithPosition");
+      const result = parse(parser)("abc");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.value).toBe("abc");
+        expect(result.val.position.offset).toBe(0);
+      }
     });
   });
 });
