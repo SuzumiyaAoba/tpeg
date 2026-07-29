@@ -15,6 +15,7 @@ import {
   stringLiteral,
   tpegExpression,
 } from "@suzumiyaaoba/tpeg-parser";
+import { initialPos } from "./pos";
 
 console.log("📁 TPEG Parser File-Based Demo\n");
 
@@ -50,7 +51,7 @@ const demoGrammarFile = (filename: string) => {
   console.log(grammarContent);
   console.log();
 
-  const pos = { offset: 0, line: 1, column: 1 };
+  const pos = initialPos;
   const result = grammarDefinition(grammarContent, pos);
 
   if (result.success) {
@@ -110,7 +111,7 @@ const demoBasicSyntaxFile = (filename: string) => {
     ];
 
     let matched = false;
-    const pos = { offset: 0, line: 1, column: 1 };
+    const pos = initialPos;
 
     for (const { name, parser } of parsers) {
       const result = parser(input, pos);
@@ -168,7 +169,7 @@ const demoStructuredInputFile = (filename: string) => {
 
     for (const input of inputs.slice(0, 3)) {
       // Show first 3 examples from each section
-      const pos = { offset: 0, line: 1, column: 1 };
+      const pos = initialPos;
       const result = tpegExpression(input, pos);
 
       if (result.success) {

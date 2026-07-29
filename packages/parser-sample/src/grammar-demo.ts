@@ -15,6 +15,7 @@ import {
   ruleDefinition,
   singleLineComment,
 } from "@suzumiyaaoba/tpeg-parser";
+import { initialPos } from "./pos";
 
 console.log("📚 TPEG Grammar Definition Demo (Phase 1.6)\n");
 
@@ -23,7 +24,7 @@ const demoParser = <T>(name: string, parser: Parser<T>, inputs: string[]) => {
   console.log(`=== ${name} ===`);
 
   for (const input of inputs) {
-    const pos = { offset: 0, line: 1, column: 1 };
+    const pos = initialPos;
     const result = parser(input, pos);
 
     if (result.success) {
@@ -132,7 +133,7 @@ for (const grammar of grammarExamples) {
   console.log(grammar);
   console.log();
 
-  const pos = { offset: 0, line: 1, column: 1 };
+  const pos = initialPos;
   const result = grammarDefinition(grammar, pos);
 
   if (result.success) {

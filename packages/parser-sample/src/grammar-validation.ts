@@ -12,6 +12,7 @@ import {
   generateTypeScriptParser,
   grammarDefinition,
 } from "@suzumiyaaoba/tpeg-parser";
+import { initialPos } from "./pos";
 
 const EXAMPLES_DIR = join(import.meta.dir, "../examples");
 
@@ -43,7 +44,7 @@ async function validateGrammars(): Promise<ValidationResult[]> {
         const grammarText = await readFile(grammarPath, "utf-8");
 
         // Parse the grammar
-        const pos = { offset: 0, line: 1, column: 1 };
+        const pos = initialPos;
         const parseResult = grammarDefinition(grammarText, pos);
 
         if (!parseResult.success) {

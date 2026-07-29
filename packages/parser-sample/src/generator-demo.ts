@@ -12,6 +12,7 @@ import {
   generateTypeScriptParser,
   grammarDefinition,
 } from "@suzumiyaaoba/tpeg-parser";
+import { initialPos } from "./pos";
 
 console.log("🏗️  TPEG Parser Generation Demo\n");
 
@@ -30,7 +31,7 @@ console.log(`\n${"=".repeat(60)}\n`);
 
 // Parse the grammar
 console.log("🔍 Parsing Grammar...");
-const pos = { offset: 0, line: 1, column: 1 };
+const pos = initialPos;
 const parseResult = grammarDefinition(grammarText, pos);
 
 if (!parseResult.success) {

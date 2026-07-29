@@ -12,6 +12,7 @@ import {
   stringLiteral,
   tpegExpression,
 } from "@suzumiyaaoba/tpeg-parser";
+import { initialPos } from "./pos";
 
 console.log("🚀 TPEG Parser Complete Demo");
 console.log("============================\n");
@@ -43,7 +44,7 @@ const syntaxExamples = [
 ];
 
 for (const example of syntaxExamples) {
-  const pos = { offset: 0, line: 1, column: 1 };
+  const pos = initialPos;
   const result = example.parser(example.input, pos);
   const status = result.success ? "✅" : "❌";
   console.log(`${status} ${example.name}: ${example.input}`);
@@ -84,7 +85,7 @@ console.log("Grammar Definition:");
 console.log(calculatorGrammar);
 console.log();
 
-const pos = { offset: 0, line: 1, column: 1 };
+const pos = initialPos;
 const grammarResult = grammarDefinition(calculatorGrammar, pos);
 
 if (grammarResult.success) {

@@ -14,6 +14,7 @@ import {
   stringLiteral,
   tpegExpression,
 } from "@suzumiyaaoba/tpeg-parser";
+import { initialPos } from "./pos";
 
 console.log("🎯 TPEG Parser Basic Demo\n");
 
@@ -22,7 +23,7 @@ const demoParser = <T>(name: string, parser: Parser<T>, inputs: string[]) => {
   console.log(`=== ${name} ===`);
 
   for (const input of inputs) {
-    const pos = { offset: 0, line: 1, column: 1 };
+    const pos = initialPos;
     const result = parser(input, pos);
 
     if (result.success) {
@@ -99,7 +100,7 @@ const compositionExamples = [
 ];
 
 for (const expr of compositionExamples) {
-  const pos = { offset: 0, line: 1, column: 1 };
+  const pos = initialPos;
   const result = tpegExpression(expr, pos);
 
   if (result.success) {
