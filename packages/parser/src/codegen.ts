@@ -257,7 +257,9 @@ export class TPEGCodeGenerator {
     if (expr.min === expr.max) {
       // {n} - exactly n
       if (expr.min === 0) {
-        return "choice()"; // Never matches - empty choice
+        // {0} always matches zero repetitions, producing an empty array --
+        // not "choice()", which always fails.
+        return `quantified(${inner}, 0, 0)`;
       }
       if (expr.min === 1) {
         return inner;
@@ -351,8 +353,7 @@ export class TPEGCodeGenerator {
           else if (quantified.min === 1) combinators.add("oneOrMore");
           else combinators.add("quantified");
         } else if (quantified.min === quantified.max) {
-          if (quantified.min === 0) combinators.add("choice");
-          else if (quantified.min !== 1) combinators.add("quantified");
+          if (quantified.min !== 1) combinators.add("quantified");
         } else {
           if (quantified.min === 0 && quantified.max === 1) {
             combinators.add("optional");

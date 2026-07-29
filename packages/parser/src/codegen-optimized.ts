@@ -30,7 +30,6 @@ import type {
 import {
   analyzeExpressionComplexity,
   analyzeGrammarPerformance,
-  createCharClassLookup,
   globalPerformanceMonitor,
   stringInterner,
 } from "./performance-utils";
@@ -121,6 +120,11 @@ export class OptimizedTPEGCodeGenerator {
   generateGrammar(grammar: GrammarDefinition): OptimizedGeneratedCode {
     globalPerformanceMonitor.start("grammar-generation");
 
+    // Reset per-instance state so a reused generator doesn't leak rule
+    // names or cached expression templates from a previous grammar.
+    this.ruleNames.clear();
+    this.templateCache.clear();
+
     const performanceAnalysis = analyzeGrammarPerformance(grammar);
     const imports: string[] = [];
     const exports: string[] = [];
@@ -193,12 +197,13 @@ export class OptimizedTPEGCodeGenerator {
       this.collectUsedCombinators(rule.pattern, usedCombinators);
     }
 
-    // Add performance imports if needed
+    // Add performance imports if needed. memoize lives in tpeg-combinator,
+    // not tpeg-core, so it must not also be folded into the tpeg-core
+    // import below -- that would import a name tpeg-core doesn't export.
     if (
       this.options.enableMemoization &&
       analysis.estimatedParseComplexity !== "low"
     ) {
-      usedCombinators.add("memoize");
       imports.push('import { memoize } from "@suzumiyaaoba/tpeg-combinator";');
     }
 
@@ -287,30 +292,13 @@ export class OptimizedTPEGCodeGenerator {
       complexity &&
       (complexity.estimatedComplexity === "high" || complexity.hasRecursion);
 
-    let parserCode = this.generateOptimizedExpression(rule.pattern);
-
-    // Add memoization for complex rules
-    if (shouldMemoize) {
-      parserCode = `memoize(${parserCode})`;
-    }
+    const innerCode = this.generateOptimizedExpression(rule.pattern);
+    const parserCode = shouldMemoize ? `memoize(${innerCode})` : innerCode;
 
     const name = stringInterner.intern(this.options.namePrefix + rule.name);
+    const typeAnnotation = this.options.includeTypes ? ": Parser<any>" : "";
 
-    // Use template caching for common patterns
-    const templateKey = `rule-${this.options.includeTypes}-${shouldMemoize}`;
-    return this.templateCache
-      .get(templateKey, () => {
-        if (this.options.includeTypes) {
-          return shouldMemoize
-            ? `export const ${name}: Parser<any> = memoize(PLACEHOLDER);`
-            : `export const ${name}: Parser<any> = PLACEHOLDER;`;
-        }
-        return shouldMemoize
-          ? `export const ${name} = memoize(PLACEHOLDER);`
-          : `export const ${name} = PLACEHOLDER;`;
-      })
-      .replace("PLACEHOLDER", parserCode)
-      .replace(`${name}:`, `${name}:`);
+    return `export const ${name}${typeAnnotation} = ${parserCode};`;
   }
 
   /**
@@ -371,7 +359,6 @@ export class OptimizedTPEGCodeGenerator {
         end: range.end || undefined,
       }));
 
-      createCharClassLookup(ranges);
       const isSimpleAscii = ranges.every(
         (r) =>
           r.start.charCodeAt(0) < 128 && (!r.end || r.end.charCodeAt(0) < 128),
@@ -478,7 +465,11 @@ export class OptimizedTPEGCodeGenerator {
 
     if (expr.min === expr.max) {
       // {n} - exactly n
-      if (expr.min === 0) return "choice()"; // Never matches - empty choice
+      if (expr.min === 0) {
+        // {0} always matches zero repetitions, producing an empty array --
+        // not "choice()", which always fails.
+        return `quantified(${inner}, 0, 0)`;
+      }
       if (expr.min === 1) return inner;
       // Use quantified combinator for exact repetition {n}
       return `quantified(${inner}, ${expr.min}, ${expr.max})`;

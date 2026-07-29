@@ -50,7 +50,7 @@ describe("quantified expression code generation", () => {
       expect(result.code).not.toContain("quantified");
     });
 
-    it("should handle {0} as empty choice", () => {
+    it("should handle {0} as an always-matching zero repetition, not an always-failing empty choice", () => {
       const grammar = createGrammarDefinition(
         "Test",
         [],
@@ -63,7 +63,10 @@ describe("quantified expression code generation", () => {
       );
 
       const result = generator.generateGrammar(grammar);
-      expect(result.code).toContain("choice()");
+      // quantified(x, 0, 0) always succeeds with an empty array; choice()
+      // (no alternatives) always fails -- {0} must never generate the latter.
+      expect(result.code).toContain('quantified(literal("a"), 0, 0)');
+      expect(result.code).not.toContain("choice()");
     });
   });
 
