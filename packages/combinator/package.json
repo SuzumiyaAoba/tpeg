@@ -15,7 +15,7 @@
     "dev": "bun run ./index.ts",
     "typecheck": "tsc --noEmit",
     "build": "bun run build:types && bun build ./index.ts --outdir ./dist",
-    "build:types": "tsc ./index.ts --declaration --outDir ./dist/ --emitDeclarationOnly --skipLibCheck",
+    "build:types": "tsc --project ./tsconfig.build.json",
     "benchmark": "bun test benchmark.spec.ts"
   },
   "dependencies": {
