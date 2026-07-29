@@ -10,9 +10,11 @@ import {
   type ParseResult,
   type Parser,
   type Pos,
+  any,
   choice,
   literal,
   map,
+  not,
   optional,
   seq,
   zeroOrMore,
@@ -214,7 +216,12 @@ export const jsonParser = (): Parser<JSONValue> => {
   );
 
   // Return a tokenized JSON parser
-  return memoize(token(valueParser));
+  //
+  // Without an explicit end-of-input check, a value parser that matches a
+  // valid prefix (e.g. "true" out of "true xyz", or "123" out of "123abc")
+  // succeeds while silently discarding the malformed trailing content
+  // instead of rejecting the input.
+  return memoize(map(seq(token(valueParser), not(any)), ([value]) => value));
 };
 
 /**

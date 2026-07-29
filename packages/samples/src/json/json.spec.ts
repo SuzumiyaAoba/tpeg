@@ -299,6 +299,17 @@ describe("parseJSON", () => {
     expect(parseJSON("{invalid}")).toBe(null);
     expect(console.error).toHaveBeenCalled();
   });
+
+  it("should reject trailing garbage after a valid value instead of silently dropping it", () => {
+    // JSON.parse rejects all of these (invalid JSON), so each falls through
+    // to the custom TPEG parser. Without an end-of-input check, that parser
+    // used to match just the valid prefix and silently discard the rest --
+    // e.g. returning `true` for "true xyz" or `123` for "123abc" -- instead
+    // of correctly treating the whole input as unparseable.
+    expect(parseJSON("true xyz")).toBe(null);
+    expect(parseJSON("123abc")).toBe(null);
+    expect(parseJSON('{"a":1}}}}')).toBe(null);
+  });
 });
 
 // Test correction for Unicode handling

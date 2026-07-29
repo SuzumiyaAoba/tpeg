@@ -63,7 +63,17 @@ const csvRow = sepBy(field, literal(","));
 const newline = choice(literal("\r\n"), literal("\n"), literal("\r"));
 
 // Parse multiple rows
-const csvParser: Parser<string[][]> = sepBy(csvRow, newline);
+//
+// sepBy never fails on its own -- when `value` doesn't match at a position
+// it falls back to succeeding with an empty result there (see
+// packages/combinator/src/list.ts). Without an explicit end-of-input check,
+// that means any malformed trailing content (e.g. a stray, unterminated
+// quote) is silently dropped instead of surfacing as a parse error, even
+// though parseCSV's contract is to throw on malformed input.
+const csvParser: Parser<string[][]> = map(
+  seq(sepBy(csvRow, newline), not(any)),
+  ([rows]) => rows,
+);
 
 /**
  * Parse CSV string and return array of string arrays.
@@ -96,7 +106,7 @@ export const parseCSV = (input: string): string[][] => {
     );
   }
 
-  throw new Error(`CSV parse error: ${result.error}`);
+  throw new Error(`CSV parse error: ${result.error.message}`);
 };
 
 /**

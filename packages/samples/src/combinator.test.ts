@@ -221,8 +221,10 @@ describe("TPEG Samples Integration Tests", () => {
     it("handles malformed CSV gracefully", () => {
       const { parseCSV } = require("./csv/csv");
 
-      // This should return empty array instead of throwing
-      expect(parseCSV('"unclosed quote')).toEqual([]);
+      // An unterminated quote is malformed CSV, so parseCSV throws rather
+      // than silently returning a truncated/empty result -- see
+      // csv/csv.spec.ts for the full rationale.
+      expect(() => parseCSV('"unclosed quote')).toThrow();
     });
   });
 

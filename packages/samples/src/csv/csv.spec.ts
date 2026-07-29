@@ -205,9 +205,28 @@ describe("CSV Parser", () => {
   });
 
   describe("Error Handling", () => {
-    it("handles invalid CSV gracefully", () => {
-      // The parser should return empty array for malformed input
-      expect(parseCSV('"unclosed quote')).toEqual([]);
+    it("throws on an unclosed quote instead of silently dropping it", () => {
+      // A leading quote with no matching close is malformed CSV. The old
+      // grammar had no end-of-input check, so sepBy's built-in "value
+      // failed, succeed with []" fallback silently accepted this and
+      // returned []; parseCSV's documented contract is to throw instead.
+      expect(() => parseCSV('"unclosed quote')).toThrow(/CSV parse error/);
+    });
+
+    it("throws (with the real diagnostic message) on trailing garbage after a valid row", () => {
+      // A stray, unterminated quote right after an otherwise well-formed
+      // row used to be silently truncated away instead of rejected.
+      expect(() => parseCSV('a,b,c"')).toThrow();
+      try {
+        parseCSV('a,b,c"');
+        throw new Error("expected parseCSV to throw");
+      } catch (error) {
+        // Previously this stringified the ParseError object directly
+        // (`${result.error}`), producing "CSV parse error: [object Object]"
+        // instead of the actual diagnostic message.
+        expect((error as Error).message).not.toContain("[object Object]");
+        expect((error as Error).message).toContain("CSV parse error:");
+      }
     });
   });
 
