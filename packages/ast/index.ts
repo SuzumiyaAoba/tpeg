@@ -1,5 +1,3 @@
-import { u } from "unist-builder";
-
 import type {
   Literal as UnistLiteral,
   Node as UnistNode,
@@ -839,9 +837,10 @@ export const isGrammar = (
  * // { type: "literal", value: "hello" }
  * ```
  */
-export const literal = <T extends string>(value: T): Literal<T> => {
-  return u("literal", { value }) as Literal<T>;
-};
+export const literal = <T extends string>(value: T): Literal<T> => ({
+  type: "literal",
+  value,
+});
 
 /**
  * Creates an identifier node with the specified value.
@@ -856,9 +855,10 @@ export const literal = <T extends string>(value: T): Literal<T> => {
  * // { type: "identifier", value: "digit" }
  * ```
  */
-export const identifier = <T extends string>(value: T): Identifier<T> => {
-  return u("identifier", { value }) as Identifier<T>;
-};
+export const identifier = <T extends string>(value: T): Identifier<T> => ({
+  type: "identifier",
+  value,
+});
 
 /**
  * Creates a sequence node with the specified expressions.
@@ -878,9 +878,10 @@ export const identifier = <T extends string>(value: T): Identifier<T> => {
  */
 export const sequence = <T extends readonly ExprNode[]>(
   ...exprs: T
-): Sequence<T> => {
-  return u("sequence", { children: [...exprs] }) as Sequence<T>;
-};
+): Sequence<T> => ({
+  type: "sequence",
+  children: [...exprs],
+});
 
 /**
  * Creates a choice node with the specified expressions.
@@ -900,9 +901,10 @@ export const sequence = <T extends readonly ExprNode[]>(
  */
 export const choice = <T extends readonly ExprNode[]>(
   ...exprs: T
-): Choice<T> => {
-  return u("choice", { children: [...exprs] }) as Choice<T>;
-};
+): Choice<T> => ({
+  type: "choice",
+  children: [...exprs],
+});
 
 /**
  * Creates an optional node with the specified expression.
@@ -917,9 +919,10 @@ export const choice = <T extends readonly ExprNode[]>(
  * // { type: "optional", children: [{ type: "literal", value: "a" }] }
  * ```
  */
-export const optional = <T extends ExprNode>(expr: T): Optional<T> => {
-  return u("optional", [expr]) as Optional<T>;
-};
+export const optional = <T extends ExprNode>(expr: T): Optional<T> => ({
+  type: "optional",
+  children: [expr],
+});
 
 /**
  * Creates a map node with the specified expression and mapper.
@@ -942,12 +945,11 @@ export const optional = <T extends ExprNode>(expr: T): Optional<T> => {
 export const map = <T extends ExprNode, F>(
   expr: T,
   mapper: F,
-): MapNode<T, F> => {
-  return u("map", { children: [expr], data: { mapper } }) as unknown as MapNode<
-    T,
-    F
-  >;
-};
+): MapNode<T, F> => ({
+  type: "map",
+  children: [expr],
+  data: { mapper },
+});
 
 /**
  * Creates a char node with the specified value.
@@ -962,9 +964,10 @@ export const map = <T extends ExprNode, F>(
  * // { type: "char", value: "a" }
  * ```
  */
-export const char = <T extends string>(value: T): Char<T> => {
-  return u("char", { value }) as Char<T>;
-};
+export const char = <T extends string>(value: T): Char<T> => ({
+  type: "char",
+  value,
+});
 
 /**
  * Creates a range node with the specified from and to values.
@@ -984,9 +987,10 @@ export const char = <T extends string>(value: T): Char<T> => {
 export const range = <F extends string, T extends string>(
   from: F,
   to: T,
-): Range<F, T> => {
-  return u("range", { value: [from, to] }) as Range<F, T>;
-};
+): Range<F, T> => ({
+  type: "range",
+  value: [from, to],
+});
 
 /**
  * Creates a charClass node with the specified elements.
@@ -1006,9 +1010,10 @@ export const range = <F extends string, T extends string>(
  */
 export const charClass = <T extends readonly CharClassElement[]>(
   ...elements: T
-): CharClass<T> => {
-  return u("charClass", { children: [...elements] }) as CharClass<T>;
-};
+): CharClass<T> => ({
+  type: "charClass",
+  children: [...elements],
+});
 
 /**
  * Creates an anyChar node.
@@ -1021,9 +1026,7 @@ export const charClass = <T extends readonly CharClassElement[]>(
  * // { type: "anyChar" }
  * ```
  */
-export const anyChar = (): AnyChar => {
-  return u("anyChar") as AnyChar;
-};
+export const anyChar = (): AnyChar => ({ type: "anyChar" });
 
 /**
  * Creates an andPredicate node with the specified expression.
@@ -1038,9 +1041,10 @@ export const anyChar = (): AnyChar => {
  * // { type: "andPredicate", children: [{ type: "literal", value: "a" }] }
  * ```
  */
-export const andPredicate = <T extends ExprNode>(expr: T): AndPredicate<T> => {
-  return u("andPredicate", [expr]) as AndPredicate<T>;
-};
+export const andPredicate = <T extends ExprNode>(expr: T): AndPredicate<T> => ({
+  type: "andPredicate",
+  children: [expr],
+});
 
 /**
  * Creates a notPredicate node with the specified expression.
@@ -1055,9 +1059,10 @@ export const andPredicate = <T extends ExprNode>(expr: T): AndPredicate<T> => {
  * // { type: "notPredicate", children: [{ type: "literal", value: "a" }] }
  * ```
  */
-export const notPredicate = <T extends ExprNode>(expr: T): NotPredicate<T> => {
-  return u("notPredicate", [expr]) as NotPredicate<T>;
-};
+export const notPredicate = <T extends ExprNode>(expr: T): NotPredicate<T> => ({
+  type: "notPredicate",
+  children: [expr],
+});
 
 /**
  * Creates a zeroOrMore node with the specified expression.
@@ -1072,9 +1077,10 @@ export const notPredicate = <T extends ExprNode>(expr: T): NotPredicate<T> => {
  * // { type: "zeroOrMore", children: [{ type: "literal", value: "a" }] }
  * ```
  */
-export const zeroOrMore = <T extends ExprNode>(expr: T): ZeroOrMore<T> => {
-  return u("zeroOrMore", [expr]) as ZeroOrMore<T>;
-};
+export const zeroOrMore = <T extends ExprNode>(expr: T): ZeroOrMore<T> => ({
+  type: "zeroOrMore",
+  children: [expr],
+});
 
 /**
  * Creates a oneOrMore node with the specified expression.
@@ -1089,9 +1095,10 @@ export const zeroOrMore = <T extends ExprNode>(expr: T): ZeroOrMore<T> => {
  * // { type: "oneOrMore", children: [{ type: "literal", value: "a" }] }
  * ```
  */
-export const oneOrMore = <T extends ExprNode>(expr: T): OneOrMore<T> => {
-  return u("oneOrMore", [expr]) as OneOrMore<T>;
-};
+export const oneOrMore = <T extends ExprNode>(expr: T): OneOrMore<T> => ({
+  type: "oneOrMore",
+  children: [expr],
+});
 
 /**
  * Creates a group node with the specified expression.
@@ -1106,9 +1113,10 @@ export const oneOrMore = <T extends ExprNode>(expr: T): OneOrMore<T> => {
  * // { type: "group", children: [{ type: "choice", children: [{ type: "literal", value: "a" }, { type: "literal", value: "b" }] }] }
  * ```
  */
-export const group = <T extends ExprNode>(expr: T): Group<T> => {
-  return u("group", [expr]) as Group<T>;
-};
+export const group = <T extends ExprNode>(expr: T): Group<T> => ({
+  type: "group",
+  children: [expr],
+});
 
 /**
  * Creates a definition node with the specified identifier and expression.
@@ -1128,12 +1136,10 @@ export const group = <T extends ExprNode>(expr: T): Group<T> => {
 export const definition = <I extends string, E extends ExprNode>(
   id: I,
   expr: E,
-): Definition<Identifier<I>, E> => {
-  return u("definition", [identifier(id), expr]) as Definition<
-    Identifier<I>,
-    E
-  >;
-};
+): Definition<Identifier<I>, E> => ({
+  type: "definition",
+  children: [identifier(id), expr],
+});
 
 /**
  * Creates a grammar node with the specified definitions.
@@ -1153,6 +1159,7 @@ export const definition = <I extends string, E extends ExprNode>(
  */
 export const grammar = <T extends readonly Definition[]>(
   ...definitions: T
-): Grammar<T> => {
-  return u("grammar", { children: [...definitions] }) as Grammar<T>;
-};
+): Grammar<T> => ({
+  type: "grammar",
+  children: [...definitions],
+});
