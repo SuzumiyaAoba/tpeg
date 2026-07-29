@@ -1,4 +1,4 @@
-import { newline, sepBy, takeUntil } from "@suzumiyaaoba/tpeg-combinator";
+import { sepBy, takeUntil } from "@suzumiyaaoba/tpeg-combinator";
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   any,
@@ -58,6 +58,9 @@ const field = choice(quotedField, unquotedField);
 
 // Parse a single CSV row
 const csvRow = sepBy(field, literal(","));
+
+// Line ending: CRLF (Windows), LF (Unix), or CR (Mac)
+const newline = choice(literal("\r\n"), literal("\n"), literal("\r"));
 
 // Parse multiple rows
 const csvParser: Parser<string[][]> = sepBy(csvRow, newline);
