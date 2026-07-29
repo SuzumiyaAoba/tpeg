@@ -25,11 +25,11 @@ jobs:
       - name: Run linters
         run: bun run check
 
-      - name: Type check
-        run: bun run typecheck
-
       - name: Build packages
         run: bun run build
+
+      - name: Type check
+        run: bun run typecheck
 
       - name: Run tests
         run: bun test
