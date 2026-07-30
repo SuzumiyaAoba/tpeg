@@ -17,6 +17,7 @@ import {
   createOptional,
   createPlus,
   createPositiveLookahead,
+  createQualifiedIdentifier,
   createRuleDefinition,
   createSequence,
   createStar,
@@ -292,6 +293,27 @@ describe("TPEG Code Generation", () => {
 
       expect(result.code).toContain('choice(number, literal("null"))');
       expect(result.exports).toEqual(["number", "expression"]);
+    });
+
+    test("should handle qualified (cross-module) rule references", () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "main",
+            createQualifiedIdentifier("math", "expr"),
+          ),
+        ],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      const result = generator.generateGrammar(grammar);
+
+      expect(result.code).toContain(
+        "export const main: Parser<any> = math.expr;",
+      );
+      expect(result.exports).toEqual(["main"]);
     });
 
     test("should handle complex nested expressions", () => {

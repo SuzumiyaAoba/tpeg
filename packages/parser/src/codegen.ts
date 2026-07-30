@@ -19,6 +19,7 @@ import type {
   Optional,
   Plus,
   PositiveLookahead,
+  QualifiedIdentifier,
   Quantified,
   RuleDefinition,
   Sequence,
@@ -143,6 +144,8 @@ export class TPEGCodeGenerator {
         return this.generateCharacterClass(expr as CharacterClass);
       case "Identifier":
         return this.generateIdentifier(expr as Identifier);
+      case "QualifiedIdentifier":
+        return this.generateQualifiedIdentifier(expr as QualifiedIdentifier);
       case "AnyChar":
         return this.generateAnyChar(expr as AnyChar);
       case "Sequence":
@@ -200,6 +203,13 @@ export class TPEGCodeGenerator {
     }
     // External reference - might need special handling
     return `${expr.name}`;
+  }
+
+  private generateQualifiedIdentifier(expr: QualifiedIdentifier): string {
+    // References a rule exported from another module, e.g. `math.expr`.
+    // The generated code assumes the module is imported as a namespace
+    // object under its alias (see namespace-manager.ts's import resolution).
+    return `${expr.module}.${expr.name}`;
   }
 
   private generateAnyChar(_expr: AnyChar): string {

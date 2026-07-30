@@ -29,6 +29,7 @@ import type {
   ParserTemplateData,
   Plus,
   PositiveLookahead,
+  QualifiedIdentifier,
   Quantified,
   RuleDefinition,
   RuleTemplateData,
@@ -325,6 +326,8 @@ export class EtaTPEGCodeGenerator {
         return this.generateCharacterClass(expr as CharacterClass);
       case "Identifier":
         return this.generateIdentifier(expr as Identifier);
+      case "QualifiedIdentifier":
+        return this.generateQualifiedIdentifier(expr as QualifiedIdentifier);
       case "AnyChar":
         return "anyChar()";
       case "Sequence":
@@ -382,6 +385,13 @@ export class EtaTPEGCodeGenerator {
       return this.options.namePrefix + name;
     }
     return name;
+  }
+
+  private generateQualifiedIdentifier(expr: QualifiedIdentifier): string {
+    // References a rule exported from another module, e.g. `math.expr`.
+    // The generated code assumes the module is imported as a namespace
+    // object under its alias (see namespace-manager.ts's import resolution).
+    return `${expr.module}.${expr.name}`;
   }
 
   private generateSequence(expr: Sequence): string {

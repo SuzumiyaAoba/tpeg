@@ -20,6 +20,7 @@ import type {
   Optional,
   Plus,
   PositiveLookahead,
+  QualifiedIdentifier,
   Quantified,
   RuleDefinition,
   Sequence,
@@ -125,6 +126,17 @@ function createQuantified(
 function createIdentifier(name: string): Identifier {
   return {
     type: "Identifier",
+    name,
+  };
+}
+
+function createQualifiedIdentifier(
+  module: string,
+  name: string,
+): QualifiedIdentifier {
+  return {
+    type: "QualifiedIdentifier",
+    module,
     name,
   };
 }
@@ -278,6 +290,27 @@ describe("EtaTPEGCodeGenerator", () => {
         "test_world",
         "test_greeting",
       ]);
+    });
+
+    it("should generate a namespaced reference for a qualified (cross-module) identifier", async () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "main",
+            createQualifiedIdentifier("math", "expr"),
+          ),
+        ],
+      );
+
+      const result = await generateEtaTypeScriptParser(grammar, {
+        includeTypes: true,
+      });
+
+      expect(result.code).toContain(
+        "export const main: Parser<any> = math.expr;",
+      );
     });
   });
 

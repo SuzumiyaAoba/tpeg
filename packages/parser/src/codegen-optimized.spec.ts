@@ -20,6 +20,7 @@ import {
   createCharacterClass,
   createGrammarDefinition,
   createIdentifier,
+  createQualifiedIdentifier,
   createRuleDefinition,
   createStringLiteral,
 } from "./types";
@@ -197,5 +198,19 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
     expect(notDigit("m", pos).success).toBe(true);
     expect(notDigit("5", pos).success).toBe(false);
     expect(anything("x", pos).success).toBe(true);
+  });
+
+  it("generates a namespaced reference for a qualified (cross-module) identifier", () => {
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [createRuleDefinition("main", createQualifiedIdentifier("math", "expr"))],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar);
+
+    expect(result.code).toContain(
+      "export const main: Parser<any> = math.expr;",
+    );
   });
 });
