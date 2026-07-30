@@ -2,11 +2,19 @@
   "name": "@suzumiyaaoba/tpeg-type-inference",
   "version": "0.1.0",
   "description": "Type inference system for TPEG grammar definitions",
-  "main": "index.ts",
-  "types": "index.ts",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "package.json"],
   "scripts": {
     "test": "bun test",
-    "build": "tsc",
+    "build": "tsc --project ./tsconfig.build.json",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
