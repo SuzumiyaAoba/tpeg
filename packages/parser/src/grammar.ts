@@ -33,7 +33,14 @@ import {
   createGrammarDefinition,
   createRuleDefinition,
 } from "./types";
-import { optionalWhitespace, whitespace } from "./whitespace-utils";
+import {
+  grammarBlockWhitespace,
+  optionalWhitespace,
+  whitespace,
+} from "./whitespace-utils";
+
+const IDENTIFIER_START_CHAR = /[a-zA-Z_]/;
+const IDENTIFIER_CONT_CHAR = /[a-zA-Z0-9_]/;
 
 /**
  * Bounded expression parser for grammar rules
@@ -70,11 +77,11 @@ const grammarRuleExpression: Parser<Expression> = (input: string, pos) => {
       if (checkPos < input.length) {
         // Look for identifier pattern: [a-zA-Z_][a-zA-Z0-9_]*
         const currentChar = input[checkPos];
-        if (currentChar && /[a-zA-Z_]/.test(currentChar)) {
+        if (currentChar && IDENTIFIER_START_CHAR.test(currentChar)) {
           checkPos++;
           while (checkPos < input.length) {
             const nextChar = input[checkPos];
-            if (nextChar && /[a-zA-Z0-9_]/.test(nextChar)) {
+            if (nextChar && IDENTIFIER_CONT_CHAR.test(nextChar)) {
               checkPos++;
             } else {
               break;
@@ -137,23 +144,6 @@ const grammarRuleExpression: Parser<Expression> = (input: string, pos) => {
     },
   };
 };
-
-/**
- * Parse line-oriented whitespace including newlines for grammar blocks
- * This handles whitespace, newlines, and comments between grammar items
- */
-const grammarBlockWhitespace: Parser<string> = map(
-  zeroOrMore(
-    choice(
-      literal(" "),
-      literal("\t"),
-      literal("\r\n"),
-      literal("\n"),
-      literal("\r"),
-    ),
-  ),
-  (chars) => chars.join(""),
-);
 
 /**
  * Parse any character except newline

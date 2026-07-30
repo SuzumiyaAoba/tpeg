@@ -148,13 +148,14 @@ const transformBlockClose: Parser<string> = literal(
  * Parse complex type (including object types)
  * This is a simplified parser that captures type strings including braces
  */
+const TYPE_CHAR = /[a-zA-Z0-9_<>[\]]/;
+
 const complexType: Parser<string> = (
   input: string,
   pos: { offset: number; line: number; column: number },
 ) => {
   let currentPos = pos.offset;
   let braceCount = 0;
-  let result = "";
 
   while (currentPos < input.length) {
     const char = input[currentPos];
@@ -165,28 +166,26 @@ const complexType: Parser<string> = (
 
     if (char === "{") {
       braceCount++;
-      result += char;
       currentPos++;
     } else if (char === "}") {
       braceCount--;
-      result += char;
       currentPos++;
       if (braceCount === 0) {
         break;
       }
     } else if (braceCount > 0) {
       // Inside braces, capture everything
-      result += char;
       currentPos++;
-    } else if (/[a-zA-Z0-9_<>[\]]/.test(char)) {
+    } else if (TYPE_CHAR.test(char)) {
       // Outside braces, capture identifier-like characters
-      result += char;
       currentPos++;
     } else {
       // Stop at other characters
       break;
     }
   }
+
+  const result = input.slice(pos.offset, currentPos);
 
   if (result.length === 0) {
     return {

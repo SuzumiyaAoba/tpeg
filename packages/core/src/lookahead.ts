@@ -1,6 +1,6 @@
 import type { Parser } from "./types";
 import type { ParseSuccess } from "./types";
-import { createFailure, isFailure } from "./utils";
+import { createFailure, isFailure, prependContext } from "./utils";
 
 /**
  * Pre-allocated success result base object for memory optimization.
@@ -109,13 +109,10 @@ export const andPredicate =
     const result = parser(input, pos);
 
     if (isFailure(result)) {
-      // Enhanced error context processing with minimal allocation
-      // Preserves original error chain while adding lookahead context
-      const context = Array.isArray(result.error.context)
-        ? ["in positive lookahead", ...result.error.context]
-        : result.error.context
-          ? ["in positive lookahead", result.error.context]
-          : ["in positive lookahead"];
+      const context = prependContext(
+        "in positive lookahead",
+        result.error.context,
+      );
 
       return createFailure(
         `Positive lookahead failed: ${result.error.message}`,

@@ -1,6 +1,13 @@
 import { spaces, whitespace } from "@suzumiyaaoba/tpeg-combinator";
 import type { ParseResult } from "@suzumiyaaoba/tpeg-core";
-import { choice, lit, oneOrMore, parse, seq } from "@suzumiyaaoba/tpeg-core";
+import {
+  charClass,
+  choice,
+  lit,
+  oneOrMore,
+  parse,
+  seq,
+} from "@suzumiyaaoba/tpeg-core";
 
 // Define a custom ParseError interface
 interface DemoParseError {
@@ -51,18 +58,7 @@ ${" ".repeat(error.pos.column)}^
  */
 
 // Numbers
-const digit = choice(
-  lit("0"),
-  lit("1"),
-  lit("2"),
-  lit("3"),
-  lit("4"),
-  lit("5"),
-  lit("6"),
-  lit("7"),
-  lit("8"),
-  lit("9"),
-);
+const digit = charClass(["0", "9"]);
 const integer = oneOrMore(digit);
 
 // Operators

@@ -158,9 +158,12 @@ export function analyzeGrammarPerformance(
 
   // Determine overall complexity
   const ruleCount = grammar.rules.length;
-  const highComplexityRules = Array.from(ruleComplexity.values()).filter(
-    (c) => c.estimatedComplexity === "high",
-  ).length;
+  let highComplexityRules = 0;
+  for (const c of ruleComplexity.values()) {
+    if (c.estimatedComplexity === "high") {
+      highComplexityRules++;
+    }
+  }
 
   let estimatedParseComplexity: "low" | "medium" | "high" = "low";
   if (ruleCount > 50 || highComplexityRules > 5) {

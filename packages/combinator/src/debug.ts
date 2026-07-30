@@ -1,5 +1,5 @@
 import type { ParseFailure, Parser, Pos } from "@suzumiyaaoba/tpeg-core";
-import { withDetailedError } from "./error";
+import { named } from "./error";
 
 /**
  * Creates a debug wrapper for a parser with comprehensive logging capabilities.
@@ -25,16 +25,12 @@ export const debug = <T>(
   } = options;
 
   const debugParser: Parser<T> = (input: string, pos: Pos) => {
-    const startPos = pos || { offset: 0, line: 1, column: 1 };
-
     if (logInput) {
-      const context = input.slice(startPos.offset, startPos.offset + 20);
-      customLogger(
-        `[DEBUG ${name}] Input at ${startPos.offset}: "${context}..."`,
-      );
+      const context = input.slice(pos.offset, pos.offset + 20);
+      customLogger(`[DEBUG ${name}] Input at ${pos.offset}: "${context}..."`);
     }
 
-    const result = parser(input, startPos);
+    const result = parser(input, pos);
 
     if (result.success && logSuccess) {
       customLogger(`[DEBUG ${name}] SUCCESS`);
@@ -66,5 +62,5 @@ export const debug = <T>(
     return result;
   };
 
-  return parserName ? withDetailedError(debugParser, parserName) : debugParser;
+  return named(debugParser, parserName);
 };

@@ -1,5 +1,5 @@
 import type { ParseResult, Parser, Pos } from "@suzumiyaaoba/tpeg-core";
-import { withDetailedError } from "./error";
+import { named } from "./error";
 
 /**
  * Memoization parser that caches results for optimization.
@@ -46,7 +46,7 @@ export const memoize = <T>(
 
     if (inner.size >= maxCacheSize) {
       const firstKey = inner.keys().next().value;
-      if (firstKey) {
+      if (firstKey !== undefined) {
         inner.delete(firstKey);
       }
     }
@@ -55,9 +55,7 @@ export const memoize = <T>(
     return result;
   };
 
-  return parserName
-    ? withDetailedError(memoizedParser, parserName)
-    : memoizedParser;
+  return named(memoizedParser, parserName);
 };
 
 /**
@@ -85,11 +83,7 @@ export const recursive = <T>(
     innerParser = p;
   };
 
-  const namedParser = parserName
-    ? withDetailedError(parser, parserName)
-    : parser;
-
-  return [namedParser, setParser];
+  return [named(parser, parserName), setParser];
 };
 
 /**
@@ -103,13 +97,12 @@ export const withPosition = <T>(
     input: string,
     pos: Pos,
   ) => {
-    const startPos = pos || { offset: 0, line: 1, column: 1 };
-    const result = parser(input, startPos);
+    const result = parser(input, pos);
 
     if (result.success) {
       return {
         success: true,
-        val: { value: result.val, position: startPos },
+        val: { value: result.val, position: pos },
         current: result.current,
         next: result.next,
       } as const;
@@ -118,7 +111,5 @@ export const withPosition = <T>(
     return result;
   };
 
-  return parserName
-    ? withDetailedError(withPositionParser, parserName)
-    : withPositionParser;
+  return named(withPositionParser, parserName);
 };

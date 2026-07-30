@@ -12,22 +12,7 @@ import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { literal, map, seq } from "@suzumiyaaoba/tpeg-core";
 import { identifier } from "./identifier";
 import type { Expression, LabeledExpression } from "./types";
-
-/**
- * Creates a labeled expression AST node.
- *
- * @param label - The label identifier
- * @param expression - The expression being labeled
- * @returns LabeledExpression AST node
- */
-export const createLabeledExpression = (
-  label: string,
-  expression: Expression,
-): LabeledExpression => ({
-  type: "LabeledExpression",
-  label,
-  expression,
-});
+import { createLabeledExpression } from "./types";
 
 /**
  * Parses a labeled expression: name:expr

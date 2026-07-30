@@ -11,7 +11,7 @@ import {
   seq,
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
-import { labeled, withDetailedError } from "./error";
+import { labeled, named } from "./error";
 
 /**
  * Parser that matches a single whitespace character (space, tab, newline, carriage return).
@@ -22,6 +22,36 @@ export const whitespace = charClass(" ", "\t", "\n", "\r");
  * Parser that matches zero or more whitespace characters.
  */
 export const spaces = map(zeroOrMore(whitespace), (chars) => chars.join(""));
+
+/**
+ * Skips leading/trailing whitespace without allocating an array of matched
+ * characters and joining it, unlike `zeroOrMore(whitespace)` + `.join("")` —
+ * `token()` only needs the resulting position, never the skipped text.
+ */
+const skipWhitespace: Parser<undefined> = (input, pos) => {
+  let { offset, line, column } = pos;
+
+  while (offset < input.length) {
+    const ch = input[offset];
+    if (ch !== " " && ch !== "\t" && ch !== "\n" && ch !== "\r") {
+      break;
+    }
+    if (ch === "\n") {
+      line++;
+      column = 0;
+    } else {
+      column++;
+    }
+    offset++;
+  }
+
+  return {
+    success: true,
+    val: undefined,
+    current: pos,
+    next: { offset, line, column },
+  };
+};
 
 /**
  * Creates a parser that automatically handles surrounding whitespace.
@@ -35,8 +65,11 @@ export const spaces = map(zeroOrMore(whitespace), (chars) => chars.join(""));
  * @returns Parser<T> A parser that handles surrounding whitespace automatically
  */
 export const token = <T>(parser: Parser<T>, parserName?: string): Parser<T> => {
-  const tokenParser = map(seq(spaces, parser, spaces), ([_, value]) => value);
-  return parserName ? withDetailedError(tokenParser, parserName) : tokenParser;
+  const tokenParser = map(
+    seq(skipWhitespace, parser, skipWhitespace),
+    ([, value]) => value,
+  );
+  return named(tokenParser, parserName);
 };
 
 /**

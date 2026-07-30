@@ -24,6 +24,12 @@ import {
   seq,
 } from "@suzumiyaaoba/tpeg-core";
 import type { Expression, Optional, Plus, Quantified, Star } from "./types";
+import {
+  createOptional,
+  createPlus,
+  createQuantified,
+  createStar,
+} from "./types";
 
 /**
  * Parses a star repetition operator: expr*
@@ -87,31 +93,17 @@ export const applyRepetition = (
   if (typeof operator === "string") {
     switch (operator) {
       case "*":
-        return {
-          type: "Star" as const,
-          expression,
-        } as Star;
+        return createStar(expression);
       case "+":
-        return {
-          type: "Plus" as const,
-          expression,
-        } as Plus;
+        return createPlus(expression);
       case "?":
-        return {
-          type: "Optional" as const,
-          expression,
-        } as Optional;
+        return createOptional(expression);
       default:
         return expression;
     }
   }
   // Quantified repetition
-  return {
-    type: "Quantified" as const,
-    expression,
-    min: operator.min,
-    max: operator.max,
-  } as Quantified;
+  return createQuantified(expression, operator.min, operator.max);
 };
 
 /**
@@ -123,31 +115,18 @@ export const repetitionOperator: Parser<
 > = choice(starOperator, plusOperator, optionalOperator, quantifiedOperator);
 
 /**
- * Parses a postfix expression with optional repetition operators.
- * Handles multiple consecutive repetition operators like: expr*+?
+ * The "optional repetition operator" parser used by {@link withRepetition},
+ * built once at module scope instead of per call (see below).
  */
-export const parseRepetition = (
-  baseExpression: Expression,
-): Parser<Expression> => {
-  return map(
-    seq(
-      // The base expression is already parsed
-      // Just parse any following repetition operators
-      optional(repetitionOperator),
-    ),
-    ([repetitionOp]) => {
-      // repetitionOp is either [operator] or [] from optional parser
-      if (repetitionOp.length > 0 && repetitionOp[0] !== undefined) {
-        return applyRepetition(baseExpression, repetitionOp[0]);
-      }
-      return baseExpression;
-    },
-  );
-};
+const optionalRepetitionOperator = optional(repetitionOperator);
 
 /**
  * Creates a parser that handles repetition for any base expression parser.
  * This is a higher-order function that wraps any expression parser with repetition support.
+ *
+ * Every postfix expression in a grammar (identifiers, groups, char classes, ...)
+ * is wrapped with this, so it reuses a module-level operator parser built once
+ * rather than constructing a fresh combinator tree on every invocation.
  */
 export const withRepetition = <T extends Expression>(
   expressionParser: Parser<T>,
@@ -159,9 +138,22 @@ export const withRepetition = <T extends Expression>(
       return baseResult;
     }
 
-    // Then try to parse repetition operators
-    const repetitionParser = parseRepetition(baseResult.val);
-    return repetitionParser(input, baseResult.next);
+    // Then try to parse repetition operators (never fails: optional() always succeeds)
+    const opResult = optionalRepetitionOperator(input, baseResult.next);
+    if (!opResult.success) {
+      return opResult;
+    }
+    const [repetitionOp] = opResult.val;
+
+    return {
+      success: true,
+      val:
+        repetitionOp !== undefined
+          ? applyRepetition(baseResult.val, repetitionOp)
+          : baseResult.val,
+      current: baseResult.next,
+      next: opResult.next,
+    };
   };
 };
 
@@ -169,34 +161,22 @@ export const withRepetition = <T extends Expression>(
  * Parses a star repetition expression specifically.
  * Exported for direct use when star parsing is needed.
  */
-export const starExpression = (baseExpression: Expression): Star => {
-  return {
-    type: "Star" as const,
-    expression: baseExpression,
-  };
-};
+export const starExpression = (baseExpression: Expression): Star =>
+  createStar(baseExpression);
 
 /**
  * Parses a plus repetition expression specifically.
  * Exported for direct use when plus parsing is needed.
  */
-export const plusExpression = (baseExpression: Expression): Plus => {
-  return {
-    type: "Plus" as const,
-    expression: baseExpression,
-  };
-};
+export const plusExpression = (baseExpression: Expression): Plus =>
+  createPlus(baseExpression);
 
 /**
  * Parses an optional expression specifically.
  * Exported for direct use when optional parsing is needed.
  */
-export const optionalExpression = (baseExpression: Expression): Optional => {
-  return {
-    type: "Optional" as const,
-    expression: baseExpression,
-  };
-};
+export const optionalExpression = (baseExpression: Expression): Optional =>
+  createOptional(baseExpression);
 
 /**
  * Parses a quantified expression specifically.
@@ -206,14 +186,4 @@ export const quantifiedExpression = (
   baseExpression: Expression,
   min: number,
   max?: number,
-): Quantified => {
-  const result: Quantified = {
-    type: "Quantified" as const,
-    expression: baseExpression,
-    min,
-  };
-  if (max !== undefined) {
-    result.max = max;
-  }
-  return result;
-};
+): Quantified => createQuantified(baseExpression, min, max);

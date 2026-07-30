@@ -27,6 +27,7 @@ import type {
   StringLiteral,
 } from "./types";
 
+import { escapeStringLiteral } from "./constants";
 import {
   analyzeExpressionComplexity,
   analyzeGrammarPerformance,
@@ -347,7 +348,7 @@ export class OptimizedTPEGCodeGenerator {
   }
 
   private generateStringLiteral(expr: StringLiteral): string {
-    const escaped = expr.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const escaped = escapeStringLiteral(expr.value);
     return `literal("${stringInterner.intern(escaped)}")`;
   }
 

@@ -47,10 +47,7 @@ export const Digit = charClass(["0", "9"]);
  * Parses one or more digits and converts them to a number.
  * This parser handles positive integers only.
  */
-// biome-ignore lint/suspicious/noShadowRestrictedNames:
-export const Number = map(plus(Digit), ($) =>
-  global.Number.parseInt($.join("")),
-);
+export const NumberLit = map(plus(Digit), ($) => Number.parseInt($.join("")));
 
 /**
  * Factor parser (number or parenthesized expression).
@@ -64,7 +61,7 @@ export const Factor: Parser<number> = choice(
     seq(_, lit("("), _, (input, pos) => Expr(input, pos), _, lit(")"), _),
     ($) => $[3],
   ),
-  map(seq(_, Number, _), ($) => $[1]),
+  map(seq(_, NumberLit, _), ($) => $[1]),
 );
 
 /**

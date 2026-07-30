@@ -1,5 +1,5 @@
 import type { NonEmptyArray, NonEmptyString, Parser, Pos } from "./types";
-import { createFailure, getCharAndLength, nextPos } from "./utils";
+import { createFailure, getCharAt, nextPos } from "./utils";
 
 /**
  * Represents a character class specification - either a single character or a range
@@ -45,7 +45,7 @@ export const charClass = (
   });
 
   const charClassParser = (input: string, pos: Pos) => {
-    const [char] = getCharAndLength(input, pos.offset);
+    const char = getCharAt(input, pos.offset);
 
     if (!char) {
       return createFailure(
@@ -62,26 +62,19 @@ export const charClass = (
     const charCode = char.codePointAt(0) ?? 0;
 
     // Check if the character matches any of the compiled specifications
-    for (const spec of compiledSpecs) {
-      if (spec.isSingle) {
-        if (char === spec.char) {
-          return {
-            success: true,
-            val: char,
-            current: pos,
-            next: nextPos(char, pos),
-          } as const;
-        }
-      } else {
-        if (charCode >= spec.start && charCode <= spec.end) {
-          return {
-            success: true,
-            val: char,
-            current: pos,
-            next: nextPos(char, pos),
-          } as const;
-        }
-      }
+    const matched = compiledSpecs.some((spec) =>
+      spec.isSingle
+        ? char === spec.char
+        : charCode >= spec.start && charCode <= spec.end,
+    );
+
+    if (matched) {
+      return {
+        success: true,
+        val: char,
+        current: pos,
+        next: nextPos(char, pos),
+      } as const;
     }
 
     // No match found

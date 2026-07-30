@@ -8,12 +8,6 @@
 import type { Expression, GrammarDefinition } from "./types";
 
 /**
- * Simple memoization cache for parser results
- * Uses Map for string-based caching
- */
-// const parseCache = new Map<string, Map<number, any>>();
-
-/**
  * High-performance string hashing function
  * Uses djb2 algorithm for fast, reasonably good distribution
  */

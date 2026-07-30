@@ -485,7 +485,7 @@ const validateParseError = (error: unknown): error is ParseError => {
 
   const err = error as ParseError;
   return (
-    err.pos &&
+    err.pos != null &&
     typeof err.pos.line === "number" &&
     typeof err.pos.column === "number" &&
     err.pos.line >= 1 &&
@@ -649,7 +649,6 @@ export const formatParseError = (
     contextLines,
     highlightErrors,
     showPosition,
-    colorize,
     messages,
     maxLineLength,
     showLineNumbers,

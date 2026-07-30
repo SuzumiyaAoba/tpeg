@@ -12,6 +12,7 @@
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { choice, literal } from "@suzumiyaaoba/tpeg-core";
 import type { Expression, NegativeLookahead, PositiveLookahead } from "./types";
+import { createNegativeLookahead, createPositiveLookahead } from "./types";
 
 /**
  * Parses a positive lookahead operator: &
@@ -24,32 +25,6 @@ export const positiveLookaheadOperator: Parser<string> = literal("&");
  * Used in expressions like !expr
  */
 export const negativeLookaheadOperator: Parser<string> = literal("!");
-
-/**
- * Creates a positive lookahead AST node.
- * Represents &expr in the grammar.
- */
-export const createPositiveLookahead = (
-  expression: Expression,
-): PositiveLookahead => {
-  return {
-    type: "PositiveLookahead" as const,
-    expression,
-  };
-};
-
-/**
- * Creates a negative lookahead AST node.
- * Represents !expr in the grammar.
- */
-export const createNegativeLookahead = (
-  expression: Expression,
-): NegativeLookahead => {
-  return {
-    type: "NegativeLookahead" as const,
-    expression,
-  };
-};
 
 /**
  * Parses any lookahead operator.

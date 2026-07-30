@@ -4,13 +4,18 @@ import {
   literal,
   map,
   notPredicate,
-  oneOrMore,
   optional,
   seq,
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
-import { withDetailedError } from "./error";
+import { named } from "./error";
 import { token } from "./primitive";
+
+/**
+ * Drops a separator and keeps only the value from a `seq(sep, value)` pair.
+ */
+const dropSeparator = <T, S>(sep: Parser<S>, value: Parser<T>): Parser<T> =>
+  map(seq(sep, value), ([, v]) => v);
 
 /**
  * Parser that applies a parser repeatedly, separated by another parser.
@@ -21,7 +26,7 @@ export const sepBy = <T, S>(
   parserName?: string,
 ): Parser<T[]> => {
   const sepByOne = map(
-    seq(value, zeroOrMore(map(seq(separator, value), ([_, v]) => v))),
+    seq(value, zeroOrMore(dropSeparator(separator, value))),
     ([first, rest]) => [first, ...rest],
   );
 
@@ -30,7 +35,7 @@ export const sepBy = <T, S>(
     map(notPredicate(value), () => []),
   );
 
-  return parserName ? withDetailedError(parser, parserName) : parser;
+  return named(parser, parserName);
 };
 
 /**
@@ -41,16 +46,14 @@ export const sepBy1 = <T, S>(
   separator: Parser<S>,
   parserName?: string,
 ): Parser<NonEmptyArray<T>> => {
-  const single = map(value, (v) => [v] as NonEmptyArray<T>);
-
-  const multiple = map(
-    seq(value, oneOrMore(map(seq(separator, value), ([_, v]) => v))),
+  // The shared `value` prefix is parsed once; branching only on what follows
+  // avoids re-parsing it for the (common) single-element case.
+  const parser = map(
+    seq(value, zeroOrMore(dropSeparator(separator, value))),
     ([first, rest]) => [first, ...rest] as NonEmptyArray<T>,
   );
 
-  const parser = choice(multiple, single);
-
-  return parserName ? withDetailedError(parser, parserName) : parser;
+  return named(parser, parserName);
 };
 
 /**
@@ -68,7 +71,7 @@ export const commaSeparated = <T>(
   const nonEmpty = map(
     seq(
       token(valueParser),
-      zeroOrMore(map(seq(comma, token(valueParser)), ([_, val]) => val)),
+      zeroOrMore(dropSeparator(comma, token(valueParser))),
       allowTrailing ? optional(comma) : map(notPredicate(comma), () => []),
     ),
     ([first, rest]) => [first, ...rest],
@@ -76,7 +79,7 @@ export const commaSeparated = <T>(
 
   const parser = choice(nonEmpty, empty);
 
-  return parserName ? withDetailedError(parser, parserName) : parser;
+  return named(parser, parserName);
 };
 
 /**
@@ -89,24 +92,16 @@ export const commaSeparated1 = <T>(
 ): Parser<NonEmptyArray<T>> => {
   const comma = token(literal(","));
 
-  const single = map(
+  // The shared `token(valueParser)` prefix is parsed once; branching only on
+  // what follows avoids re-parsing it for the (common) single-element case.
+  const parser = map(
     seq(
       token(valueParser),
-      allowTrailing ? optional(comma) : map(notPredicate(comma), () => []),
-    ),
-    ([val]) => [val] as NonEmptyArray<T>,
-  );
-
-  const multiple = map(
-    seq(
-      token(valueParser),
-      oneOrMore(map(seq(comma, token(valueParser)), ([_, val]) => val)),
+      zeroOrMore(dropSeparator(comma, token(valueParser))),
       allowTrailing ? optional(comma) : map(notPredicate(comma), () => []),
     ),
     ([first, rest]) => [first, ...rest] as NonEmptyArray<T>,
   );
 
-  const parser = choice(multiple, single);
-
-  return parserName ? withDetailedError(parser, parserName) : parser;
+  return named(parser, parserName);
 };

@@ -8,8 +8,6 @@ import { describe, expect, it } from "bun:test";
 import { literal } from "@suzumiyaaoba/tpeg-core";
 import {
   applyLookahead,
-  createNegativeLookahead,
-  createPositiveLookahead,
   lookaheadOperator,
   negativeLookaheadExpression,
   negativeLookaheadOperator,
@@ -18,6 +16,7 @@ import {
   withLookahead,
 } from "./lookahead";
 import type { StringLiteral } from "./types";
+import { createNegativeLookahead, createPositiveLookahead } from "./types";
 
 const pos = { offset: 0, line: 1, column: 1 };
 

@@ -2,7 +2,7 @@ import type { Parser, Pos } from "@suzumiyaaoba/tpeg-core";
 import {
   anyChar,
   choice,
-  getCharAndLength,
+  getCharAt,
   literal,
   map,
   nextPos,
@@ -10,7 +10,7 @@ import {
   seq,
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
-import { labeled, withDetailedError } from "./error";
+import { labeled, named } from "./error";
 
 /**
  * Parser that consumes characters until a condition is met.
@@ -26,7 +26,7 @@ import { labeled, withDetailedError } from "./error";
 export const takeUntil =
   <T>(condition: Parser<T>, _parserName?: string): Parser<string> =>
   (input: string, pos: Pos) => {
-    const startPos = pos || { offset: 0, line: 1, column: 1 };
+    const startPos = pos;
 
     let currentPos = startPos;
 
@@ -36,7 +36,7 @@ export const takeUntil =
         break;
       }
 
-      const [char] = getCharAndLength(input, currentPos.offset);
+      const char = getCharAt(input, currentPos.offset);
       if (!char) break;
 
       currentPos = nextPos(char, currentPos);
@@ -64,101 +64,70 @@ export const between = <O, C>(
     seq(open, takeUntil(close), close),
     ([_, content]) => content,
   );
-  const parser = parserName ? withDetailedError(base, parserName) : base;
+  const parser = named(base, parserName);
 
-  return (input: string, pos: Pos) => {
-    const startPos = pos || { offset: 0, line: 1, column: 1 };
-    return parser(input, startPos);
-  };
+  return (input: string, pos: Pos) => parser(input, pos);
+};
+
+/**
+ * Builds a quoted-string parser for the given quote character, with escape
+ * sequence support. Shared by {@link quotedString} and {@link singleQuotedString},
+ * which differ only in the quote character and error label.
+ */
+const makeQuotedString = (quoteChar: string, label: string): Parser<string> => {
+  const escapeSeq = map(seq(literal("\\"), anyChar()), ([_, char]) => {
+    switch (char) {
+      case "n":
+        return "\n";
+      case "r":
+        return "\r";
+      case "t":
+        return "\t";
+      case "b":
+        return "\b";
+      case "f":
+        return "\f";
+      case "\\":
+        return "\\";
+      case quoteChar:
+        return quoteChar;
+      default:
+        return char;
+    }
+  });
+
+  const stringChar = choice(
+    escapeSeq,
+    map(
+      seq(notPredicate(choice(literal(quoteChar), literal("\\"))), anyChar()),
+      ([_, char]) => char,
+    ),
+  );
+
+  return labeled(
+    map(
+      seq(literal(quoteChar), zeroOrMore(stringChar), literal(quoteChar)),
+      ([_, chars]) => chars.join(""),
+    ),
+    label,
+  );
 };
 
 /**
  * Parser for matching a double-quoted string with escape sequence support.
  */
-export const quotedString: Parser<string> = (() => {
-  const createEscapeHandler = (quoteChar: string) =>
-    map(seq(literal("\\"), anyChar()), ([_, char]) => {
-      switch (char) {
-        case "n":
-          return "\n";
-        case "r":
-          return "\r";
-        case "t":
-          return "\t";
-        case "b":
-          return "\b";
-        case "f":
-          return "\f";
-        case "\\":
-          return "\\";
-        case quoteChar:
-          return quoteChar;
-        default:
-          return char;
-      }
-    });
-
-  const escapeSeq = createEscapeHandler('"');
-
-  const stringChar = choice(
-    escapeSeq,
-    map(
-      seq(notPredicate(choice(literal('"'), literal("\\"))), anyChar()),
-      ([_, char]) => char,
-    ),
-  );
-
-  return labeled(
-    map(seq(literal('"'), zeroOrMore(stringChar), literal('"')), ([_, chars]) =>
-      chars.join(""),
-    ),
-    "Expected valid double-quoted string",
-  );
-})();
+export const quotedString: Parser<string> = makeQuotedString(
+  '"',
+  "Expected valid double-quoted string",
+);
 
 /**
  * Parser for matching a single-quoted string with escape sequence support.
  */
-export const singleQuotedString: Parser<string> = (() => {
-  const createEscapeHandler = (quoteChar: string) =>
-    map(seq(literal("\\"), anyChar()), ([_, char]) => {
-      switch (char) {
-        case "n":
-          return "\n";
-        case "r":
-          return "\r";
-        case "t":
-          return "\t";
-        case "b":
-          return "\b";
-        case "f":
-          return "\f";
-        case "\\":
-          return "\\";
-        case quoteChar:
-          return quoteChar;
-        default:
-          return char;
-      }
-    });
-
-  const escapeSeq = createEscapeHandler("'");
-
-  const stringChar = choice(
-    escapeSeq,
-    map(
-      seq(notPredicate(choice(literal("'"), literal("\\"))), anyChar()),
-      ([_, char]) => char,
-    ),
-  );
-
-  return labeled(
-    map(seq(literal("'"), zeroOrMore(stringChar), literal("'")), ([_, chars]) =>
-      chars.join(""),
-    ),
-    "Expected valid single-quoted string",
-  );
-})();
+export const singleQuotedString: Parser<string> = makeQuotedString(
+  "'",
+  "Expected valid single-quoted string",
+);
 
 /**
  * Parser for matching a string with either single or double quotes.

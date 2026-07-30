@@ -5,6 +5,7 @@
  * This is a basic implementation supporting core TPEG features.
  */
 
+import { escapeStringLiteral } from "./constants";
 import type {
   AnyChar,
   CharacterClass,
@@ -172,8 +173,7 @@ export class TPEGCodeGenerator {
   }
 
   private generateStringLiteral(expr: StringLiteral): string {
-    const escaped = expr.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-    return `literal("${escaped}")`;
+    return `literal("${escapeStringLiteral(expr.value)}")`;
   }
 
   private generateCharacterClass(expr: CharacterClass): string {

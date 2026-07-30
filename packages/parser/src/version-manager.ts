@@ -1,5 +1,10 @@
 import type { GrammarDefinition } from "./types.js";
 
+const VERSION_PREFIX_RE = /^v/;
+const SEMVER_RE =
+  /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+const CONSTRAINT_OPERATOR_RE = /^(>=|<=|>|<|\^|~|=)?(.+)$/;
+
 // Module system types (temporary until proper package structure)
 interface ModuleInfo {
   type: "ModuleInfo";
@@ -100,11 +105,8 @@ export class VersionManager {
       return cached;
     }
 
-    const cleanVersion = versionString.replace(/^v/, "");
-    const versionRegex =
-      /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
-
-    const match = cleanVersion.match(versionRegex);
+    const cleanVersion = versionString.replace(VERSION_PREFIX_RE, "");
+    const match = cleanVersion.match(SEMVER_RE);
     if (!match) {
       throw new VersionParseError(versionString, "Invalid semver format");
     }
@@ -136,7 +138,7 @@ export class VersionManager {
     }
 
     // 演算子を抽出
-    const operatorMatch = trimmed.match(/^(>=|<=|>|<|\^|~|=)?(.+)$/);
+    const operatorMatch = trimmed.match(CONSTRAINT_OPERATOR_RE);
     if (!operatorMatch) {
       throw new VersionParseError(
         constraintString,

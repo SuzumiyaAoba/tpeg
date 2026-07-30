@@ -1,5 +1,5 @@
 import type { NonEmptyString, ParseResult, Parser, Pos } from "./types";
-import { advancePos, createFailure, getCharAndLength, nextPos } from "./utils";
+import { advancePos, createFailure, getCharAt, nextPos } from "./utils";
 
 /**
  * Parser that parses any single character from the input.
@@ -75,7 +75,7 @@ import { advancePos, createFailure, getCharAndLength, nextPos } from "./utils";
 export const anyChar =
   (parserName = "anyChar"): Parser<string> =>
   (input: string, pos: Pos) => {
-    const [char] = getCharAndLength(input, pos.offset);
+    const char = getCharAt(input, pos.offset);
 
     if (!char) {
       return createFailure("Unexpected EOI", pos, {
@@ -173,11 +173,10 @@ const parseSimpleString = <T extends string>(
     });
   }
 
-  // Use slice for more efficient string comparison
-  const inputSlice = input.slice(offset, offset + str.length);
-  if (inputSlice !== str) {
+  // Avoid allocating a substring on the (common) success path
+  if (!input.startsWith(str, offset)) {
     // Find the first mismatched character for better error reporting
-    // Use the already sliced input for comparison to avoid double indexing
+    const inputSlice = input.slice(offset, offset + str.length);
     for (let i = 0; i < str.length; i++) {
       if (inputSlice[i] !== str[i]) {
         const errorPos = {
@@ -264,9 +263,8 @@ const parseComplexString = <T extends string>(
     });
   }
 
-  // Fast path: slice comparison
-  const inputSlice = input.slice(offset, offset + str.length);
-  if (inputSlice === str) {
+  // Fast path: avoid allocating a substring on the (common) success path
+  if (input.startsWith(str, offset)) {
     return {
       success: true,
       val: str,
@@ -288,7 +286,7 @@ const parseComplexString = <T extends string>(
     const strChar = String.fromCodePoint(strCode);
     const strCharLen = strChar.length;
 
-    const [inputChar] = getCharAndLength(input, currentPos.offset);
+    const inputChar = getCharAt(input, currentPos.offset);
 
     if (inputChar === "") {
       return createFailure(
@@ -318,6 +316,7 @@ const parseComplexString = <T extends string>(
     i += strCharLen;
   }
 
+  const inputSlice = input.slice(offset, currentPos.offset);
   return createFailure(`Expected "${str}" but got "${inputSlice}"`, pos, {
     expected: str,
     found: inputSlice,

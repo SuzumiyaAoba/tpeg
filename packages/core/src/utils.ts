@@ -101,6 +101,34 @@ export const getCharAndLength = (
 };
 
 /**
+ * Gets a single character from the input string at the given offset,
+ * without allocating the `[char, length]` tuple that {@link getCharAndLength}
+ * returns. Use this when only the character itself is needed.
+ *
+ * @param input - The input string to read from
+ * @param offset - The position in the string to start reading (0-based)
+ * @returns The character at `offset` (may be a surrogate pair), or "" if out of range
+ *
+ * @example
+ * ```typescript
+ * const text = "Hello 🌍 World";
+ *
+ * getCharAt(text, 0);  // "H"
+ * getCharAt(text, 6);  // "🌍" (emoji is 2 code units)
+ * getCharAt(text, 20); // "" (out of range)
+ * ```
+ */
+export const getCharAt = (input: string, offset: number): string => {
+  if (offset < 0 || offset >= input.length) {
+    return "";
+  }
+
+  const code = input.codePointAt(offset);
+  if (code === undefined) return "";
+  return String.fromCodePoint(code);
+};
+
+/**
  * Calculates the next position after consuming a character.
  *
  * This function updates the position information (offset, column, line)
@@ -444,20 +472,28 @@ export const unicodeLength = (str: string): number => {
  * unicodeGraphemeLength("");                // 0
  * ```
  */
+// Lazily constructed once and reused across calls: Intl.Segmenter construction
+// has non-trivial setup cost, and the locale/options here never change.
+let graphemeSegmenter: Intl.Segmenter | null | undefined;
+
 export const unicodeGraphemeLength = (str: string): number => {
   if (!str) return 0;
 
   try {
-    const segmenter = new Intl.Segmenter("en", {
-      granularity: "grapheme",
-    });
-    const segments = segmenter.segment(str);
+    if (graphemeSegmenter === undefined) {
+      graphemeSegmenter = new Intl.Segmenter("en", { granularity: "grapheme" });
+    }
+    if (graphemeSegmenter === null) {
+      throw new Error("Intl.Segmenter unavailable");
+    }
+    const segments = graphemeSegmenter.segment(str);
     let count = 0;
     for (const _ of segments) {
       count++;
     }
     return count;
   } catch (error) {
+    graphemeSegmenter = null;
     // Fallback to unicodeLength if Intl.Segmenter is not available
     const silenceWarn = (() => {
       const g = globalThis as unknown as {
@@ -521,4 +557,30 @@ export const isWhitespace = (char: string): boolean => {
  */
 export const isNewline = (char: string): boolean => {
   return char === "\n" || char === "\r";
+};
+
+/**
+ * Prepends one or more labels to an error's `context`, normalizing the
+ * existing context (which may be a single string, an array, or absent)
+ * into a flat array.
+ *
+ * @param labels - Label(s) to prepend, outermost first
+ * @param context - The existing `ParseError.context` value to normalize and extend
+ * @returns A flat array starting with `labels`, followed by the normalized existing context
+ *
+ * @example
+ * ```typescript
+ * prependContext("in sequence", "inner"); // ["in sequence", "inner"]
+ * prependContext("in sequence", ["a", "b"]); // ["in sequence", "a", "b"]
+ * prependContext("in sequence", undefined); // ["in sequence"]
+ * ```
+ */
+export const prependContext = (
+  labels: string | string[],
+  context: string | string[] | undefined,
+): string[] => {
+  return [
+    ...(Array.isArray(labels) ? labels : [labels]),
+    ...(Array.isArray(context) ? context : context ? [context] : []),
+  ];
 };

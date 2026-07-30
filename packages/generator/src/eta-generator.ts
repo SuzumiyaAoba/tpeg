@@ -118,8 +118,7 @@ export class EtaTPEGCodeGenerator {
 
     // Add performance imports for optimized template
     if (this.options.optimize) {
-      templateData.performanceImports =
-        this.generatePerformanceImports(performanceAnalysis);
+      templateData.performanceImports = this.generatePerformanceImports();
       templateData.header = this.generateHeader(grammar);
       templateData.footer = this.generateFooter();
     }
@@ -152,7 +151,7 @@ export class EtaTPEGCodeGenerator {
    */
   private generateImports(
     grammar: GrammarDefinition,
-    _analysis: ReturnType<typeof analyzeGrammarPerformance>,
+    analysis: ReturnType<typeof analyzeGrammarPerformance>,
   ): string[] {
     const imports = [];
 
@@ -177,13 +176,18 @@ export class EtaTPEGCodeGenerator {
       // coarser grammar-level estimatedParseComplexity can stay "low" even
       // when a single small rule is genuinely recursive, which would skip
       // this import while a rule's generated code still called memoize().
-      const anyRuleMemoized =
-        this.options.enableMemoization &&
-        Array.from(_analysis.ruleComplexity.values()).some(
-          (complexity) =>
+      let anyRuleMemoized = false;
+      if (this.options.enableMemoization) {
+        for (const complexity of analysis.ruleComplexity.values()) {
+          if (
             complexity.estimatedComplexity === "high" ||
-            complexity.hasRecursion,
-        );
+            complexity.hasRecursion
+          ) {
+            anyRuleMemoized = true;
+            break;
+          }
+        }
+      }
       if (anyRuleMemoized) {
         imports.push(
           'import { memoize } from "@suzumiyaaoba/tpeg-combinator";',
@@ -203,9 +207,7 @@ export class EtaTPEGCodeGenerator {
   /**
    * Generate performance-specific imports
    */
-  private generatePerformanceImports(
-    _analysis: ReturnType<typeof analyzeGrammarPerformance>,
-  ): string[] {
+  private generatePerformanceImports(): string[] {
     const imports = [];
 
     if (this.options.includeMonitoring) {

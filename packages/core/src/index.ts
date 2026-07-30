@@ -43,6 +43,7 @@ import {
   createPos,
   extractValue,
   getCharAndLength,
+  getCharAt,
   isEmptyArray,
   isFailure,
   isNewline,
@@ -123,6 +124,7 @@ export const utils = {
 
   // Character utilities
   getCharAndLength,
+  getCharAt,
   unicodeLength,
   isWhitespace,
   isNewline,

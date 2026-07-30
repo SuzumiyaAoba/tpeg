@@ -93,6 +93,10 @@ export interface TypeInferenceContext {
   maxRecursionDepth: number;
   /** Current recursion depth */
   currentDepth: number;
+  /** Number of `typeCache` hits during the current inference run */
+  cacheHits: number;
+  /** Number of `typeCache` misses during the current inference run */
+  cacheMisses: number;
 }
 
 /**
@@ -217,6 +221,8 @@ export class TypeInferenceEngine {
       verbose: this.options.generateDocumentation,
       maxRecursionDepth: this.options.maxRecursionDepth,
       currentDepth: 0,
+      cacheHits: 0,
+      cacheMisses: 0,
     };
   }
 
@@ -334,6 +340,8 @@ export class TypeInferenceEngine {
 
     // Deduplicate imports and calculate final stats
     result.imports = Array.from(new Set(result.imports));
+    result.stats.cacheHits = this.context.cacheHits;
+    result.stats.cacheMisses = this.context.cacheMisses;
     result.stats.inferenceTime = performance.now() - this.startTime;
 
     return result;
@@ -366,8 +374,12 @@ export class TypeInferenceEngine {
     if (this.options.enableCaching && this.context.typeCache.has(cacheKey)) {
       const cached = this.context.typeCache.get(cacheKey);
       if (cached) {
+        this.context.cacheHits++;
         return cached;
       }
+    }
+    if (this.options.enableCaching) {
+      this.context.cacheMisses++;
     }
 
     this.context.currentDepth++;
@@ -920,6 +932,8 @@ export class TypeInferenceEngine {
     this.context.ruleStack = [];
     this.context.currentRule = undefined as string | undefined;
     this.context.currentDepth = 0;
+    this.context.cacheHits = 0;
+    this.context.cacheMisses = 0;
   }
 
   /**

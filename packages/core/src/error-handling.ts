@@ -314,11 +314,12 @@ export class ErrorHandler {
    * Finds the next safe position to continue parsing after an error.
    */
   private findNextSafePosition(input: string, pos: Pos): Pos {
-    let currentPos = { ...pos };
+    let offset = pos.offset;
+    let column = pos.column;
 
     // Skip until we find a safe character (whitespace, newline, or common delimiter)
-    while (currentPos.offset < input.length) {
-      const char = input[currentPos.offset];
+    while (offset < input.length) {
+      const char = input[offset];
       if (
         char === " " ||
         char === "\n" ||
@@ -328,14 +329,11 @@ export class ErrorHandler {
       ) {
         break;
       }
-      currentPos = {
-        ...currentPos,
-        offset: currentPos.offset + 1,
-        column: currentPos.column + 1,
-      };
+      offset++;
+      column++;
     }
 
-    return currentPos;
+    return { ...pos, offset, column };
   }
 
   /**

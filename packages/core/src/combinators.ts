@@ -1,5 +1,5 @@
 import type { ParseError, Parser, Pos } from "./types";
-import { createFailure, isFailure } from "./utils";
+import { createFailure, isFailure, prependContext } from "./utils";
 
 /**
  * Parser that parses a sequence of parsers in order.
@@ -59,14 +59,7 @@ export const sequence = <P extends Parser<unknown>[]>(
           parserResult.error.pos,
           {
             ...parserResult.error,
-            context: [
-              "in sequence",
-              ...(Array.isArray(parserResult.error.context)
-                ? parserResult.error.context
-                : parserResult.error.context
-                  ? [parserResult.error.context]
-                  : []),
-            ],
+            context: prependContext("in sequence", parserResult.error.context),
             parserName: "sequence",
           },
         );
@@ -221,39 +214,6 @@ export const choice = <T extends unknown[]>(
 };
 
 /**
- * Parser that makes a parser optional, returning the value or null.
- * Different from repetition.ts optional which returns [T] | [].
- *
- * @template T Type of the parser result
- * @param parser The parser to make optional
- * @returns Parser that always succeeds, returning T | null
- *
- * @example
- * ```typescript
- * const parser = maybe(char('a'));
- * const result1 = parser('a', 0); // Success: 'a'
- * const result2 = parser('b', 0); // Success: null
- * ```
- */
-export const maybe =
-  <T>(parser: Parser<T>): Parser<T | null> =>
-  (input: string, pos) => {
-    const result = parser(input, pos);
-
-    if (result.success) {
-      return result;
-    }
-
-    // Return null if parser fails, but don't advance position
-    return {
-      success: true,
-      val: null,
-      current: pos,
-      next: pos,
-    };
-  };
-
-/**
  * Parser that tries to parse with the given parser and returns a default value if it fails.
  *
  * This combinator makes a parser optional by providing a fallback value when parsing fails.
@@ -298,6 +258,24 @@ export const withDefault =
       next: pos,
     };
   };
+
+/**
+ * Parser that makes a parser optional, returning the value or null.
+ * Different from repetition.ts optional which returns [T] | [].
+ *
+ * @template T Type of the parser result
+ * @param parser The parser to make optional
+ * @returns Parser that always succeeds, returning T | null
+ *
+ * @example
+ * ```typescript
+ * const parser = maybe(char('a'));
+ * const result1 = parser('a', 0); // Success: 'a'
+ * const result2 = parser('b', 0); // Success: null
+ * ```
+ */
+export const maybe = <T>(parser: Parser<T>): Parser<T | null> =>
+  withDefault<T | null>(parser, null);
 
 /**
  * Parser that succeeds if the given parser fails (without consuming input).

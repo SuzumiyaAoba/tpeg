@@ -54,6 +54,20 @@ export const withDetailedError = <T>(
 };
 
 /**
+ * Wraps `parser` with {@link withDetailedError} when `parserName` is given,
+ * otherwise returns it unchanged. Centralizes the
+ * `parserName ? withDetailedError(parser, parserName) : parser` pattern
+ * repeated across the combinator modules.
+ *
+ * @template T Type of parser result
+ * @param parser The parser to conditionally wrap
+ * @param parserName Optional name for error reporting
+ * @returns `parser`, wrapped with detailed error reporting if `parserName` is provided
+ */
+export const named = <T>(parser: Parser<T>, parserName?: string): Parser<T> =>
+  parserName ? withDetailedError(parser, parserName) : parser;
+
+/**
  * Creates a labeled parser with custom error message.
  *
  * Provides simple error labeling for parser debugging and error reporting.

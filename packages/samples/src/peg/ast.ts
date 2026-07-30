@@ -296,34 +296,3 @@ export const isDefinition = (expr: Expr): expr is Definition =>
  */
 export const isGrammar = (expr: Expr): expr is Grammar =>
   expr.type === "Grammar";
-
-// Helper function to create AST nodes with position information
-
-/**
- * Creates an AST node with the specified type, position, and properties.
- *
- * This helper function ensures all AST nodes have consistent structure
- * with proper type information and position data.
- *
- * @template T - The specific expression type
- * @param type - The node type
- * @param pos - The position information
- * @param props - Additional properties for the node
- * @returns A properly typed AST node
- *
- * @example
- * ```typescript
- * const node = createNode("Literal", pos, { value: "hello" });
- * // Returns: { type: "Literal", pos: pos, value: "hello" }
- * ```
- */
-export const createNode = <T extends Expr>(
-  type: T["type"],
-  pos: Pos,
-  props: Omit<T, "type" | "pos">,
-): T =>
-  ({
-    type,
-    pos,
-    ...props,
-  }) as T;

@@ -1,4 +1,5 @@
 import {
+  commaSeparated,
   labeled,
   memoize,
   number,
@@ -7,17 +8,14 @@ import {
   token,
 } from "@suzumiyaaoba/tpeg-combinator";
 import {
-  type ParseResult,
   type Parser,
-  type Pos,
   any,
   choice,
   literal,
   map,
   not,
-  optional,
+  parse,
   seq,
-  zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
 
 // Export Parser type
@@ -68,56 +66,11 @@ const stringParser = map(quotedString, (s) => s);
 // Parse number values
 const numberParser = map(number, (n) => n);
 
-/**
- * Parse comma-separated values (empty array if empty).
- *
- * This parser handles arrays of JSON values, including empty arrays.
- * It uses optional parsing to handle the case where no values are present.
- *
- * @param parser - The parser for individual JSON values
- * @returns A parser that returns an array of parsed values
- */
-const commaSeparatedValues = (
-  parser: Parser<JSONValue>,
-): Parser<JSONValue[]> => {
-  return map(
-    optional(
-      map(
-        seq(
-          token(parser),
-          zeroOrMore(
-            map(seq(token(literal(",")), token(parser)), ([, val]) => val),
-          ),
-        ),
-        ([first, rest]) => [first, ...rest],
-      ),
-    ),
-    (optionalValues) => (optionalValues.length ? optionalValues[0] : []),
-  );
-};
-
 // Handle empty arrays specifically
 const emptyArrayParser = map(
   seq(token(literal("[")), token(literal("]"))),
   () => [],
 );
-
-/**
- * Helper function to parse a string using a parser.
- *
- * This utility function provides a convenient way to parse strings
- * by automatically creating the initial position and calling the parser.
- *
- * @template T - The type of the parsed result
- * @param parser - The parser to use
- * @returns A function that takes a string and returns a parse result
- */
-const parse =
-  <T>(parser: Parser<T>) =>
-  (input: string): ParseResult<T> => {
-    const pos: Pos = { offset: 0, line: 1, column: 1 };
-    return parser(input, pos);
-  };
 
 /**
  * Create a JSON parser that can parse any valid JSON string
@@ -143,11 +96,7 @@ export const jsonParser = (): Parser<JSONValue> => {
 
   // Parse arrays
   const arrayParser = map(
-    seq(
-      token(literal("[")),
-      commaSeparatedValues(valueParser),
-      token(literal("]")),
-    ),
+    seq(token(literal("[")), commaSeparated(valueParser), token(literal("]"))),
     ([, elements]) => elements,
   );
 
@@ -157,34 +106,9 @@ export const jsonParser = (): Parser<JSONValue> => {
     ([key, , value]) => [key, value] as const,
   );
 
-  /**
-   * Parse comma-separated properties (empty array if empty).
-   *
-   * This parser handles object properties, including empty objects.
-   * It uses optional parsing to handle the case where no properties are present.
-   *
-   * @returns A parser that returns an array of key-value pairs
-   */
-  const commaSeparatedProperties = (): Parser<[string, JSONValue][]> => {
-    return map(
-      optional(
-        map(
-          seq(
-            keyValuePair,
-            zeroOrMore(
-              map(seq(token(literal(",")), keyValuePair), ([, pair]) => pair),
-            ),
-          ),
-          ([first, rest]) => [first, ...rest],
-        ),
-      ),
-      (optionalPairs) => (optionalPairs.length ? optionalPairs[0] : []),
-    );
-  };
-
   // Parse objects
   const objectParser = map(
-    seq(token(literal("{")), commaSeparatedProperties(), token(literal("}"))),
+    seq(token(literal("{")), commaSeparated(keyValuePair), token(literal("}"))),
     ([, pairs]) => {
       const obj: JSONObject = {};
       for (const [key, value] of pairs) {
@@ -248,6 +172,16 @@ export const jsonParser = (): Parser<JSONValue> => {
  * // Returns: "hello world"
  * ```
  */
+// Built once and reused across calls, instead of on every call that reaches
+// the custom-parser fallback below (parseJSON() only gets there when
+// JSON.parse() rejects the input first). jsonParser() constructs a whole
+// recursive combinator graph including a memoize() cache; without this,
+// repeatedly parsing many invalid/non-standard JSON strings would rebuild
+// that graph from scratch every time. memoize()'s cache is FIFO-bounded
+// (default 1000 distinct input strings), so reusing it here only adds a
+// bounded amount of retained state, not an unbounded one.
+let cachedJsonParser: Parser<JSONValue> | undefined;
+
 export const parseJSON = (input: string): JSONValue | null | string => {
   // Throw error if input is null
   if (input === null) {
@@ -269,7 +203,8 @@ export const parseJSON = (input: string): JSONValue | null | string => {
 
     // Use custom parser
     // token() function automatically handles leading and trailing whitespace
-    const result = parse(jsonParser())(input);
+    cachedJsonParser ??= jsonParser();
+    const result = parse(cachedJsonParser)(input);
 
     if (result.success) {
       return result.val;

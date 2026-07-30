@@ -1148,13 +1148,16 @@ export const createModuleFile = (
  * }
  * ```
  */
-export const isStringLiteral = (expr: unknown): expr is StringLiteral => {
-  return (
-    typeof expr === "object" &&
-    expr !== null &&
-    (expr as { type?: unknown }).type === "StringLiteral"
-  );
-};
+const hasNodeType = <T extends string>(
+  expr: unknown,
+  type: T,
+): expr is { type: T } =>
+  typeof expr === "object" &&
+  expr !== null &&
+  (expr as { type?: unknown }).type === type;
+
+export const isStringLiteral = (expr: unknown): expr is StringLiteral =>
+  hasNodeType(expr, "StringLiteral");
 
 /**
  * Type guard to check if an expression is a CharacterClass.
@@ -1162,13 +1165,8 @@ export const isStringLiteral = (expr: unknown): expr is StringLiteral => {
  * @param expr - The expression to check
  * @returns True if the expression is a CharacterClass
  */
-export const isCharacterClass = (expr: unknown): expr is CharacterClass => {
-  return (
-    typeof expr === "object" &&
-    expr !== null &&
-    (expr as { type?: unknown }).type === "CharacterClass"
-  );
-};
+export const isCharacterClass = (expr: unknown): expr is CharacterClass =>
+  hasNodeType(expr, "CharacterClass");
 
 /**
  * Type guard to check if an expression is an Identifier.
@@ -1176,13 +1174,8 @@ export const isCharacterClass = (expr: unknown): expr is CharacterClass => {
  * @param expr - The expression to check
  * @returns True if the expression is an Identifier
  */
-export const isIdentifier = (expr: unknown): expr is Identifier => {
-  return (
-    typeof expr === "object" &&
-    expr !== null &&
-    (expr as { type?: unknown }).type === "Identifier"
-  );
-};
+export const isIdentifier = (expr: unknown): expr is Identifier =>
+  hasNodeType(expr, "Identifier");
 
 /**
  * Type guard to check if an expression is a QualifiedIdentifier.
@@ -1192,13 +1185,7 @@ export const isIdentifier = (expr: unknown): expr is Identifier => {
  */
 export const isQualifiedIdentifier = (
   expr: unknown,
-): expr is QualifiedIdentifier => {
-  return (
-    typeof expr === "object" &&
-    expr !== null &&
-    (expr as { type?: unknown }).type === "QualifiedIdentifier"
-  );
-};
+): expr is QualifiedIdentifier => hasNodeType(expr, "QualifiedIdentifier");
 
 /**
  * Type guard to check if an expression is an AnyChar.
@@ -1206,13 +1193,8 @@ export const isQualifiedIdentifier = (
  * @param expr - The expression to check
  * @returns True if the expression is an AnyChar
  */
-export const isAnyChar = (expr: unknown): expr is AnyChar => {
-  return (
-    typeof expr === "object" &&
-    expr !== null &&
-    (expr as { type?: unknown }).type === "AnyChar"
-  );
-};
+export const isAnyChar = (expr: unknown): expr is AnyChar =>
+  hasNodeType(expr, "AnyChar");
 
 /**
  * Type guard to check if an expression is a Sequence.
@@ -1220,13 +1202,8 @@ export const isAnyChar = (expr: unknown): expr is AnyChar => {
  * @param expr - The expression to check
  * @returns True if the expression is a Sequence
  */
-export const isSequence = (expr: unknown): expr is Sequence => {
-  return (
-    typeof expr === "object" &&
-    expr !== null &&
-    (expr as { type?: unknown }).type === "Sequence"
-  );
-};
+export const isSequence = (expr: unknown): expr is Sequence =>
+  hasNodeType(expr, "Sequence");
 
 /**
  * Type guard to check if an expression is a Choice.
@@ -1234,13 +1211,8 @@ export const isSequence = (expr: unknown): expr is Sequence => {
  * @param expr - The expression to check
  * @returns True if the expression is a Choice
  */
-export const isChoice = (expr: unknown): expr is Choice => {
-  return (
-    typeof expr === "object" &&
-    expr !== null &&
-    (expr as { type?: unknown }).type === "Choice"
-  );
-};
+export const isChoice = (expr: unknown): expr is Choice =>
+  hasNodeType(expr, "Choice");
 
 /**
  * Type guard to check if an expression is a Group.
@@ -1248,13 +1220,8 @@ export const isChoice = (expr: unknown): expr is Choice => {
  * @param expr - The expression to check
  * @returns True if the expression is a Group
  */
-export const isGroup = (expr: unknown): expr is Group => {
-  return (
-    typeof expr === "object" &&
-    expr !== null &&
-    (expr as { type?: unknown }).type === "Group"
-  );
-};
+export const isGroup = (expr: unknown): expr is Group =>
+  hasNodeType(expr, "Group");
 
 /**
  * Type guard to check if an expression is a Star.
@@ -1262,13 +1229,8 @@ export const isGroup = (expr: unknown): expr is Group => {
  * @param expr - The expression to check
  * @returns True if the expression is a Star
  */
-export const isStar = (expr: unknown): expr is Star => {
-  return (
-    typeof expr === "object" &&
-    expr !== null &&
-    (expr as { type?: unknown }).type === "Star"
-  );
-};
+export const isStar = (expr: unknown): expr is Star =>
+  hasNodeType(expr, "Star");
 
 /**
  * Type guard to check if an expression is a Plus.
@@ -1276,13 +1238,8 @@ export const isStar = (expr: unknown): expr is Star => {
  * @param expr - The expression to check
  * @returns True if the expression is a Plus
  */
-export const isPlus = (expr: unknown): expr is Plus => {
-  return (
-    typeof expr === "object" &&
-    expr !== null &&
-    (expr as { type?: unknown }).type === "Plus"
-  );
-};
+export const isPlus = (expr: unknown): expr is Plus =>
+  hasNodeType(expr, "Plus");
 
 /**
  * Type guard to check if an expression is an Optional.
@@ -1290,13 +1247,8 @@ export const isPlus = (expr: unknown): expr is Plus => {
  * @param expr - The expression to check
  * @returns True if the expression is an Optional
  */
-export const isOptional = (expr: unknown): expr is Optional => {
-  return (
-    typeof expr === "object" &&
-    expr !== null &&
-    (expr as { type?: unknown }).type === "Optional"
-  );
-};
+export const isOptional = (expr: unknown): expr is Optional =>
+  hasNodeType(expr, "Optional");
 
 /**
  * Type guard to check if an expression is a Quantified.
@@ -1304,13 +1256,8 @@ export const isOptional = (expr: unknown): expr is Optional => {
  * @param expr - The expression to check
  * @returns True if the expression is a Quantified
  */
-export const isQuantified = (expr: unknown): expr is Quantified => {
-  return (
-    typeof expr === "object" &&
-    expr !== null &&
-    (expr as { type?: unknown }).type === "Quantified"
-  );
-};
+export const isQuantified = (expr: unknown): expr is Quantified =>
+  hasNodeType(expr, "Quantified");
 
 /**
  * Type guard to check if an expression is a PositiveLookahead.
@@ -1318,15 +1265,8 @@ export const isQuantified = (expr: unknown): expr is Quantified => {
  * @param expr - The expression to check
  * @returns True if the expression is a PositiveLookahead
  */
-export const isPositiveLookahead = (
-  expr: unknown,
-): expr is PositiveLookahead => {
-  return (
-    typeof expr === "object" &&
-    expr !== null &&
-    (expr as { type?: unknown }).type === "PositiveLookahead"
-  );
-};
+export const isPositiveLookahead = (expr: unknown): expr is PositiveLookahead =>
+  hasNodeType(expr, "PositiveLookahead");
 
 /**
  * Type guard to check if an expression is a NegativeLookahead.
@@ -1334,15 +1274,8 @@ export const isPositiveLookahead = (
  * @param expr - The expression to check
  * @returns True if the expression is a NegativeLookahead
  */
-export const isNegativeLookahead = (
-  expr: unknown,
-): expr is NegativeLookahead => {
-  return (
-    typeof expr === "object" &&
-    expr !== null &&
-    (expr as { type?: unknown }).type === "NegativeLookahead"
-  );
-};
+export const isNegativeLookahead = (expr: unknown): expr is NegativeLookahead =>
+  hasNodeType(expr, "NegativeLookahead");
 
 /**
  * Type guard to check if an expression is a LabeledExpression.
@@ -1350,15 +1283,8 @@ export const isNegativeLookahead = (
  * @param expr - The expression to check
  * @returns True if the expression is a LabeledExpression
  */
-export const isLabeledExpression = (
-  expr: unknown,
-): expr is LabeledExpression => {
-  return (
-    typeof expr === "object" &&
-    expr !== null &&
-    (expr as { type?: unknown }).type === "LabeledExpression"
-  );
-};
+export const isLabeledExpression = (expr: unknown): expr is LabeledExpression =>
+  hasNodeType(expr, "LabeledExpression");
 
 /**
  * Type guard to check if a grammar definition is a ModularGrammarDefinition.

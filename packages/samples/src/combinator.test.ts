@@ -6,6 +6,9 @@ import {
   token,
 } from "@suzumiyaaoba/tpeg-combinator";
 import { literal, parse } from "@suzumiyaaoba/tpeg-core";
+import { DirectExpression, Expression } from "./arith/calculator";
+import { arrayToCSV, parseCSV, parseCSVWithHeaders } from "./csv/csv";
+import { parseJSON } from "./json/json";
 
 describe("TPEG Samples Integration Tests", () => {
   describe("JSON Parser Integration", () => {
@@ -20,7 +23,6 @@ describe("TPEG Samples Integration Tests", () => {
         }
         `;
 
-      const { parseJSON } = require("./json/json");
       const result = parseJSON(jsonString);
 
       expect(result).toEqual({
@@ -35,7 +37,6 @@ describe("TPEG Samples Integration Tests", () => {
     it("parses JSON arrays", () => {
       const jsonString = `[1, "hello", true, null, {"key": "value"}]`;
 
-      const { parseJSON } = require("./json/json");
       const result = parseJSON(jsonString);
 
       expect(result).toEqual([1, "hello", true, null, { key: "value" }]);
@@ -50,7 +51,6 @@ describe("TPEG Samples Integration Tests", () => {
         "meta": {"total": 2}
       }`;
 
-      const { parseJSON } = require("./json/json");
       const result = parseJSON(jsonString);
 
       expect(result).toEqual({
@@ -63,8 +63,6 @@ describe("TPEG Samples Integration Tests", () => {
     });
 
     it("handles empty structures", () => {
-      const { parseJSON } = require("./json/json");
-
       expect(parseJSON("{}")).toEqual({});
       expect(parseJSON("[]")).toEqual([]);
     });
@@ -75,7 +73,6 @@ describe("TPEG Samples Integration Tests", () => {
       const csvString =
         "name,age,city\nJohn,30,New York\nJane,25,Boston\nBob,40,Chicago";
 
-      const { parseCSV } = require("./csv/csv");
       const result = parseCSV(csvString);
 
       expect(result).toEqual([
@@ -91,7 +88,6 @@ describe("TPEG Samples Integration Tests", () => {
 "Product A","A ""great"" product with, commas",29.99
 "Product B","Simple product",19.99`;
 
-      const { parseCSV } = require("./csv/csv");
       const result = parseCSV(csvString);
 
       expect(result).toEqual([
@@ -104,7 +100,6 @@ describe("TPEG Samples Integration Tests", () => {
     it("parses CSV with headers into objects", () => {
       const csvString = "name,age,city\nJohn,30,New York\nJane,25,Boston";
 
-      const { parseCSVWithHeaders } = require("./csv/csv");
       const result = parseCSVWithHeaders(csvString);
 
       expect(result).toEqual([
@@ -119,7 +114,6 @@ describe("TPEG Samples Integration Tests", () => {
         { name: "Jane", age: 25, city: "Boston" },
       ];
 
-      const { arrayToCSV } = require("./csv/csv");
       const result = arrayToCSV(data);
 
       expect(result).toBe("name,age,city\nJohn,30,New York\nJane,25,Boston");
@@ -128,8 +122,6 @@ describe("TPEG Samples Integration Tests", () => {
 
   describe("Arithmetic Parser Integration", () => {
     it("evaluates basic arithmetic expressions", () => {
-      const { DirectExpression } = require("./arith/calculator");
-
       const testCases = [
         { expr: "1 + 2", expected: 3 },
         { expr: "3 * 4", expected: 12 },
@@ -148,8 +140,6 @@ describe("TPEG Samples Integration Tests", () => {
     });
 
     it("handles operator precedence", () => {
-      const { DirectExpression } = require("./arith/calculator");
-
       const testCases = [
         { expr: "1 + 2 * 3", expected: 7 },
         { expr: "2 * 3 + 1", expected: 7 },
@@ -167,8 +157,6 @@ describe("TPEG Samples Integration Tests", () => {
     });
 
     it("builds AST for expressions", () => {
-      const { Expression } = require("./arith/calculator");
-
       const result = parse(Expression)("1 + 2");
       expect(result.success).toBe(true);
 
@@ -211,16 +199,12 @@ describe("TPEG Samples Integration Tests", () => {
 
   describe("Error Handling Integration", () => {
     it("handles invalid JSON gracefully", () => {
-      const { parseJSON } = require("./json/json");
-
       // These should return null instead of throwing
       expect(parseJSON('{"invalid": json}')).toBe(null);
       expect(parseJSON("[1,2,3,]")).toBe(null);
     });
 
     it("handles malformed CSV gracefully", () => {
-      const { parseCSV } = require("./csv/csv");
-
       // An unterminated quote is malformed CSV, so parseCSV throws rather
       // than silently returning a truncated/empty result -- see
       // csv/csv.spec.ts for the full rationale.
@@ -238,7 +222,6 @@ describe("TPEG Samples Integration Tests", () => {
         })),
       };
 
-      const { parseJSON } = require("./json/json");
       const jsonString = JSON.stringify(largeObject);
       const result = parseJSON(jsonString);
 
@@ -246,8 +229,6 @@ describe("TPEG Samples Integration Tests", () => {
     });
 
     it("handles large CSV files", () => {
-      const { parseCSV } = require("./csv/csv");
-
       const headers = "id,name,value";
       const rows = Array.from(
         { length: 100 },
@@ -263,8 +244,6 @@ describe("TPEG Samples Integration Tests", () => {
     });
 
     it("handles deeply nested arithmetic expressions", () => {
-      const { DirectExpression } = require("./arith/calculator");
-
       const deepExpression = "((((1 + 2) * 3) - 4) / 5)";
       const result = parse(DirectExpression)(deepExpression);
 

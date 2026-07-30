@@ -1,5 +1,5 @@
 import type { NonEmptyArray, ParseFailure, Parser } from "./types";
-import { createFailure } from "./utils";
+import { createFailure, prependContext } from "./utils";
 
 /**
  * Creates a standardized infinite loop error for repetition parsers.
@@ -150,14 +150,7 @@ export const oneOrMore =
             {
               ...failure.error,
               parserName,
-              context: [
-                "in oneOrMore",
-                ...(failure.error.context
-                  ? Array.isArray(failure.error.context)
-                    ? failure.error.context
-                    : [failure.error.context]
-                  : []),
-              ],
+              context: prependContext("in oneOrMore", failure.error.context),
             },
           );
         }
@@ -248,15 +241,13 @@ export const quantified = <T>(
           {
             ...failure.error,
             parserName,
-            context: [
-              `in quantified{${min},${max ?? ""}}`,
-              `failed at required repetition ${i + 1}/${min}`,
-              ...(failure.error.context
-                ? Array.isArray(failure.error.context)
-                  ? failure.error.context
-                  : [failure.error.context]
-                : []),
-            ],
+            context: prependContext(
+              [
+                `in quantified{${min},${max ?? ""}}`,
+                `failed at required repetition ${i + 1}/${min}`,
+              ],
+              failure.error.context,
+            ),
           },
         );
       }
@@ -276,53 +267,27 @@ export const quantified = <T>(
       count++;
     }
 
-    // Parse additional times up to max (optional)
-    if (max !== undefined) {
-      // Bounded case: parse up to max
-      for (let i = count; i < max; i++) {
-        const result = parser(input, currentPos);
-        if (!result.success) {
-          // Optional repetitions can fail - just break
-          break;
-        }
-
-        // Check for infinite loop (position doesn't advance)
-        if (result.next.offset === currentPos.offset) {
-          return createInfiniteLoopError(
-            input,
-            currentPos,
-            parserName,
-            `Repetition: ${i + 1} (optional)`,
-          );
-        }
-
-        results.push(result.val);
-        currentPos = result.next;
-        count++;
+    // Parse additional times up to max (optional), or unbounded if max is undefined
+    const limit = max ?? Number.POSITIVE_INFINITY;
+    for (let i = count; i < limit; i++) {
+      const result = parser(input, currentPos);
+      if (!result.success) {
+        // Optional repetitions can fail - just break
+        break;
       }
-    } else {
-      // Unbounded case: parse as many as possible
-      while (true) {
-        const result = parser(input, currentPos);
-        if (!result.success) {
-          // Optional repetitions can fail - just break
-          break;
-        }
 
-        // Check for infinite loop (position doesn't advance)
-        if (result.next.offset === currentPos.offset) {
-          return createInfiniteLoopError(
-            input,
-            currentPos,
-            parserName,
-            `Repetition: ${count + 1} (optional)`,
-          );
-        }
-
-        results.push(result.val);
-        currentPos = result.next;
-        count++;
+      // Check for infinite loop (position doesn't advance)
+      if (result.next.offset === currentPos.offset) {
+        return createInfiniteLoopError(
+          input,
+          currentPos,
+          parserName,
+          `Repetition: ${i + 1} (optional)`,
+        );
       }
+
+      results.push(result.val);
+      currentPos = result.next;
     }
 
     return {

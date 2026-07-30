@@ -117,6 +117,14 @@ export const ESCAPE_CHARS = {
 } as const;
 
 /**
+ * Escapes a string literal's value for embedding in generated TypeScript
+ * source (as the argument to `literal("...")`). Shared by the base and
+ * optimized code generators.
+ */
+export const escapeStringLiteral = (value: string): string =>
+  value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+/**
  * Grammar keywords
  */
 export const GRAMMAR_KEYWORDS = {
