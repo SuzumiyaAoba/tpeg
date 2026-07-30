@@ -1,48 +1,9 @@
-import type { GrammarDefinition, RuleDefinition } from "./types.js";
-
-// Module system types (temporary until proper package structure)
-interface ImportStatement {
-  type: "ImportStatement";
-  modulePath: string;
-  alias?: string;
-  selective?: string[];
-  version?: string;
-}
-
-interface ExportDeclaration {
-  type: "ExportDeclaration";
-  rules: string[];
-}
-
-interface ModuleInfo {
-  type: "ModuleInfo";
-  namespace?: string;
-  dependencies?: string[];
-  conflicts?: string[];
-  version?: string;
-}
-
-interface QualifiedIdentifier {
-  type: "QualifiedIdentifier";
-  module: string;
-  name: string;
-}
-
-interface ModularGrammarDefinition extends Omit<GrammarDefinition, "type"> {
-  type: "ModularGrammarDefinition";
-  imports?: ImportStatement[];
-  exports?: ExportDeclaration;
-  moduleInfo?: ModuleInfo;
-  extends?: string;
-}
-
-interface ModuleFile {
-  type: "ModuleFile";
-  filePath: string;
-  imports: ImportStatement[];
-  grammars: (GrammarDefinition | ModularGrammarDefinition)[];
-  moduleInfo?: ModuleInfo;
-}
+import type {
+  ModularGrammarDefinition,
+  ModuleFile,
+  QualifiedIdentifier,
+} from "@suzumiyaaoba/tpeg-core";
+import type { RuleDefinition } from "./types.js";
 
 /**
  * 名前空間の衝突エラー

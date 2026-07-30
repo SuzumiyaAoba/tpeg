@@ -271,32 +271,7 @@ export class TypeIntegrationEngine {
   ): string {
     const guardName = `is${ruleName}Result`;
     const typeName = `${ruleName}Result`;
-
-    // Simple type guards based on the inferred type
-    let guardImplementation: string;
-
-    if (
-      inferredType.typeString.startsWith('"') &&
-      inferredType.typeString.endsWith('"')
-    ) {
-      // String literal type
-      const literal = inferredType.typeString.slice(1, -1);
-      guardImplementation = `return typeof value === "string" && value === "${literal}";`;
-    } else if (inferredType.baseType === "string") {
-      guardImplementation = `return typeof value === "string";`;
-    } else if (inferredType.isArray) {
-      guardImplementation = "return Array.isArray(value);";
-    } else if (inferredType.baseType === "object") {
-      guardImplementation = `return typeof value === "object" && value !== null;`;
-    } else if (inferredType.baseType === "void") {
-      // Lookaheads (inferLookaheadType) never produce a value, so the
-      // runtime result actually is undefined -- unlike the generic
-      // fallback below, "!== undefined" would be backwards here.
-      guardImplementation = "return value === undefined;";
-    } else {
-      // TODO: Enhance type guard for union types
-      guardImplementation = "return value !== undefined;";
-    }
+    const guardImplementation = `return ${this.guardExpression(inferredType)};`;
 
     return [
       `  /** Type guard for ${typeName} */`,
@@ -304,6 +279,45 @@ export class TypeIntegrationEngine {
       `    ${guardImplementation}`,
       "  }",
     ].join("\n");
+  }
+
+  /**
+   * Build the boolean expression (no "return"/";") that checks whether
+   * `value` matches an inferred type, for use in a type guard body.
+   */
+  private guardExpression(inferredType: InferredType): string {
+    // Checked before the string-literal heuristic below: a union's own
+    // typeString (e.g. `"yes" | "no"`) can itself start and end with a
+    // quote, which would otherwise be misread as a single string literal.
+    if (inferredType.baseType === "union" && inferredType.unionMembers) {
+      return inferredType.unionMembers
+        .map((member) => `(${this.guardExpression(member)})`)
+        .join(" || ");
+    }
+    if (
+      inferredType.typeString.startsWith('"') &&
+      inferredType.typeString.endsWith('"')
+    ) {
+      // String literal type
+      const literal = inferredType.typeString.slice(1, -1);
+      return `typeof value === "string" && value === "${literal}"`;
+    }
+    if (inferredType.baseType === "string") {
+      return `typeof value === "string"`;
+    }
+    if (inferredType.isArray) {
+      return "Array.isArray(value)";
+    }
+    if (inferredType.baseType === "object") {
+      return `typeof value === "object" && value !== null`;
+    }
+    if (inferredType.baseType === "void") {
+      // Lookaheads (inferLookaheadType) never produce a value, so the
+      // runtime result actually is undefined -- unlike the generic
+      // fallback below, "!== undefined" would be backwards here.
+      return "value === undefined";
+    }
+    return "value !== undefined";
   }
 
   /**

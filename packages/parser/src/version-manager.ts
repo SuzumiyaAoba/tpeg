@@ -1,34 +1,9 @@
-import type { GrammarDefinition } from "./types.js";
+import type { ModuleFile } from "@suzumiyaaoba/tpeg-core";
 
 const VERSION_PREFIX_RE = /^v/;
 const SEMVER_RE =
   /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 const CONSTRAINT_OPERATOR_RE = /^(>=|<=|>|<|\^|~|=)?(.+)$/;
-
-// Module system types (temporary until proper package structure)
-interface ModuleInfo {
-  type: "ModuleInfo";
-  namespace?: string;
-  dependencies?: string[];
-  conflicts?: string[];
-  version?: string;
-}
-
-interface ImportStatement {
-  type: "ImportStatement";
-  modulePath: string;
-  alias?: string;
-  selective?: string[];
-  version?: string;
-}
-
-interface ModuleFile {
-  type: "ModuleFile";
-  filePath: string;
-  imports: ImportStatement[];
-  grammars: GrammarDefinition[];
-  moduleInfo?: ModuleInfo;
-}
 
 /**
  * バージョン互換性エラー

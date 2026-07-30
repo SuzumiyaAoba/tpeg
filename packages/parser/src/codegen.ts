@@ -181,16 +181,16 @@ export class TPEGCodeGenerator {
       .map((range) => {
         if (range.end) {
           // Range like a-z
-          return `{ from: "${range.start}", to: "${range.end}" }`;
+          return `["${escapeStringLiteral(range.start)}", "${escapeStringLiteral(range.end)}"]`;
         }
         // Single character
-        return `"${range.start}"`;
+        return `"${escapeStringLiteral(range.start)}"`;
       })
       .join(", ");
 
-    const negated = expr.negated ? ", true" : "";
-
-    return `charClass(${ranges}${negated})`;
+    return expr.negated
+      ? `negatedCharClass(${ranges})`
+      : `charClass(${ranges})`;
   }
 
   private generateIdentifier(expr: Identifier): string {
@@ -203,7 +203,7 @@ export class TPEGCodeGenerator {
   }
 
   private generateAnyChar(_expr: AnyChar): string {
-    return "anyChar";
+    return "anyChar()";
   }
 
   private generateSequence(expr: Sequence): string {
@@ -304,7 +304,10 @@ export class TPEGCodeGenerator {
         combinators.add("literal");
         break;
       case "CharacterClass":
-        combinators.add("charClass");
+        combinators.add(expr.negated ? "negatedCharClass" : "charClass");
+        break;
+      case "AnyChar":
+        combinators.add("anyChar");
         break;
       case "Sequence":
         combinators.add("sequence");

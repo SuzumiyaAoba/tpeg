@@ -70,6 +70,8 @@ export interface InferredType {
     start: number;
     end: number;
   };
+  /** For baseType "union": the inferred type of each alternative, used to build a type guard */
+  unionMembers?: InferredType[];
 }
 
 /**
@@ -662,6 +664,7 @@ export class TypeInferenceEngine {
       documentation: this.options.generateDocumentation
         ? "Union of alternative expressions"
         : undefined,
+      unionMembers: alternativeTypes,
     };
   }
 

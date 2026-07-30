@@ -15,6 +15,9 @@ import {
   generateOptimizedTypeScriptParser,
 } from "./codegen-optimized";
 import {
+  createAnyChar,
+  createCharRange,
+  createCharacterClass,
   createGrammarDefinition,
   createIdentifier,
   createRuleDefinition,
@@ -149,5 +152,50 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
     expect(result.code).toContain("export const g_baz");
     expect(result.code).toContain("= foo;");
     expect(result.code).not.toContain("g_foo");
+  });
+
+  it("generates character class / negated character class / AnyChar code that actually parses input", async () => {
+    const core = await import("@suzumiyaaoba/tpeg-core");
+
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "letter",
+          createCharacterClass([createCharRange("a", "z")], false),
+        ),
+        createRuleDefinition(
+          "notDigit",
+          createCharacterClass([createCharRange("0", "9")], true),
+        ),
+        createRuleDefinition("anything", createAnyChar()),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      includeImports: true,
+    });
+
+    expect(result.code).toContain('charClass(["a", "z"])');
+    expect(result.code).toContain('negatedCharClass(["0", "9"])');
+    expect(result.code).toContain("anyChar()");
+
+    const body = result.code
+      .replace(/^import[^\n]*\n?/gm, "")
+      .replace(/^export const (\w+): Parser<[^>]*>/gm, "const $1");
+    const moduleFactory = new Function(
+      ...Object.keys(core),
+      `${body}\nreturn { letter, notDigit, anything };`,
+    );
+    const { letter, notDigit, anything } = moduleFactory(
+      ...Object.values(core),
+    );
+
+    const pos = { offset: 0, column: 0, line: 1 };
+    expect(letter("m", pos).success).toBe(true);
+    expect(notDigit("m", pos).success).toBe(true);
+    expect(notDigit("5", pos).success).toBe(false);
+    expect(anything("x", pos).success).toBe(true);
   });
 });

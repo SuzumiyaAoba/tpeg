@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { charClass } from "./char-class";
+import { charClass, negatedCharClass } from "./char-class";
 import type { Pos } from "./types";
 
 describe("charClass", () => {
@@ -198,5 +198,45 @@ describe("charClass", () => {
     // Range from 😀 (1F600) to 🤣 (1F923)
     const result = charClass(["😀", "🤣"])(input, pos);
     expect(result.success).toBe(false);
+  });
+});
+
+describe("negatedCharClass", () => {
+  it("should succeed on a character not in the exclusion set", () => {
+    const input = "5";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = negatedCharClass(["a", "z"])(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("5");
+      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
+    }
+  });
+
+  it("should fail on a character within an excluded range", () => {
+    const input = "m";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = negatedCharClass(["a", "z"])(input, pos);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.message).toContain("expected not one of: a-z");
+    }
+  });
+
+  it("should fail on an excluded single character", () => {
+    const input = '"';
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = negatedCharClass('"', "\\")(input, pos);
+    expect(result.success).toBe(false);
+  });
+
+  it("should fail at end of input", () => {
+    const input = "";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = negatedCharClass(["a", "z"])(input, pos);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.message).toContain("Unexpected end of input");
+    }
   });
 });

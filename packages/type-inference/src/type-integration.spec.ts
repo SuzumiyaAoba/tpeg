@@ -275,6 +275,39 @@ describe("TypeIntegrationEngine", () => {
       );
     });
 
+    it("should generate a per-alternative guard for union (Choice) results", () => {
+      const options: Partial<TypeIntegrationOptions> = {
+        generateTypeGuards: true,
+      };
+      const engine = new TypeIntegrationEngine(options);
+
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "test",
+            createChoice([
+              createStringLiteral("yes", '"'),
+              createStringLiteral("no", '"'),
+            ]),
+          ),
+        ],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+
+      // A union guard must check each alternative individually -- the old
+      // generic fallback ("value !== undefined") accepted any defined
+      // value, including strings that match neither alternative.
+      expect(typedGrammar.typeDefinitions).toContain(
+        'return (typeof value === "string" && value === "yes") || (typeof value === "string" && value === "no");',
+      );
+      expect(typedGrammar.typeDefinitions).not.toContain(
+        "return value !== undefined;",
+      );
+    });
+
     it("should include documentation when enabled", () => {
       const options: Partial<TypeIntegrationOptions> = {
         includeDocumentation: true,

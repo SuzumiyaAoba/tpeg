@@ -161,7 +161,6 @@ export class EtaTPEGCodeGenerator {
 
       // Analyze which combinators are actually needed
       const usedCombinators = new Set<string>();
-      usedCombinators.add("literal"); // Always needed for string literals
 
       for (const rule of grammar.rules) {
         this.collectUsedCombinators(rule.pattern, usedCombinators);
@@ -227,8 +226,16 @@ export class EtaTPEGCodeGenerator {
     combinators: Set<string>,
   ): void {
     switch (expr.type) {
+      case "StringLiteral":
+        combinators.add("literal");
+        break;
       case "CharacterClass":
-        combinators.add("charClass");
+        combinators.add(
+          (expr as CharacterClass).negated ? "negatedCharClass" : "charClass",
+        );
+        break;
+      case "AnyChar":
+        combinators.add("anyChar");
         break;
       case "Sequence":
         combinators.add("sequence");
@@ -319,7 +326,7 @@ export class EtaTPEGCodeGenerator {
       case "Identifier":
         return this.generateIdentifier(expr as Identifier);
       case "AnyChar":
-        return "anyChar";
+        return "anyChar()";
       case "Sequence":
         return this.generateSequence(expr as Sequence);
       case "Choice":
@@ -347,23 +354,26 @@ export class EtaTPEGCodeGenerator {
     }
   }
 
+  private escapeStringLiteral(value: string): string {
+    return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  }
+
   private generateStringLiteral(expr: StringLiteral): string {
-    const escaped = expr.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-    return `literal("${escaped}")`;
+    return `literal("${this.escapeStringLiteral(expr.value)}")`;
   }
 
   private generateCharacterClass(expr: CharacterClass): string {
     const ranges = expr.ranges
       .map((range) => {
         if (range.end) {
-          return `{ from: "${range.start}", to: "${range.end}" }`;
+          return `["${this.escapeStringLiteral(range.start)}", "${this.escapeStringLiteral(range.end)}"]`;
         }
-        return `"${range.start}"`;
+        return `"${this.escapeStringLiteral(range.start)}"`;
       })
       .join(", ");
 
-    const negated = expr.negated ? ", true" : "";
-    return `charClass([${ranges}]${negated})`;
+    const combinator = expr.negated ? "negatedCharClass" : "charClass";
+    return `${combinator}(${ranges})`;
   }
 
   private generateIdentifier(expr: Identifier): string {

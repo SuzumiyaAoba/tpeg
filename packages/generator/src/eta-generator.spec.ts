@@ -177,7 +177,71 @@ describe("EtaTPEGCodeGenerator", () => {
 
       expect(result.code).toContain("charClass");
       expect(result.code).toContain("export const test_letter: Parser<any>");
-      expect(result.code).toContain('{ from: "a", to: "z" }');
+      expect(result.code).toContain('["a", "z"]');
+    });
+
+    it("should generate a negated character class parser", async () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "notDigit",
+            createCharacterClass([createCharRange("0", "9")], true),
+          ),
+        ],
+      );
+
+      const result = await generateEtaTypeScriptParser(grammar, {
+        namePrefix: "test_",
+        includeTypes: true,
+      });
+
+      expect(result.code).toContain('negatedCharClass(["0", "9"])');
+      expect(result.code).toContain(
+        'import { negatedCharClass } from "@suzumiyaaoba/tpeg-core";',
+      );
+    });
+
+    it("should generate character class / negated character class / AnyChar code that actually parses input", async () => {
+      const core = await import("@suzumiyaaoba/tpeg-core");
+
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "letter",
+            createCharacterClass([createCharRange("a", "z")], false),
+          ),
+          createRuleDefinition(
+            "notDigit",
+            createCharacterClass([createCharRange("0", "9")], true),
+          ),
+          createRuleDefinition("anything", { type: "AnyChar" }),
+        ],
+      );
+
+      const result = await generateEtaTypeScriptParser(grammar, {
+        includeTypes: true,
+      });
+
+      const body = result.code
+        .replace(/import\s*(?:type\s*)?\{[^}]*\}\s*from\s*"[^"]*";/g, "")
+        .replace(/^export const (\w+): Parser<[^>]*>/gm, "const $1");
+      const moduleFactory = new Function(
+        ...Object.keys(core),
+        `${body}\nreturn { letter, notDigit, anything };`,
+      );
+      const { letter, notDigit, anything } = moduleFactory(
+        ...Object.values(core),
+      );
+
+      const pos = { offset: 0, column: 0, line: 1 };
+      expect(letter("m", pos).success).toBe(true);
+      expect(notDigit("m", pos).success).toBe(true);
+      expect(notDigit("5", pos).success).toBe(false);
+      expect(anything("x", pos).success).toBe(true);
     });
 
     it("should generate multiple rules", async () => {

@@ -192,7 +192,6 @@ export class OptimizedTPEGCodeGenerator {
 
     // Analyze which combinators are actually needed
     const usedCombinators = new Set<string>();
-    usedCombinators.add("literal"); // Always needed for string literals
 
     for (const rule of grammar.rules) {
       this.collectUsedCombinators(rule.pattern, usedCombinators);
@@ -225,8 +224,14 @@ export class OptimizedTPEGCodeGenerator {
     combinators: Set<string>,
   ): void {
     switch (expr.type) {
+      case "StringLiteral":
+        combinators.add("literal");
+        break;
       case "CharacterClass":
-        combinators.add("charClass");
+        combinators.add(expr.negated ? "negatedCharClass" : "charClass");
+        break;
+      case "AnyChar":
+        combinators.add("anyChar");
         break;
       case "Sequence":
         combinators.add("sequence");
@@ -318,7 +323,7 @@ export class OptimizedTPEGCodeGenerator {
         case "Identifier":
           return this.generateIdentifier(expr as Identifier);
         case "AnyChar":
-          return "anyChar";
+          return "anyChar()";
         case "Sequence":
           return this.generateOptimizedSequence(expr as Sequence);
         case "Choice":
@@ -353,45 +358,17 @@ export class OptimizedTPEGCodeGenerator {
   }
 
   private generateOptimizedCharacterClass(expr: CharacterClass): string {
-    // Use lookup table optimization for common character classes
-    if (this.options.optimize) {
-      const ranges = expr.ranges.map((range) => ({
-        start: range.start,
-        end: range.end || undefined,
-      }));
-
-      const isSimpleAscii = ranges.every(
-        (r) =>
-          r.start.charCodeAt(0) < 128 && (!r.end || r.end.charCodeAt(0) < 128),
-      );
-
-      if (isSimpleAscii && !expr.negated) {
-        // Generate optimized ASCII character class
-        const charCodes = ranges
-          .map((r) => {
-            if (r.end) {
-              return `{ from: "${r.start}", to: "${r.end}" }`;
-            }
-            return `"${r.start}"`;
-          })
-          .join(", ");
-
-        return `charClass([${charCodes}])`;
-      }
-    }
-
-    // Fallback to standard generation
     const ranges = expr.ranges
       .map((range) => {
         if (range.end) {
-          return `{ from: "${range.start}", to: "${range.end}" }`;
+          return `["${escapeStringLiteral(range.start)}", "${escapeStringLiteral(range.end)}"]`;
         }
-        return `"${range.start}"`;
+        return `"${escapeStringLiteral(range.start)}"`;
       })
       .join(", ");
 
-    const negated = expr.negated ? ", true" : "";
-    return `charClass([${ranges}]${negated})`;
+    const combinator = expr.negated ? "negatedCharClass" : "charClass";
+    return `${combinator}(${ranges})`;
   }
 
   private generateIdentifier(expr: Identifier): string {
