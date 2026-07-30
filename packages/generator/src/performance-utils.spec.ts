@@ -23,6 +23,7 @@ import type {
 const stringLiteral = (value: string): StringLiteral => ({
   type: "StringLiteral",
   value,
+  quote: '"',
 });
 const identifier = (name: string): Identifier => ({
   type: "Identifier",

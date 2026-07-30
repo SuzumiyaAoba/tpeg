@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "bun:test";
-import type { ImportStatement } from "@suzumiyaaoba/tpeg-core";
+import type { ImportStatement, ModuleFile } from "@suzumiyaaoba/tpeg-core";
 import { type FileSystemInterface, ModuleResolver } from "./module-resolver.js";
 import { NamespaceManager } from "./namespace-manager.js";
 import { VersionManager } from "./version-manager.js";
@@ -151,13 +151,14 @@ describe("Module System Integration Tests", () => {
               name: rule,
               pattern: { type: "Identifier" as const, name: "test" },
             })),
-            exports:
-              exports.length > 0
-                ? {
+            ...(exports.length > 0
+              ? {
+                  exports: {
                     type: "ExportDeclaration" as const,
                     rules: exports,
-                  }
-                : undefined,
+                  },
+                }
+              : {}),
           },
         ],
         moduleInfo: { type: "ModuleInfo" as const, version: "1.0.0" },

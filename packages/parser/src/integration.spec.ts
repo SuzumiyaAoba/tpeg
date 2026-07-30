@@ -60,22 +60,23 @@ describe("TPEG Integration Tests", () => {
 
         // Check annotations
         expect(grammar.annotations).toHaveLength(1);
-        expect(grammar.annotations[0].key).toBe("start");
-        expect(grammar.annotations[0].value).toBe("expression");
+        expect(grammar.annotations[0]?.key).toBe("start");
+        expect(grammar.annotations[0]?.value).toBe("expression");
 
         // Check grammar rules
         expect(grammar.rules).toHaveLength(1);
-        expect(grammar.rules[0].name).toBe("expression");
+        expect(grammar.rules[0]?.name).toBe("expression");
 
         // Check transforms
         expect(grammar.transforms).toBeDefined();
         expect(grammar.transforms).toHaveLength(1);
         const transform = grammar.transforms?.[0];
+        if (!transform) throw new Error("expected a transform to be defined");
         expect(transform.type).toBe("TransformDefinition");
         expect(transform.transformSet.name).toBe("SimpleTransforms");
         expect(transform.transformSet.targetLanguage).toBe("typescript");
         expect(transform.transformSet.functions).toHaveLength(1);
-        expect(transform.transformSet.functions[0].name).toBe("expression");
+        expect(transform.transformSet.functions[0]?.name).toBe("expression");
       }
     });
   });
@@ -149,6 +150,7 @@ describe("TPEG Integration Tests", () => {
         expect(grammar.transforms).toHaveLength(1);
 
         const transform = grammar.transforms?.[0];
+        if (!transform) throw new Error("expected a transform to be defined");
         expect(transform.transformSet.name).toBe("ArithmeticEvaluator");
         expect(transform.transformSet.targetLanguage).toBe("typescript");
         expect(transform.transformSet.functions).toHaveLength(3);
@@ -224,6 +226,8 @@ describe("TPEG Integration Tests", () => {
         expect(grammar.transforms).toHaveLength(2);
 
         const evaluatorTransform = grammar.transforms?.[0];
+        if (!evaluatorTransform)
+          throw new Error("expected a transform to be defined");
         expect(evaluatorTransform.transformSet.name).toBe("Evaluator");
         expect(evaluatorTransform.transformSet.targetLanguage).toBe(
           "typescript",
@@ -231,6 +235,8 @@ describe("TPEG Integration Tests", () => {
         expect(evaluatorTransform.transformSet.functions).toHaveLength(2);
 
         const astBuilderTransform = grammar.transforms?.[1];
+        if (!astBuilderTransform)
+          throw new Error("expected a transform to be defined");
         expect(astBuilderTransform.transformSet.name).toBe("ASTBuilder");
         expect(astBuilderTransform.transformSet.targetLanguage).toBe(
           "typescript",
@@ -313,6 +319,7 @@ describe("TPEG Integration Tests", () => {
         expect(grammar.transforms).toHaveLength(1);
 
         const transform = grammar.transforms?.[0];
+        if (!transform) throw new Error("expected a transform to be defined");
         expect(transform.transformSet.name).toBe("JSONParser");
         expect(transform.transformSet.targetLanguage).toBe("python");
         expect(transform.transformSet.functions).toHaveLength(5);

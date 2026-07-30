@@ -87,8 +87,8 @@ describe("NamespaceManager", () => {
     name,
     annotations: [],
     rules,
-    exports,
-    imports,
+    ...(exports !== undefined ? { exports } : {}),
+    ...(imports !== undefined ? { imports } : {}),
   });
 
   const createModuleFile = (
@@ -101,7 +101,7 @@ describe("NamespaceManager", () => {
     filePath,
     imports,
     grammars,
-    moduleInfo,
+    ...(moduleInfo !== undefined ? { moduleInfo } : {}),
   });
 
   const createQualifiedId = (

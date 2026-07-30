@@ -170,12 +170,12 @@ export interface TokenizeError {
 /**
  * Create a StringLiteral AST node
  * @param value The string content (without quotes)
- * @param quote The quote character used
+ * @param quote The quote character used (defaults to double quote)
  * @returns StringLiteral node
  */
 export const createStringLiteral = (
   value: string,
-  quote: '"' | "'",
+  quote: '"' | "'" = '"',
 ): StringLiteral => ({
   type: "StringLiteral",
   value,

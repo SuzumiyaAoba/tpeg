@@ -96,7 +96,7 @@ describe("repetition operators", () => {
         const result = quantifiedOperator("{3,}", pos);
         expect(result.success).toBe(true);
         if (result.success) {
-          expect(result.val).toEqual({ min: 3, max: undefined });
+          expect(result.val).toEqual({ min: 3 });
         }
       });
 
@@ -133,7 +133,7 @@ describe("repetition operators", () => {
           { input: "?", expected: "?" },
           { input: "{5}", expected: { min: 5, max: 5 } },
           { input: "{2,8}", expected: { min: 2, max: 8 } },
-          { input: "{10,}", expected: { min: 10, max: undefined } },
+          { input: "{10,}", expected: { min: 10 } },
         ];
 
         for (const test of tests) {
@@ -203,12 +203,12 @@ describe("repetition operators", () => {
     });
 
     it("should create quantified expression with minimum", () => {
-      const result = applyRepetition(testExpr, { min: 4, max: undefined });
+      const result = applyRepetition(testExpr, { min: 4 });
       expect(result.type).toBe("Quantified");
       if (result.type === "Quantified") {
         expect(result.expression).toBe(testExpr);
         expect(result.min).toBe(4);
-        expect(result.max).toBe(undefined);
+        expect(result.max).toBeUndefined();
       }
     });
 
@@ -267,7 +267,7 @@ describe("repetition operators", () => {
         expect(result.type).toBe("Quantified");
         expect(result.expression).toBe(testExpr);
         expect(result.min).toBe(4);
-        expect(result.max).toBe(undefined);
+        expect(result.max).toBeUndefined();
       });
     });
   });

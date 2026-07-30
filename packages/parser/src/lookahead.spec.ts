@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { literal } from "@suzumiyaaoba/tpeg-core";
 import {
   applyLookahead,
@@ -15,8 +16,17 @@ import {
   positiveLookaheadOperator,
   withLookahead,
 } from "./lookahead";
-import type { StringLiteral } from "./types";
+import type { Expression, StringLiteral } from "./types";
 import { createNegativeLookahead, createPositiveLookahead } from "./types";
+
+/**
+ * withLookahead requires Parser<T extends Expression>; these tests exercise
+ * its operator-handling logic in isolation with plain string-literal parsers
+ * standing in for "expressions", so the cast is a deliberate type-level lie
+ * that matches the runtime value (a string) throughout this suite.
+ */
+const asExpressionParser = (parser: Parser<string>): Parser<Expression> =>
+  parser as unknown as Parser<Expression>;
 
 const pos = { offset: 0, line: 1, column: 1 };
 
@@ -164,7 +174,9 @@ describe("lookahead operators", () => {
 
   describe("withLookahead higher-order parser", () => {
     const stringLiteralParser = literal('"hello"');
-    const lookaheadParser = withLookahead(stringLiteralParser);
+    const lookaheadParser = withLookahead(
+      asExpressionParser(stringLiteralParser),
+    );
 
     it("should parse positive lookahead expression", () => {
       const result = lookaheadParser('&"hello"', pos);
@@ -172,7 +184,9 @@ describe("lookahead operators", () => {
       if (result.success) {
         expect(result.val.type).toBe("PositiveLookahead");
         if (result.val.type === "PositiveLookahead") {
-          expect(result.val.expression).toBe('"hello"');
+          expect(result.val.expression).toBe(
+            '"hello"' as unknown as Expression,
+          );
         }
         expect(result.next.offset).toBe(8); // & + "hello"
       }
@@ -184,7 +198,9 @@ describe("lookahead operators", () => {
       if (result.success) {
         expect(result.val.type).toBe("NegativeLookahead");
         if (result.val.type === "NegativeLookahead") {
-          expect(result.val.expression).toBe('"hello"');
+          expect(result.val.expression).toBe(
+            '"hello"' as unknown as Expression,
+          );
         }
         expect(result.next.offset).toBe(8); // ! + "hello"
       }
@@ -194,7 +210,7 @@ describe("lookahead operators", () => {
       const result = lookaheadParser('"hello"', pos);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.val).toBe('"hello"');
+        expect(result.val).toBe('"hello"' as unknown as Expression);
         expect(result.next.offset).toBe(7); // "hello"
       }
     });
@@ -213,7 +229,9 @@ describe("lookahead operators", () => {
   describe("complex lookahead expressions", () => {
     // Test with more complex base parsers
     const numberParser = literal("123");
-    const lookaheadNumberParser = withLookahead(numberParser);
+    const lookaheadNumberParser = withLookahead(
+      asExpressionParser(numberParser),
+    );
 
     it("should handle positive lookahead with numbers", () => {
       const result = lookaheadNumberParser("&123", pos);
@@ -221,7 +239,7 @@ describe("lookahead operators", () => {
       if (result.success) {
         expect(result.val.type).toBe("PositiveLookahead");
         if (result.val.type === "PositiveLookahead") {
-          expect(result.val.expression).toBe("123");
+          expect(result.val.expression).toBe("123" as unknown as Expression);
         }
       }
     });
@@ -232,7 +250,7 @@ describe("lookahead operators", () => {
       if (result.success) {
         expect(result.val.type).toBe("NegativeLookahead");
         if (result.val.type === "NegativeLookahead") {
-          expect(result.val.expression).toBe("123");
+          expect(result.val.expression).toBe("123" as unknown as Expression);
         }
       }
     });
@@ -240,7 +258,7 @@ describe("lookahead operators", () => {
 
   describe("edge cases", () => {
     const simpleParser = literal("a");
-    const lookaheadParser = withLookahead(simpleParser);
+    const lookaheadParser = withLookahead(asExpressionParser(simpleParser));
 
     it("should handle empty string after lookahead operator", () => {
       const result = lookaheadParser("&", pos);

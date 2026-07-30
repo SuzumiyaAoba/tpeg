@@ -165,9 +165,9 @@ describe("lookahead-composition integration", () => {
         expect(result.val.type).toBe("Sequence");
         if (result.val.type === "Sequence") {
           expect(result.val.elements).toHaveLength(3);
-          expect(result.val.elements[0].type).toBe("PositiveLookahead");
-          expect(result.val.elements[1].type).toBe("StringLiteral");
-          expect(result.val.elements[2].type).toBe("NegativeLookahead");
+          expect(result.val.elements[0]?.type).toBe("PositiveLookahead");
+          expect(result.val.elements[1]?.type).toBe("StringLiteral");
+          expect(result.val.elements[2]?.type).toBe("NegativeLookahead");
         }
       }
     });
@@ -179,9 +179,9 @@ describe("lookahead-composition integration", () => {
         expect(result.val.type).toBe("Sequence");
         if (result.val.type === "Sequence") {
           expect(result.val.elements).toHaveLength(3);
-          expect(result.val.elements[0].type).toBe("PositiveLookahead");
-          expect(result.val.elements[1].type).toBe("Star");
-          expect(result.val.elements[2].type).toBe("NegativeLookahead");
+          expect(result.val.elements[0]?.type).toBe("PositiveLookahead");
+          expect(result.val.elements[1]?.type).toBe("Star");
+          expect(result.val.elements[2]?.type).toBe("NegativeLookahead");
         }
       }
     });
@@ -195,8 +195,8 @@ describe("lookahead-composition integration", () => {
         expect(result.val.type).toBe("Choice");
         if (result.val.type === "Choice") {
           expect(result.val.alternatives).toHaveLength(2);
-          expect(result.val.alternatives[0].type).toBe("PositiveLookahead");
-          expect(result.val.alternatives[1].type).toBe("NegativeLookahead");
+          expect(result.val.alternatives[0]?.type).toBe("PositiveLookahead");
+          expect(result.val.alternatives[1]?.type).toBe("NegativeLookahead");
         }
       }
     });
@@ -208,9 +208,9 @@ describe("lookahead-composition integration", () => {
         expect(result.val.type).toBe("Choice");
         if (result.val.type === "Choice") {
           expect(result.val.alternatives).toHaveLength(3);
-          expect(result.val.alternatives[0].type).toBe("Star"); // (&"test")*
-          expect(result.val.alternatives[1].type).toBe("StringLiteral");
-          expect(result.val.alternatives[2].type).toBe("Plus"); // (!"avoid")+
+          expect(result.val.alternatives[0]?.type).toBe("Star"); // (&"test")*
+          expect(result.val.alternatives[1]?.type).toBe("StringLiteral");
+          expect(result.val.alternatives[2]?.type).toBe("Plus"); // (!"avoid")+
         }
       }
     });
@@ -224,8 +224,8 @@ describe("lookahead-composition integration", () => {
         expect(result.val.type).toBe("Sequence");
         if (result.val.type === "Sequence") {
           expect(result.val.elements).toHaveLength(2);
-          expect(result.val.elements[0].type).toBe("PositiveLookahead");
-          expect(result.val.elements[1].type).toBe("StringLiteral");
+          expect(result.val.elements[0]?.type).toBe("PositiveLookahead");
+          expect(result.val.elements[1]?.type).toBe("StringLiteral");
         }
       }
     });
@@ -237,8 +237,8 @@ describe("lookahead-composition integration", () => {
         expect(result.val.type).toBe("Choice");
         if (result.val.type === "Choice") {
           expect(result.val.alternatives).toHaveLength(2);
-          expect(result.val.alternatives[0].type).toBe("PositiveLookahead");
-          expect(result.val.alternatives[1].type).toBe("StringLiteral");
+          expect(result.val.alternatives[0]?.type).toBe("PositiveLookahead");
+          expect(result.val.alternatives[1]?.type).toBe("StringLiteral");
         }
       }
     });

@@ -11,6 +11,7 @@ import type {
   CharacterClass,
   Choice,
   Expression,
+  GrammarAnnotation,
   GrammarDefinition,
   Group,
   Identifier,
@@ -49,6 +50,7 @@ export type {
   LabeledExpression,
   RuleDefinition,
   GrammarDefinition,
+  GrammarAnnotation,
 };
 
 /**

@@ -17,9 +17,5 @@
     "allowUnusedLabels": true
   },
   "include": ["src/**/*", "index.ts"],
-  "exclude": [
-    "src/**/*.spec.ts",
-    "src/**/__tests__/**",
-    "src/**/__snapshots__/**"
-  ]
+  "exclude": ["src/**/__tests__/**", "src/**/__snapshots__/**"]
 }

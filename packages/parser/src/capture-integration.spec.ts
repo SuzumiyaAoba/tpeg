@@ -36,7 +36,9 @@ describe("Capture Integration Tests", () => {
         sequence.elements.forEach((element, index) => {
           expect(element.type).toBe("LabeledExpression");
           const labeled = element as LabeledExpression;
-          expect(labeled.label).toBe(["first", "second", "third"][index]);
+          expect(labeled.label).toBe(
+            ["first", "second", "third"][index] as string,
+          );
         });
       }
     });

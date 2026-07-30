@@ -13,6 +13,7 @@ import type {
   CharacterClass,
   Choice,
   Expression,
+  GrammarAnnotation,
   GrammarDefinition,
   Identifier,
   LabeledExpression,
@@ -31,7 +32,7 @@ import type {
 // Simple test helper functions
 function createGrammarDefinition(
   name: string,
-  annotations: unknown[],
+  annotations: GrammarAnnotation[],
   rules: RuleDefinition[],
 ): GrammarDefinition {
   return {
@@ -53,10 +54,14 @@ function createRuleDefinition(
   };
 }
 
-function createStringLiteral(value: string): StringLiteral {
+function createStringLiteral(
+  value: string,
+  quote: '"' | "'" = '"',
+): StringLiteral {
   return {
     type: "StringLiteral",
     value,
+    quote,
   };
 }
 
@@ -119,7 +124,7 @@ function createQuantified(
     type: "Quantified",
     expression,
     min,
-    max,
+    ...(max !== undefined ? { max } : {}),
   };
 }
 

@@ -165,7 +165,7 @@ describe("Grammar Definition Block Tests", () => {
           value: "expression",
         });
 
-        expect(result.val.rules[0].name).toBe("expression");
+        expect(result.val.rules[0]?.name).toBe("expression");
       }
     });
 
@@ -193,7 +193,7 @@ describe("Grammar Definition Block Tests", () => {
         expect(result.val.name).toBe("TestGrammar");
         expect(result.val.annotations).toHaveLength(0);
         expect(result.val.rules).toHaveLength(1);
-        expect(result.val.rules[0].name).toBe("expression");
+        expect(result.val.rules[0]?.name).toBe("expression");
       }
     });
 
@@ -221,17 +221,17 @@ describe("Grammar Definition Block Tests", () => {
         expect(ruleNames).toEqual(["expression", "term", "factor", "number"]);
 
         // Verify each rule has proper structure
-        expect(result.val.rules[0].name).toBe("expression");
-        expect(result.val.rules[0].pattern.type).toBe("Sequence");
+        expect(result.val.rules[0]?.name).toBe("expression");
+        expect(result.val.rules[0]?.pattern.type).toBe("Sequence");
 
-        expect(result.val.rules[1].name).toBe("term");
-        expect(result.val.rules[1].pattern.type).toBe("Sequence");
+        expect(result.val.rules[1]?.name).toBe("term");
+        expect(result.val.rules[1]?.pattern.type).toBe("Sequence");
 
-        expect(result.val.rules[2].name).toBe("factor");
-        expect(result.val.rules[2].pattern.type).toBe("Choice");
+        expect(result.val.rules[2]?.name).toBe("factor");
+        expect(result.val.rules[2]?.pattern.type).toBe("Choice");
 
-        expect(result.val.rules[3].name).toBe("number");
-        expect(result.val.rules[3].pattern.type).toBe("Sequence");
+        expect(result.val.rules[3]?.name).toBe("number");
+        expect(result.val.rules[3]?.pattern.type).toBe("Sequence");
       }
     });
 
@@ -248,11 +248,11 @@ describe("Grammar Definition Block Tests", () => {
         expect(result.val.annotations).toHaveLength(0);
         expect(result.val.rules).toHaveLength(2);
 
-        expect(result.val.rules[0].name).toBe("rule1");
-        expect(result.val.rules[0].pattern.type).toBe("StringLiteral");
+        expect(result.val.rules[0]?.name).toBe("rule1");
+        expect(result.val.rules[0]?.pattern.type).toBe("StringLiteral");
 
-        expect(result.val.rules[1].name).toBe("rule2");
-        expect(result.val.rules[1].pattern.type).toBe("StringLiteral");
+        expect(result.val.rules[1]?.name).toBe("rule2");
+        expect(result.val.rules[1]?.pattern.type).toBe("StringLiteral");
       }
     });
   });

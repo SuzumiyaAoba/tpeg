@@ -13,7 +13,7 @@
   },
   "files": ["dist", "templates", "README.md", "README.ja.md", "package.json"],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --project ./tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

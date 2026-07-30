@@ -7,7 +7,6 @@
 
 import { describe, expect, it } from "bun:test";
 import { parse } from "@suzumiyaaoba/tpeg-core";
-import type { Pos } from "@suzumiyaaoba/tpeg-core";
 import {
   parameterList,
   parameterType,
@@ -20,11 +19,6 @@ import {
   transformSetName,
   transformsKeyword,
 } from "./transforms";
-
-/**
- * Test position for parsing
- */
-const _TEST_POS: Pos = { offset: 0, line: 1, column: 1 };
 
 describe("transformsKeyword", () => {
   it("should parse 'transforms' keyword", () => {
@@ -121,8 +115,8 @@ describe("parameterList", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toHaveLength(1);
-      expect(result.val[0].name).toBe("captures");
-      expect(result.val[0].type).toBe("string");
+      expect(result.val[0]?.name).toBe("captures");
+      expect(result.val[0]?.type).toBe("string");
     }
   });
 
@@ -131,10 +125,10 @@ describe("parameterList", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toHaveLength(2);
-      expect(result.val[0].name).toBe("left");
-      expect(result.val[0].type).toBe("number");
-      expect(result.val[1].name).toBe("right");
-      expect(result.val[1].type).toBe("number");
+      expect(result.val[0]?.name).toBe("left");
+      expect(result.val[0]?.type).toBe("number");
+      expect(result.val[1]?.name).toBe("right");
+      expect(result.val[1]?.type).toBe("number");
     }
   });
 });
@@ -169,8 +163,8 @@ describe("transformFunction", () => {
     if (result.success) {
       expect(result.val.name).toBe("number");
       expect(result.val.parameters).toHaveLength(1);
-      expect(result.val.parameters[0].name).toBe("captures");
-      expect(result.val.parameters[0].type).toBe("string");
+      expect(result.val.parameters[0]?.name).toBe("captures");
+      expect(result.val.parameters[0]?.type).toBe("string");
       expect(result.val.returnType.type).toBe("Result");
       expect(result.val.body).toContain("parseInt");
     }
@@ -200,8 +194,8 @@ describe("transformSet", () => {
       expect(result.val.name).toBe("ArithmeticEvaluator");
       expect(result.val.targetLanguage).toBe("typescript");
       expect(result.val.functions).toHaveLength(2);
-      expect(result.val.functions[0].name).toBe("number");
-      expect(result.val.functions[1].name).toBe("expression");
+      expect(result.val.functions[0]?.name).toBe("number");
+      expect(result.val.functions[1]?.name).toBe("expression");
     }
   });
 });
@@ -240,7 +234,7 @@ describe("transformDefinition", () => {
     if (result.success) {
       expect(result.val.transformSet.targetLanguage).toBe("python");
       expect(result.val.transformSet.functions).toHaveLength(1);
-      expect(result.val.transformSet.functions[0].name).toBe("number");
+      expect(result.val.transformSet.functions[0]?.name).toBe("number");
     }
   });
 });
@@ -260,8 +254,8 @@ describe("transformFunctions", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toHaveLength(2);
-      expect(result.val[0].name).toBe("number");
-      expect(result.val[1].name).toBe("expression");
+      expect(result.val[0]?.name).toBe("number");
+      expect(result.val[1]?.name).toBe("expression");
     }
   });
 });
