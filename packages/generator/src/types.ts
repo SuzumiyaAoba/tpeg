@@ -2,120 +2,54 @@
  * Type definitions for TPEG Code Generator
  *
  * These types are used for code generation and template rendering.
- * They import the core TPEG types and extend them with generation-specific interfaces.
+ * The grammar AST types are the canonical ones from @suzumiyaaoba/tpeg-core;
+ * this module only adds generation-specific interfaces on top of them.
  */
 
-/**
- * Core TPEG AST node types for code generation
- * These are simplified versions of the full AST types
- */
+import type {
+  AnyChar,
+  CharacterClass,
+  Choice,
+  Expression,
+  GrammarDefinition,
+  Group,
+  Identifier,
+  LabeledExpression,
+  NegativeLookahead,
+  Optional,
+  Plus,
+  PositiveLookahead,
+  QualifiedIdentifier,
+  Quantified,
+  RuleDefinition,
+  Sequence,
+  Star,
+  StringLiteral,
+} from "@suzumiyaaoba/tpeg-core";
 
-// Expression type literals
-export type ExpressionType =
-  | "StringLiteral"
-  | "CharacterClass"
-  | "Identifier"
-  | "AnyChar"
-  | "Sequence"
-  | "Choice"
-  | "Group"
-  | "Star"
-  | "Plus"
-  | "Optional"
-  | "Quantified"
-  | "PositiveLookahead"
-  | "NegativeLookahead"
-  | "LabeledExpression";
+/** Discriminant values of {@link Expression}, derived from core's AST union. */
+export type ExpressionType = Expression["type"];
 
-export interface Expression {
-  type: ExpressionType;
-}
-
-export interface StringLiteral extends Expression {
-  type: "StringLiteral";
-  value: string;
-}
-
-export interface CharacterClass extends Expression {
-  type: "CharacterClass";
-  ranges: Array<{ start: string; end?: string }>;
-  negated: boolean;
-}
-
-export interface Identifier extends Expression {
-  type: "Identifier";
-  name: string;
-}
-
-export interface AnyChar extends Expression {
-  type: "AnyChar";
-}
-
-export interface Sequence extends Expression {
-  type: "Sequence";
-  elements: Expression[];
-}
-
-export interface Choice extends Expression {
-  type: "Choice";
-  alternatives: Expression[];
-}
-
-export interface Group extends Expression {
-  type: "Group";
-  expression: Expression;
-}
-
-export interface Star extends Expression {
-  type: "Star";
-  expression: Expression;
-}
-
-export interface Plus extends Expression {
-  type: "Plus";
-  expression: Expression;
-}
-
-export interface Optional extends Expression {
-  type: "Optional";
-  expression: Expression;
-}
-
-export interface Quantified extends Expression {
-  type: "Quantified";
-  expression: Expression;
-  min: number;
-  max?: number;
-}
-
-export interface PositiveLookahead extends Expression {
-  type: "PositiveLookahead";
-  expression: Expression;
-}
-
-export interface NegativeLookahead extends Expression {
-  type: "NegativeLookahead";
-  expression: Expression;
-}
-
-export interface LabeledExpression extends Expression {
-  type: "LabeledExpression";
-  label: string;
-  expression: Expression;
-}
-
-export interface RuleDefinition {
-  type: "RuleDefinition";
-  name: string;
-  pattern: Expression;
-}
-
-export interface GrammarDefinition {
-  type: "GrammarDefinition";
-  name: string;
-  annotations: unknown[];
-  rules: RuleDefinition[];
-}
+export type {
+  Expression,
+  StringLiteral,
+  CharacterClass,
+  Identifier,
+  QualifiedIdentifier,
+  AnyChar,
+  Sequence,
+  Choice,
+  Group,
+  Star,
+  Plus,
+  Optional,
+  Quantified,
+  PositiveLookahead,
+  NegativeLookahead,
+  LabeledExpression,
+  RuleDefinition,
+  GrammarDefinition,
+};
 
 /**
  * Performance analysis result for expressions
