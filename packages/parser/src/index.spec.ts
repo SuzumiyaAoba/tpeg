@@ -3,7 +3,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { basicSyntax } from "./index";
+import { parse } from "@suzumiyaaoba/tpeg-core";
+import { basicSyntax, tpegFile } from "./index";
 
 describe("basicSyntax", () => {
   const parser = basicSyntax;
@@ -141,5 +142,75 @@ describe("basicSyntax", () => {
       const result = parser("[unclosed", pos);
       expect(result.success).toBe(false);
     });
+  });
+});
+
+describe("tpegFile", () => {
+  it("parses a grammar block alone", () => {
+    const result = parse(tpegFile)(`
+      grammar Simple {
+        greeting = "hello"
+      }
+    `);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.name).toBe("Simple");
+      expect(result.val.rules).toHaveLength(1);
+      expect(result.val.transforms).toEqual([]);
+    }
+  });
+
+  it("attaches trailing transforms blocks to the grammar's transforms array", () => {
+    const result = parse(tpegFile)(`
+      grammar Calculator {
+        number = [0-9]+
+      }
+
+      transforms Evaluator@typescript {
+        number(captures: string) -> Result<number> {
+          return { success: true, value: parseInt(captures, 10) };
+        }
+      }
+    `);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.name).toBe("Calculator");
+      expect(result.val.transforms).toHaveLength(1);
+      expect(result.val.transforms?.[0]?.transformSet.name).toBe("Evaluator");
+      expect(result.val.transforms?.[0]?.transformSet.targetLanguage).toBe(
+        "typescript",
+      );
+    }
+  });
+
+  it("collects multiple trailing transforms blocks", () => {
+    const result = parse(tpegFile)(`
+      grammar Calculator {
+        number = [0-9]+
+      }
+
+      transforms Evaluator@typescript {
+        number(captures: string) -> Result<number> {
+          return { success: true, value: parseInt(captures, 10) };
+        }
+      }
+
+      transforms Printer@typescript {
+        number(captures: string) -> Result<string> {
+          return { success: true, value: captures };
+        }
+      }
+    `);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.transforms).toHaveLength(2);
+      expect(result.val.transforms?.map((t) => t.transformSet.name)).toEqual([
+        "Evaluator",
+        "Printer",
+      ]);
+    }
   });
 });
