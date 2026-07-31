@@ -22,6 +22,11 @@ import {
   createSequence,
   createStar,
   createStringLiteral,
+  createTransformDefinition,
+  createTransformFunction,
+  createTransformParameter,
+  createTransformReturnType,
+  createTransformSet,
 } from "./types";
 
 describe("TPEG Code Generation", () => {
@@ -470,6 +475,94 @@ describe("TPEG Code Generation", () => {
       const result = generator.generateGrammar(grammar);
 
       expect(result.code).toContain('literal("quotes\\"and\\\\backslashes")');
+    });
+  });
+
+  describe("transform integration", () => {
+    test("should apply a matching TypeScript transform function to a rule's parse result", async () => {
+      const core = await import("@suzumiyaaoba/tpeg-core");
+
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "number",
+            createLabeledExpression(
+              "digits",
+              createPlus(
+                createCharacterClass([createCharRange("0", "9")], false),
+              ),
+            ),
+          ),
+        ],
+        [
+          createTransformDefinition(
+            createTransformSet("Evaluator", "typescript", [
+              createTransformFunction(
+                "number",
+                [createTransformParameter("captures", "{ digits: string[] }")],
+                createTransformReturnType("Result", "number"),
+                `
+    const value = parseInt(captures.digits.join(""), 10);
+    if (isNaN(value)) {
+      return { success: false, error: "Invalid number format" };
+    }
+    return { success: true, value };
+  `,
+              ),
+            ]),
+          ),
+        ],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      const result = generator.generateGrammar(grammar);
+
+      const body = result.code
+        .replace(/^import[^\n]*\n?/gm, "")
+        .replace(/^export const (\w+): Parser<[^>]*>/gm, "const $1");
+      const moduleFactory = new Function(
+        ...Object.keys(core),
+        `${body}\nreturn { number };`,
+      );
+      const { number } = moduleFactory(...Object.values(core));
+
+      const pos = { offset: 0, column: 0, line: 1 };
+      expect(number("123abc", pos)).toEqual({
+        success: true,
+        val: 123,
+        current: { offset: 0, column: 0, line: 1 },
+        next: { offset: 3, column: 3, line: 1 },
+      });
+      expect(number("abc", pos).success).toBe(false);
+    });
+
+    test("should leave a rule without a matching transform function unaffected", () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition("hello", createStringLiteral("hello"))],
+        [
+          createTransformDefinition(
+            createTransformSet("Evaluator", "typescript", [
+              createTransformFunction(
+                "unrelatedRule",
+                [createTransformParameter("captures", "string")],
+                createTransformReturnType("Result", "string"),
+                "return { success: true, value: captures };",
+              ),
+            ]),
+          ),
+        ],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      const result = generator.generateGrammar(grammar);
+
+      expect(result.code).toContain(
+        'export const hello: Parser<any> = literal("hello");',
+      );
     });
   });
 });

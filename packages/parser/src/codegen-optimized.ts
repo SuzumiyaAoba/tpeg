@@ -26,8 +26,10 @@ import type {
   Sequence,
   Star,
   StringLiteral,
+  TransformFunction,
 } from "./types";
 
+import { collectTransformFunctions, wrapWithTransform } from "./codegen";
 import { escapeStringLiteral } from "./constants";
 import {
   analyzeExpressionComplexity,
@@ -144,9 +146,15 @@ export class OptimizedTPEGCodeGenerator {
       this.ruleNames.add(stringInterner.intern(rule.name));
     }
 
-    // Generate parser for each rule with optimization
+    // Generate parser for each rule with optimization, applying a matching
+    // TypeScript transform function (if the grammar declares one)
+    const transformsByRuleName = collectTransformFunctions(grammar);
     for (const rule of grammar.rules) {
-      const ruleCode = this.generateOptimizedRule(rule, performanceAnalysis);
+      const ruleCode = this.generateOptimizedRule(
+        rule,
+        performanceAnalysis,
+        transformsByRuleName.get(rule.name),
+      );
       parts.push(ruleCode);
       exports.push(stringInterner.intern(rule.name));
     }
@@ -292,6 +300,7 @@ export class OptimizedTPEGCodeGenerator {
   private generateOptimizedRule(
     rule: RuleDefinition,
     analysis: ReturnType<typeof analyzeGrammarPerformance>,
+    transformFn?: TransformFunction,
   ): string {
     const complexity = analysis.ruleComplexity.get(rule.name);
     const shouldMemoize =
@@ -300,7 +309,10 @@ export class OptimizedTPEGCodeGenerator {
       (complexity.estimatedComplexity === "high" || complexity.hasRecursion);
 
     const innerCode = this.generateOptimizedExpression(rule.pattern);
-    const parserCode = shouldMemoize ? `memoize(${innerCode})` : innerCode;
+    let parserCode = shouldMemoize ? `memoize(${innerCode})` : innerCode;
+    if (transformFn) {
+      parserCode = wrapWithTransform(rule.name, parserCode, transformFn);
+    }
 
     const name = stringInterner.intern(this.options.namePrefix + rule.name);
     const typeAnnotation = this.options.includeTypes ? ": Parser<any>" : "";

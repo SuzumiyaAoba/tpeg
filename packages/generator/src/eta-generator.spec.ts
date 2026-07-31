@@ -34,12 +34,14 @@ function createGrammarDefinition(
   name: string,
   annotations: GrammarAnnotation[],
   rules: RuleDefinition[],
+  transforms?: GrammarDefinition["transforms"],
 ): GrammarDefinition {
   return {
     type: "GrammarDefinition",
     name,
     annotations,
     rules,
+    ...(transforms !== undefined ? { transforms } : {}),
   };
 }
 
@@ -104,6 +106,17 @@ function createStar(expression: Expression): Star {
 function createPlus(expression: Expression): Plus {
   return {
     type: "Plus",
+    expression,
+  };
+}
+
+function createLabeledExpression(
+  label: string,
+  expression: Expression,
+): LabeledExpression {
+  return {
+    type: "LabeledExpression",
+    label,
     expression,
   };
 }
@@ -316,6 +329,76 @@ describe("EtaTPEGCodeGenerator", () => {
       expect(result.code).toContain(
         "export const main: Parser<any> = math.expr;",
       );
+    });
+  });
+
+  describe("transform integration", () => {
+    it("applies a matching TypeScript transform function to a rule's parse result", async () => {
+      const core = await import("@suzumiyaaoba/tpeg-core");
+
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "number",
+            createLabeledExpression(
+              "digits",
+              createPlus(
+                createCharacterClass([createCharRange("0", "9")], false),
+              ),
+            ),
+          ),
+        ],
+        [
+          {
+            type: "TransformDefinition",
+            transformSet: {
+              name: "Evaluator",
+              targetLanguage: "typescript",
+              functions: [
+                {
+                  name: "number",
+                  parameters: [
+                    { name: "captures", type: "{ digits: string[] }" },
+                  ],
+                  returnType: { type: "Result", generic: "number" },
+                  body: `
+    const value = parseInt(captures.digits.join(""), 10);
+    if (isNaN(value)) {
+      return { success: false, error: "Invalid number format" };
+    }
+    return { success: true, value };
+  `,
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      const result = await generateEtaTypeScriptParser(grammar, {
+        includeImports: false,
+      });
+
+      const body = result.code.replace(
+        /^export const (\w+): Parser<[^>]*>/gm,
+        "const $1",
+      );
+      const moduleFactory = new Function(
+        ...Object.keys(core),
+        `${body}\nreturn { number };`,
+      );
+      const { number } = moduleFactory(...Object.values(core));
+
+      const pos = { offset: 0, column: 0, line: 1 };
+      expect(number("123abc", pos)).toEqual({
+        success: true,
+        val: 123,
+        current: { offset: 0, column: 0, line: 1 },
+        next: { offset: 3, column: 3, line: 1 },
+      });
+      expect(number("abc", pos).success).toBe(false);
     });
   });
 

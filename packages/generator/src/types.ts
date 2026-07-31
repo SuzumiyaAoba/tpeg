@@ -26,6 +26,7 @@ import type {
   Sequence,
   Star,
   StringLiteral,
+  TransformFunction,
 } from "@suzumiyaaoba/tpeg-core";
 
 /** Discriminant values of {@link Expression}, derived from core's AST union. */
@@ -51,6 +52,7 @@ export type {
   RuleDefinition,
   GrammarDefinition,
   GrammarAnnotation,
+  TransformFunction,
 };
 
 /**
