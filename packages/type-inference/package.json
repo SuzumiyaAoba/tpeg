@@ -11,7 +11,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md", "README.ja.md", "package.json"],
+  "files": ["dist", "README.md", "package.json"],
   "scripts": {
     "test": "bun test",
     "build": "tsc --project ./tsconfig.build.json",
