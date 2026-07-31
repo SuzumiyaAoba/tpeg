@@ -27,6 +27,7 @@ import { characterClass } from "./character-class";
 import { identifier } from "./identifier";
 import { withOptionalLabel } from "./label";
 import { withLookahead } from "./lookahead";
+import { qualifiedIdentifier } from "./module";
 import { withRepetition } from "./repetition";
 import { stringLiteral } from "./string-literal";
 import type {
@@ -47,12 +48,20 @@ const whitespace: Parser<void> = map(
 );
 
 /**
- * Parses any basic syntax element (string literal, character class, identifier, any char).
- * This is a local version to avoid circular imports.
+ * Parses any basic syntax element (string literal, character class,
+ * qualified identifier, identifier, any char). This is a local version to
+ * avoid circular imports.
+ *
+ * qualifiedIdentifier is tried before identifier: `identifier` alone would
+ * otherwise greedily match just the module alias in `module.rule` (e.g.
+ * `lit` in `lit.identifier`) and never backtrack to try the qualified form,
+ * leaving `.rule` to fall through elsewhere (`.` parses as AnyChar) instead
+ * of forming one cross-module reference.
  */
 const basicSyntax: Parser<BasicSyntaxNode> = choice(
   stringLiteral,
   characterClass,
+  qualifiedIdentifier,
   identifier,
 );
 

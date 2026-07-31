@@ -11,16 +11,13 @@
  * That's expected: this test is about "does the file's leading module parse
  * without failing," not "is every byte of the fence consumed."
  *
- * Passing also does not mean every rule body's AST is semantically correct.
- * Qualified references (`module.rule`) inside a rule body - e.g. the module
- * composition example's `assignment = lit.identifier "=" expr.expression` -
- * still parse "successfully", but wrongly: composition.ts's basicSyntax
- * doesn't try qualifiedIdentifier, so "." falls through to AnyChar, splitting
- * `lit.identifier` into three AST nodes (Identifier "lit", AnyChar,
- * Identifier "identifier") instead of one qualified reference. Adjacency
- * (this session's composition.ts fix) is what makes that sequence succeed at
- * all rather than fail. Fixing this is a parser-only gap - codegen.ts
- * already handles a QualifiedIdentifier node - but out of scope here.
+ * Rule bodies are also checked for semantic correctness where it matters:
+ * composition.ts's basicSyntax now tries qualifiedIdentifier before
+ * identifier, so cross-module references like `lit.identifier` inside a rule
+ * body (e.g. the module composition example's `assignment = lit.identifier
+ * "=" expr.expression`) parse as a single QualifiedIdentifier node rather
+ * than degrading to Identifier + AnyChar + Identifier. See
+ * composition.spec.ts for direct coverage of that parsing behavior.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -59,4 +56,27 @@ describe("docs/peg-grammar.md grammar examples", () => {
       expect(result.success).toBe(true);
     },
   );
+
+  test("the module-composition example's 'assignment' rule parses qualified references as QualifiedIdentifier nodes, not Identifier+AnyChar+Identifier", () => {
+    const mixinBlock = grammarBlocks.find((block) =>
+      block.includes("lit.identifier"),
+    );
+    expect(mixinBlock).toBeDefined();
+
+    const result = parse(tpegModuleFile)(mixinBlock ?? "");
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const assignment = result.val.grammar.rules.find(
+        (rule) => rule.name === "assignment",
+      );
+      expect(assignment?.pattern.type).toBe("Sequence");
+      if (assignment?.pattern.type === "Sequence") {
+        expect(assignment.pattern.elements.map((el) => el.type)).toEqual([
+          "QualifiedIdentifier",
+          "StringLiteral",
+          "QualifiedIdentifier",
+        ]);
+      }
+    }
+  });
 });

@@ -91,6 +91,7 @@ import { characterClass } from "./character-class";
 import { expression } from "./composition";
 import { grammarDefinition } from "./grammar";
 import { identifier } from "./identifier";
+import { qualifiedIdentifier } from "./module";
 import { stringLiteral } from "./string-literal";
 import { transformDefinition } from "./transforms";
 import type { BasicSyntaxNode, GrammarDefinition } from "./types";
@@ -98,7 +99,8 @@ import { whitespace } from "./whitespace-utils";
 
 /**
  * Combined parser for all basic TPEG syntax elements.
- * Attempts to parse string literals, character classes, or identifiers.
+ * Attempts to parse string literals, character classes, qualified
+ * identifiers (`module.rule`), or plain identifiers.
  *
  * @returns Parser<BasicSyntaxNode> Parser that matches any basic syntax element
  *
@@ -112,11 +114,15 @@ import { whitespace } from "./whitespace-utils";
  *
  * const result3 = basicSyntax('identifier', { offset: 0, line: 1, column: 1 });
  * // result3.success === true, result3.val.type === "Identifier"
+ *
+ * const result4 = basicSyntax('math.expr', { offset: 0, line: 1, column: 1 });
+ * // result4.success === true, result4.val.type === "QualifiedIdentifier"
  * ```
  */
 export const basicSyntax: Parser<BasicSyntaxNode> = coreChoice(
   stringLiteral,
   characterClass,
+  qualifiedIdentifier,
   identifier,
 );
 

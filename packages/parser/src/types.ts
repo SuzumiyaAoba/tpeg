@@ -107,6 +107,7 @@ export interface TransformDefinition {
 export type BasicSyntaxNode =
   | StringLiteral
   | CharacterClass
+  | QualifiedIdentifier
   | Identifier
   | AnyChar;
 

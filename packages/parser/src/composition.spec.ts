@@ -47,6 +47,79 @@ describe("composition operators", () => {
           }
         }
       });
+
+      it("should parse a qualified identifier (module.rule) as one node, not identifier + AnyChar + identifier", () => {
+        const input = "math.expr";
+        const result = expression()(input, pos);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.next.offset).toBe(input.length);
+          expect(result.val.type).toBe("QualifiedIdentifier");
+          if (result.val.type === "QualifiedIdentifier") {
+            expect(result.val.module).toBe("math");
+            expect(result.val.name).toBe("expr");
+          }
+        }
+      });
+
+      it("should still parse a bare dot as AnyChar (qualifiedIdentifier requires an identifier before the dot)", () => {
+        const result = expression()(".", pos);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.val.type).toBe("AnyChar");
+        }
+      });
+
+      it("should fall back to identifier + AnyChar when the dot isn't followed by a valid identifier (e.g. 'rule .' meaning rule-then-any-char)", () => {
+        // qualifiedIdentifier is "identifier . identifier" with no fallback,
+        // so it fails outright here and choice() falls through to plain
+        // identifier, matching just "foo" - the old (pre-qualifiedIdentifier)
+        // behavior, still correct for genuinely non-qualified input.
+        const input = "foo.";
+        const result = expression()(input, pos);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.next.offset).toBe(input.length);
+          expect(result.val.type).toBe("Sequence");
+          if (result.val.type === "Sequence") {
+            expect(result.val.elements.map((e) => e.type)).toEqual([
+              "Identifier",
+              "AnyChar",
+            ]);
+          }
+        }
+      });
+
+      it("should parse a labeled qualified identifier (label:module.rule)", () => {
+        const input = "label:module.rule";
+        const result = expression()(input, pos);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.next.offset).toBe(input.length);
+          expect(result.val.type).toBe("LabeledExpression");
+          if (result.val.type === "LabeledExpression") {
+            expect(result.val.label).toBe("label");
+            expect(result.val.expression.type).toBe("QualifiedIdentifier");
+          }
+        }
+      });
+
+      it("should parse a sequence mixing qualified identifiers with other elements, as docs/peg-grammar.md's mixin example's 'assignment' rule does", () => {
+        const input = 'lit.identifier "=" expr.expression';
+        const result = expression()(input, pos);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.next.offset).toBe(input.length);
+          expect(result.val.type).toBe("Sequence");
+          if (result.val.type === "Sequence") {
+            expect(result.val.elements.map((e) => e.type)).toEqual([
+              "QualifiedIdentifier",
+              "StringLiteral",
+              "QualifiedIdentifier",
+            ]);
+          }
+        }
+      });
     });
 
     describe("sequence operator", () => {
