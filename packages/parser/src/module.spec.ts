@@ -10,6 +10,8 @@ import {
   exportDeclaration,
   extendsClause,
   importStatement,
+  moduleInfoListAnnotation,
+  moduleInfoRecordAnnotation,
   qualifiedIdentifier,
 } from "./module";
 
@@ -132,6 +134,109 @@ describe("Module System Parsers", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.rules).toEqual(["identifier"]);
+      }
+    });
+  });
+
+  describe("moduleInfoListAnnotation", () => {
+    it("should parse @dependencies: [...]", () => {
+      const input = '@dependencies: ["base.tpeg", "utils.tpeg"]';
+      const result = moduleInfoListAnnotation(input, {
+        offset: 0,
+        line: 1,
+        column: 1,
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual({
+          type: "ModuleInfoListAnnotation",
+          key: "dependencies",
+          values: ["base.tpeg", "utils.tpeg"],
+        });
+      }
+    });
+
+    it("should parse @conflicts: [...] with a single entry", () => {
+      const input = '@conflicts: ["legacy.tpeg"]';
+      const result = moduleInfoListAnnotation(input, {
+        offset: 0,
+        line: 1,
+        column: 1,
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.key).toBe("conflicts");
+        expect(result.val.values).toEqual(["legacy.tpeg"]);
+      }
+    });
+
+    it("should parse an empty list", () => {
+      const input = "@dependencies: []";
+      const result = moduleInfoListAnnotation(input, {
+        offset: 0,
+        line: 1,
+        column: 1,
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.values).toEqual([]);
+      }
+    });
+  });
+
+  describe("moduleInfoRecordAnnotation", () => {
+    it("should parse a multi-line @requires: { ... } record", () => {
+      const input = `@requires: {
+        "base.tpeg": "^1.0",
+        "operators.tpeg": ">=2.0, <3.0"
+      }`;
+      const result = moduleInfoRecordAnnotation(input, {
+        offset: 0,
+        line: 1,
+        column: 1,
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual({
+          type: "ModuleInfoRecordAnnotation",
+          key: "requires",
+          values: {
+            "base.tpeg": "^1.0",
+            "operators.tpeg": ">=2.0, <3.0",
+          },
+        });
+      }
+    });
+
+    it("should parse a single-entry record on one line", () => {
+      const input = '@requires: { "base.tpeg": "^1.0" }';
+      const result = moduleInfoRecordAnnotation(input, {
+        offset: 0,
+        line: 1,
+        column: 1,
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.values).toEqual({ "base.tpeg": "^1.0" });
+      }
+    });
+
+    it("should parse an empty record", () => {
+      const input = "@requires: {}";
+      const result = moduleInfoRecordAnnotation(input, {
+        offset: 0,
+        line: 1,
+        column: 1,
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.values).toEqual({});
       }
     });
   });

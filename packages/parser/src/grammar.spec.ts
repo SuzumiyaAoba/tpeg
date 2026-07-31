@@ -11,6 +11,7 @@ import {
   documentationComment,
   grammarAnnotation,
   grammarDefinition,
+  modularGrammarDefinition,
   quotedString,
   ruleDefinition,
   singleLineComment,
@@ -412,6 +413,151 @@ describe("Grammar Definition Block Tests", () => {
 
         expect(result.val.rules[1]?.name).toBe("rule2");
         expect(result.val.rules[1]?.pattern.type).toBe("StringLiteral");
+      }
+    });
+  });
+
+  describe("modularGrammarDefinition: @dependencies/@conflicts array annotations", () => {
+    test("should parse @dependencies/@conflicts array-of-quoted-strings annotations into moduleInfo, as docs/peg-grammar.md's module-dependency example uses", () => {
+      const input = `grammar ModuleA {
+        @dependencies: ["base.tpeg", "utils.tpeg"]
+        @conflicts: ["legacy.tpeg"]
+
+        rule_a = "x"
+      }`;
+
+      // grammarDefinition parses the same input without failing - the
+      // array annotations are recognized and discarded, same as @export.
+      const plain = testParse(grammarDefinition, input);
+      expect(plain.success).toBe(true);
+
+      const result = testParse(modularGrammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.moduleInfo).toEqual({
+          type: "ModuleInfo",
+          dependencies: ["base.tpeg", "utils.tpeg"],
+          conflicts: ["legacy.tpeg"],
+        });
+      }
+    });
+
+    test("should not create a moduleInfo when there is nothing to put in it", () => {
+      const input = `grammar Empty2 {
+        rule_a = "x"
+      }`;
+
+      const result = testParse(modularGrammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.moduleInfo).toBeUndefined();
+      }
+    });
+  });
+
+  describe("modularGrammarDefinition: extends clause", () => {
+    test("should parse a plain 'extends Name' clause", () => {
+      const input = `grammar MyGrammar extends base.Base {
+        rule_a = "x"
+      }`;
+
+      const plain = testParse(grammarDefinition, input);
+      expect(plain.success).toBe(true);
+
+      const result = testParse(modularGrammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.name).toBe("MyGrammar");
+        expect(result.val.extends).toBe("base.Base");
+      }
+    });
+
+    test("should parse an 'extends module.Dotted.Name' clause where the extended grammar's own name is dotted, as docs/peg-grammar.md's module-resolution example uses", () => {
+      const input = `grammar Math.Advanced extends core.Math.Core {
+        factor = number
+      }`;
+
+      const result = testParse(modularGrammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.name).toBe("Math.Advanced");
+        expect(result.val.extends).toBe("core.Math.Core");
+      }
+    });
+
+    test("should leave extends undefined when absent", () => {
+      const input = `grammar Standalone {
+        rule_a = "x"
+      }`;
+
+      const result = testParse(modularGrammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.extends).toBeUndefined();
+      }
+    });
+  });
+
+  describe("modularGrammarDefinition: @requires record annotation", () => {
+    test('should parse a multi-line @requires: { "key": "value", ... } annotation into moduleInfo.requires, as docs/peg-grammar.md\'s module-versioning example uses', () => {
+      const input = `grammar MyGrammar extends base.Base {
+        @requires: {
+          "base.tpeg": "^1.0",
+          "operators.tpeg": ">=2.0, <3.0"
+        }
+
+        rule_a = "x"
+      }`;
+
+      const plain = testParse(grammarDefinition, input);
+      expect(plain.success).toBe(true);
+
+      const result = testParse(modularGrammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.moduleInfo).toEqual({
+          type: "ModuleInfo",
+          requires: {
+            "base.tpeg": "^1.0",
+            "operators.tpeg": ">=2.0, <3.0",
+          },
+        });
+      }
+    });
+  });
+
+  describe("modularGrammarDefinition: includes mixin clause", () => {
+    test("should parse an 'includes a.B, c.D, e.F' mixin clause, as docs/peg-grammar.md's module-composition example uses", () => {
+      const input = `grammar ProgrammingLanguage
+        includes lit.Literals, ops.Operators, expr.Expressions {
+
+        program = statement*
+      }`;
+
+      const plain = testParse(grammarDefinition, input);
+      expect(plain.success).toBe(true);
+
+      const result = testParse(modularGrammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.name).toBe("ProgrammingLanguage");
+        expect(result.val.includes).toEqual([
+          "lit.Literals",
+          "ops.Operators",
+          "expr.Expressions",
+        ]);
+      }
+    });
+
+    test("should leave includes undefined when absent", () => {
+      const input = `grammar Standalone2 {
+        rule_a = "x"
+      }`;
+
+      const result = testParse(modularGrammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.includes).toBeUndefined();
       }
     });
   });

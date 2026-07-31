@@ -231,6 +231,157 @@ export const exportDeclaration: Parser<ExportDeclaration> = map(
 );
 
 // ============================================================================
+// Module-Metadata List Annotation Parser (@dependencies, @conflicts)
+// ============================================================================
+
+/**
+ * A parsed `@key: ["a", "b"]` annotation - the array-of-quoted-strings form
+ * docs/peg-grammar.md uses for `@dependencies` and `@conflicts`. Distinct
+ * from `GrammarAnnotation` (single string value) and `ExportDeclaration`
+ * (array of bare identifiers, always keyed "export"): this is generic over
+ * the key so both `@dependencies` and `@conflicts` share one parser, with
+ * the key->ModuleInfo-field mapping left to the caller (grammar.ts).
+ */
+export interface ModuleInfoListAnnotation {
+  type: "ModuleInfoListAnnotation";
+  key: string;
+  values: string[];
+}
+
+/**
+ * Parse a quoted-string list: ["a", "b", "c"]
+ */
+const quotedStringList: Parser<string[]> = map(
+  sequence(
+    literal("["),
+    optionalWhitespace,
+    optional(
+      map(
+        sequence(
+          stringLiteral,
+          zeroOrMore(
+            map(
+              sequence(
+                optionalWhitespace,
+                literal(","),
+                optionalWhitespace,
+                stringLiteral,
+              ),
+              ([, , , str]) => str.value,
+            ),
+          ),
+        ),
+        ([first, rest]) => [first.value, ...rest],
+      ),
+    ),
+    optionalWhitespace,
+    literal("]"),
+  ),
+  ([, , values, ,]) => values?.[0] ?? [],
+);
+
+/**
+ * Parse a module-metadata list annotation: `@dependencies: [...]` or
+ * `@conflicts: [...]`.
+ */
+export const moduleInfoListAnnotation: Parser<ModuleInfoListAnnotation> = map(
+  sequence(
+    literal("@"),
+    identifier,
+    optionalWhitespace,
+    literal(":"),
+    optionalWhitespace,
+    quotedStringList,
+  ),
+  ([, key, , , , values]) => ({
+    type: "ModuleInfoListAnnotation" as const,
+    key: key.name,
+    values,
+  }),
+);
+
+// ============================================================================
+// Module-Metadata Record Annotation Parser (@requires)
+// ============================================================================
+
+/**
+ * A parsed `@key: { "a": "b", ... }` annotation - the quoted-string-keyed
+ * object-literal form docs/peg-grammar.md uses for `@requires` (per-module
+ * version constraints, e.g. `@requires: { "base.tpeg": "^1.0" }`).
+ */
+export interface ModuleInfoRecordAnnotation {
+  type: "ModuleInfoRecordAnnotation";
+  key: string;
+  values: Record<string, string>;
+}
+
+/**
+ * Parse one `"key": "value"` entry of a quoted-string record.
+ */
+const quotedStringRecordEntry: Parser<[string, string]> = map(
+  sequence(
+    stringLiteral,
+    optionalWhitespace,
+    literal(":"),
+    optionalWhitespace,
+    stringLiteral,
+  ),
+  ([key, , , , value]) => [key.value, value.value],
+);
+
+/**
+ * Parse a quoted-string record: { "a": "b", "c": "d" }
+ */
+const quotedStringRecord: Parser<Record<string, string>> = map(
+  sequence(
+    literal("{"),
+    optionalWhitespace,
+    optional(
+      map(
+        sequence(
+          quotedStringRecordEntry,
+          zeroOrMore(
+            map(
+              sequence(
+                optionalWhitespace,
+                literal(","),
+                optionalWhitespace,
+                quotedStringRecordEntry,
+              ),
+              ([, , , entry]) => entry,
+            ),
+          ),
+        ),
+        ([first, rest]) => [first, ...rest],
+      ),
+    ),
+    optionalWhitespace,
+    literal("}"),
+  ),
+  ([, , entries]) => Object.fromEntries(entries?.[0] ?? []),
+);
+
+/**
+ * Parse a module-metadata record annotation: `@requires: { "mod": "^1.0" }`.
+ */
+export const moduleInfoRecordAnnotation: Parser<ModuleInfoRecordAnnotation> =
+  map(
+    sequence(
+      literal("@"),
+      identifier,
+      optionalWhitespace,
+      literal(":"),
+      optionalWhitespace,
+      quotedStringRecord,
+    ),
+    ([, key, , , , values]) => ({
+      type: "ModuleInfoRecordAnnotation" as const,
+      key: key.name,
+      values,
+    }),
+  );
+
+// ============================================================================
 // Qualified Identifier Parser
 // ============================================================================
 

@@ -506,6 +506,8 @@ export interface ModuleInfo {
   conflicts?: string[];
   /** Module version */
   version?: string;
+  /** Version constraints per dependency, from `@requires: { "mod.tpeg": "^1.0", ... }` */
+  requires?: Record<string, string>;
 }
 
 /**
@@ -551,6 +553,8 @@ export interface ModularGrammarDefinition
   moduleInfo?: ModuleInfo;
   /** Optional parent grammar this extends */
   extends?: string;
+  /** Other grammars this grammar mixes in via `includes a.B, c.D` */
+  includes?: string[];
 }
 
 /**
@@ -1050,6 +1054,7 @@ export const createExportDeclaration = (
  * @param dependencies - List of required dependencies
  * @param conflicts - List of conflicting modules
  * @param version - Module version
+ * @param requires - Version constraints per dependency
  * @returns A new ModuleInfo AST node
  */
 export const createModuleInfo = (
@@ -1057,6 +1062,7 @@ export const createModuleInfo = (
   dependencies?: string[],
   conflicts?: string[],
   version?: string,
+  requires?: Record<string, string>,
 ): ModuleInfo => {
   const result: ModuleInfo = {
     type: "ModuleInfo",
@@ -1065,6 +1071,7 @@ export const createModuleInfo = (
   if (dependencies !== undefined) result.dependencies = dependencies;
   if (conflicts !== undefined) result.conflicts = conflicts;
   if (version !== undefined) result.version = version;
+  if (requires !== undefined) result.requires = requires;
   return result;
 };
 
@@ -1090,6 +1097,7 @@ export const createModularGrammarDefinition = (
   exports?: ExportDeclaration,
   moduleInfo?: ModuleInfo,
   extendsGrammar?: string,
+  includes?: string[],
 ): ModularGrammarDefinition => {
   const result: ModularGrammarDefinition = {
     type: "ModularGrammarDefinition",
@@ -1102,6 +1110,7 @@ export const createModularGrammarDefinition = (
   if (exports !== undefined) result.exports = exports;
   if (moduleInfo !== undefined) result.moduleInfo = moduleInfo;
   if (extendsGrammar !== undefined) result.extends = extendsGrammar;
+  if (includes !== undefined) result.includes = includes;
   return result;
 };
 

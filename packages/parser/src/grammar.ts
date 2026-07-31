@@ -10,6 +10,7 @@
 
 import type {
   ExportDeclaration,
+  ImportStatement,
   ModularGrammarDefinition,
 } from "@suzumiyaaoba/tpeg-core";
 import {
@@ -18,6 +19,7 @@ import {
   createModuleInfo,
   literal,
   map,
+  optional,
   seq as sequence,
   star as zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
@@ -25,7 +27,12 @@ import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { expression } from "./composition";
 import { GRAMMAR_KEYWORDS, GRAMMAR_SYMBOLS } from "./constants";
 import { identifier } from "./identifier";
-import { exportDeclaration } from "./module";
+import {
+  exportDeclaration,
+  importStatement,
+  moduleInfoListAnnotation,
+  moduleInfoRecordAnnotation,
+} from "./module";
 import { stringLiteral } from "./string-literal";
 import { transformDefinition } from "./transforms";
 import type {
@@ -322,6 +329,8 @@ export const ruleDefinition: Parser<RuleDefinition> = map(
 type GrammarItemType =
   | { type: "annotation"; value: GrammarAnnotation }
   | { type: "export"; value: ExportDeclaration }
+  | { type: "moduleInfoList"; key: string; values: string[] }
+  | { type: "moduleInfoRecord"; key: string; values: Record<string, string> }
   | { type: "rule"; value: RuleDefinition }
   | { type: "transform"; value: TransformDefinition }
   | { type: "comment"; value: string };
@@ -330,14 +339,36 @@ type GrammarItemType =
  * Parse grammar item (export declaration, annotation, rule, transform, or comment)
  * Returns a tagged union for easier processing in the main grammar parser.
  *
- * exportDeclaration is tried before grammarAnnotation: both start with "@",
- * but exportDeclaration only matches the specific "@export: [...]" array-value
- * form, so ordering doesn't create ambiguity with other "@key: \"value\"" annotations.
+ * All four "@"-prefixed alternatives are tried in most-specific-first order:
+ * exportDeclaration only matches literal "@export" with an array-of-identifiers
+ * value; moduleInfoListAnnotation matches any "@key" with an array-of-quoted-
+ * strings value (used for @dependencies/@conflicts); moduleInfoRecordAnnotation
+ * matches any "@key" with a quoted-string-keyed object-literal value (used for
+ * @requires); grammarAnnotation is the generic "@key: value" (or flag-only
+ * "@key") fallback. Each requires a distinct value shape, so a mismatched
+ * alternative fails outright rather than partially matching - ordering
+ * doesn't create ambiguity between them.
  */
 const grammarItem: Parser<GrammarItemType> = choice(
   map(
     exportDeclaration,
     (decl): GrammarItemType => ({ type: "export", value: decl }),
+  ),
+  map(
+    moduleInfoListAnnotation,
+    (decl): GrammarItemType => ({
+      type: "moduleInfoList",
+      key: decl.key,
+      values: decl.values,
+    }),
+  ),
+  map(
+    moduleInfoRecordAnnotation,
+    (decl): GrammarItemType => ({
+      type: "moduleInfoRecord",
+      key: decl.key,
+      values: decl.values,
+    }),
   ),
   map(
     grammarAnnotation,
@@ -390,17 +421,31 @@ const separateGrammarItems = (
   rules: RuleDefinition[];
   transforms: TransformDefinition[];
   exportedRules: string[];
+  moduleInfoLists: Map<string, string[]>;
+  moduleInfoRecords: Map<string, Record<string, string>>;
 } => {
   const annotations: GrammarAnnotation[] = [];
   const rules: RuleDefinition[] = [];
   const transforms: TransformDefinition[] = [];
   const exportedRules: string[] = [];
+  const moduleInfoLists = new Map<string, string[]>();
+  const moduleInfoRecords = new Map<string, Record<string, string>>();
 
   for (const item of items) {
     if (item.type === "annotation") {
       annotations.push(item.value);
     } else if (item.type === "export") {
       exportedRules.push(...item.value.rules);
+    } else if (item.type === "moduleInfoList") {
+      moduleInfoLists.set(item.key, [
+        ...(moduleInfoLists.get(item.key) ?? []),
+        ...item.values,
+      ]);
+    } else if (item.type === "moduleInfoRecord") {
+      moduleInfoRecords.set(item.key, {
+        ...moduleInfoRecords.get(item.key),
+        ...item.values,
+      });
     } else if (item.type === "rule") {
       rules.push(item.value);
     } else if (item.type === "transform") {
@@ -409,7 +454,14 @@ const separateGrammarItems = (
     // Comments are ignored - they don't contribute to the grammar structure
   }
 
-  return { annotations, rules, transforms, exportedRules };
+  return {
+    annotations,
+    rules,
+    transforms,
+    exportedRules,
+    moduleInfoLists,
+    moduleInfoRecords,
+  };
 };
 
 /**
@@ -454,24 +506,85 @@ const dottedGrammarName: Parser<string> = map(
 );
 
 /**
- * Shared parser for the "grammar Name { ...items... }" block, used by both
- * grammarDefinition and modularGrammarDefinition below so the two stay in
- * sync on grammar/block syntax.
+ * Parse an `extends Name` or `extends module.Dotted.Name` clause. Defined
+ * locally (rather than reusing module.ts's `extendsClause`) because the
+ * extended grammar's own name can itself be dotted (e.g. `extends
+ * core.Math.Core`, extending the dotted grammar `Math.Core` via module alias
+ * `core`) - module.ts's `qualifiedIdentifier` only supports a single
+ * `module.name` segment pair, which is right for its other use (resolving
+ * `module.rule` references) but too narrow here.
+ */
+const grammarExtendsClause: Parser<string> = map(
+  sequence(literal("extends"), whitespace, dottedGrammarName),
+  ([, , name]) => name,
+);
+
+/**
+ * Parse an `includes a.B, c.D, e.F` mixin clause: one or more (possibly
+ * module-qualified, possibly dotted) grammar names, comma-separated. Reuses
+ * dottedGrammarName per-entry for the same reason grammarExtendsClause does -
+ * each entry can itself be a dotted name (`module.Namespaced.Grammar`).
+ */
+const grammarIncludesClause: Parser<string[]> = map(
+  sequence(
+    literal("includes"),
+    whitespace,
+    dottedGrammarName,
+    zeroOrMore(
+      map(
+        sequence(
+          optionalWhitespace,
+          literal(","),
+          optionalWhitespace,
+          dottedGrammarName,
+        ),
+        ([, , , name]) => name,
+      ),
+    ),
+  ),
+  ([, , first, rest]) => [first, ...rest],
+);
+
+/**
+ * Shared parser for the "grammar Name [extends Other] [includes A, B] { ...items... }"
+ * block, used by both grammarDefinition and modularGrammarDefinition below
+ * so the two stay in sync on grammar/block syntax. `extends`/`includes` are
+ * optional and only meaningful to modularGrammarDefinition (plain
+ * GrammarDefinition has no field for them, same treatment as
+ * `@export`/`@dependencies`/`@conflicts`).
  * Format: [comments...] grammar Name { @annotations... rule_definitions... }
  */
-const grammarBlock: Parser<{ name: string; items: GrammarItemType[] }> = map(
+const grammarBlock: Parser<{
+  name: string;
+  items: GrammarItemType[];
+  extends?: string;
+  includes?: string[];
+}> = map(
   sequence(
     leadingContent,
     literal(GRAMMAR_KEYWORDS.GRAMMAR),
     whitespace,
     dottedGrammarName,
     optionalWhitespace,
+    optional(grammarExtendsClause),
+    optionalWhitespace,
+    optional(grammarIncludesClause),
+    optionalWhitespace,
     literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_OPEN),
     grammarItems,
     grammarBlockWhitespace,
     literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_CLOSE),
   ),
-  (results) => ({ name: results[3], items: results[6] }),
+  (results) => {
+    const extendsName = results[5]?.[0];
+    const includesNames = results[7]?.[0];
+    return {
+      name: results[3],
+      items: results[10],
+      ...(extendsName !== undefined ? { extends: extendsName } : {}),
+      ...(includesNames !== undefined ? { includes: includesNames } : {}),
+    };
+  },
 );
 
 /**
@@ -490,17 +603,29 @@ export const grammarDefinition: Parser<GrammarDefinition> = map(
 
 /**
  * Parse a grammar definition block, preserving `@export: [...]` declarations
- * as a ModularGrammarDefinition (used by the module system to know which
- * rules a module makes available to importers). A `moduleInfo.version` is
- * populated from the `@version` annotation when present, since that's the
- * only module-metadata annotation with parser support today.
+ * and an `extends Other`/`extends module.Other` clause as a
+ * ModularGrammarDefinition (used by the module system to know which rules a
+ * module makes available to importers, and what it extends). `moduleInfo` is
+ * populated from the `@version` annotation and the `@dependencies`/
+ * `@conflicts` array annotations when present, since those are the only
+ * module-metadata annotations with parser support today (`@namespace` is
+ * not).
  */
 export const modularGrammarDefinition: Parser<ModularGrammarDefinition> = map(
   grammarBlock,
-  ({ name, items }) => {
-    const { annotations, rules, transforms, exportedRules } =
-      separateGrammarItems(items);
+  ({ name, items, extends: extendsName, includes }) => {
+    const {
+      annotations,
+      rules,
+      transforms,
+      exportedRules,
+      moduleInfoLists,
+      moduleInfoRecords,
+    } = separateGrammarItems(items);
     const version = annotations.find((a) => a.key === "version")?.value;
+    const dependencies = moduleInfoLists.get("dependencies");
+    const conflicts = moduleInfoLists.get("conflicts");
+    const requires = moduleInfoRecords.get("requires");
 
     return createModularGrammarDefinition(
       name,
@@ -511,9 +636,40 @@ export const modularGrammarDefinition: Parser<ModularGrammarDefinition> = map(
       exportedRules.length > 0
         ? { type: "ExportDeclaration", rules: exportedRules }
         : undefined,
-      version
-        ? createModuleInfo(undefined, undefined, undefined, version)
+      version || dependencies || conflicts || requires
+        ? createModuleInfo(
+            undefined,
+            dependencies,
+            conflicts,
+            version,
+            requires,
+          )
         : undefined,
+      extendsName,
+      includes,
     );
   },
+);
+
+/**
+ * Parse a full TPEG module file: zero or more import statements (each
+ * preceded by its own leading comments/whitespace, so a `//`-commented
+ * import line doesn't fail leadingContent's "no arbitrary text" rule)
+ * followed by a single grammar block. This is what a `.tpeg` file that
+ * begins with `import "..." as alias` lines needs - grammarDefinition and
+ * modularGrammarDefinition on their own only accept a grammar block, since
+ * their `leadingContent` skips comments/whitespace but not `import`
+ * statements.
+ */
+export const tpegModuleFile: Parser<{
+  imports: ImportStatement[];
+  grammar: ModularGrammarDefinition;
+}> = map(
+  sequence(
+    zeroOrMore(
+      map(sequence(leadingContent, importStatement), ([, stmt]) => stmt),
+    ),
+    modularGrammarDefinition,
+  ),
+  ([imports, grammar]) => ({ imports, grammar }),
 );
