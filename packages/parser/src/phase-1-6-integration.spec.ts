@@ -88,8 +88,8 @@ describe("Phase 1.6 Integration Tests", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.annotations).toHaveLength(2);
-        expect(result.val.annotations[0].key).toBe("version");
-        expect(result.val.annotations[1].key).toBe("description");
+        expect(result.val.annotations[0]?.key).toBe("version");
+        expect(result.val.annotations[1]?.key).toBe("description");
       }
     });
 
@@ -102,7 +102,7 @@ describe("Phase 1.6 Integration Tests", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.rules).toHaveLength(1);
-        expect(result.val.rules[0].name).toBe("expression");
+        expect(result.val.rules[0]?.name).toBe("expression");
       }
     });
 
@@ -127,7 +127,7 @@ describe("Phase 1.6 Integration Tests", () => {
   describe("backward compatibility", () => {
     test("should maintain existing TPEG expression parsing", () => {
       // Import the main tpegExpression parser
-      const { tpegExpression } = require("./index");
+      const { tpegExpression } = require("./index") as typeof import("./index");
 
       const result = testParse(tpegExpression, '"hello" / "world"');
       expect(result.success).toBe(true);

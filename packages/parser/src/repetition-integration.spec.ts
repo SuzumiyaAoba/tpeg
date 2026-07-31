@@ -79,8 +79,8 @@ describe("repetition-composition integration", () => {
         expect(result.val.type).toBe("Sequence");
         if (result.val.type === "Sequence") {
           expect(result.val.elements).toHaveLength(2);
-          expect(result.val.elements[0].type).toBe("Plus");
-          expect(result.val.elements[1].type).toBe("Star");
+          expect(result.val.elements[0]?.type).toBe("Plus");
+          expect(result.val.elements[1]?.type).toBe("Star");
         }
       }
     });
@@ -92,8 +92,8 @@ describe("repetition-composition integration", () => {
         expect(result.val.type).toBe("Choice");
         if (result.val.type === "Choice") {
           expect(result.val.alternatives).toHaveLength(2);
-          expect(result.val.alternatives[0].type).toBe("Plus");
-          expect(result.val.alternatives[1].type).toBe("Star");
+          expect(result.val.alternatives[0]?.type).toBe("Plus");
+          expect(result.val.alternatives[1]?.type).toBe("Star");
         }
       }
     });
@@ -107,8 +107,8 @@ describe("repetition-composition integration", () => {
         expect(result.val.type).toBe("Sequence");
         if (result.val.type === "Sequence") {
           expect(result.val.elements).toHaveLength(2);
-          expect(result.val.elements[0].type).toBe("Plus");
-          expect(result.val.elements[1].type).toBe("StringLiteral");
+          expect(result.val.elements[0]?.type).toBe("Plus");
+          expect(result.val.elements[1]?.type).toBe("StringLiteral");
         }
       }
     });
@@ -120,8 +120,8 @@ describe("repetition-composition integration", () => {
         expect(result.val.type).toBe("Choice");
         if (result.val.type === "Choice") {
           expect(result.val.alternatives).toHaveLength(2);
-          expect(result.val.alternatives[0].type).toBe("Plus");
-          expect(result.val.alternatives[1].type).toBe("StringLiteral");
+          expect(result.val.alternatives[0]?.type).toBe("Plus");
+          expect(result.val.alternatives[1]?.type).toBe("StringLiteral");
         }
       }
     });

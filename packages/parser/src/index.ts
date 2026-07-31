@@ -31,6 +31,12 @@ export {
   documentationComment,
 } from "./grammar";
 
+// Export transform definition parser
+export { transformDefinition } from "./transforms";
+
+// Export whitespace utilities
+export { whitespace, optionalWhitespace } from "./whitespace-utils";
+
 // Export code generation system
 export {
   TPEGCodeGenerator,
@@ -75,12 +81,20 @@ export {
 export { sepBy, sepBy1 } from "@suzumiyaaoba/tpeg-combinator";
 
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
-import { choice as coreChoice } from "@suzumiyaaoba/tpeg-core";
+import {
+  choice as coreChoice,
+  map,
+  sequence,
+  star,
+} from "@suzumiyaaoba/tpeg-core";
 import { characterClass } from "./character-class";
 import { expression } from "./composition";
+import { grammarDefinition } from "./grammar";
 import { identifier } from "./identifier";
 import { stringLiteral } from "./string-literal";
-import type { BasicSyntaxNode } from "./types";
+import { transformDefinition } from "./transforms";
+import type { BasicSyntaxNode, GrammarDefinition } from "./types";
+import { whitespace } from "./whitespace-utils";
 
 /**
  * Combined parser for all basic TPEG syntax elements.
@@ -128,6 +142,47 @@ export const basicSyntax: Parser<BasicSyntaxNode> = coreChoice(
  * ```
  */
 export const tpegExpression = expression();
+
+/**
+ * Parses a complete `.tpeg` file: a single `grammar Name { ... }` block,
+ * optionally followed by one or more `transforms Name@language { ... }`
+ * blocks. The transforms are attached to the returned grammar's
+ * `transforms` array, exactly as `GrammarDefinition.transforms` expects,
+ * so the result can be passed directly to `generateTypeScriptParser` (or
+ * the optimized/Eta generators) to get transform-aware generated code.
+ *
+ * @example
+ * ```typescript
+ * const result = parse(tpegFile)(`
+ *   grammar Calculator {
+ *     number = [0-9]+
+ *   }
+ *
+ *   transforms Evaluator@typescript {
+ *     number(captures: string) -> Result<number> {
+ *       return { success: true, value: parseInt(captures, 10) };
+ *     }
+ *   }
+ * `);
+ * ```
+ */
+export const tpegFile: Parser<GrammarDefinition> = map(
+  sequence(
+    grammarDefinition,
+    star(
+      map(
+        sequence(star(whitespace), transformDefinition),
+        ([, transform]) => transform,
+      ),
+    ),
+  ),
+  ([grammar, transforms]) => ({
+    ...grammar,
+    ...(transforms.length > 0
+      ? { transforms: [...(grammar.transforms ?? []), ...transforms] }
+      : {}),
+  }),
+);
 
 // Export module system parsers
 export * from "./module";

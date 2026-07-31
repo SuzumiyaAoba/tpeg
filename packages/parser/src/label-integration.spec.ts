@@ -232,9 +232,9 @@ describe("Label Integration Tests", () => {
         expect(sequence.type).toBe("Sequence");
         expect(sequence.elements).toHaveLength(3);
 
-        expect(sequence.elements[0].type).toBe("LabeledExpression");
-        expect(sequence.elements[1].type).toBe("StringLiteral");
-        expect(sequence.elements[2].type).toBe("StringLiteral");
+        expect(sequence.elements[0]?.type).toBe("LabeledExpression");
+        expect(sequence.elements[1]?.type).toBe("StringLiteral");
+        expect(sequence.elements[2]?.type).toBe("StringLiteral");
       }
     });
 
@@ -292,7 +292,7 @@ describe("Label Integration Tests", () => {
         expect(labeledStar.label).toBe("items");
         expect(labeledStar.expression.type).toBe("Star");
 
-        expect(sequence.elements[1].type).toBe("StringLiteral");
+        expect(sequence.elements[1]?.type).toBe("StringLiteral");
       }
     });
 
@@ -329,8 +329,8 @@ describe("Label Integration Tests", () => {
         expect(choice.type).toBe("Choice");
         expect(choice.alternatives).toHaveLength(2);
 
-        expect(choice.alternatives[0].type).toBe("LabeledExpression");
-        expect(choice.alternatives[1].type).toBe("LabeledExpression");
+        expect(choice.alternatives[0]?.type).toBe("LabeledExpression");
+        expect(choice.alternatives[1]?.type).toBe("LabeledExpression");
       }
     });
   });

@@ -11,6 +11,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { generateTypeScriptParser, grammarDefinition } from "./index";
+import type { Expression } from "./types";
 import {
   createCharRange,
   createCharacterClass,
@@ -318,10 +319,14 @@ describe("TPEG Parser Performance Benchmarks", () => {
       }
 
       // Check that performance doesn't degrade exponentially
-      const firstResult = results[0];
-      const lastResult = results[results.length - 1];
+      const firstResult = results[0] as { size: number; opsPerSec: number };
+      const lastResult = results[results.length - 1] as {
+        size: number;
+        opsPerSec: number;
+      };
       const scalingFactor = firstResult.opsPerSec / lastResult.opsPerSec;
-      const expectedMaxScaling = (sizes[sizes.length - 1] / sizes[0]) ** 1.5; // Allow for slightly worse than linear
+      const expectedMaxScaling =
+        ((sizes[sizes.length - 1] as number) / (sizes[0] as number)) ** 1.5; // Allow for slightly worse than linear
 
       console.log(
         `Scaling factor: ${scalingFactor.toFixed(2)}x (should be < ${expectedMaxScaling.toFixed(2)}x)`,
@@ -404,21 +409,28 @@ describe("TPEG Parser Performance Benchmarks", () => {
         ws = [ \\t]*
       }`;
 
-      let parseResult: ReturnType<typeof grammarDefinition>;
       const parseTime = benchmark(
         "Calculator Parse",
         () => {
           const pos = { offset: 0, line: 1, column: 1 };
-          parseResult = grammarDefinition(calculatorGrammar, pos);
+          const parseResult = grammarDefinition(calculatorGrammar, pos);
           if (!parseResult.success) throw new Error("Parse failed");
         },
         200,
       );
 
+      const freshParseResult = grammarDefinition(calculatorGrammar, {
+        offset: 0,
+        line: 1,
+        column: 1,
+      });
+      if (!freshParseResult.success) throw new Error("Parse failed");
+      const parsedCalculatorGrammar = freshParseResult.val;
+
       const generateTime = benchmark(
         "Calculator Code Generation",
         () => {
-          generateTypeScriptParser(parseResult.val, {
+          generateTypeScriptParser(parsedCalculatorGrammar, {
             namePrefix: "calc_",
             includeImports: true,
             includeTypes: true,

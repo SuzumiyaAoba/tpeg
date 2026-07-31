@@ -21,6 +21,7 @@ import type {
   Optional,
   Plus,
   PositiveLookahead,
+  QualifiedIdentifier,
   Quantified,
   RuleDefinition,
   Sequence,
@@ -33,6 +34,7 @@ export type {
   CharacterClass,
   CharRange,
   Identifier,
+  QualifiedIdentifier,
   AnyChar,
   Sequence,
   Choice,
@@ -168,12 +170,12 @@ export interface TokenizeError {
 /**
  * Create a StringLiteral AST node
  * @param value The string content (without quotes)
- * @param quote The quote character used
+ * @param quote The quote character used (defaults to double quote)
  * @returns StringLiteral node
  */
 export const createStringLiteral = (
   value: string,
-  quote: '"' | "'",
+  quote: '"' | "'" = '"',
 ): StringLiteral => ({
   type: "StringLiteral",
   value,
@@ -211,6 +213,21 @@ export const createCharRange = (start: string, end?: string): CharRange =>
  */
 export const createIdentifier = (name: string): Identifier => ({
   type: "Identifier",
+  name,
+});
+
+/**
+ * Create a QualifiedIdentifier AST node (a cross-module rule reference, e.g. `math.expr`)
+ * @param module The module alias the rule is imported under
+ * @param name The rule name within that module
+ * @returns QualifiedIdentifier node
+ */
+export const createQualifiedIdentifier = (
+  module: string,
+  name: string,
+): QualifiedIdentifier => ({
+  type: "QualifiedIdentifier",
+  module,
   name,
 });
 

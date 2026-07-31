@@ -57,8 +57,8 @@ describe("composition operators", () => {
           expect(result.val.type).toBe("Sequence");
           if (result.val.type === "Sequence") {
             expect(result.val.elements).toHaveLength(2);
-            expect(result.val.elements[0].type).toBe("StringLiteral");
-            expect(result.val.elements[1].type).toBe("StringLiteral");
+            expect(result.val.elements[0]?.type).toBe("StringLiteral");
+            expect(result.val.elements[1]?.type).toBe("StringLiteral");
           }
         }
       });
@@ -81,9 +81,9 @@ describe("composition operators", () => {
           expect(result.val.type).toBe("Sequence");
           if (result.val.type === "Sequence") {
             expect(result.val.elements).toHaveLength(3);
-            expect(result.val.elements[0].type).toBe("StringLiteral");
-            expect(result.val.elements[1].type).toBe("CharacterClass");
-            expect(result.val.elements[2].type).toBe("Identifier");
+            expect(result.val.elements[0]?.type).toBe("StringLiteral");
+            expect(result.val.elements[1]?.type).toBe("CharacterClass");
+            expect(result.val.elements[2]?.type).toBe("Identifier");
           }
         }
       });
@@ -113,8 +113,8 @@ describe("composition operators", () => {
           expect(result.val.type).toBe("Choice");
           if (result.val.type === "Choice") {
             expect(result.val.alternatives).toHaveLength(2);
-            expect(result.val.alternatives[0].type).toBe("StringLiteral");
-            expect(result.val.alternatives[1].type).toBe("StringLiteral");
+            expect(result.val.alternatives[0]?.type).toBe("StringLiteral");
+            expect(result.val.alternatives[1]?.type).toBe("StringLiteral");
           }
         }
       });
@@ -137,9 +137,9 @@ describe("composition operators", () => {
           expect(result.val.type).toBe("Choice");
           if (result.val.type === "Choice") {
             expect(result.val.alternatives).toHaveLength(3);
-            expect(result.val.alternatives[0].type).toBe("StringLiteral");
-            expect(result.val.alternatives[1].type).toBe("CharacterClass");
-            expect(result.val.alternatives[2].type).toBe("Identifier");
+            expect(result.val.alternatives[0]?.type).toBe("StringLiteral");
+            expect(result.val.alternatives[1]?.type).toBe("CharacterClass");
+            expect(result.val.alternatives[2]?.type).toBe("Identifier");
           }
         }
       });
@@ -212,8 +212,8 @@ describe("composition operators", () => {
           expect(result.val.type).toBe("Sequence");
           if (result.val.type === "Sequence") {
             expect(result.val.elements).toHaveLength(2);
-            expect(result.val.elements[0].type).toBe("Group");
-            expect(result.val.elements[1].type).toBe("StringLiteral");
+            expect(result.val.elements[0]?.type).toBe("Group");
+            expect(result.val.elements[1]?.type).toBe("StringLiteral");
           }
         }
       });
@@ -225,8 +225,8 @@ describe("composition operators", () => {
           expect(result.val.type).toBe("Choice");
           if (result.val.type === "Choice") {
             expect(result.val.alternatives).toHaveLength(2);
-            expect(result.val.alternatives[0].type).toBe("Sequence");
-            expect(result.val.alternatives[1].type).toBe("Sequence");
+            expect(result.val.alternatives[0]?.type).toBe("Sequence");
+            expect(result.val.alternatives[1]?.type).toBe("Sequence");
           }
         }
       });
@@ -239,9 +239,9 @@ describe("composition operators", () => {
           if (result.val.type === "Choice") {
             expect(result.val.alternatives).toHaveLength(2);
             // First alternative should be a sequence: ("a" / "b") "c"
-            expect(result.val.alternatives[0].type).toBe("Sequence");
+            expect(result.val.alternatives[0]?.type).toBe("Sequence");
             // Second alternative should be a sequence: "d" ("e" / "f")
-            expect(result.val.alternatives[1].type).toBe("Sequence");
+            expect(result.val.alternatives[1]?.type).toBe("Sequence");
           }
         }
       });

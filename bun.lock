@@ -23,6 +23,21 @@
         "@types/unist": "^3.0.3",
       },
     },
+    "packages/cli": {
+      "name": "@suzumiyaaoba/tpeg-cli",
+      "version": "0.1.0",
+      "bin": {
+        "tpeg": "./dist/cli.js",
+      },
+      "dependencies": {
+        "@suzumiyaaoba/tpeg-core": "workspace:*",
+        "@suzumiyaaoba/tpeg-parser": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^7.0.2",
+      },
+    },
     "packages/combinator": {
       "name": "@suzumiyaaoba/tpeg-combinator",
       "version": "0.0.2",
@@ -116,6 +131,8 @@
 
     "@suzumiyaaoba/tpeg-ast": ["@suzumiyaaoba/tpeg-ast@workspace:packages/ast"],
 
+    "@suzumiyaaoba/tpeg-cli": ["@suzumiyaaoba/tpeg-cli@workspace:packages/cli"],
+
     "@suzumiyaaoba/tpeg-combinator": ["@suzumiyaaoba/tpeg-combinator@workspace:packages/combinator"],
 
     "@suzumiyaaoba/tpeg-core": ["@suzumiyaaoba/tpeg-core@workspace:packages/core"],
@@ -192,6 +209,8 @@
 
     "undici-types": ["undici-types@7.8.0", "", {}, "sha512-9UJ2xGDvQ43tYyVMpuHlsgApydB8ZKfVYTsLDhXkFL/6gfkp+U8xTGdh8pMJv1SpZna0zxG1DwsKZsreLbXBxw=="],
 
+    "@suzumiyaaoba/tpeg-cli/@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
+
     "@suzumiyaaoba/tpeg-core/@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 
     "@suzumiyaaoba/tpeg-generator/@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
@@ -199,6 +218,8 @@
     "@suzumiyaaoba/tpeg-parser/@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 
     "@suzumiyaaoba/tpeg-parser-sample/@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
+
+    "@suzumiyaaoba/tpeg-cli/@types/bun/bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
 
     "@suzumiyaaoba/tpeg-core/@types/bun/bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
 

@@ -19,12 +19,84 @@ import type {
   Optional,
   Plus,
   PositiveLookahead,
+  QualifiedIdentifier,
   Quantified,
   RuleDefinition,
   Sequence,
   Star,
   StringLiteral,
+  TransformFunction,
 } from "./types";
+
+/**
+ * Target language transform functions are matched against when a grammar
+ * carries multiple `transforms ... @language { ... }` blocks.
+ */
+const CODEGEN_TARGET_LANGUAGE = "typescript";
+
+/**
+ * Builds a rule-name -> TransformFunction lookup for the TypeScript-targeted
+ * transform set on a grammar. If more than one TypeScript transform set is
+ * present, the first one (in declaration order) wins.
+ */
+export const collectTransformFunctions = (
+  grammar: GrammarDefinition,
+): Map<string, TransformFunction> => {
+  const byName = new Map<string, TransformFunction>();
+  const transformSet = grammar.transforms?.find(
+    (t) => t.transformSet.targetLanguage === CODEGEN_TARGET_LANGUAGE,
+  )?.transformSet;
+
+  if (!transformSet) {
+    return byName;
+  }
+
+  for (const fn of transformSet.functions) {
+    byName.set(fn.name, fn);
+  }
+
+  return byName;
+};
+
+/**
+ * Wraps a rule's generated parser expression so that, on a successful parse,
+ * the matching TypeScript transform function's body runs against the parse
+ * result (the rule's capture structure) and its Result<T> return value
+ * becomes the parser's own success/failure outcome.
+ */
+export const wrapWithTransform = (
+  ruleName: string,
+  parserCode: string,
+  transformFn: TransformFunction,
+): string => {
+  const paramName = transformFn.parameters[0]?.name ?? "captures";
+  return `(input, pos) => {
+  const __base = (${parserCode});
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __transformed = ((${paramName}) => {
+${transformFn.body}
+  })(__result.val);
+  if (!__transformed.success) {
+    return {
+      success: false,
+      error: {
+        message: __transformed.error ?? "Transform failed",
+        pos: __result.current,
+        parserName: "${ruleName}",
+        expected: "successful transform",
+        found: JSON.stringify(__result.val),
+      },
+    };
+  }
+  return {
+    success: true,
+    val: __transformed.value,
+    current: __result.current,
+    next: __result.next,
+  };
+}`;
+};
 
 /**
  * Code generation options
@@ -96,9 +168,14 @@ export class TPEGCodeGenerator {
       }
     }
 
-    // Generate parser for each rule
+    // Generate parser for each rule, applying a matching TypeScript
+    // transform function (if the grammar declares one) to the rule's result
+    const transformsByRuleName = collectTransformFunctions(grammar);
     for (const rule of grammar.rules) {
-      const ruleCode = this.generateRule(rule);
+      const ruleCode = this.generateRule(
+        rule,
+        transformsByRuleName.get(rule.name),
+      );
       parts.push(ruleCode);
       exports.push(rule.name);
     }
@@ -122,8 +199,14 @@ export class TPEGCodeGenerator {
   /**
    * Generate code for a single rule definition
    */
-  private generateRule(rule: RuleDefinition): string {
-    const parserCode = this.generateExpression(rule.pattern);
+  private generateRule(
+    rule: RuleDefinition,
+    transformFn?: TransformFunction,
+  ): string {
+    let parserCode = this.generateExpression(rule.pattern);
+    if (transformFn) {
+      parserCode = wrapWithTransform(rule.name, parserCode, transformFn);
+    }
     const name = this.options.namePrefix + rule.name;
 
     if (this.options.includeTypes) {
@@ -143,6 +226,8 @@ export class TPEGCodeGenerator {
         return this.generateCharacterClass(expr as CharacterClass);
       case "Identifier":
         return this.generateIdentifier(expr as Identifier);
+      case "QualifiedIdentifier":
+        return this.generateQualifiedIdentifier(expr as QualifiedIdentifier);
       case "AnyChar":
         return this.generateAnyChar(expr as AnyChar);
       case "Sequence":
@@ -200,6 +285,13 @@ export class TPEGCodeGenerator {
     }
     // External reference - might need special handling
     return `${expr.name}`;
+  }
+
+  private generateQualifiedIdentifier(expr: QualifiedIdentifier): string {
+    // References a rule exported from another module, e.g. `math.expr`.
+    // The generated code assumes the module is imported as a namespace
+    // object under its alias (see namespace-manager.ts's import resolution).
+    return `${expr.module}.${expr.name}`;
   }
 
   private generateAnyChar(_expr: AnyChar): string {

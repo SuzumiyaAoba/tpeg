@@ -13,6 +13,7 @@ import type {
   CharacterClass,
   Choice,
   Expression,
+  GrammarAnnotation,
   GrammarDefinition,
   Identifier,
   LabeledExpression,
@@ -20,6 +21,7 @@ import type {
   Optional,
   Plus,
   PositiveLookahead,
+  QualifiedIdentifier,
   Quantified,
   RuleDefinition,
   Sequence,
@@ -30,14 +32,16 @@ import type {
 // Simple test helper functions
 function createGrammarDefinition(
   name: string,
-  annotations: unknown[],
+  annotations: GrammarAnnotation[],
   rules: RuleDefinition[],
+  transforms?: GrammarDefinition["transforms"],
 ): GrammarDefinition {
   return {
     type: "GrammarDefinition",
     name,
     annotations,
     rules,
+    ...(transforms !== undefined ? { transforms } : {}),
   };
 }
 
@@ -52,10 +56,14 @@ function createRuleDefinition(
   };
 }
 
-function createStringLiteral(value: string): StringLiteral {
+function createStringLiteral(
+  value: string,
+  quote: '"' | "'" = '"',
+): StringLiteral {
   return {
     type: "StringLiteral",
     value,
+    quote,
   };
 }
 
@@ -102,6 +110,17 @@ function createPlus(expression: Expression): Plus {
   };
 }
 
+function createLabeledExpression(
+  label: string,
+  expression: Expression,
+): LabeledExpression {
+  return {
+    type: "LabeledExpression",
+    label,
+    expression,
+  };
+}
+
 function createOptional(expression: Expression): Optional {
   return {
     type: "Optional",
@@ -118,13 +137,24 @@ function createQuantified(
     type: "Quantified",
     expression,
     min,
-    max,
+    ...(max !== undefined ? { max } : {}),
   };
 }
 
 function createIdentifier(name: string): Identifier {
   return {
     type: "Identifier",
+    name,
+  };
+}
+
+function createQualifiedIdentifier(
+  module: string,
+  name: string,
+): QualifiedIdentifier {
+  return {
+    type: "QualifiedIdentifier",
+    module,
     name,
   };
 }
@@ -278,6 +308,97 @@ describe("EtaTPEGCodeGenerator", () => {
         "test_world",
         "test_greeting",
       ]);
+    });
+
+    it("should generate a namespaced reference for a qualified (cross-module) identifier", async () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "main",
+            createQualifiedIdentifier("math", "expr"),
+          ),
+        ],
+      );
+
+      const result = await generateEtaTypeScriptParser(grammar, {
+        includeTypes: true,
+      });
+
+      expect(result.code).toContain(
+        "export const main: Parser<any> = math.expr;",
+      );
+    });
+  });
+
+  describe("transform integration", () => {
+    it("applies a matching TypeScript transform function to a rule's parse result", async () => {
+      const core = await import("@suzumiyaaoba/tpeg-core");
+
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "number",
+            createLabeledExpression(
+              "digits",
+              createPlus(
+                createCharacterClass([createCharRange("0", "9")], false),
+              ),
+            ),
+          ),
+        ],
+        [
+          {
+            type: "TransformDefinition",
+            transformSet: {
+              name: "Evaluator",
+              targetLanguage: "typescript",
+              functions: [
+                {
+                  name: "number",
+                  parameters: [
+                    { name: "captures", type: "{ digits: string[] }" },
+                  ],
+                  returnType: { type: "Result", generic: "number" },
+                  body: `
+    const value = parseInt(captures.digits.join(""), 10);
+    if (isNaN(value)) {
+      return { success: false, error: "Invalid number format" };
+    }
+    return { success: true, value };
+  `,
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      const result = await generateEtaTypeScriptParser(grammar, {
+        includeImports: false,
+      });
+
+      const body = result.code.replace(
+        /^export const (\w+): Parser<[^>]*>/gm,
+        "const $1",
+      );
+      const moduleFactory = new Function(
+        ...Object.keys(core),
+        `${body}\nreturn { number };`,
+      );
+      const { number } = moduleFactory(...Object.values(core));
+
+      const pos = { offset: 0, column: 0, line: 1 };
+      expect(number("123abc", pos)).toEqual({
+        success: true,
+        val: 123,
+        current: { offset: 0, column: 0, line: 1 },
+        next: { offset: 3, column: 3, line: 1 },
+      });
+      expect(number("abc", pos).success).toBe(false);
     });
   });
 

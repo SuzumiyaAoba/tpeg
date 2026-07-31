@@ -105,9 +105,9 @@ describe("Label Advanced Tests", () => {
         expect(choice.alternatives).toHaveLength(3);
 
         // All alternatives should be labeled
-        expect(choice.alternatives[0].type).toBe("LabeledExpression");
-        expect(choice.alternatives[1].type).toBe("LabeledExpression");
-        expect(choice.alternatives[2].type).toBe("LabeledExpression");
+        expect(choice.alternatives[0]?.type).toBe("LabeledExpression");
+        expect(choice.alternatives[1]?.type).toBe("LabeledExpression");
+        expect(choice.alternatives[2]?.type).toBe("LabeledExpression");
       }
     });
   });
@@ -157,7 +157,9 @@ describe("Label Advanced Tests", () => {
         sequence.elements.forEach((element, index) => {
           expect(element.type).toBe("LabeledExpression");
           const labeled = element as LabeledExpression;
-          expect(labeled.label).toBe(["first", "second", "third"][index]);
+          expect(labeled.label).toBe(
+            ["first", "second", "third"][index] as string,
+          );
         });
       }
     });
@@ -249,7 +251,7 @@ describe("Label Advanced Tests", () => {
           if (index < expectedLabels.length - 1) {
             expect(current.expression.type).toBe("Group");
             const group = current.expression as Group;
-            current = group.expression;
+            current = group.expression as LabeledExpression;
           } else {
             expect(current.expression.type).toBe("StringLiteral");
           }
@@ -304,7 +306,7 @@ describe("Label Advanced Tests", () => {
         { input: 'exact:"a"{3}', operatorType: "Quantified" },
         { input: 'range:"a"{2,5}', operatorType: "Quantified" },
         { input: 'minimum:"a"{3,}', operatorType: "Quantified" },
-      ];
+      ] as const;
 
       for (const { input, operatorType } of testCases) {
         const result = parser(input, createPosition());
@@ -323,7 +325,7 @@ describe("Label Advanced Tests", () => {
       const testCases = [
         { input: 'positive:&"test"', operatorType: "PositiveLookahead" },
         { input: 'negative:!"test"', operatorType: "NegativeLookahead" },
-      ];
+      ] as const;
 
       for (const { input, operatorType } of testCases) {
         const result = parser(input, createPosition());
@@ -343,7 +345,7 @@ describe("Label Advanced Tests", () => {
         { input: 'str:"hello"', syntaxType: "StringLiteral" },
         { input: "chars:[a-z]", syntaxType: "CharacterClass" },
         { input: "ref:identifier", syntaxType: "Identifier" },
-      ];
+      ] as const;
 
       for (const { input, syntaxType } of testCases) {
         const result = parser(input, createPosition());

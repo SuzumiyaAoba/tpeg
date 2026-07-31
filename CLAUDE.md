@@ -14,6 +14,7 @@ TPEG is a TypeScript library for building parsers using Parsing Expression Gramm
 - **tpeg-generator**: Code generation system with template-based output using Eta templates
 - **tpeg-parser-sample**: Runnable demos of the grammar parser and generator
 - **tpeg-samples**: Legacy example parsers (JSON, CSV, arithmetic, PEG grammar), built directly on tpeg-core/tpeg-combinator
+- **tpeg-cli**: `tpeg` command-line tool that generates a standalone TypeScript parser from a `.tpeg` grammar file, built on tpeg-core + tpeg-parser
 
 For exact current counts (packages, files, tests), don't trust prose — run the commands in this file (`find packages -name "*.spec.ts" | wc -l`, `bun test`, etc.); they drift with every commit and this file doesn't get updated in lockstep.
 
@@ -33,6 +34,7 @@ bun run build:generator
 bun run build:type-inference
 bun run build:parser-sample
 bun run build:samples
+bun run build:cli
 ```
 
 Cross-package type resolution (e.g. `tpeg-combinator` importing types from `tpeg-core`) depends on each dependency's `dist/` existing — a package's `dist/index.d.ts` is what `tsc` resolves against for a workspace dependency. If you `bun run typecheck` on a package whose dependencies haven't been built yet, `tsc` can fall back to that dependency's raw `src/`, checked under *your* package's compiler options instead of its own (this is why CI runs `build` before `typecheck`).
@@ -62,7 +64,7 @@ bun run check     # biome check (lint + format + import order); this is the CI g
 bun run fix       # biome check --fix --unsafe
 bun run format    # biome format --write
 
-# Type checking (all 8 packages with a package.json)
+# Type checking (all 9 packages with a package.json)
 bun run typecheck
 ```
 
@@ -106,7 +108,8 @@ tpeg-core (no workspace dependencies)
     ├── tpeg-generator (depends on tpeg-core, eta templates)
     ├── tpeg-type-inference (depends on tpeg-core)
     └── tpeg-parser (depends on tpeg-core, tpeg-combinator)
-        └── tpeg-parser-sample (depends on tpeg-core, tpeg-parser)
+        ├── tpeg-parser-sample (depends on tpeg-core, tpeg-parser)
+        └── tpeg-cli (depends on tpeg-core, tpeg-parser)
 ```
 
 ### Architecture Notes

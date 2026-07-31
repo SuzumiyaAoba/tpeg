@@ -58,7 +58,7 @@ describe("VersionManager", () => {
     filePath,
     imports,
     grammars,
-    moduleInfo,
+    ...(moduleInfo !== undefined ? { moduleInfo } : {}),
   });
 
   describe("parseVersion", () => {
@@ -322,18 +322,30 @@ describe("VersionManager", () => {
 
       const testVersion = { major: 1, minor: 2, patch: 4 };
 
-      expect(manager.satisfiesConstraint(testVersion, constraints[0])).toBe(
-        true,
-      ); // >=
-      expect(manager.satisfiesConstraint(testVersion, constraints[1])).toBe(
-        false,
-      ); // <=
-      expect(manager.satisfiesConstraint(testVersion, constraints[2])).toBe(
-        true,
-      ); // >
-      expect(manager.satisfiesConstraint(testVersion, constraints[3])).toBe(
-        false,
-      ); // <
+      expect(
+        manager.satisfiesConstraint(
+          testVersion,
+          constraints[0] as VersionConstraint,
+        ),
+      ).toBe(true); // >=
+      expect(
+        manager.satisfiesConstraint(
+          testVersion,
+          constraints[1] as VersionConstraint,
+        ),
+      ).toBe(false); // <=
+      expect(
+        manager.satisfiesConstraint(
+          testVersion,
+          constraints[2] as VersionConstraint,
+        ),
+      ).toBe(true); // >
+      expect(
+        manager.satisfiesConstraint(
+          testVersion,
+          constraints[3] as VersionConstraint,
+        ),
+      ).toBe(false); // <
     });
 
     it("should handle wildcard constraint", () => {
