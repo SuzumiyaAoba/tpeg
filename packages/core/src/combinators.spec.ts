@@ -2,13 +2,14 @@ import { describe, expect, it } from "bun:test";
 import { lit } from "./basic";
 import {
   choice,
+  lazy,
   maybe,
   reject,
   seq,
   sequence,
   withDefault,
 } from "./combinators";
-import type { Pos } from "./types";
+import type { Parser, Pos } from "./types";
 import { createFailure } from "./utils";
 
 describe("seq", () => {
@@ -202,5 +203,38 @@ describe("reject", () => {
     const pos: Pos = { offset: 0, column: 0, line: 1 };
     const result = reject(lit("a"))(input, pos);
     expect(result.success).toBe(false);
+  });
+});
+
+describe("lazy", () => {
+  it("delegates to the parser returned by the thunk", () => {
+    const input = "a";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = lazy(() => lit("a"))(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("a");
+    }
+  });
+
+  it("defers reading a not-yet-initialized const, breaking the TDZ that a plain reference hits", () => {
+    // Mirrors the shape generated code produces for mutually recursive
+    // rules: `a` refers to `b`, which is declared below it. A direct
+    // reference (`b` instead of `lazy(() => b)`) would throw
+    // "Cannot access 'b' before initialization" as soon as `a`'s
+    // initializer ran.
+    const a: Parser<unknown> = sequence(
+      lit("("),
+      lazy(() => b),
+      lit(")"),
+    );
+    const b: Parser<unknown> = choice(a, lit("x"));
+
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = a("(((x)))", pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.next.offset).toBe(7);
+    }
   });
 });

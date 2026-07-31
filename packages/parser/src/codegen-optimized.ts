@@ -104,6 +104,10 @@ class CodeTemplateCache {
 export class OptimizedTPEGCodeGenerator {
   private options: Required<OptimizedCodeGenOptions>;
   private ruleNames: Set<string> = new Set();
+  /** Rule name -> declaration index, used to detect forward/self/mutual references. */
+  private ruleIndex: Map<string, number> = new Map();
+  /** Declaration index of the rule currently being generated. */
+  private currentRuleIndex = -1;
   private templateCache = new CodeTemplateCache();
 
   constructor(options: OptimizedCodeGenOptions = { language: "typescript" }) {
@@ -127,12 +131,22 @@ export class OptimizedTPEGCodeGenerator {
     // Reset per-instance state so a reused generator doesn't leak rule
     // names or cached expression templates from a previous grammar.
     this.ruleNames.clear();
+    this.ruleIndex.clear();
     this.templateCache.clear();
 
     const performanceAnalysis = analyzeGrammarPerformance(grammar);
     const imports: string[] = [];
     const exports: string[] = [];
     const parts: string[] = [];
+
+    // Collect all rule names and their declaration order first for
+    // reference resolution (see generateIdentifier) - generateOptimizedImports
+    // below needs ruleIndex populated to know whether a "lazy" import is
+    // required.
+    grammar.rules.forEach((rule, index) => {
+      this.ruleNames.add(stringInterner.intern(rule.name));
+      this.ruleIndex.set(rule.name, index);
+    });
 
     // Add optimized imports based on usage analysis
     if (this.options.includeImports) {
@@ -141,15 +155,11 @@ export class OptimizedTPEGCodeGenerator {
       );
     }
 
-    // Collect all rule names first for reference resolution
-    for (const rule of grammar.rules) {
-      this.ruleNames.add(stringInterner.intern(rule.name));
-    }
-
     // Generate parser for each rule with optimization, applying a matching
     // TypeScript transform function (if the grammar declares one)
     const transformsByRuleName = collectTransformFunctions(grammar);
-    for (const rule of grammar.rules) {
+    grammar.rules.forEach((rule, index) => {
+      this.currentRuleIndex = index;
       const ruleCode = this.generateOptimizedRule(
         rule,
         performanceAnalysis,
@@ -157,7 +167,7 @@ export class OptimizedTPEGCodeGenerator {
       );
       parts.push(ruleCode);
       exports.push(stringInterner.intern(rule.name));
-    }
+    });
 
     // Add performance monitoring if enabled
     if (this.options.includeMonitoring) {
@@ -202,9 +212,9 @@ export class OptimizedTPEGCodeGenerator {
     // Analyze which combinators are actually needed
     const usedCombinators = new Set<string>();
 
-    for (const rule of grammar.rules) {
-      this.collectUsedCombinators(rule.pattern, usedCombinators);
-    }
+    grammar.rules.forEach((rule, index) => {
+      this.collectUsedCombinators(rule.pattern, usedCombinators, index);
+    });
 
     // Add performance imports if needed. memoize lives in tpeg-combinator,
     // not tpeg-core, so it must not also be folded into the tpeg-core
@@ -231,6 +241,7 @@ export class OptimizedTPEGCodeGenerator {
   private collectUsedCombinators(
     expr: Expression,
     combinators: Set<string>,
+    currentRuleIndex: number,
   ): void {
     switch (expr.type) {
       case "StringLiteral":
@@ -242,44 +253,86 @@ export class OptimizedTPEGCodeGenerator {
       case "AnyChar":
         combinators.add("anyChar");
         break;
+      case "Identifier": {
+        // Mirrors generateIdentifier's decision: a forward/self/mutual
+        // reference is generated as `lazy(() => name)`, which needs the
+        // import.
+        const targetIndex = this.ruleIndex.get(expr.name);
+        if (targetIndex !== undefined && targetIndex >= currentRuleIndex) {
+          combinators.add("lazy");
+        }
+        break;
+      }
       case "Sequence":
         combinators.add("sequence");
         for (const element of expr.elements) {
-          this.collectUsedCombinators(element, combinators);
+          this.collectUsedCombinators(element, combinators, currentRuleIndex);
         }
         break;
       case "Choice":
         combinators.add("choice");
         for (const alternative of expr.alternatives) {
-          this.collectUsedCombinators(alternative, combinators);
+          this.collectUsedCombinators(
+            alternative,
+            combinators,
+            currentRuleIndex,
+          );
         }
         break;
       case "Star":
         combinators.add("zeroOrMore");
-        this.collectUsedCombinators(expr.expression, combinators);
+        this.collectUsedCombinators(
+          expr.expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "Plus":
         combinators.add("oneOrMore");
-        this.collectUsedCombinators(expr.expression, combinators);
+        this.collectUsedCombinators(
+          expr.expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "Optional":
         combinators.add("optional");
-        this.collectUsedCombinators(expr.expression, combinators);
+        this.collectUsedCombinators(
+          expr.expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "PositiveLookahead":
         combinators.add("andPredicate");
-        this.collectUsedCombinators(expr.expression, combinators);
+        this.collectUsedCombinators(
+          expr.expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "NegativeLookahead":
         combinators.add("notPredicate");
-        this.collectUsedCombinators(expr.expression, combinators);
+        this.collectUsedCombinators(
+          expr.expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "Group":
-        this.collectUsedCombinators(expr.expression, combinators);
+        this.collectUsedCombinators(
+          expr.expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "LabeledExpression":
         combinators.add("capture");
-        this.collectUsedCombinators(expr.expression, combinators);
+        this.collectUsedCombinators(
+          expr.expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "Quantified":
         // Add the quantified combinator for quantified expressions
@@ -289,7 +342,11 @@ export class OptimizedTPEGCodeGenerator {
         combinators.add("oneOrMore");
         combinators.add("optional");
         combinators.add("choice");
-        this.collectUsedCombinators(expr.expression, combinators);
+        this.collectUsedCombinators(
+          expr.expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
     }
   }
@@ -324,8 +381,12 @@ export class OptimizedTPEGCodeGenerator {
    * Generate optimized code for any expression type with caching
    */
   private generateOptimizedExpression(expr: Expression): string {
-    // Use object identity for caching when possible
-    const cacheKey = `expr-${expr.type}-${JSON.stringify(expr)}`;
+    // Use object identity for caching when possible. Identifier codegen
+    // depends on this.currentRuleIndex (whether the reference needs a
+    // `lazy` wrapper), so it must be part of the key - otherwise the same
+    // rule name referenced from two different rules could reuse a cached
+    // decision that was only correct for the first one.
+    const cacheKey = `expr-${expr.type}-${this.currentRuleIndex}-${JSON.stringify(expr)}`;
 
     return this.templateCache.get(cacheKey, () => {
       switch (expr.type) {
@@ -389,7 +450,18 @@ export class OptimizedTPEGCodeGenerator {
   private generateIdentifier(expr: Identifier): string {
     const name = stringInterner.intern(expr.name);
     if (this.ruleNames.has(name)) {
-      return stringInterner.intern(this.options.namePrefix + name);
+      const prefixedName = stringInterner.intern(
+        this.options.namePrefix + name,
+      );
+      // A reference to a rule declared at or after the current one would
+      // read that `const` before its initializer has run (forward
+      // reference, self-recursion, or mutual recursion) - defer the lookup
+      // with `lazy` so it only resolves once every rule has been declared.
+      const targetIndex = this.ruleIndex.get(name);
+      if (targetIndex !== undefined && targetIndex >= this.currentRuleIndex) {
+        return `lazy(() => ${prefixedName})`;
+      }
+      return prefixedName;
     }
     return name;
   }

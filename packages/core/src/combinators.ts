@@ -313,3 +313,31 @@ export const reject =
       next: pos,
     };
   };
+
+/**
+ * Parser that defers resolving its underlying parser until first invoked.
+ *
+ * A rule defined as `const a = sequence(literal("("), b, literal(")"))`
+ * throws a `ReferenceError` (temporal dead zone) as soon as `b` is a `const`
+ * declared later in the same module - the common shape for generated,
+ * mutually- or self-recursive grammar rules. Wrapping the reference in
+ * `lazy(() => b)` defers reading `b` until the wrapped parser actually runs,
+ * by which point every top-level `const` in the module has finished
+ * initializing.
+ *
+ * @template T Type of the parser result
+ * @param fn Thunk returning the parser to delegate to, evaluated on every call
+ * @returns Parser that calls `fn()` and delegates to its result
+ *
+ * @example
+ * ```typescript
+ * // "a" and "b" reference each other; whichever is declared second would
+ * // otherwise throw a ReferenceError when the other's initializer runs.
+ * const a: Parser<unknown> = sequence(literal("("), lazy(() => b), literal(")"));
+ * const b: Parser<unknown> = choice(a, literal("x"));
+ * ```
+ */
+export const lazy =
+  <T>(fn: () => Parser<T>): Parser<T> =>
+  (input: string, pos) =>
+    fn()(input, pos);

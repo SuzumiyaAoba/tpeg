@@ -117,12 +117,57 @@ export const ESCAPE_CHARS = {
 } as const;
 
 /**
+ * Named escapes for control characters that can't appear literally inside a
+ * double-quoted TypeScript string. Grammar values commonly contain these
+ * (e.g. a whitespace character class `[ \t\n\r]` decodes to actual tab/
+ * newline/CR bytes, not the two-character `\t` etc. sequences), so
+ * `escapeStringLiteral` must re-escape them, not just backslash/quote.
+ */
+const NAMED_CONTROL_CHAR_ESCAPES: Record<string, string> = {
+  "\n": ESCAPE_CHARS.ESCAPED_NEWLINE,
+  "\r": ESCAPE_CHARS.ESCAPED_CARRIAGE_RETURN,
+  "\t": ESCAPE_CHARS.ESCAPED_TAB,
+  "\b": "\\b",
+  "\f": "\\f",
+  "\v": "\\v",
+  "\0": "\\0",
+};
+
+/**
  * Escapes a string literal's value for embedding in generated TypeScript
  * source (as the argument to `literal("...")`). Shared by the base and
  * optimized code generators.
+ *
+ * Beyond backslash/double-quote, this also re-escapes control characters
+ * (newline, tab, CR, and other non-printable bytes) - without it, a value
+ * containing an actual newline byte would emit as a raw newline inside a
+ * `"..."` literal, which is invalid TypeScript (unterminated string).
  */
-export const escapeStringLiteral = (value: string): string =>
-  value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+export const escapeStringLiteral = (value: string): string => {
+  let result = "";
+  for (const char of value) {
+    if (char === ESCAPE_CHARS.BACKSLASH) {
+      result += ESCAPE_CHARS.ESCAPED_BACKSLASH;
+      continue;
+    }
+    if (char === QUOTE_CHARS.DOUBLE) {
+      result += ESCAPE_CHARS.ESCAPED_QUOTE;
+      continue;
+    }
+    const named = NAMED_CONTROL_CHAR_ESCAPES[char];
+    if (named) {
+      result += named;
+      continue;
+    }
+    const code = char.codePointAt(0) ?? 0;
+    if (code < 0x20 || code === 0x7f) {
+      result += `\\x${code.toString(16).padStart(2, "0")}`;
+      continue;
+    }
+    result += char;
+  }
+  return result;
+};
 
 /**
  * Grammar keywords

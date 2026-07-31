@@ -565,4 +565,101 @@ describe("TPEG Code Generation", () => {
       );
     });
   });
+
+  describe("recursive rule references", () => {
+    test("wraps a forward/mutual reference in lazy() and imports lazy", () => {
+      // a = "(" b ")"
+      // b = a / "x"
+      // `b` is declared after `a`, so a plain `b` reference in `a`'s
+      // initializer would throw "Cannot access 'b' before initialization".
+      const grammar = createGrammarDefinition(
+        "Rec",
+        [],
+        [
+          createRuleDefinition(
+            "a",
+            createSequence([
+              createStringLiteral("("),
+              createIdentifier("b"),
+              createStringLiteral(")"),
+            ]),
+          ),
+          createRuleDefinition(
+            "b",
+            createChoice([createIdentifier("a"), createStringLiteral("x")]),
+          ),
+        ],
+        [],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      const result = generator.generateGrammar(grammar);
+
+      expect(result.code).toContain(
+        'export const a: Parser<any> = sequence(literal("("), lazy(() => b), literal(")"));',
+      );
+      expect(result.code).toContain(
+        'export const b: Parser<any> = choice(a, literal("x"));',
+      );
+      expect(result.imports.join("\n")).toContain("lazy");
+    });
+
+    test("does not wrap a reference to an already-declared earlier rule", () => {
+      // number = [0-9]+
+      // term = number
+      // `number` is declared before `term` refers to it, so the reference
+      // is safe as a plain identifier - no lazy() indirection needed.
+      const grammar = createGrammarDefinition(
+        "NonRec",
+        [],
+        [
+          createRuleDefinition(
+            "number",
+            createCharacterClass([createCharRange("0", "9")], false),
+          ),
+          createRuleDefinition("term", createIdentifier("number")),
+        ],
+        [],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      const result = generator.generateGrammar(grammar);
+
+      expect(result.code).toContain("export const term: Parser<any> = number;");
+      expect(result.imports.join("\n")).not.toContain("lazy");
+    });
+  });
+
+  describe("control characters in character classes", () => {
+    test("escapes tab/newline/carriage-return instead of embedding raw bytes", () => {
+      const grammar = createGrammarDefinition(
+        "Whitespace",
+        [],
+        [
+          createRuleDefinition(
+            "ws",
+            createCharacterClass(
+              [
+                createCharRange(" "),
+                createCharRange("\t"),
+                createCharRange("\n"),
+                createCharRange("\r"),
+              ],
+              false,
+            ),
+          ),
+        ],
+        [],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      const result = generator.generateGrammar(grammar);
+
+      // A raw control byte here would make this generated source invalid
+      // TypeScript (an unterminated string literal).
+      expect(result.code).toContain(
+        'export const ws: Parser<any> = charClass(" ", "\\t", "\\n", "\\r");',
+      );
+    });
+  });
 });

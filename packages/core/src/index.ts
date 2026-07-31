@@ -27,6 +27,7 @@ import { capture, captureChoice, captureSequence } from "./capture";
 import { charClass } from "./char-class";
 import {
   choice,
+  lazy,
   maybe,
   reject,
   seq,
@@ -72,6 +73,7 @@ export const parsers = {
   maybe,
   withDefault,
   reject,
+  lazy,
 
   // Repetition parsers
   zeroOrMore,
@@ -144,4 +146,5 @@ export const combinators = {
   maybe,
   withDefault,
   reject,
+  lazy,
 } as const;

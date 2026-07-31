@@ -35,6 +35,9 @@ task*-runner-results.json
 .cache
 *.tsbuildinfo
 
+# generated fixtures written by self-hosting.spec.ts at test time
+packages/parser-sample/.generated
+
 # IntelliJ based IDEs
 .idea
 

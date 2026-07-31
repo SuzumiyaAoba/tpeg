@@ -130,6 +130,10 @@ export interface GeneratedCode {
 export class TPEGCodeGenerator {
   private options: Required<CodeGenOptions>;
   private ruleNames: Set<string> = new Set();
+  /** Rule name -> declaration index, used to detect forward/self/mutual references. */
+  private ruleIndex: Map<string, number> = new Map();
+  /** Declaration index of the rule currently being generated. */
+  private currentRuleIndex = -1;
 
   constructor(options: CodeGenOptions = { language: "typescript" }) {
     this.options = {
@@ -151,11 +155,17 @@ export class TPEGCodeGenerator {
     // Collect used combinators
     const usedCombinators = new Set<string>();
 
-    // Collect all rule names first
-    for (const rule of grammar.rules) {
+    // Collect all rule names and their declaration order first, since a
+    // reference to a rule needs to know both (whether it's a rule at all,
+    // and whether generating it as a plain identifier would read a `const`
+    // that hasn't been initialized yet - see generateIdentifier).
+    grammar.rules.forEach((rule, index) => {
       this.ruleNames.add(rule.name);
-      this.collectUsedCombinators(rule.pattern, usedCombinators);
-    }
+      this.ruleIndex.set(rule.name, index);
+    });
+    grammar.rules.forEach((rule, index) => {
+      this.collectUsedCombinators(rule.pattern, usedCombinators, index);
+    });
 
     // Add imports based on what's actually used
     if (this.options.includeImports) {
@@ -171,14 +181,15 @@ export class TPEGCodeGenerator {
     // Generate parser for each rule, applying a matching TypeScript
     // transform function (if the grammar declares one) to the rule's result
     const transformsByRuleName = collectTransformFunctions(grammar);
-    for (const rule of grammar.rules) {
+    grammar.rules.forEach((rule, index) => {
+      this.currentRuleIndex = index;
       const ruleCode = this.generateRule(
         rule,
         transformsByRuleName.get(rule.name),
       );
       parts.push(ruleCode);
       exports.push(rule.name);
-    }
+    });
 
     // Combine all parts
     let code = "";
@@ -281,7 +292,16 @@ export class TPEGCodeGenerator {
   private generateIdentifier(expr: Identifier): string {
     // For rule references, we need to handle potential recursion
     if (this.ruleNames.has(expr.name)) {
-      return `${this.options.namePrefix}${expr.name}`;
+      const name = `${this.options.namePrefix}${expr.name}`;
+      // A reference to a rule declared at or after the current one would
+      // read that `const` before its initializer has run (forward
+      // reference, self-recursion, or mutual recursion) - defer the lookup
+      // with `lazy` so it only resolves once every rule has been declared.
+      const targetIndex = this.ruleIndex.get(expr.name);
+      if (targetIndex !== undefined && targetIndex >= this.currentRuleIndex) {
+        return `lazy(() => ${name})`;
+      }
+      return name;
     }
     // External reference - might need special handling
     return `${expr.name}`;
@@ -390,6 +410,7 @@ export class TPEGCodeGenerator {
   private collectUsedCombinators(
     expr: Expression,
     combinators: Set<string>,
+    currentRuleIndex: number,
   ): void {
     switch (expr.type) {
       case "StringLiteral":
@@ -401,44 +422,86 @@ export class TPEGCodeGenerator {
       case "AnyChar":
         combinators.add("anyChar");
         break;
+      case "Identifier": {
+        // Mirrors generateIdentifier's decision: a forward/self/mutual
+        // reference is generated as `lazy(() => name)`, which needs the
+        // import.
+        const targetIndex = this.ruleIndex.get(expr.name);
+        if (targetIndex !== undefined && targetIndex >= currentRuleIndex) {
+          combinators.add("lazy");
+        }
+        break;
+      }
       case "Sequence":
         combinators.add("sequence");
         for (const element of expr.elements) {
-          this.collectUsedCombinators(element, combinators);
+          this.collectUsedCombinators(element, combinators, currentRuleIndex);
         }
         break;
       case "Choice":
         combinators.add("choice");
         for (const alternative of expr.alternatives) {
-          this.collectUsedCombinators(alternative, combinators);
+          this.collectUsedCombinators(
+            alternative,
+            combinators,
+            currentRuleIndex,
+          );
         }
         break;
       case "Star":
         combinators.add("zeroOrMore");
-        this.collectUsedCombinators(expr.expression, combinators);
+        this.collectUsedCombinators(
+          expr.expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "Plus":
         combinators.add("oneOrMore");
-        this.collectUsedCombinators(expr.expression, combinators);
+        this.collectUsedCombinators(
+          expr.expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "Optional":
         combinators.add("optional");
-        this.collectUsedCombinators(expr.expression, combinators);
+        this.collectUsedCombinators(
+          expr.expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "PositiveLookahead":
         combinators.add("andPredicate");
-        this.collectUsedCombinators(expr.expression, combinators);
+        this.collectUsedCombinators(
+          expr.expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "NegativeLookahead":
         combinators.add("notPredicate");
-        this.collectUsedCombinators(expr.expression, combinators);
+        this.collectUsedCombinators(
+          expr.expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "Group":
-        this.collectUsedCombinators(expr.expression, combinators);
+        this.collectUsedCombinators(
+          expr.expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "LabeledExpression":
         combinators.add("capture");
-        this.collectUsedCombinators(expr.expression, combinators);
+        this.collectUsedCombinators(
+          expr.expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "Quantified": {
         const quantified = expr as Quantified;
@@ -456,7 +519,11 @@ export class TPEGCodeGenerator {
             combinators.add("quantified");
           }
         }
-        this.collectUsedCombinators(quantified.expression, combinators);
+        this.collectUsedCombinators(
+          quantified.expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       }
     }
