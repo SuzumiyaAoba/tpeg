@@ -15,10 +15,40 @@
 import { resolve as resolvePath } from "node:path";
 import type {
   ImportStatement,
+  ModularGrammarDefinition,
   ModuleFile,
   QualifiedIdentifier,
 } from "@suzumiyaaoba/tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
+import {
+  map,
+  parse,
+  seq as sequence,
+  star as zeroOrMore,
+} from "@suzumiyaaoba/tpeg-core";
+import { modularGrammarDefinition } from "./grammar";
 import { importStatement } from "./module";
+import { optionalWhitespace } from "./whitespace-utils";
+
+/**
+ * Parses a module file's full text: zero or more import statements followed
+ * by a single "grammar Name { ... }" block. This is a best-effort parse -
+ * syntax the grammar-block parser doesn't support yet (e.g. `extends`,
+ * unquoted annotation values, qualified identifiers inside rule bodies) makes
+ * the grammar half fail, in which case callers fall back to imports-only.
+ */
+const moduleFileContent: Parser<{
+  imports: ImportStatement[];
+  grammar: ModularGrammarDefinition;
+}> = map(
+  sequence(
+    zeroOrMore(
+      map(sequence(optionalWhitespace, importStatement), ([, stmt]) => stmt),
+    ),
+    modularGrammarDefinition,
+  ),
+  ([imports, grammar]) => ({ imports, grammar }),
+);
 
 // ============================================================================
 // Types
@@ -279,18 +309,33 @@ export class ModuleResolver {
       // Read file content
       const content = await this.context.fileSystem.readFile(filePath);
 
-      // Parse the module content
-      // Note: This is a simplified parser - in practice, we'd need a full TPEG file parser
-      const moduleFile: ModuleFile = {
-        type: "ModuleFile",
-        filePath,
-        imports: [],
-        grammars: [],
-      };
-
-      // Extract imports from the content
-      const imports = this.parseImports(content);
-      moduleFile.imports = imports;
+      // Parse imports + the grammar block together, so the resolved module's
+      // rules and @export declarations are actually available (e.g. to
+      // NamespaceManager.registerModule). Grammar syntax not yet supported by
+      // modularGrammarDefinition (extends, unquoted annotation values,
+      // qualified identifiers in rule bodies) falls back to imports-only, so
+      // dependency resolution still works even when the grammar half can't
+      // be parsed.
+      const fullParse = parse(moduleFileContent)(content);
+      const moduleFile: ModuleFile = fullParse.success
+        ? {
+            type: "ModuleFile",
+            filePath,
+            imports: fullParse.val.imports,
+            grammars: [fullParse.val.grammar],
+            // NamespaceManager and VersionManager both read moduleInfo off
+            // the ModuleFile, not off the grammar block, so it has to be
+            // lifted here for @version to actually reach them.
+            ...(fullParse.val.grammar.moduleInfo
+              ? { moduleInfo: fullParse.val.grammar.moduleInfo }
+              : {}),
+          }
+        : {
+            type: "ModuleFile",
+            filePath,
+            imports: this.parseImports(content),
+            grammars: [],
+          };
 
       return moduleFile;
     } catch (error) {

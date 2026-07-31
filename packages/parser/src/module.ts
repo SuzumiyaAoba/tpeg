@@ -9,8 +9,12 @@
  * - Selective imports: import "module.tpeg" { rule1, rule2 }
  * - Versioned imports: import "module.tpeg" version "^1.0" as alias
  * - Export declarations: @export: [rule1, rule2]
- * - Module metadata: @namespace, @dependencies, @conflicts
  * - Qualified identifiers: module.rule
+ *
+ * Module-metadata annotations (@namespace, @dependencies, @conflicts) described
+ * in docs/peg-grammar.md are not parsed by this file yet; only @export and the
+ * generic @version/@description annotations (via grammar.ts's grammarAnnotation)
+ * are currently supported.
  */
 
 import type { Parser } from "@suzumiyaaoba/tpeg-core";

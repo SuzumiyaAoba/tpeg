@@ -8,17 +8,24 @@
  * - Comment handling (// and /// documentation)
  */
 
-import type { Parser } from "@suzumiyaaoba/tpeg-core";
+import type {
+  ExportDeclaration,
+  ModularGrammarDefinition,
+} from "@suzumiyaaoba/tpeg-core";
 import {
   choice,
+  createModularGrammarDefinition,
+  createModuleInfo,
   literal,
   map,
   seq as sequence,
   star as zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { expression } from "./composition";
 import { GRAMMAR_KEYWORDS, GRAMMAR_SYMBOLS } from "./constants";
 import { identifier } from "./identifier";
+import { exportDeclaration } from "./module";
 import { stringLiteral } from "./string-literal";
 import { transformDefinition } from "./transforms";
 import type {
@@ -237,15 +244,24 @@ export const ruleDefinition: Parser<RuleDefinition> = map(
  */
 type GrammarItemType =
   | { type: "annotation"; value: GrammarAnnotation }
+  | { type: "export"; value: ExportDeclaration }
   | { type: "rule"; value: RuleDefinition }
   | { type: "transform"; value: TransformDefinition }
   | { type: "comment"; value: string };
 
 /**
- * Parse grammar item (annotation, rule, transform, or comment)
- * Returns a tagged union for easier processing in the main grammar parser
+ * Parse grammar item (export declaration, annotation, rule, transform, or comment)
+ * Returns a tagged union for easier processing in the main grammar parser.
+ *
+ * exportDeclaration is tried before grammarAnnotation: both start with "@",
+ * but exportDeclaration only matches the specific "@export: [...]" array-value
+ * form, so ordering doesn't create ambiguity with other "@key: \"value\"" annotations.
  */
 const grammarItem: Parser<GrammarItemType> = choice(
+  map(
+    exportDeclaration,
+    (decl): GrammarItemType => ({ type: "export", value: decl }),
+  ),
   map(
     grammarAnnotation,
     (annotation): GrammarItemType => ({
@@ -296,14 +312,18 @@ const separateGrammarItems = (
   annotations: GrammarAnnotation[];
   rules: RuleDefinition[];
   transforms: TransformDefinition[];
+  exportedRules: string[];
 } => {
   const annotations: GrammarAnnotation[] = [];
   const rules: RuleDefinition[] = [];
   const transforms: TransformDefinition[] = [];
+  const exportedRules: string[] = [];
 
   for (const item of items) {
     if (item.type === "annotation") {
       annotations.push(item.value);
+    } else if (item.type === "export") {
+      exportedRules.push(...item.value.rules);
     } else if (item.type === "rule") {
       rules.push(item.value);
     } else if (item.type === "transform") {
@@ -312,7 +332,7 @@ const separateGrammarItems = (
     // Comments are ignored - they don't contribute to the grammar structure
   }
 
-  return { annotations, rules, transforms };
+  return { annotations, rules, transforms, exportedRules };
 };
 
 /**
@@ -342,10 +362,12 @@ const leadingContent: Parser<void> = map(
 );
 
 /**
- * Parse complete grammar definition block with optional leading comments
+ * Shared parser for the "grammar Name { ...items... }" block, used by both
+ * grammarDefinition and modularGrammarDefinition below so the two stay in
+ * sync on grammar/block syntax.
  * Format: [comments...] grammar Name { @annotations... rule_definitions... }
  */
-export const grammarDefinition: Parser<GrammarDefinition> = map(
+const grammarBlock: Parser<{ name: string; items: GrammarItemType[] }> = map(
   sequence(
     leadingContent,
     literal(GRAMMAR_KEYWORDS.GRAMMAR),
@@ -357,11 +379,49 @@ export const grammarDefinition: Parser<GrammarDefinition> = map(
     grammarBlockWhitespace,
     literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_CLOSE),
   ),
-  (results) => {
-    const grammarName = results[3].name;
-    const items = results[6];
+  (results) => ({ name: results[3].name, items: results[6] }),
+);
+
+/**
+ * Parse complete grammar definition block with optional leading comments.
+ * Any `@export: [...]` declarations are parsed but discarded here - use
+ * modularGrammarDefinition when the exports need to be preserved.
+ */
+export const grammarDefinition: Parser<GrammarDefinition> = map(
+  grammarBlock,
+  ({ name, items }) => {
     const { annotations, rules, transforms } = separateGrammarItems(items);
 
-    return createGrammarDefinition(grammarName, annotations, rules, transforms);
+    return createGrammarDefinition(name, annotations, rules, transforms);
+  },
+);
+
+/**
+ * Parse a grammar definition block, preserving `@export: [...]` declarations
+ * as a ModularGrammarDefinition (used by the module system to know which
+ * rules a module makes available to importers). A `moduleInfo.version` is
+ * populated from the `@version` annotation when present, since that's the
+ * only module-metadata annotation with parser support today.
+ */
+export const modularGrammarDefinition: Parser<ModularGrammarDefinition> = map(
+  grammarBlock,
+  ({ name, items }) => {
+    const { annotations, rules, transforms, exportedRules } =
+      separateGrammarItems(items);
+    const version = annotations.find((a) => a.key === "version")?.value;
+
+    return createModularGrammarDefinition(
+      name,
+      annotations,
+      rules,
+      transforms,
+      undefined,
+      exportedRules.length > 0
+        ? { type: "ExportDeclaration", rules: exportedRules }
+        : undefined,
+      version
+        ? createModuleInfo(undefined, undefined, undefined, version)
+        : undefined,
+    );
   },
 );

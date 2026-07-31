@@ -256,6 +256,73 @@ describe("Module System Integration Tests", () => {
   });
 
   describe("Integration Scenarios", () => {
+    it("resolves a module's real parsed grammar (not a hand-built stub) through NamespaceManager", async () => {
+      // Unlike the hand-built ModuleFile fixtures used elsewhere in this
+      // file, this exercises the actual ModuleResolver -> NamespaceManager
+      // pipeline: resolver.resolveModule() parses @export declarations and
+      // rules from real .tpeg source, and NamespaceManager consumes exactly
+      // what the resolver produced.
+      const BASE_MODULE = `
+        grammar Base {
+          @export: [greeting]
+
+          greeting = "hello"
+        }
+      `;
+
+      const MAIN_MODULE = `
+        import "base.tpeg" as base
+
+        grammar Main {
+          @export: [farewell]
+
+          farewell = "world"
+        }
+      `;
+
+      mockFs.addFile("/test/base.tpeg", BASE_MODULE);
+      mockFs.addFile("/test/main.tpeg", MAIN_MODULE);
+
+      const baseResolved = await resolver.resolveModule("/test/base.tpeg");
+      const mainResolved = await resolver.resolveModule("/test/main.tpeg");
+
+      // The grammar block actually parsed - not the empty-array fallback.
+      expect(baseResolved.content.grammars).toHaveLength(1);
+      expect(mainResolved.content.grammars).toHaveLength(1);
+
+      namespaceManager.registerModule(baseResolved.content);
+      namespaceManager.registerModule(mainResolved.content);
+
+      const resolved = namespaceManager.resolveQualifiedName(
+        { type: "QualifiedIdentifier", module: "base", name: "greeting" },
+        "main",
+      );
+
+      expect(resolved.rule.name).toBe("greeting");
+      expect(resolved.moduleName).toBe("base");
+      expect(resolved.isExported).toBe(true);
+    });
+
+    it("lifts @version from a resolved module's grammar block onto ModuleFile.moduleInfo", async () => {
+      // VersionManager and NamespaceManager both read moduleInfo off the
+      // ModuleFile (not the grammar block), so a parsed @version annotation
+      // needs to be surfaced there to be reachable at all.
+      mockFs.addFile(
+        "/test/versioned.tpeg",
+        `
+        grammar Versioned {
+          @version: "1.2.3"
+
+          rule_a = "a"
+        }
+      `,
+      );
+
+      const resolved = await resolver.resolveModule("/test/versioned.tpeg");
+
+      expect(resolved.content.moduleInfo?.version).toBe("1.2.3");
+    });
+
     it("should handle complete module system workflow", async () => {
       // Setup realistic module scenario
       const UTILS_MODULE = `
