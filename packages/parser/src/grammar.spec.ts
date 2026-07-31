@@ -113,6 +113,45 @@ describe("Grammar Definition Block Tests", () => {
         });
       }
     });
+
+    test("should parse a bare identifier value, as docs/peg-grammar.md's @start/@skip examples use", () => {
+      const result = testParse(grammarAnnotation, "@start: expression");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual({
+          type: "GrammarAnnotation",
+          key: "start",
+          value: "expression",
+        });
+      }
+    });
+
+    test("should parse a flag-only annotation with no value, e.g. @private", () => {
+      const result = testParse(grammarAnnotation, "@private");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual({
+          type: "GrammarAnnotation",
+          key: "private",
+          value: "",
+        });
+      }
+    });
+
+    test("should not let a flag-only match swallow a real @key: value annotation", () => {
+      // @version has to still consume its full ": \"1.0\"" value - a naive
+      // "flag annotation tried first" implementation would match just
+      // "@version" and leave ": \"1.0\"" as unparsed trailing input.
+      const result = testParse(grammarAnnotation, '@version: "1.0"');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual({
+          type: "GrammarAnnotation",
+          key: "version",
+          value: "1.0",
+        });
+      }
+    });
   });
 
   describe("ruleDefinition", () => {
@@ -166,6 +205,126 @@ describe("Grammar Definition Block Tests", () => {
         });
 
         expect(result.val.rules[0]?.name).toBe("expression");
+      }
+    });
+
+    test("should parse a grammar block mixing quoted, bare-identifier, and flag-only annotations, matching docs/peg-grammar.md's actual syntax", () => {
+      const input = `grammar SimpleCalc {
+        @version: "1.0"
+        @start: expression
+        @skip: whitespace
+        @private
+
+        expression = [0-9]+
+      }`;
+
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.annotations).toEqual([
+          { type: "GrammarAnnotation", key: "version", value: "1.0" },
+          { type: "GrammarAnnotation", key: "start", value: "expression" },
+          { type: "GrammarAnnotation", key: "skip", value: "whitespace" },
+          { type: "GrammarAnnotation", key: "private", value: "" },
+        ]);
+        expect(result.val.rules).toHaveLength(1);
+      }
+    });
+
+    test("should parse a dotted (namespaced) grammar name, as docs/peg-grammar.md's module-resolution examples use (e.g. `grammar Math.Core`)", () => {
+      const input = `grammar Math.Core {
+        expression = [0-9]+
+      }`;
+
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.name).toBe("Math.Core");
+      }
+    });
+
+    test("should parse a rule body that spans multiple lines via a labeled choice with '/' continuations, as docs/peg-grammar.md's JSON grammar example does", () => {
+      // Regression test for grammarRuleExpression: it used to stop
+      // unconditionally at the first newline, so any rule body split across
+      // lines (rather than just any rule body containing an internal
+      // newline) would be truncated mid-expression and fail to parse.
+      const input = `grammar JSON {
+        value =
+          string:string_literal /
+          number:number_literal /
+          "true"
+
+        string_literal = [0-9]+
+        number_literal = [0-9]+
+      }`;
+
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules).toHaveLength(3);
+        expect(result.val.rules[0]?.name).toBe("value");
+        expect(result.val.rules[0]?.pattern.type).toBe("Choice");
+      }
+    });
+
+    test("should not mistake a same-line '}' inside a rule's own string literal or character class for the grammar block's closing brace", () => {
+      // Regression test: the multi-line rule body fix above needed a "}"
+      // boundary check to replace the old "stop at any newline" behavior,
+      // but a "}" on the *same line* as the rule (inside a string literal or
+      // character class) isn't the block's closing brace - only a "}"
+      // reached by crossing an actual line break is.
+      const input = `grammar X {
+        sep = " }"
+        chars = [ }]
+      }`;
+
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules).toHaveLength(2);
+        expect(result.val.rules[0]?.name).toBe("sep");
+        expect(result.val.rules[1]?.name).toBe("chars");
+      }
+    });
+
+    test("should continue a multi-line sequence onto a line starting with 'identifier (group)'", () => {
+      // The next-rule boundary check only fires on "identifier ws* =", not
+      // "identifier ws* (" - deliberately: grammarItem's transform
+      // alternative is transformDefinition, which requires a literal
+      // "transforms" keyword, so a bare "identifier(...)" is never itself a
+      // valid next grammarItem to guard against. Treating "(" as a boundary
+      // too would instead break exactly this legitimate case: a sequence
+      // continued on the next line with a rule reference immediately
+      // followed by a group.
+      const input = 'expr = "a"\n         foo (bar)';
+
+      const result = testParse(ruleDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.pattern.type).toBe("Sequence");
+      }
+    });
+
+    test("should report an accurate line/column after a rule body spanning multiple lines", () => {
+      // Regression test: grammarRuleExpression used to recompute the
+      // returned line/column from the *rule's own start* position plus a
+      // raw character offset, which is only correct for single-line bodies.
+      // For a multi-line body it must reflect the sub-parse's own
+      // (newline-aware) end position instead.
+      const input = `grammar X {
+  value =
+    "a" /
+    "b"
+}`;
+
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.next).toEqual({
+          offset: input.length,
+          line: 5,
+          column: 1,
+        });
       }
     });
 

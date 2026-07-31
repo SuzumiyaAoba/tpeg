@@ -454,11 +454,15 @@ describe("Label Integration Tests", () => {
     test("malformed label syntax fails appropriately", () => {
       const parser = expression();
 
-      // name"value" is actually valid syntax but parses as just the identifier 'name'
-      const result1 = parser('name"value"', createPosition());
+      // name"value" is a valid two-element sequence: identifier "name"
+      // followed by string literal "value" - PEG juxtaposition doesn't
+      // require whitespace between sequence elements.
+      const input1 = 'name"value"';
+      const result1 = parser(input1, createPosition());
       expect(result1.success).toBe(true);
       if (result1.success) {
-        expect(result1.val.type).toBe("Identifier");
+        expect(result1.val.type).toBe("Sequence");
+        expect(result1.next.offset).toBe(input1.length);
       }
 
       // Invalid label characters - this should still parse as an identifier (partial)

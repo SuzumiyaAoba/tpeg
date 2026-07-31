@@ -20,7 +20,6 @@ import {
   choice,
   literal,
   map,
-  oneOrMore,
   seq,
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
@@ -114,19 +113,19 @@ const groupExpression = (): Parser<Group> => {
 };
 
 /**
- * Parses a sequence of labeled expressions separated by whitespace.
- * Returns a single expression if only one element, otherwise a Sequence.
+ * Parses a sequence of labeled expressions, optionally separated by
+ * whitespace. Whitespace between elements is optional (not required): PEG
+ * juxtaposition doesn't require a separator, so `[a-z][0-9]*` must parse as
+ * a two-element sequence exactly like `[a-z] [0-9]*` does. Each `labeled()`
+ * element itself always consumes at least one character when it matches
+ * (primary() can't match zero-width), so relaxing this to zeroOrMore can't
+ * introduce a zero-progress loop iteration.
  */
 const sequenceExpression = (): Parser<Expression> => {
   return map(
     seq(
       labeled(),
-      zeroOrMore(
-        seq(
-          oneOrMore(charClass(" ", "\t", "\n", "\r")), // Require at least one whitespace
-          labeled(),
-        ),
-      ),
+      zeroOrMore(seq(zeroOrMore(charClass(" ", "\t", "\n", "\r")), labeled())),
     ),
     ([first, rest]) => {
       if (rest.length === 0) {

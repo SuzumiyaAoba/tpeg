@@ -49,63 +49,88 @@ import {
 const IDENTIFIER_START_CHAR = /[a-zA-Z_]/;
 const IDENTIFIER_CONT_CHAR = /[a-zA-Z0-9_]/;
 
+const isSpaceOrTab = (char: string | undefined): boolean =>
+  char === " " || char === "\t";
+
+const isLineBreakOrSpaceOrTab = (char: string | undefined): boolean =>
+  isSpaceOrTab(char) || char === "\n" || char === "\r";
+
 /**
- * Bounded expression parser for grammar rules
- * This parser stops at newlines or the next rule definition to prevent consuming the next rule
+ * Bounded expression parser for grammar rules.
+ *
+ * This parser stops at the next rule definition or the enclosing grammar
+ * block's closing "}", to prevent `expression()`'s sequence operator (which
+ * treats newlines as ordinary inter-element whitespace) from greedily
+ * consuming subsequent rules. The boundary check runs on *any* whitespace
+ * run (including newlines), not just same-line spaces/tabs, so a rule body
+ * can legitimately span multiple lines (e.g. a labeled choice with `/`
+ * alternatives on their own lines) as long as what follows isn't actually
+ * the start of another rule or the block's end.
  */
 const grammarRuleExpression: Parser<Expression> = (input: string, pos) => {
-  // Find the end of the current rule expression
-  // Look for newlines or the next rule definition pattern (identifier followed by =)
   let endPos = pos.offset;
   let foundEnd = false;
 
   while (endPos < input.length && !foundEnd) {
     const char = input[endPos];
 
-    // Stop at newlines
-    if (char === "\n" || char === "\r") {
-      foundEnd = true;
-      break;
-    }
-
-    // Look ahead to see if we're at the start of a new rule definition
-    // A rule definition starts with: whitespace* identifier whitespace* "="
-    if (char === " " || char === "\t") {
-      // Skip whitespace and look for identifier pattern
+    if (isLineBreakOrSpaceOrTab(char)) {
+      // Look ahead past this whitespace run (without committing to
+      // consuming it) to see whether the current rule ends here: either the
+      // next rule definition ("identifier whitespace* =") or the grammar
+      // block's closing brace.
       let checkPos = endPos;
+      let crossedLineBreak = false;
       while (
         checkPos < input.length &&
-        (input[checkPos] === " " || input[checkPos] === "\t")
+        isLineBreakOrSpaceOrTab(input[checkPos])
       ) {
+        if (input[checkPos] === "\n" || input[checkPos] === "\r") {
+          crossedLineBreak = true;
+        }
         checkPos++;
       }
 
-      // Check if we have an identifier followed by =
       if (checkPos < input.length) {
-        // Look for identifier pattern: [a-zA-Z_][a-zA-Z0-9_]*
-        const currentChar = input[checkPos];
-        if (currentChar && IDENTIFIER_START_CHAR.test(currentChar)) {
-          checkPos++;
-          while (checkPos < input.length) {
-            const nextChar = input[checkPos];
-            if (nextChar && IDENTIFIER_CONT_CHAR.test(nextChar)) {
-              checkPos++;
-            } else {
-              break;
-            }
-          }
+        const boundaryChar = input[checkPos];
 
-          // Skip whitespace after identifier
+        // Only treat "}" as the block's closing brace when it's preceded by
+        // a line break: every real grammar block closes on its own line, so
+        // this can't confuse a "}" that appears same-line inside a string
+        // literal or character class (e.g. `sep = " }"`), which has no
+        // line break to cross before reaching it.
+        if (boundaryChar === "}" && crossedLineBreak) {
+          foundEnd = true;
+          break;
+        }
+
+        if (boundaryChar && IDENTIFIER_START_CHAR.test(boundaryChar)) {
+          let identEnd = checkPos + 1;
           while (
-            checkPos < input.length &&
-            (input[checkPos] === " " || input[checkPos] === "\t")
+            identEnd < input.length &&
+            IDENTIFIER_CONT_CHAR.test(input[identEnd] ?? "")
           ) {
-            checkPos++;
+            identEnd++;
           }
 
-          // Check if we have an = sign
-          if (checkPos < input.length && input[checkPos] === "=") {
-            // We found the start of the next rule, stop here
+          // Same-line whitespace only: "identifier\n=" isn't recognized as
+          // the next rule's start, matching the original implementation.
+          let afterIdent = identEnd;
+          while (afterIdent < input.length && isSpaceOrTab(input[afterIdent])) {
+            afterIdent++;
+          }
+
+          // "=" means a rule definition follows ("name = pattern"). Note
+          // this deliberately does *not* also treat "identifier(" as a
+          // boundary: `grammarItem`'s transform alternative is
+          // transformDefinition, which requires a literal "transforms"
+          // keyword (see transforms.ts) - a bare "name(params) -> Type {...}"
+          // is never a valid grammarItem on its own, so there's nothing to
+          // guard against there, and treating "(" as a boundary would
+          // instead break a legitimate multi-line sequence whose next line
+          // happens to start with "identifier (...)" (e.g. a rule reference
+          // immediately followed by a group).
+          if (afterIdent < input.length && input[afterIdent] === "=") {
             foundEnd = true;
             break;
           }
@@ -127,15 +152,21 @@ const grammarRuleExpression: Parser<Expression> = (input: string, pos) => {
   });
 
   if (result.success) {
-    // Adjust the position back to the original input context
+    // Only offset needs adjusting back to the original input - line/column
+    // are already correct absolute positions, since the sub-parse was
+    // seeded with the outer pos.line/pos.column and every core combinator
+    // that consumes a "\n" (see nextPos/advancePos in tpeg-core) advances
+    // line and resets column accordingly. Recomputing them here from
+    // pos.line/pos.column instead (as this used to) is wrong for any rule
+    // body that spans multiple lines.
     return {
       success: true,
       val: result.val,
       current: pos,
       next: {
         offset: pos.offset + result.next.offset,
-        line: pos.line,
-        column: pos.column + result.next.offset,
+        line: result.next.line,
+        column: result.next.column,
       },
     };
   }
@@ -145,8 +176,8 @@ const grammarRuleExpression: Parser<Expression> = (input: string, pos) => {
       message: result.error.message,
       pos: {
         offset: pos.offset + result.error.pos.offset,
-        line: pos.line,
-        column: pos.column + result.error.pos.offset,
+        line: result.error.pos.line,
+        column: result.error.pos.column,
       },
     },
   };
@@ -206,10 +237,29 @@ export const quotedString: Parser<string> = map(
 );
 
 /**
- * Parse grammar annotation like @version: "1.0" (with optional leading whitespace)
- * Returns a GrammarAnnotation AST node with the key and value extracted
+ * Parse a bare (unquoted) identifier as an annotation value, e.g. the
+ * `expression` in `@start: expression` or the `whitespace` in
+ * `@skip: whitespace` - docs/peg-grammar.md uses this form for annotations
+ * that name a rule, as opposed to `@version`/`@description`-style annotations
+ * that hold an arbitrary string.
  */
-export const grammarAnnotation: Parser<GrammarAnnotation> = map(
+const bareAnnotationValue: Parser<string> = map(identifier, (id) => id.name);
+
+/**
+ * Parse an annotation value: a quoted string (tried first, so existing
+ * `@key: "value"` annotations are unaffected) or a bare identifier.
+ */
+const annotationValue: Parser<string> = choice(
+  quotedString,
+  bareAnnotationValue,
+);
+
+/**
+ * Parse a `@key: value` annotation (with optional leading whitespace),
+ * where value is a quoted string or a bare identifier.
+ * Returns a GrammarAnnotation AST node with the key and value extracted.
+ */
+const keyValueAnnotation: Parser<GrammarAnnotation> = map(
   sequence(
     optionalWhitespace,
     literal(GRAMMAR_SYMBOLS.ANNOTATION_PREFIX),
@@ -217,9 +267,36 @@ export const grammarAnnotation: Parser<GrammarAnnotation> = map(
     optionalWhitespace,
     literal(GRAMMAR_SYMBOLS.LABEL_SEPARATOR),
     optionalWhitespace,
-    quotedString,
+    annotationValue,
   ),
   (results) => createGrammarAnnotation(results[2].name, results[6]),
+);
+
+/**
+ * Parse a flag-only annotation with no value, e.g. `@private` or `@override`.
+ * Represented as a GrammarAnnotation with an empty string value.
+ *
+ * Must be tried after keyValueAnnotation (see grammarAnnotation below): since
+ * it doesn't require a ":", trying it first would match just the "@key" part
+ * of a real "@key: value" annotation and leave ": value" as unparsed trailing
+ * input, hard-failing the enclosing grammar block.
+ */
+const flagAnnotation: Parser<GrammarAnnotation> = map(
+  sequence(
+    optionalWhitespace,
+    literal(GRAMMAR_SYMBOLS.ANNOTATION_PREFIX),
+    identifier,
+  ),
+  (results) => createGrammarAnnotation(results[2].name, ""),
+);
+
+/**
+ * Parse any grammar annotation: `@key: "value"`, `@key: value`, or the
+ * flag-only `@key` form.
+ */
+export const grammarAnnotation: Parser<GrammarAnnotation> = choice(
+  keyValueAnnotation,
+  flagAnnotation,
 );
 
 /**
@@ -362,6 +439,21 @@ const leadingContent: Parser<void> = map(
 );
 
 /**
+ * Parse a grammar's own name, which docs/peg-grammar.md's module-resolution
+ * examples (e.g. `grammar Math.Core { ... }`) allow to be dotted for
+ * namespacing. Only used here - rule names and rule-body references use the
+ * plain `identifier` parser, since a dot there means a qualified reference
+ * (`module.rule`), an unrelated construct.
+ */
+const dottedGrammarName: Parser<string> = map(
+  sequence(
+    identifier,
+    zeroOrMore(map(sequence(literal("."), identifier), ([, id]) => id.name)),
+  ),
+  ([first, rest]) => [first.name, ...rest].join("."),
+);
+
+/**
  * Shared parser for the "grammar Name { ...items... }" block, used by both
  * grammarDefinition and modularGrammarDefinition below so the two stay in
  * sync on grammar/block syntax.
@@ -372,14 +464,14 @@ const grammarBlock: Parser<{ name: string; items: GrammarItemType[] }> = map(
     leadingContent,
     literal(GRAMMAR_KEYWORDS.GRAMMAR),
     whitespace,
-    identifier,
+    dottedGrammarName,
     optionalWhitespace,
     literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_OPEN),
     grammarItems,
     grammarBlockWhitespace,
     literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_CLOSE),
   ),
-  (results) => ({ name: results[3].name, items: results[6] }),
+  (results) => ({ name: results[3], items: results[6] }),
 );
 
 /**

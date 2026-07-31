@@ -88,6 +88,43 @@ describe("composition operators", () => {
         }
       });
 
+      it("should parse adjacent elements with no whitespace as a sequence", () => {
+        // PEG juxtaposition doesn't require a separator - this is the exact
+        // pattern docs/peg-grammar.md uses for its own `identifier` rule
+        // (`[a-zA-Z_][a-zA-Z0-9_]*`), and previously only the first
+        // character class was consumed, leaving the rest as unparsed
+        // trailing input (a silent partial parse, not a parser failure).
+        const input = "[a-zA-Z_][a-zA-Z0-9_]*";
+        const result = expression()(input, pos);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.next.offset).toBe(input.length);
+          expect(result.val.type).toBe("Sequence");
+          if (result.val.type === "Sequence") {
+            expect(result.val.elements).toHaveLength(2);
+          }
+        }
+      });
+
+      it("should parse adjacent string literals with no whitespace as a sequence", () => {
+        const input = '"a""b"';
+        const result = expression()(input, pos);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.next.offset).toBe(input.length);
+          expect(result.val.type).toBe("Sequence");
+        }
+      });
+
+      it("should fully consume a mix of adjacent and whitespace-separated elements", () => {
+        const input = '[0-9]+"x"';
+        const result = expression()(input, pos);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.next.offset).toBe(input.length);
+        }
+      });
+
       it("should handle whitespace in sequences", () => {
         const result = expression()('"hello"   "world"', pos);
         expect(result.success).toBe(true);
