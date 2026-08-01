@@ -1,6 +1,28 @@
 import type { ParseError, Parser, Pos } from "./types";
 import { createFailure, isFailure, prependContext } from "./utils";
 
+/** How many distinct expectations `error` carries -- used by `choice` to
+ * break ties between two failures at the same (farthest) offset. */
+const expectedRichness = (error: ParseError): number =>
+  Array.isArray(error.expected)
+    ? error.expected.length
+    : error.expected
+      ? 1
+      : 0;
+
+/** Adds `error`'s expectation(s) to `target`. Module-level (not a closure
+ * over `choice`'s per-call state) so it isn't reallocated on every parse. */
+const mergeExpectedInto = (target: Set<string>, error: ParseError): void => {
+  if (!error.expected) return;
+  if (Array.isArray(error.expected)) {
+    for (const exp of error.expected) {
+      target.add(exp);
+    }
+  } else {
+    target.add(error.expected);
+  }
+};
+
 /**
  * Parser that parses a sequence of parsers in order.
  *
@@ -139,7 +161,10 @@ export const choice = <T extends unknown[]>(
       });
     }
 
-    const errors: ParseError[] = [];
+    // Nothing beyond these two bindings is allocated on the success path
+    // (by far the common case in a PEG choice): no error array, no Set,
+    // until an alternative actually fails.
+    let expectedSet: Set<string> | null = null;
     let farthestError: ParseError | null = null;
 
     for (let i = 0; i < parsers.length; i++) {
@@ -156,46 +181,35 @@ export const choice = <T extends unknown[]>(
       }
 
       if (isFailure(result)) {
-        errors.push(result.error);
-        // Track farthest error by offset, tie-break by expected richness
-        if (
-          !farthestError ||
-          result.error.pos.offset > farthestError.pos.offset ||
-          (result.error.pos.offset === farthestError.pos.offset &&
-            (Array.isArray(result.error.expected)
-              ? result.error.expected.length
-              : result.error.expected
-                ? 1
-                : 0) >
-              (Array.isArray(farthestError.expected)
-                ? farthestError.expected.length
-                : farthestError.expected
-                  ? 1
-                  : 0))
-        ) {
-          farthestError = result.error;
-        }
-      }
-    }
-
-    // Aggregate expectations from farthest position only
-    const targetOffset = farthestError?.pos.offset ?? pos.offset;
-    const expectedSet = new Set<string>();
-    for (const error of errors) {
-      if (error.pos.offset !== targetOffset) continue;
-      if (error.expected) {
-        if (Array.isArray(error.expected)) {
-          for (const exp of error.expected) {
-            expectedSet.add(exp);
+        const error = result.error;
+        if (!farthestError || error.pos.offset > farthestError.pos.offset) {
+          // Strictly farther than anything seen so far: expectations
+          // collected for the previous (now-stale) farthest offset no
+          // longer belong in the aggregate.
+          farthestError = error;
+          expectedSet = null;
+          if (error.expected) {
+            expectedSet = new Set();
+            mergeExpectedInto(expectedSet, error);
           }
-        } else {
-          expectedSet.add(error.expected);
+        } else if (error.pos.offset === farthestError.pos.offset) {
+          if (error.expected) {
+            if (!expectedSet) expectedSet = new Set();
+            mergeExpectedInto(expectedSet, error);
+          }
+          if (expectedRichness(error) > expectedRichness(farthestError)) {
+            farthestError = error;
+          }
         }
       }
     }
 
-    const expected = Array.from(expectedSet);
-    const found = farthestError?.found;
+    // Rebind through a fresh `const` after the loop: some TS versions'
+    // control-flow analysis over a `let` reassigned across branches
+    // inside a loop narrows it to `never` by this point otherwise.
+    const finalFarthestError: ParseError | null = farthestError;
+    const expected = expectedSet ? Array.from(expectedSet) : [];
+    const found = finalFarthestError?.found;
 
     const customMessage = `None of the parsers matched. ${
       expected.length > 0
@@ -203,7 +217,7 @@ export const choice = <T extends unknown[]>(
         : "No expectations provided"
     }`;
 
-    return createFailure(customMessage, farthestError?.pos ?? pos, {
+    return createFailure(customMessage, finalFarthestError?.pos ?? pos, {
       parserName: "choice",
       ...(expected.length > 0 && { expected }),
       ...(found !== undefined && { found }),

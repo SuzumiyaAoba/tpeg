@@ -123,6 +123,38 @@ describe("choice", () => {
       expect(result.error.expected).toEqual(["a", "x", "y"]);
     }
   });
+
+  it("should report only the farthest failure's expected values, not earlier (closer) ones", () => {
+    // alt1 fails immediately at offset 0; alt2 consumes one char before
+    // failing at offset 1. Only alt2's expectation should survive --
+    // alt1's "a" is from a strictly closer (less useful) failure and
+    // must not be merged in alongside it.
+    const input = "xz";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = choice(lit("a"), sequence(lit("x"), lit("y")))(input, pos);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.expected).toEqual(["y"]);
+      expect(result.error.pos).toEqual({ offset: 1, column: 1, line: 1 });
+    }
+  });
+
+  it("should merge expected values only across failures tied at the farthest offset", () => {
+    // alt1 and alt3 both fail at offset 1 (after consuming "x"); alt2
+    // fails immediately at offset 0 and must be excluded from the merge.
+    const input = "xz";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = choice(
+      sequence(lit("x"), lit("y")),
+      lit("a"),
+      sequence(lit("x"), lit("w")),
+    )(input, pos);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.expected).toEqual(["y", "w"]);
+      expect(result.error.pos).toEqual({ offset: 1, column: 1, line: 1 });
+    }
+  });
 });
 
 describe("sequence", () => {
