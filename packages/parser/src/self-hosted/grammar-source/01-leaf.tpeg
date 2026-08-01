@@ -1,0 +1,44 @@
+grammar SelfHostLeaf {
+  escapeChar = "\\" [nrt\\"']
+
+  doubleStringChar = escapeChar { const c = $$[1]; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t"; return c; }
+                    / [^"\\]
+
+  singleStringChar = escapeChar { const c = $$[1]; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t"; return c; }
+                    / [^'\\]
+
+  doubleQuotedString = "\"" chars:doubleStringChar* "\"" { return { type: "StringLiteral", value: chars.join(""), quote: '"' }; }
+
+  singleQuotedString = "'" chars:singleStringChar* "'" { return { type: "StringLiteral", value: chars.join(""), quote: "'" }; }
+
+  stringLiteral = doubleQuotedString / singleQuotedString
+
+  classEscapeStd = "\\" [tnrbfv0] { const c = $$[1]; if (c === "t") return "\t"; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "b") return "\b"; if (c === "f") return "\f"; if (c === "v") return "\v"; return "\0"; }
+
+  classEscapeSpecial = "\\" [\]\\\^\-"'] { return $$[1]; }
+
+  classChar = classEscapeStd / classEscapeSpecial / [^\]\\\^\-]
+
+  charRangePair = start:classChar "-" end:classChar { return { start, end }; }
+
+  charRangeSingle = start:classChar { return { start }; }
+
+  charRange = charRangePair / charRangeSingle
+
+  characterClassBrackets = "[" negation:"^"? ranges:charRange+ "]" { return { type: "CharacterClass", ranges, negated: negation.length > 0 }; }
+
+  anyCharDot = "." { return { type: "AnyChar" }; }
+
+  characterClass = characterClassBrackets / anyCharDot
+
+  identStart = [a-zA-Z_]
+  identCont = [a-zA-Z0-9_]*
+
+  identifierName = start:identStart rest:identCont { return start + rest.join(""); }
+
+  identifier = name:identifierName { return { type: "Identifier", name }; }
+
+  qualifiedIdentifier = module:identifierName "." name:identifierName { return { type: "QualifiedIdentifier", module, name }; }
+
+  basicSyntax = stringLiteral / characterClass / qualifiedIdentifier / identifier
+}

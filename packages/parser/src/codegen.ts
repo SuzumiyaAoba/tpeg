@@ -134,6 +134,21 @@ export const collectTopLevelLabels = (expr: Expression): string[] => {
 };
 
 /**
+ * Narrows a label list down to the ones an action's code actually mentions
+ * (matched as a whole word, so a label named `char` doesn't false-match
+ * inside `charAt`). An unconditionally-destructured label the action ignores
+ * would otherwise be a real `tsc --noEmit` failure on a saved generated file
+ * under `noUnusedLocals` - never surfaced by dynamically `new Function`-eval'd
+ * generated code in this package's own tests, which skips type-checking
+ * entirely.
+ */
+export const filterReferencedLabels = (
+  code: string,
+  labels: string[],
+): string[] =>
+  labels.filter((label) => new RegExp(`\\b${label}\\b`).test(code));
+
+/**
  * Wraps an alternative's generated parser expression so that, on a
  * successful parse, the semantic action code runs with `$$` bound to the
  * raw match value and (if the wrapped expression carries labeled captures)
@@ -144,7 +159,30 @@ export const wrapWithAction = (
   parserCode: string,
   actionCode: string,
   labels: string[],
+  includeTypes: boolean,
 ): string => {
+  // Only declare `$$` when something can actually reference it - a label
+  // destructure reads it, and the substring check covers a bare `$$` in the
+  // action body (e.g. `return $$.join("")` for an unlabeled expression). An
+  // action that ignores its match entirely (e.g. `{ return { type: "X" }; }`)
+  // would otherwise leave `$$` unused, which fails a real generated file's
+  // own `tsc --noEmit` under `noUnusedLocals` (never surfaced by this
+  // package's own tests, which execute generated code via `new Function`
+  // rather than saving and compiling it as a file).
+  const needsCaptureValue = labels.length > 0 || actionCode.includes("$$");
+  // captureSequence()'s return type is a union of the merged capture object
+  // and a positional tuple (it can't statically know which one a given call
+  // produces), so an untyped $$ fails to typecheck a destructure of any
+  // label below - the action's arbitrary code is untyped anyway (same as a
+  // transform function body), so this is deliberate, not merely convenient.
+  // Only added under `includeTypes`, matching every other type annotation
+  // this generator emits: with `includeTypes: false` the output has no type
+  // syntax at all (plain JS, safe to run via `new Function` without a TS
+  // transpile step), so a `: any` annotation here would be the only such
+  // syntax in that mode and would break exactly that use case.
+  const captureBinding = needsCaptureValue
+    ? `    const $$${includeTypes ? ": any" : ""} = __result.val;\n`
+    : "";
   const destructure =
     labels.length > 0 ? `    const { ${labels.join(", ")} } = $$;\n` : "";
   return `(input, pos) => {
@@ -152,8 +190,7 @@ export const wrapWithAction = (
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
-    const $$ = __result.val;
-${destructure}${actionCode}
+${captureBinding}${destructure}${actionCode}
   })();
   return {
     success: true,
@@ -479,8 +516,11 @@ export class TPEGCodeGenerator {
 
   private generateActionExpression(expr: ActionExpression): string {
     const inner = this.generateExpression(expr.expression);
-    const labels = collectTopLevelLabels(expr.expression);
-    return wrapWithAction(inner, expr.code, labels);
+    const labels = filterReferencedLabels(
+      expr.code,
+      collectTopLevelLabels(expr.expression),
+    );
+    return wrapWithAction(inner, expr.code, labels, this.options.includeTypes);
   }
 
   /**

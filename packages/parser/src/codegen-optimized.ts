@@ -33,6 +33,7 @@ import type {
 import {
   collectTopLevelLabels,
   collectTransformFunctions,
+  filterReferencedLabels,
   wrapWithAction,
   wrapWithTransform,
 } from "./codegen";
@@ -587,8 +588,11 @@ export class OptimizedTPEGCodeGenerator {
 
   private generateActionExpression(expr: ActionExpression): string {
     const inner = this.generateOptimizedExpression(expr.expression);
-    const labels = collectTopLevelLabels(expr.expression);
-    return wrapWithAction(inner, expr.code, labels);
+    const labels = filterReferencedLabels(
+      expr.code,
+      collectTopLevelLabels(expr.expression),
+    );
+    return wrapWithAction(inner, expr.code, labels, this.options.includeTypes);
   }
 
   /**

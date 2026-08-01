@@ -1,0 +1,27 @@
+grammar SelfHostAction {
+  escapedActionChar = "\\" . { return "\\" + $$[1]; }
+
+  doubleQuotedActionString = "\"" chars:(escapedActionChar / [^"\\])* "\"" { return '"' + chars.join("") + '"'; }
+
+  singleQuotedActionString = "'" chars:(escapedActionChar / [^'\\])* "'" { return "'" + chars.join("") + "'"; }
+
+  templateActionString = "`" chars:(escapedActionChar / [^`\\])* "`" { return "`" + chars.join("") + "`"; }
+
+  actionString = doubleQuotedActionString / singleQuotedActionString / templateActionString
+
+  lineCommentChar = !("\n" / "\r") c:. { return c; }
+
+  blockCommentChar = !"*/" c:. { return c; }
+
+  actionLineComment = "//" chars:lineCommentChar* { return "//" + chars.join(""); }
+
+  actionBlockComment = "/*" chars:blockCommentChar* "*/" { return "/*" + chars.join("") + "*/"; }
+
+  nestedActionBlock = inner:actionBlock { return "{" + inner + "}"; }
+
+  actionPlainChar = !("{" / "}") c:. { return c; }
+
+  actionContent = nestedActionBlock / actionString / actionLineComment / actionBlockComment / actionPlainChar
+
+  actionBlock = "{" parts:actionContent* "}" { return parts.join(""); }
+}

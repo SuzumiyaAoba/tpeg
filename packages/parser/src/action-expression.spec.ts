@@ -332,4 +332,67 @@ describe("ActionExpression code generation (runtime)", () => {
       expect(parsed.val).toBe("a-b");
     }
   });
+
+  test("with includeTypes, $$ is typed as any (real generated files must pass tsc, not just run)", () => {
+    // Regression test: captureSequence()'s TS return type is a union of the
+    // merged capture object and a positional tuple, so an untyped `$$`
+    // fails `tsc --noEmit` (TS2339) when a multi-label action destructures
+    // it - even though the generated code runs correctly (this package's
+    // other runtime tests all use `new Function`, which never typechecks
+    // anything, so this class of bug was invisible until a real .ts file
+    // generated from a multi-label action was actually compiled).
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        createRuleDefinition(
+          "pair",
+          createActionExpression(
+            createSequence([
+              createLabeledExpression("left", createStringLiteral("a")),
+              createLabeledExpression("right", createStringLiteral("b")),
+            ]),
+            "return left + right;",
+          ),
+        ),
+      ],
+    );
+
+    const withTypes = generateTypeScriptParser(grammar, {
+      includeImports: false,
+      includeTypes: true,
+    });
+    expect(withTypes.code).toContain("const $$: any = __result.val;");
+
+    // includeTypes: false must stay free of type syntax entirely, so the
+    // output remains valid to run directly (e.g. via `new Function`, as
+    // this file's other tests do) without a TypeScript transpile step.
+    const withoutTypes = generateTypeScriptParser(grammar, {
+      includeImports: false,
+      includeTypes: false,
+    });
+    expect(withoutTypes.code).not.toContain(": any");
+    expect(withoutTypes.code).toContain("const $$ = __result.val;");
+  });
+
+  test("an action that never references its match doesn't leave $$ unused", () => {
+    // Regression test: `tsc --noEmit` under noUnusedLocals fails a real
+    // generated file if `$$` is declared but the action ignores it.
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        createRuleDefinition(
+          "always1",
+          createActionExpression(createStringLiteral("a"), "return 1;"),
+        ),
+      ],
+    );
+
+    const result = generateTypeScriptParser(grammar, {
+      includeImports: false,
+      includeTypes: true,
+    });
+    expect(result.code).not.toContain("$$");
+  });
 });

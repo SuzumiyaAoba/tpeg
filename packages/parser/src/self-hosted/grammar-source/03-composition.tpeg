@@ -1,0 +1,133 @@
+grammar SelfHostComposition {
+  // ---- Leaf constructs ----
+
+  escapeChar = "\\" [nrt\\"']
+
+  doubleStringChar = escapeChar { const c = $$[1]; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t"; return c; }
+                    / [^"\\]
+
+  singleStringChar = escapeChar { const c = $$[1]; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t"; return c; }
+                    / [^'\\]
+
+  doubleQuotedString = "\"" chars:doubleStringChar* "\"" { return { type: "StringLiteral", value: chars.join(""), quote: '"' }; }
+
+  singleQuotedString = "'" chars:singleStringChar* "'" { return { type: "StringLiteral", value: chars.join(""), quote: "'" }; }
+
+  stringLiteralNode = doubleQuotedString / singleQuotedString
+
+  classEscapeStd = "\\" [tnrbfv0] { const c = $$[1]; if (c === "t") return "\t"; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "b") return "\b"; if (c === "f") return "\f"; if (c === "v") return "\v"; return "\0"; }
+
+  classEscapeSpecial = "\\" [\]\\\^\-"'] { return $$[1]; }
+
+  classChar = classEscapeStd / classEscapeSpecial / [^\]\\\^\-]
+
+  charRangePair = start:classChar "-" end:classChar { return { start, end }; }
+
+  charRangeSingle = start:classChar { return { start }; }
+
+  charRange = charRangePair / charRangeSingle
+
+  characterClassBrackets = "[" negation:"^"? ranges:charRange+ "]" { return { type: "CharacterClass", ranges, negated: negation.length > 0 }; }
+
+  anyCharDot = "." { return { type: "AnyChar" }; }
+
+  characterClassNode = characterClassBrackets / anyCharDot
+
+  identStart = [a-zA-Z_]
+  identCont = [a-zA-Z0-9_]*
+
+  identifierName = start:identStart rest:identCont { return start + rest.join(""); }
+
+  identifierNode = name:identifierName { return { type: "Identifier", name }; }
+
+  qualifiedIdentifierNode = module:identifierName "." name:identifierName { return { type: "QualifiedIdentifier", module, name }; }
+
+  basicSyntax = stringLiteralNode / characterClassNode / qualifiedIdentifierNode / identifierNode
+
+  // ---- Semantic action blocks (recursive, replaces brace-scanner.ts) ----
+
+  escapedActionChar = "\\" . { return "\\" + $$[1]; }
+
+  doubleQuotedActionString = "\"" chars:(escapedActionChar / [^"\\])* "\"" { return '"' + chars.join("") + '"'; }
+
+  singleQuotedActionString = "'" chars:(escapedActionChar / [^'\\])* "'" { return "'" + chars.join("") + "'"; }
+
+  templateActionString = "`" chars:(escapedActionChar / [^`\\])* "`" { return "`" + chars.join("") + "`"; }
+
+  actionStringLiteral = doubleQuotedActionString / singleQuotedActionString / templateActionString
+
+  lineCommentChar = !("\n" / "\r") c:. { return c; }
+
+  blockCommentChar = !"*/" c:. { return c; }
+
+  actionLineComment = "//" chars:lineCommentChar* { return "//" + chars.join(""); }
+
+  actionBlockComment = "/*" chars:blockCommentChar* "*/" { return "/*" + chars.join("") + "*/"; }
+
+  nestedActionBlock = inner:actionBlock { return "{" + inner + "}"; }
+
+  actionPlainChar = !("{" / "}") c:. { return c; }
+
+  actionContent = nestedActionBlock / actionStringLiteral / actionLineComment / actionBlockComment / actionPlainChar
+
+  actionBlock = "{" parts:actionContent* "}" { return parts.join(""); }
+
+  // ---- Composition operators ----
+
+  interWs = [ \t\n\r]*
+  sameLineWs = [ \t]*
+
+  group = "(" interWs expr:choiceExpr interWs ")" { return { type: "Group", expression: expr }; }
+
+  primary = group / basicSyntax
+
+  positiveLookahead = "&" expr:prefix { return { type: "PositiveLookahead", expression: expr }; }
+
+  negativeLookahead = "!" expr:prefix { return { type: "NegativeLookahead", expression: expr }; }
+
+  prefix = positiveLookahead / negativeLookahead / primary
+
+  integer = digits:[0-9]+ { return parseInt(digits.join(""), 10); }
+
+  quantifiedRange = "{" min:integer "," max:integer "}" { return { min, max }; }
+
+  quantifiedMin = "{" min:integer "," "}" { return { min, max: undefined }; }
+
+  quantifiedExact = "{" n:integer "}" { return { min: n, max: n }; }
+
+  quantifiedOp = quantifiedRange / quantifiedMin / quantifiedExact
+
+  starOp = expr:prefix "*" { return { type: "Star", expression: expr }; }
+
+  plusOp = expr:prefix "+" { return { type: "Plus", expression: expr }; }
+
+  optionalOp = expr:prefix "?" { return { type: "Optional", expression: expr }; }
+
+  quantOp = expr:prefix q:quantifiedOp { return { type: "Quantified", expression: expr, min: q.min, max: q.max }; }
+
+  postfix = starOp / plusOp / optionalOp / quantOp / prefix
+
+  labeled = label:identifierName ":" expr:postfix { return { type: "LabeledExpression", label, expression: expr }; }
+          / postfix
+
+  notNextRuleStart = !(identifierName sameLineWs "=")
+
+  sequenceContinuation = interWs notNextRuleStart labeled
+
+  sequenceBase = first:labeled rest:sequenceContinuation* {
+    if (rest.length === 0) return first;
+    const elements = [first, ...rest.map((r: any) => r[2])];
+    return { type: "Sequence", elements };
+  }
+
+  alternative = base:sequenceBase act:(interWs actionBlock)? {
+    if (act.length === 0) return base;
+    return { type: "ActionExpression", expression: base, code: act[0][1] };
+  }
+
+  choiceExpr = first:alternative rest:(interWs "/" interWs alternative)* {
+    if (rest.length === 0) return first;
+    const alternatives = [first, ...rest.map((r: any) => r[3])];
+    return { type: "Choice", alternatives };
+  }
+}
