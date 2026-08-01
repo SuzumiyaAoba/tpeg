@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { literal as lit } from "./basic";
 import { charClass } from "./char-class";
-import { seq } from "./combinators";
+import { choice, commit, seq } from "./combinators";
 import {
   oneOrMore,
   opt,
@@ -117,6 +117,52 @@ describe("oneOrMore", () => {
     if (result.success) {
       expect(result.val).toEqual(["a", "a", "a"]);
       expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
+    }
+  });
+});
+
+describe("fatal (cut/commit) propagation", () => {
+  it("optional re-raises a fatal failure instead of matching zero times", () => {
+    const input = "ax";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const parser = seq(lit("a"), commit(lit("b")));
+    const result = optional(parser)(input, pos);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.fatal).toBe(true);
+    }
+  });
+
+  it("zeroOrMore re-raises a fatal failure from a later iteration", () => {
+    const input = "aabx";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const parser = choice(seq(lit("b"), commit(lit("c"))), lit("a"));
+    const result = zeroOrMore(parser)(input, pos);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.fatal).toBe(true);
+    }
+  });
+
+  it("oneOrMore re-raises a fatal failure from a later iteration", () => {
+    const input = "aabx";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const parser = choice(seq(lit("b"), commit(lit("c"))), lit("a"));
+    const result = oneOrMore(parser)(input, pos);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.fatal).toBe(true);
+    }
+  });
+
+  it("quantified re-raises a fatal failure from an optional repetition", () => {
+    const input = "aabx";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const parser = choice(seq(lit("b"), commit(lit("c"))), lit("a"));
+    const result = quantified(parser, 0)(input, pos);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.fatal).toBe(true);
     }
   });
 });

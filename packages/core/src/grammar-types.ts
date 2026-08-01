@@ -289,6 +289,28 @@ export interface NegativeLookahead {
 }
 
 /**
+ * Cut/commit node in TPEG grammar AST.
+ * Represents the `~` cut point that may appear as one of a `Sequence`'s
+ * `elements`, e.g. `"if" ~ condition "then" body`. Once every element
+ * before the cut has matched, the elements after it are committed to: if
+ * any of them then fails, the enclosing `Choice` (see `Choice.alternatives`)
+ * must not try a sibling alternative, unlike ordinary PEG backtracking.
+ * A bare marker with no `expression` field of its own -- it consumes no
+ * input and contributes nothing to the enclosing sequence's capture (same
+ * treatment as `PositiveLookahead`/`NegativeLookahead`, see the Capture
+ * Structure Reference Table in docs/peg-grammar.md).
+ *
+ * @example
+ * ```typescript
+ * const cut: Cut = { type: "Cut" };
+ * ```
+ */
+export interface Cut {
+  /** The node type identifier */
+  type: "Cut";
+}
+
+/**
  * Labeled expression node in TPEG grammar AST.
  * Represents a labeled expression for capturing results (label:expr).
  *
@@ -357,6 +379,7 @@ export type Expression =
   | Quantified
   | PositiveLookahead
   | NegativeLookahead
+  | Cut
   | LabeledExpression
   | ActionExpression;
 
@@ -405,6 +428,15 @@ export interface RuleDefinition {
   pattern: Expression;
   /** Optional documentation comments for the rule */
   documentation?: string[];
+  /**
+   * Optional rule-scoped annotations, e.g. `@memoize` / `@memoize: 256`
+   * written directly before this rule's definition -- distinct from
+   * `GrammarDefinition.annotations`, which are block-scoped (`@start`,
+   * `@skip`, etc.). See `packages/parser/src/grammar.ts`'s
+   * `memoizeAnnotation` for the only rule-level annotation currently
+   * recognized by the parser.
+   */
+  annotations?: GrammarAnnotation[];
 }
 
 /**
@@ -931,6 +963,21 @@ export const createNegativeLookahead = (
 });
 
 /**
+ * Create a Cut AST node.
+ *
+ * @returns A new Cut AST node
+ *
+ * @example
+ * ```typescript
+ * const cut = createCut();
+ * // Returns: { type: "Cut" }
+ * ```
+ */
+export const createCut = (): Cut => ({
+  type: "Cut",
+});
+
+/**
  * Create a LabeledExpression AST node.
  *
  * @param label - The label for capturing the result
@@ -1002,6 +1049,7 @@ export const createGrammarAnnotation = (
  * @param name - The name of the rule
  * @param pattern - The expression pattern for this rule
  * @param documentation - Optional documentation comments for the rule
+ * @param annotations - Optional rule-scoped annotations (e.g. `@memoize`)
  * @returns A new RuleDefinition AST node
  *
  * @example
@@ -1014,19 +1062,14 @@ export const createRuleDefinition = (
   name: string,
   pattern: Expression,
   documentation?: string[],
-): RuleDefinition =>
-  documentation
-    ? {
-        type: "RuleDefinition",
-        name,
-        pattern,
-        documentation,
-      }
-    : {
-        type: "RuleDefinition",
-        name,
-        pattern,
-      };
+  annotations?: GrammarAnnotation[],
+): RuleDefinition => ({
+  type: "RuleDefinition",
+  name,
+  pattern,
+  ...(documentation ? { documentation } : {}),
+  ...(annotations ? { annotations } : {}),
+});
 
 /**
  * Create a GrammarDefinition AST node.
@@ -1336,6 +1379,14 @@ export const isPositiveLookahead = (expr: unknown): expr is PositiveLookahead =>
  */
 export const isNegativeLookahead = (expr: unknown): expr is NegativeLookahead =>
   hasNodeType(expr, "NegativeLookahead");
+
+/**
+ * Type guard to check if an expression is a Cut.
+ *
+ * @param expr - The expression to check
+ * @returns True if the expression is a Cut
+ */
+export const isCut = (expr: unknown): expr is Cut => hasNodeType(expr, "Cut");
 
 /**
  * Type guard to check if an expression is a LabeledExpression.

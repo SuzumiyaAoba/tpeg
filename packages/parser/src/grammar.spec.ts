@@ -176,6 +176,105 @@ describe("Grammar Definition Block Tests", () => {
     });
   });
 
+  describe("@memoize rule annotation", () => {
+    test("attaches a bare `@memoize` flag to the following rule", () => {
+      const input = `grammar X {
+        @memoize
+        expr = [0-9]+
+      }`;
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.annotations).toHaveLength(0);
+        expect(result.val.rules).toHaveLength(1);
+        expect(result.val.rules[0]?.annotations).toEqual([
+          { type: "GrammarAnnotation", key: "memoize", value: "" },
+        ]);
+      }
+    });
+
+    test("attaches `@memoize: N` with its numeric value to the following rule", () => {
+      const input = `grammar X {
+        @memoize: 256
+        expr = [0-9]+
+      }`;
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules[0]?.annotations).toEqual([
+          { type: "GrammarAnnotation", key: "memoize", value: "256" },
+        ]);
+      }
+    });
+
+    test("leaves a rule with no leading annotation without an annotations field", () => {
+      const input = `grammar X {
+        expr = [0-9]+
+      }`;
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules[0]?.annotations).toBeUndefined();
+      }
+    });
+
+    test("only annotates the rule @memoize directly precedes, not other rules in the block", () => {
+      const input = `grammar X {
+        @memoize: 10
+        first = "a"
+        second = "b"
+      }`;
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules).toHaveLength(2);
+        expect(result.val.rules[0]?.name).toBe("first");
+        expect(result.val.rules[0]?.annotations).toEqual([
+          { type: "GrammarAnnotation", key: "memoize", value: "10" },
+        ]);
+        expect(result.val.rules[1]?.name).toBe("second");
+        expect(result.val.rules[1]?.annotations).toBeUndefined();
+      }
+    });
+
+    test("does not consume `@start` immediately preceding a rule -- it stays a block-level annotation", () => {
+      // Regression guard: annotatedRuleDefinition is restricted to the
+      // literal "memoize" key precisely so this common pattern (a
+      // block-level annotation with no blank line before the rule it
+      // describes) keeps working.
+      const input = `grammar X {
+        @start: expression
+        expression = [0-9]+
+      }`;
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.annotations).toEqual([
+          { type: "GrammarAnnotation", key: "start", value: "expression" },
+        ]);
+        expect(result.val.rules).toHaveLength(1);
+        expect(result.val.rules[0]?.name).toBe("expression");
+        expect(result.val.rules[0]?.annotations).toBeUndefined();
+      }
+    });
+
+    test("supports multiple @memoize annotations directly preceding the same rule", () => {
+      const input = `grammar X {
+        @memoize
+        @memoize: 5
+        expr = [0-9]+
+      }`;
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules[0]?.annotations).toEqual([
+          { type: "GrammarAnnotation", key: "memoize", value: "" },
+          { type: "GrammarAnnotation", key: "memoize", value: "5" },
+        ]);
+      }
+    });
+  });
+
   describe("grammarDefinition", () => {
     test("should parse grammar with annotations and single rule", () => {
       const input = `grammar SimpleCalc {
@@ -285,6 +384,42 @@ describe("Grammar Definition Block Tests", () => {
         expect(result.val.rules).toHaveLength(2);
         expect(result.val.rules[0]?.name).toBe("sep");
         expect(result.val.rules[1]?.name).toBe("chars");
+      }
+    });
+
+    test("should correctly bound a rule whose body spans multiple lines and contains a `~` cut marker", () => {
+      // grammarRuleExpression's boundary scanner has explicit cases for
+      // string/char-class/comment/brace content but otherwise just advances
+      // one character at a time - confirm "~" falls through that generic
+      // path harmlessly and doesn't get mistaken for a rule/block boundary,
+      // and that the next rule after it is still parsed as a separate item.
+      const input = `grammar X {
+        if_stmt =
+          "if" ~
+          cond
+          "then"
+          body
+
+        other = "x"
+      }`;
+
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules).toHaveLength(2);
+        expect(result.val.rules[0]?.name).toBe("if_stmt");
+        expect(result.val.rules[0]?.pattern.type).toBe("Sequence");
+        if (result.val.rules[0]?.pattern.type === "Sequence") {
+          const elements = result.val.rules[0].pattern.elements;
+          expect(elements.map((e) => e.type)).toEqual([
+            "StringLiteral",
+            "Cut",
+            "Identifier",
+            "StringLiteral",
+            "Identifier",
+          ]);
+        }
+        expect(result.val.rules[1]?.name).toBe("other");
       }
     });
 

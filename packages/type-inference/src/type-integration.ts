@@ -190,6 +190,7 @@ export class TypeIntegrationEngine {
         case "StringLiteral":
         case "CharacterClass":
         case "AnyChar":
+        case "Cut":
           // These types have no sub-expressions, so no dependencies
           break;
       }

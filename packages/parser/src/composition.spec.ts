@@ -213,6 +213,33 @@ describe("composition operators", () => {
           expect(result.val.type).toBe("StringLiteral");
         }
       });
+
+      it("should parse a `~` cut marker as a sequence element", () => {
+        const result = expression()('"if" ~ "then"', pos);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.val.type).toBe("Sequence");
+          if (result.val.type === "Sequence") {
+            expect(result.val.elements).toHaveLength(3);
+            expect(result.val.elements[0]?.type).toBe("StringLiteral");
+            expect(result.val.elements[1]?.type).toBe("Cut");
+            expect(result.val.elements[2]?.type).toBe("StringLiteral");
+          }
+        }
+      });
+
+      it("should parse a `~` cut marker with no surrounding whitespace", () => {
+        const result = expression()('"a"~"b"', pos);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.next.offset).toBe('"a"~"b"'.length);
+          expect(result.val.type).toBe("Sequence");
+          if (result.val.type === "Sequence") {
+            expect(result.val.elements).toHaveLength(3);
+            expect(result.val.elements[1]?.type).toBe("Cut");
+          }
+        }
+      });
     });
 
     describe("choice operator", () => {

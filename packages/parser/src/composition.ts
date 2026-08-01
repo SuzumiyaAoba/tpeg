@@ -171,13 +171,36 @@ const withOptionalAction = (parser: Parser<Expression>): Parser<Expression> => {
 };
 
 /**
- * Parses a sequence of labeled expressions, optionally separated by
- * whitespace. Whitespace between elements is optional (not required): PEG
- * juxtaposition doesn't require a separator, so `[a-z][0-9]*` must parse as
- * a two-element sequence exactly like `[a-z] [0-9]*` does. Each `labeled()`
- * element itself always consumes at least one character when it matches
- * (primary() can't match zero-width), so relaxing this to zeroOrMore can't
- * introduce a zero-progress loop iteration.
+ * Parses the `~` cut/commit marker: a bare token that may appear as one of
+ * a sequence's elements (`"if" ~ condition "then" body`), marking that once
+ * everything before it has matched, a failure in anything after it must not
+ * let the enclosing choice try a sibling alternative. See `Cut` in
+ * grammar-types.ts for the full semantics and `generateSequence` in
+ * codegen.ts for how a `Sequence` containing one compiles to `commit(...)`.
+ */
+const cutMarker: Parser<Expression> = map(
+  literal("~"),
+  (): Expression => ({ type: "Cut" }),
+);
+
+/**
+ * Parses a single sequence element: either the `~` cut marker or an
+ * ordinary labeled expression. `cutMarker` is tried first since `~` isn't a
+ * valid start character for `labeled()` (primary/prefix/postfix/label all
+ * begin with a string literal, character class, identifier, "(", "&", or
+ * "!"), so there's no ambiguity to backtrack out of.
+ */
+const sequenceElement = (): Parser<Expression> => choice(cutMarker, labeled());
+
+/**
+ * Parses a sequence of labeled expressions (or `~` cut markers), optionally
+ * separated by whitespace. Whitespace between elements is optional (not
+ * required): PEG juxtaposition doesn't require a separator, so
+ * `[a-z][0-9]*` must parse as a two-element sequence exactly like
+ * `[a-z] [0-9]*` does. Each `labeled()` element itself always consumes at
+ * least one character when it matches (primary() can't match zero-width),
+ * and `cutMarker` always consumes exactly one ("~"), so relaxing this to
+ * zeroOrMore can't introduce a zero-progress loop iteration.
  *
  * An alternative may be followed by a semantic action block (see
  * `withOptionalAction`), which wraps the whole sequence (or, for a
@@ -187,9 +210,9 @@ const sequenceExpression = (): Parser<Expression> => {
   return withOptionalAction(
     map(
       seq(
-        labeled(),
+        sequenceElement(),
         zeroOrMore(
-          seq(zeroOrMore(charClass(" ", "\t", "\n", "\r")), labeled()),
+          seq(zeroOrMore(charClass(" ", "\t", "\n", "\r")), sequenceElement()),
         ),
       ),
       ([first, rest]) => {

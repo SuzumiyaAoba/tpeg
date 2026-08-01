@@ -388,6 +388,39 @@ describe("TypeInferenceEngine", () => {
       expect(negativeResult.baseType).toBe("void");
     });
 
+    it("should type a Cut (`~`) marker as void, like a lookahead", () => {
+      const engine = new TypeInferenceEngine();
+      const cut: Expression = { type: "Cut" };
+
+      const result = engine.inferExpressionType(cut);
+
+      expect(result.typeString).toBe("void");
+      expect(result.baseType).toBe("void");
+    });
+
+    it("should exclude a Cut marker from a sequence's inferred tuple type", () => {
+      // generateSequence (packages/parser/src/codegen.ts) drops the `~`
+      // marker entirely rather than emitting it as a sequence() argument,
+      // so the inferred tuple must have exactly as many slots as the
+      // runtime tuple does -- one fewer than expression.elements.length.
+      const engine = new TypeInferenceEngine();
+      const cut: Expression = { type: "Cut" };
+      const withCut = createSequence([
+        createStringLiteral("if", '"'),
+        cut,
+        createStringLiteral("then", '"'),
+      ]);
+      const withoutCut = createSequence([
+        createStringLiteral("if", '"'),
+        createStringLiteral("then", '"'),
+      ]);
+
+      const resultWithCut = engine.inferExpressionType(withCut);
+      const resultWithoutCut = engine.inferExpressionType(withoutCut);
+
+      expect(resultWithCut.typeString).toBe(resultWithoutCut.typeString);
+    });
+
     it("should wrap the inner type in an object keyed by the label, matching capture()'s runtime shape", () => {
       // capture(label, parser) (packages/core/src/capture.ts) returns
       // Parser<{ [label]: T }>, not Parser<T> -- the inferred type must

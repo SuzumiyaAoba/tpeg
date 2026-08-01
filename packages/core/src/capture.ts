@@ -206,6 +206,13 @@ export const captureChoice = <T extends unknown[]>(
         return result;
       }
 
+      // A cut/commit failure must stop the choice here instead of trying
+      // later alternatives -- see `choice`'s identical handling in
+      // combinators.ts for the full rationale.
+      if (result.error.fatal) {
+        return result;
+      }
+
       // Track the longest error for better error reporting
       if (!longestError || result.error.pos.offset > longestError.pos.offset) {
         longestError = result.error;

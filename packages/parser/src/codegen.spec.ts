@@ -176,6 +176,32 @@ describe("TPEG Code Generation", () => {
       );
     });
 
+    test("should compile a `~` cut marker into commit(...)-wrapped elements after it", () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "ifStmt",
+            createSequence([
+              createStringLiteral("if"),
+              { type: "Cut" },
+              createStringLiteral("cond"),
+              createStringLiteral("then"),
+            ]),
+          ),
+        ],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      const result = generator.generateGrammar(grammar);
+
+      expect(result.code).toContain(
+        'sequence(literal("if"), commit(literal("cond")), commit(literal("then")))',
+      );
+      expect(result.imports.join("\n")).toContain("commit");
+    });
+
     test("should generate choice parser", () => {
       const grammar = createGrammarDefinition(
         "TestGrammar",
@@ -660,6 +686,174 @@ describe("TPEG Code Generation", () => {
       expect(result.code).toContain(
         'export const ws: Parser<any> = charClass(" ", "\\t", "\\n", "\\r");',
       );
+    });
+  });
+
+  describe("@memoize rule annotation", () => {
+    test("wraps a rule carrying a bare `@memoize` flag in an unbounded memoize(...)", () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition("expr", createStringLiteral("x"), undefined, [
+            { type: "GrammarAnnotation", key: "memoize", value: "" },
+          ]),
+        ],
+        [],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      const result = generator.generateGrammar(grammar);
+
+      expect(result.code).toContain(
+        'export const expr: Parser<any> = memoize(literal("x"));',
+      );
+      expect(result.imports.join("\n")).toContain(
+        'import { memoize } from "@suzumiyaaoba/tpeg-combinator";',
+      );
+    });
+
+    test("wraps a rule carrying `@memoize: N` with maxCacheSize", () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition("expr", createStringLiteral("x"), undefined, [
+            { type: "GrammarAnnotation", key: "memoize", value: "256" },
+          ]),
+        ],
+        [],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      const result = generator.generateGrammar(grammar);
+
+      expect(result.code).toContain(
+        'export const expr: Parser<any> = memoize(literal("x"), { maxCacheSize: 256 });',
+      );
+    });
+
+    test("does not import memoize when no rule uses @memoize", () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition("expr", createStringLiteral("x"))],
+        [],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      const result = generator.generateGrammar(grammar);
+
+      expect(result.imports.join("\n")).not.toContain("memoize");
+    });
+
+    test("an @memoize-annotated rule actually reuses a cached result at runtime instead of re-running its pattern", async () => {
+      const core = await import("@suzumiyaaoba/tpeg-core");
+      const combinator = await import("@suzumiyaaoba/tpeg-combinator");
+
+      // `tick` is an externally-supplied parser (not defined by this
+      // grammar) that counts how many times it actually runs - the
+      // generated `counted` rule references it unresolved, same as
+      // `math.expr` elsewhere in this file.
+      let calls = 0;
+      const tick = (_input: string, pos: { offset: number }) => {
+        calls++;
+        return { success: true as const, val: "t", current: pos, next: pos };
+      };
+
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "counted",
+            createSequence([
+              createIdentifier("tick"),
+              createStringLiteral("x"),
+            ]),
+            undefined,
+            [{ type: "GrammarAnnotation", key: "memoize", value: "" }],
+          ),
+        ],
+        [],
+      );
+
+      const result = generateTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+      });
+
+      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+      const moduleFactory = new Function(
+        ...Object.keys(core),
+        ...Object.keys(combinator),
+        "tick",
+        `${body}\nreturn { counted };`,
+      );
+      const { counted } = moduleFactory(
+        ...Object.values(core),
+        ...Object.values(combinator),
+        tick,
+      );
+
+      const pos = { offset: 0, line: 1, column: 1 };
+      const first = counted("x", pos);
+      const second = counted("x", pos);
+
+      expect(first.success).toBe(true);
+      expect(second).toEqual(first);
+      // Without memoization this would be 2 - the whole point of
+      // `@memoize` is that the second call at the same position is served
+      // from cache instead of re-running `tick "x"`.
+      expect(calls).toBe(1);
+    });
+  });
+
+  describe("`~` cut/commit operator (runtime)", () => {
+    test("a fatal failure after a cut prevents the enclosing choice from falling back to a sibling alternative", async () => {
+      const core = await import("@suzumiyaaoba/tpeg-core");
+
+      // stmt = "i" ~ "f"    -- committed once "i" has matched
+      //      / "i"          -- would otherwise match "ix" as bare "i"
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "stmt",
+            createChoice([
+              createSequence([
+                createStringLiteral("i"),
+                { type: "Cut" },
+                createStringLiteral("f"),
+              ]),
+              createStringLiteral("i"),
+            ]),
+          ),
+        ],
+        [],
+      );
+
+      const result = generateTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+      });
+
+      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+      const moduleFactory = new Function(
+        ...Object.keys(core),
+        `${body}\nreturn { stmt };`,
+      );
+      const { stmt } = moduleFactory(...Object.values(core));
+
+      const pos = { offset: 0, line: 1, column: 1 };
+      const matched = stmt("if", pos);
+      expect(matched.success).toBe(true);
+
+      // Without the cut, this would fall back to the second alternative
+      // and succeed by matching just "i".
+      const committed = stmt("ix", pos);
+      expect(committed.success).toBe(false);
     });
   });
 });

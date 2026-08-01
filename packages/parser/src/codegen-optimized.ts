@@ -34,7 +34,9 @@ import {
   collectTopLevelLabels,
   collectTransformFunctions,
   filterReferencedLabels,
+  findMemoizeAnnotation,
   wrapWithAction,
+  wrapWithMemoize,
   wrapWithTransform,
 } from "./codegen";
 import { escapeStringLiteral } from "./constants";
@@ -248,9 +250,14 @@ export class OptimizedTPEGCodeGenerator {
     // Add performance imports if needed. memoize lives in tpeg-combinator,
     // not tpeg-core, so it must not also be folded into the tpeg-core
     // import below -- that would import a name tpeg-core doesn't export.
+    // An explicit `@memoize` annotation on any rule forces the import
+    // regardless of `enableMemoization`/complexity -- see
+    // `generateOptimizedRule`, which applies it independently of the
+    // automatic heuristic below.
     if (
-      this.options.enableMemoization &&
-      analysis.estimatedParseComplexity !== "low"
+      (this.options.enableMemoization &&
+        analysis.estimatedParseComplexity !== "low") ||
+      grammar.rules.some((rule) => findMemoizeAnnotation(rule))
     ) {
       imports.push('import { memoize } from "@suzumiyaaoba/tpeg-combinator";');
     }
@@ -298,7 +305,11 @@ export class OptimizedTPEGCodeGenerator {
             ? "captureSequence"
             : "sequence",
         );
+        if (expr.elements.some((el) => el.type === "Cut")) {
+          combinators.add("commit");
+        }
         for (const element of expr.elements) {
+          if (element.type === "Cut") continue;
           this.collectUsedCombinators(element, combinators, currentRuleIndex);
         }
         break;
@@ -412,14 +423,25 @@ export class OptimizedTPEGCodeGenerator {
     analysis: ReturnType<typeof analyzeGrammarPerformance>,
     transformFn?: TransformFunction,
   ): string {
-    const complexity = analysis.ruleComplexity.get(rule.name);
-    const shouldMemoize =
-      this.options.enableMemoization &&
-      complexity &&
-      (complexity.estimatedComplexity === "high" || complexity.hasRecursion);
-
     const innerCode = this.generateOptimizedExpression(rule.pattern);
-    let parserCode = shouldMemoize ? `memoize(${innerCode})` : innerCode;
+
+    // An explicit `@memoize` annotation wins over the automatic
+    // high-complexity/recursion heuristic below (and applies regardless of
+    // `enableMemoization`) -- it's the user directly saying "memoize this
+    // rule", not a suggestion this generator inferred on its own.
+    const memoizeAnnotation = findMemoizeAnnotation(rule);
+    let parserCode: string;
+    if (memoizeAnnotation) {
+      parserCode = wrapWithMemoize(innerCode, memoizeAnnotation);
+    } else {
+      const complexity = analysis.ruleComplexity.get(rule.name);
+      const shouldMemoize =
+        this.options.enableMemoization &&
+        complexity &&
+        (complexity.estimatedComplexity === "high" || complexity.hasRecursion);
+      parserCode = shouldMemoize ? `memoize(${innerCode})` : innerCode;
+    }
+
     if (transformFn) {
       parserCode = wrapWithTransform(rule.name, parserCode, transformFn);
     }
@@ -529,27 +551,52 @@ export class OptimizedTPEGCodeGenerator {
   }
 
   private generateOptimizedSequence(expr: Sequence): string {
-    if (expr.elements.length === 0) {
-      return "sequence()";
-    }
+    const hasCut = expr.elements.some((el) => el.type === "Cut");
 
-    if (expr.elements.length === 1) {
-      const element = expr.elements[0];
-      if (element) {
-        return this.generateOptimizedExpression(element);
+    if (!hasCut) {
+      if (expr.elements.length === 0) {
+        return "sequence()";
+      }
+
+      if (expr.elements.length === 1) {
+        const element = expr.elements[0];
+        if (element) {
+          return this.generateOptimizedExpression(element);
+        }
       }
     }
 
-    // Optimize common sequence patterns
-    const elements = expr.elements.map((el) =>
-      this.generateOptimizedExpression(el),
-    );
+    // A `~` cut marker (see the `Cut` node in grammar-types.ts) is dropped
+    // entirely rather than emitted as a sequence()/captureSequence()
+    // argument; every element *after* it is instead individually wrapped
+    // in commit(...) (tpeg-core's combinators.ts) - mirrors
+    // generateSequence in codegen.ts, see its comments for the full
+    // rationale.
+    const parts: string[] = [];
+    let committed = false;
+    for (const el of expr.elements) {
+      if (el.type === "Cut") {
+        committed = true;
+        continue;
+      }
+      const code = this.generateOptimizedExpression(el);
+      parts.push(committed ? `commit(${code})` : code);
+    }
+
+    if (parts.length === 0) {
+      return "sequence()";
+    }
+    if (parts.length === 1) {
+      const [only] = parts;
+      if (only) return only;
+    }
+
     // A sequence with labeled elements needs its per-element captured
     // objects merged into one - `sequence()` returns a positional tuple
     // instead, which would leave labels unreachable by name.
     return collectTopLevelLabels(expr).length > 0
-      ? `captureSequence(${elements.join(", ")})`
-      : `sequence(${elements.join(", ")})`;
+      ? `captureSequence(${parts.join(", ")})`
+      : `sequence(${parts.join(", ")})`;
   }
 
   private generateOptimizedChoice(expr: Choice): string {

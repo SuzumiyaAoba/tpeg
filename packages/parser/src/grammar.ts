@@ -14,11 +14,13 @@ import type {
   ModularGrammarDefinition,
 } from "@suzumiyaaoba/tpeg-core";
 import {
+  charClass,
   choice,
   createModularGrammarDefinition,
   createModuleInfo,
   literal,
   map,
+  oneOrMore,
   optional,
   seq as sequence,
   star as zeroOrMore,
@@ -391,6 +393,68 @@ export const ruleDefinition: Parser<RuleDefinition> = map(
 );
 
 /**
+ * Parse a decimal integer literal used as a rule-level annotation's value,
+ * e.g. the `256` in `@memoize: 256`.
+ */
+const integerLiteral: Parser<string> = map(
+  oneOrMore(charClass(["0", "9"])),
+  (digits) => digits.join(""),
+);
+
+/**
+ * Parse the `@memoize` rule-level annotation: `@memoize` (flag - memoize
+ * with an unbounded cache) or `@memoize: N` (bounded to at most N cached
+ * positions - see `packages/combinator/src/logic.ts`'s `memoize`'s
+ * `maxCacheSize` option, which this threads through at codegen time).
+ *
+ * Deliberately its own parser rather than reusing the generic
+ * `grammarAnnotation` (which also matches `@start`, `@skip`, and any other
+ * block-level annotation): restricting the key to the literal "memoize"
+ * means `annotatedRuleDefinition` below can never misfire on those. Without
+ * this restriction, trying a generic "annotations then rule" alternative
+ * ahead of `grammarAnnotation` in `grammarItem` would swallow
+ * `@start: expression` immediately followed by `expression = ...` as a
+ * rule-level annotation on `expression`, silently breaking `@start`
+ * resolution for the (very common) case where a block annotation happens
+ * to sit directly above the rule it describes.
+ */
+const memoizeAnnotation: Parser<GrammarAnnotation> = map(
+  sequence(
+    optionalWhitespace,
+    literal(GRAMMAR_SYMBOLS.ANNOTATION_PREFIX),
+    literal("memoize"),
+    optional(
+      sequence(
+        optionalWhitespace,
+        literal(GRAMMAR_SYMBOLS.LABEL_SEPARATOR),
+        optionalWhitespace,
+        integerLiteral,
+      ),
+    ),
+  ),
+  (results) => {
+    const valueClause = results[3][0];
+    return createGrammarAnnotation(
+      "memoize",
+      valueClause ? valueClause[3] : "",
+    );
+  },
+);
+
+/**
+ * Parse a rule definition preceded by one or more `@memoize` annotations,
+ * attaching them to the resulting `RuleDefinition.annotations`. Tried as
+ * its own `grammarItem` alternative *before* the generic `grammarAnnotation`
+ * (see `grammarItem` below) so `@memoize` immediately preceding a rule is
+ * captured together with it instead of being parsed as a standalone
+ * block-level annotation first.
+ */
+const annotatedRuleDefinition: Parser<RuleDefinition> = map(
+  sequence(oneOrMore(memoizeAnnotation), ruleDefinition),
+  ([annotations, rule]) => ({ ...rule, annotations }),
+);
+
+/**
  * Internal type for discriminating between grammar items during parsing
  */
 type GrammarItemType =
@@ -411,10 +475,17 @@ type GrammarItemType =
  * value; moduleInfoListAnnotation matches any "@key" with an array-of-quoted-
  * strings value (used for @dependencies/@conflicts); moduleInfoRecordAnnotation
  * matches any "@key" with a quoted-string-keyed object-literal value (used for
- * @requires); grammarAnnotation is the generic "@key: value" (or flag-only
- * "@key") fallback. Each requires a distinct value shape, so a mismatched
- * alternative fails outright rather than partially matching - ordering
- * doesn't create ambiguity between them.
+ * @requires); annotatedRuleDefinition matches only the literal "@memoize"
+ * key(s) followed by a rule definition; grammarAnnotation is the generic
+ * "@key: value" (or flag-only "@key") fallback. Each requires a distinct
+ * value shape (or, for annotatedRuleDefinition, a distinct key), so a
+ * mismatched alternative fails outright rather than partially matching -
+ * ordering doesn't create ambiguity between them. annotatedRuleDefinition
+ * must be tried before grammarAnnotation so a leading "@memoize" attaches to
+ * the rule instead of being parsed as a standalone block annotation first;
+ * see its own docs for why restricting it to "memoize" is what keeps this
+ * safe for every other annotation key (in particular "@start"/"@skip"
+ * immediately followed by a rule, which must keep working exactly as before).
  */
 const grammarItem: Parser<GrammarItemType> = choice(
   map(
@@ -436,6 +507,10 @@ const grammarItem: Parser<GrammarItemType> = choice(
       key: decl.key,
       values: decl.values,
     }),
+  ),
+  map(
+    annotatedRuleDefinition,
+    (rule): GrammarItemType => ({ type: "rule", value: rule }),
   ),
   map(
     grammarAnnotation,

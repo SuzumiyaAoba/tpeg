@@ -123,6 +123,44 @@ export const sequence = <P extends Parser<unknown>[]>(
 export const seq = sequence;
 
 /**
+ * Cut/commit combinator: wraps `parser` so that, if it fails, the failure
+ * is marked `fatal` (see `ParseError.fatal` in types.ts). This is the
+ * runtime primitive behind the grammar's `~` cut operator (a `Sequence`
+ * containing `~` compiles to `sequence(before..., commit(sequence(after...)))`
+ * -- see `packages/parser/src/codegen.ts`'s `generateSequence`), but it's
+ * also usable directly by hand-written parsers.
+ *
+ * `choice`/`captureChoice` stop trying further alternatives the moment one
+ * produces a `fatal` failure, instead of backtracking to the next one; the
+ * fatal flag survives being wrapped by `sequence`/`captureSequence` (they
+ * either return the child failure unchanged or spread its fields), so it
+ * propagates up through every enclosing `Sequence`/`Choice` until it either
+ * reaches a `choice`/`captureChoice` that stops there, or the top of the
+ * parse. `optional`/`zeroOrMore`/`oneOrMore`/`quantified` (repetition.ts)
+ * also re-raise a fatal failure rather than treating it as "no match".
+ *
+ * @example
+ * ```typescript
+ * // Once "if" has matched, a failure to parse a condition is fatal --
+ * // callers won't backtrack into trying an unrelated alternative.
+ * const ifStmt = seq(literal("if"), commit(seq(condition, literal("then"), body)));
+ * const stmt = choice(ifStmt, whileStmt, exprStmt);
+ * ```
+ */
+export const commit =
+  <T>(parser: Parser<T>): Parser<T> =>
+  (input: string, pos: Pos) => {
+    const result = parser(input, pos);
+    if (isFailure(result)) {
+      return {
+        ...result,
+        error: { ...result.error, fatal: true },
+      };
+    }
+    return result;
+  };
+
+/**
  * Parser that attempts multiple parsers and returns the result of the first successful one.
  *
  * Tries each parser in order until one succeeds. If all parsers fail, returns a failure
@@ -181,6 +219,17 @@ export const choice = <T extends unknown[]>(
       }
 
       if (isFailure(result)) {
+        // A cut/commit (see `commit`) inside this alternative: stop trying
+        // the remaining alternatives and propagate this failure as-is,
+        // rather than folding it into the usual "none of the parsers
+        // matched" aggregate -- the whole point of `~` is that once
+        // reached, this alternative was the intended one, so a sibling
+        // alternative succeeding later at a farther offset must not paper
+        // over what's actually a real error in this one.
+        if (result.error.fatal) {
+          return result;
+        }
+
         const error = result.error;
         if (!farthestError || error.pos.offset > farthestError.pos.offset) {
           // Strictly farther than anything seen so far: expectations

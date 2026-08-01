@@ -10,7 +10,7 @@ import {
   isCapturedValue,
   mergeCaptures,
 } from "./capture";
-import { choice, sequence } from "./combinators";
+import { choice, commit, sequence } from "./combinators";
 
 describe("capture", () => {
   const pos = { offset: 0, column: 0, line: 1 };
@@ -187,6 +187,21 @@ describe("capture", () => {
 
       const result = parser("bonjour", pos);
       expect(result.success).toBe(false);
+    });
+
+    it("does not try the next alternative once a committed sub-parser fails", () => {
+      // Without the fatal short-circuit, this would fall through to the
+      // second alternative (which matches on "h" alone) and succeed.
+      const parser = captureChoice(
+        sequence(literal("h"), commit(capture("greeting", literal("i")))),
+        capture("farewell", literal("h")),
+      );
+
+      const result = parser("hx", pos);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.fatal).toBe(true);
+      }
     });
 
     it("should handle mixed captured and non-captured alternatives", () => {

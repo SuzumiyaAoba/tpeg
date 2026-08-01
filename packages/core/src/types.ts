@@ -168,6 +168,19 @@ export interface ParseError {
   found?: string;
   parserName?: string;
   context?: string | string[];
+  /**
+   * Set by `commit()` (see combinators.ts) to mark a failure as a
+   * cut/commit point: once a grammar's `~` operator has been reached and
+   * the rest of that alternative fails, `choice()`/`captureChoice()` must
+   * not try sibling alternatives, and `optional`/`zeroOrMore`/`oneOrMore`/
+   * `quantified` (see repetition.ts) must not swallow the failure as "no
+   * match" either -- both re-raise a `fatal` failure unchanged instead of
+   * applying their normal backtracking/recovery behavior. Every combinator
+   * that rebuilds a failure via `{ ...childError, ... }` (rather than
+   * discarding it) preserves this flag for free, since it's just another
+   * enumerable property on `ParseError`.
+   */
+  fatal?: boolean;
 }
 
 /**

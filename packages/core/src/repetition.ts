@@ -50,6 +50,14 @@ export const optional =
       };
     }
 
+    // A cut/commit (see `commit` in combinators.ts) inside `parser` marks
+    // its failure `fatal`, meaning "do not treat this as backtrackable" --
+    // re-raise it instead of the usual "swallow and report zero matches",
+    // otherwise `("if" ~ cond)?` would silently discard the cut's intent.
+    if (result.error.fatal) {
+      return result;
+    }
+
     // Return empty array on failure (not an error)
     return {
       success: true,
@@ -88,6 +96,11 @@ export const zeroOrMore =
       const result = parser(input, currentPos);
 
       if (!result.success) {
+        // See `optional` above: a fatal (cut/commit) failure must propagate
+        // rather than be treated as "the repetition simply ends here".
+        if (result.error.fatal) {
+          return result;
+        }
         break;
       }
 
@@ -153,6 +166,11 @@ export const oneOrMore =
               context: prependContext("in oneOrMore", failure.error.context),
             },
           );
+        }
+        // See `optional` above: a fatal (cut/commit) failure must propagate
+        // rather than be treated as "the repetition simply ends here".
+        if (result.error.fatal) {
+          return result;
         }
         // Later iterations failed - break and return what we have
         break;
@@ -272,6 +290,11 @@ export const quantified = <T>(
     for (let i = count; i < limit; i++) {
       const result = parser(input, currentPos);
       if (!result.success) {
+        // See `optional` above: a fatal (cut/commit) failure must propagate
+        // rather than be treated as "the repetition simply ends here".
+        if (result.error.fatal) {
+          return result;
+        }
         // Optional repetitions can fail - just break
         break;
       }

@@ -12,6 +12,7 @@ import type {
   CharRange,
   CharacterClass,
   Choice,
+  Cut,
   Expression,
   GrammarAnnotation,
   GrammarDefinition,
@@ -46,6 +47,7 @@ export type {
   Quantified,
   PositiveLookahead,
   NegativeLookahead,
+  Cut,
   LabeledExpression,
   ActionExpression,
   Expression,
@@ -352,6 +354,14 @@ export const createNegativeLookahead = (
 });
 
 /**
+ * Create a Cut AST node (the `~` cut/commit marker)
+ * @returns Cut node
+ */
+export const createCut = (): Cut => ({
+  type: "Cut",
+});
+
+/**
  * Create a LabeledExpression AST node
  * @param label The label name
  * @param expression The expression to label
@@ -401,25 +411,21 @@ export const createGrammarAnnotation = (
  * @param name The rule name
  * @param pattern The rule pattern
  * @param documentation Optional documentation lines
+ * @param annotations Optional rule-scoped annotations (e.g. `@memoize`)
  * @returns RuleDefinition node
  */
 export const createRuleDefinition = (
   name: string,
   pattern: Expression,
   documentation?: string[],
-): RuleDefinition =>
-  documentation
-    ? {
-        type: "RuleDefinition",
-        name,
-        pattern,
-        documentation,
-      }
-    : {
-        type: "RuleDefinition",
-        name,
-        pattern,
-      };
+  annotations?: GrammarAnnotation[],
+): RuleDefinition => ({
+  type: "RuleDefinition",
+  name,
+  pattern,
+  ...(documentation ? { documentation } : {}),
+  ...(annotations ? { annotations } : {}),
+});
 
 /**
  * Create a GrammarDefinition AST node

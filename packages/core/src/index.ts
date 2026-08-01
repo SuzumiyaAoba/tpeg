@@ -27,6 +27,7 @@ import { capture, captureChoice, captureSequence } from "./capture";
 import { charClass } from "./char-class";
 import {
   choice,
+  commit,
   lazy,
   maybe,
   reject,
@@ -143,6 +144,7 @@ export const combinators = {
   sequence,
   seq,
   choice,
+  commit,
   maybe,
   withDefault,
   reject,

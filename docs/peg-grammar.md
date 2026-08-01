@@ -122,6 +122,39 @@ expr{3,}       // 3 or more times
 !expr          // Negative lookahead (non-consuming)
 ```
 
+## Cut/Commit Operator
+
+`~` may appear as one of a sequence's elements. Once everything before it has
+matched, it commits to that alternative: if anything *after* it then fails,
+the enclosing `/` choice does not fall back to a sibling alternative the way
+ordinary PEG backtracking would. This is most useful once a short, unambiguous
+prefix (a keyword, an opening delimiter) has told you which alternative was
+intended - a failure past that point is a real syntax error in that
+construct, not evidence you guessed the wrong alternative.
+
+```tpeg
+if_stmt = "if" ~ condition "then" body
+        / while_stmt
+        / expr_stmt
+```
+
+Without `~`, a typo in `condition` (e.g. a missing operand) would make the
+`"if" condition "then" body` alternative fail as a whole, and the parser
+would silently move on to try `while_stmt` and `expr_stmt` too - producing a
+confusing error about the *last* alternative it tried, far from the actual
+mistake. With `~`, a failure anywhere after `"if"` is reported immediately as
+a failure in the `if` statement, since the parser is already committed to
+that alternative.
+
+`~` consumes no input and, like `&`/`!`, contributes nothing to the enclosing
+sequence's capture (see the [Capture Structure Reference Table](#capture-structure-reference-table)).
+It has no effect as the very last element of a sequence (there is nothing
+after it left to protect), and it does not by itself affect anything outside
+the sequence it appears in - in particular, a cut inside a group nested
+inside a larger sequence only protects the rest of *its own* group, not
+sibling elements of the outer sequence. Multiple `~` in the same sequence are
+allowed but redundant: once committed, a sequence stays committed.
+
 ## Labels and Captures
 
 ### Basic Labels
@@ -214,6 +247,7 @@ export const greeting = captureSequence(
 | `group:(pattern1 / pattern2)` | `{ group: T1 \| T2 }` | Labeled group creates named capture |
 | `&pattern` | `null` | Positive lookahead doesn't capture |
 | `!pattern` | `null` | Negative lookahead doesn't capture |
+| `a ~ b` | `[T_a, T_b]` | `~` itself contributes nothing and no tuple slot - the sequence's element count (and captures, if labeled) is exactly as if `~` weren't there |
 
 ## Semantic Actions
 
@@ -317,6 +351,32 @@ rule_name = pattern
 /// @returns Calculation result (type inferred from transform)
 expression = left:term op:("+" / "-") right:term
 ```
+
+### Rule-Level Annotations: `@memoize`
+
+A rule definition may be preceded by `@memoize` (an unbounded cache) or
+`@memoize: N` (a cache bounded to at most `N` tracked positions), directly
+above the rule it applies to:
+
+```tpeg
+@memoize: 256
+expression = left:term rest:(op:add_op right:term)*
+```
+
+This is distinct from the `@key: value` annotations in the
+[Grammar Block](#grammar-block) below (`@start`, `@skip`, etc.), which are
+scoped to the whole grammar, not a single rule - `@memoize` must sit directly
+above the rule it names, with no other statement (including another
+grammar-level annotation) between them.
+
+Bounded memoization is a performance hint, not a semantic change: it caches a
+memoized rule's parse result per input position, so re-trying the same rule
+at the same offset (as ordered-choice backtracking or a shared prefix
+reparse does) is an `O(1)` lookup instead of a full re-parse - see
+`memoize`'s own documentation in `packages/combinator/src/logic.ts` for the
+full rationale and its `maxCacheSize` option, which `@memoize: N` maps onto
+directly. `@memoize` with no value leaves the cache unbounded for that rule,
+matching `memoize`'s own default.
 
 ### Grammar Block
 ```tpeg

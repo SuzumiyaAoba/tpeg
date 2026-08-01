@@ -12,6 +12,7 @@ import type {
   CharacterClass,
   Choice,
   Expression,
+  GrammarAnnotation,
   GrammarDefinition,
   Group,
   Identifier,
@@ -58,6 +59,32 @@ export const collectTransformFunctions = (
 
   return byName;
 };
+
+/**
+ * Finds a rule's `@memoize` annotation (see `packages/parser/src/grammar.ts`'s
+ * `memoizeAnnotation`), if any. If `@memoize` appears more than once on the
+ * same rule, the first one wins.
+ */
+export const findMemoizeAnnotation = (
+  rule: RuleDefinition,
+): GrammarAnnotation | undefined =>
+  rule.annotations?.find((a) => a.key === "memoize");
+
+/**
+ * Wraps `parserCode` in a `memoize(...)` call (`@suzumiyaaoba/tpeg-combinator`)
+ * per `annotation`'s value: a bare `@memoize` (empty value) memoizes with an
+ * unbounded cache, while `@memoize: N` passes `{ maxCacheSize: N }` so the
+ * generated rule's memo table never tracks more than N cached positions at
+ * once (packages/combinator/src/logic.ts's `memoize` bounds cached
+ * positions *for the input currently being parsed*, not across inputs).
+ */
+export const wrapWithMemoize = (
+  parserCode: string,
+  annotation: GrammarAnnotation,
+): string =>
+  annotation.value
+    ? `memoize(${parserCode}, { maxCacheSize: ${Number(annotation.value)} })`
+    : `memoize(${parserCode})`;
 
 /**
  * Wraps a rule's generated parser expression so that, on a successful parse,
@@ -279,6 +306,15 @@ export class TPEGCodeGenerator {
           `import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`,
         );
       }
+      // memoize lives in tpeg-combinator, not tpeg-core, and is only ever
+      // emitted for a rule carrying an explicit `@memoize` annotation (see
+      // generateRule) - this generator has no automatic memoization
+      // heuristic of its own (unlike codegen-optimized.ts).
+      if (grammar.rules.some((rule) => findMemoizeAnnotation(rule))) {
+        imports.push(
+          'import { memoize } from "@suzumiyaaoba/tpeg-combinator";',
+        );
+      }
     }
 
     // Generate parser for each rule, applying a matching TypeScript
@@ -318,6 +354,10 @@ export class TPEGCodeGenerator {
     transformFn?: TransformFunction,
   ): string {
     let parserCode = this.generateExpression(rule.pattern);
+    const memoizeAnnotation = findMemoizeAnnotation(rule);
+    if (memoizeAnnotation) {
+      parserCode = wrapWithMemoize(parserCode, memoizeAnnotation);
+    }
     if (transformFn) {
       parserCode = wrapWithTransform(rule.name, parserCode, transformFn);
     }
@@ -424,9 +464,27 @@ export class TPEGCodeGenerator {
   }
 
   private generateSequence(expr: Sequence): string {
-    const elements = expr.elements
-      .map((el) => this.generateExpression(el))
-      .join(", ");
+    // A `~` cut marker (see the `Cut` node in grammar-types.ts) is dropped
+    // entirely rather than emitted as a sequence()/captureSequence()
+    // argument - it consumes no input and contributes no value of its own.
+    // Every element *after* it is instead individually wrapped in
+    // `commit(...)` (tpeg-core's combinators.ts): once everything before
+    // the cut has matched, a failure in any of them must not let the
+    // enclosing `choice(...)` fall back to a sibling alternative. Wrapping
+    // each element individually (rather than nesting the tail in its own
+    // sub-sequence) keeps the generated tuple/capture-merge shape
+    // identical to the cut-free case - only failure behavior changes.
+    const parts: string[] = [];
+    let committed = false;
+    for (const el of expr.elements) {
+      if (el.type === "Cut") {
+        committed = true;
+        continue;
+      }
+      const code = this.generateExpression(el);
+      parts.push(committed ? `commit(${code})` : code);
+    }
+    const elements = parts.join(", ");
     // A sequence with labeled elements needs its per-element captured
     // objects merged into one - `sequence()` returns a positional tuple
     // instead, which would leave labels unreachable by name.
@@ -557,7 +615,11 @@ export class TPEGCodeGenerator {
             ? "captureSequence"
             : "sequence",
         );
+        if (expr.elements.some((el) => el.type === "Cut")) {
+          combinators.add("commit");
+        }
         for (const element of expr.elements) {
+          if (element.type === "Cut") continue;
           this.collectUsedCombinators(element, combinators, currentRuleIndex);
         }
         break;

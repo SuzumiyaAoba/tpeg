@@ -426,6 +426,23 @@ export class TypeInferenceEngine {
         case "NegativeLookahead":
           inferredType = this.inferLookaheadType(expression);
           break;
+        case "Cut":
+          // The `~` cut/commit marker: consumes no input and, per
+          // `generateSequence` in packages/parser/src/codegen.ts, is
+          // dropped entirely rather than emitted as a `sequence(...)`
+          // argument -- so, like a lookahead, it contributes nothing to
+          // the result type.
+          inferredType = {
+            typeString: "void",
+            nullable: false,
+            isArray: false,
+            baseType: "void",
+            imports: [],
+            documentation: this.options.generateDocumentation
+              ? "Cut/commit marker - no result"
+              : undefined,
+          };
+          break;
         case "LabeledExpression":
           inferredType = this.inferLabeledExpressionType(expression);
           break;
@@ -600,9 +617,15 @@ export class TypeInferenceEngine {
       };
     }
 
-    const elementTypes = expression.elements.map((element: Expression) =>
-      this.inferExpressionType(element),
-    );
+    // A `Cut` (`~`) marker never becomes an argument to the generated
+    // `sequence(...)`/`captureSequence(...)` call (see `generateSequence`
+    // in packages/parser/src/codegen.ts) -- unlike a lookahead, which is
+    // kept as a real (void-valued) tuple slot -- so it must be excluded
+    // here too, or the inferred tuple would have one more element than the
+    // runtime value actually does.
+    const elementTypes = expression.elements
+      .filter((element: Expression) => element.type !== "Cut")
+      .map((element: Expression) => this.inferExpressionType(element));
 
     const typeStrings = elementTypes.map((t) => t.typeString);
     const allImports = elementTypes.flatMap((t) => t.imports);

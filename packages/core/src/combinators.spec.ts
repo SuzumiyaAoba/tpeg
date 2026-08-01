@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { lit } from "./basic";
 import {
   choice,
+  commit,
   lazy,
   maybe,
   predictiveChoice,
@@ -93,6 +94,30 @@ describe("choice", () => {
     expect(result.success).toBe(false);
   });
 
+  it("does not try the next alternative once a committed sub-parser fails", () => {
+    const input = "ix";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const committedBranch = seq(lit("i"), commit(lit("f")));
+    const fallback = lit("i");
+    const result = choice(committedBranch, fallback)(input, pos);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.fatal).toBe(true);
+    }
+  });
+
+  it("still tries the next alternative when the failure isn't fatal", () => {
+    const input = "ix";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const branch = seq(lit("i"), lit("f"));
+    const fallback = lit("i");
+    const result = choice(branch, fallback)(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("i");
+    }
+  });
+
   it("should fail if a parser is undefined", () => {
     const input = "b";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
@@ -155,6 +180,28 @@ describe("choice", () => {
     if (!result.success) {
       expect(result.error.expected).toEqual(["y", "w"]);
       expect(result.error.pos).toEqual({ offset: 1, column: 1, line: 1 });
+    }
+  });
+});
+
+describe("commit", () => {
+  it("passes through a successful parse unchanged", () => {
+    const input = "a";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = commit(lit("a"))(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("a");
+    }
+  });
+
+  it("marks a failure as fatal", () => {
+    const input = "b";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const result = commit(lit("a"))(input, pos);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.fatal).toBe(true);
     }
   });
 });

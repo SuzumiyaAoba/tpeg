@@ -338,6 +338,97 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
       expect(parsed.next.offset).toBe(2);
     }
   });
+
+  it("compiles a `~` cut marker into commit(...)-wrapped elements after it", () => {
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "ifStmt",
+          createSequence([
+            createStringLiteral("if", '"'),
+            { type: "Cut" },
+            createStringLiteral("cond", '"'),
+            createStringLiteral("then", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      includeImports: true,
+    });
+
+    expect(result.code).toContain(
+      'sequence(literal("if"), commit(literal("cond")), commit(literal("then")))',
+    );
+    expect(result.code).toContain("import { commit, literal, sequence } from");
+  });
+
+  it("unwraps a cut sequence down to its single committed element, same as an ordinary single-element sequence", () => {
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createSequence([{ type: "Cut" }, createStringLiteral("b", '"')]),
+        ),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar);
+
+    expect(result.code).toContain(
+      'export const r: Parser<any> = commit(literal("b"));',
+    );
+  });
+
+  it("wraps a rule carrying an explicit `@memoize: N` annotation with maxCacheSize, independent of enableMemoization", () => {
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition("expr", createStringLiteral("x", '"'), undefined, [
+          { type: "GrammarAnnotation", key: "memoize", value: "128" },
+        ]),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      includeImports: true,
+      enableMemoization: false,
+    });
+
+    expect(result.code).toContain(
+      'export const expr: Parser<any> = memoize(literal("x"), { maxCacheSize: 128 });',
+    );
+    expect(result.code).toContain(
+      'import { memoize } from "@suzumiyaaoba/tpeg-combinator";',
+    );
+  });
+
+  it("does not double-wrap a rule that both carries @memoize and trips the automatic complexity heuristic", () => {
+    const bigSequence = {
+      type: "Sequence" as const,
+      elements: Array.from({ length: 60 }, () => createStringLiteral("a", '"')),
+    };
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition("big", bigSequence, undefined, [
+          { type: "GrammarAnnotation", key: "memoize", value: "" },
+        ]),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar);
+
+    expect(result.code).toContain("memoize(");
+    expect(result.code).not.toContain("memoize(memoize(");
+  });
 });
 
 describe("enablePredictiveDispatch", () => {
