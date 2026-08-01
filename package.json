@@ -23,6 +23,7 @@
     "test": "bun test",
     "test:coverage": "bun test --coverage",
     "test:watch": "bun test --watch",
+    "test:perf": "TPEG_STRICT_PERF=1 bun test",
     "typecheck": "bun run typecheck:all",
     "typecheck:all": "bun run typecheck:core && bun run typecheck:ast && bun run typecheck:combinator && bun run typecheck:parser && bun run typecheck:generator && bun run typecheck:type-inference && bun run typecheck:parser-sample && bun run typecheck:samples && bun run typecheck:cli",
     "typecheck:core": "cd packages/core && bun run typecheck",

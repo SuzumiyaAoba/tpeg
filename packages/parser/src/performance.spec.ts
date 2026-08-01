@@ -24,6 +24,22 @@ import {
   createStringLiteral,
 } from "./types";
 
+/**
+ * Most assertions below are absolute ops/sec or absolute heap-byte
+ * thresholds, which are machine-dependent and flaky on shared CI
+ * runners (see the plan's Phase 1.5 rationale). By default (plain
+ * `bun test`, what CI runs) those tests still execute the timed
+ * operation and log the result, so a thrown error still fails the
+ * suite -- only the numeric threshold check is skipped. Set
+ * `TPEG_STRICT_PERF=1` to enforce them locally.
+ *
+ * The scaling-factor assertion in "should scale linearly with grammar
+ * size" is deliberately NOT gated: it compares ops/sec measured within
+ * the same run against each other (a ratio), so it self-normalizes to
+ * the machine it runs on and stays meaningful in CI.
+ */
+const STRICT_PERF = process.env["TPEG_STRICT_PERF"] === "1";
+
 interface BenchmarkResult {
   name: string;
   iterations: number;
@@ -109,7 +125,9 @@ describe("TPEG Parser Performance Benchmarks", () => {
       console.log(
         `${result.name}: ${result.operationsPerSecond.toFixed(0)} ops/sec`,
       );
-      expect(result.operationsPerSecond).toBeGreaterThan(500); // Should parse 500+ simple grammars per second
+      if (STRICT_PERF) {
+        expect(result.operationsPerSecond).toBeGreaterThan(500); // Should parse 500+ simple grammars per second
+      }
     });
 
     it("should parse complex grammars efficiently", () => {
@@ -137,7 +155,9 @@ describe("TPEG Parser Performance Benchmarks", () => {
       console.log(
         `${result.name}: ${result.operationsPerSecond.toFixed(0)} ops/sec`,
       );
-      expect(result.operationsPerSecond).toBeGreaterThan(100); // Should parse 100+ complex grammars per second
+      if (STRICT_PERF) {
+        expect(result.operationsPerSecond).toBeGreaterThan(100); // Should parse 100+ complex grammars per second
+      }
     });
 
     it("should handle large grammars without performance degradation", () => {
@@ -166,7 +186,9 @@ describe("TPEG Parser Performance Benchmarks", () => {
       console.log(
         `${result.name}: ${result.operationsPerSecond.toFixed(0)} ops/sec`,
       );
-      expect(result.operationsPerSecond).toBeGreaterThan(10); // Should still parse large grammars reasonably fast
+      if (STRICT_PERF) {
+        expect(result.operationsPerSecond).toBeGreaterThan(10); // Should still parse large grammars reasonably fast
+      }
     });
   });
 
@@ -211,7 +233,9 @@ describe("TPEG Parser Performance Benchmarks", () => {
       console.log(
         `${result.name}: ${result.operationsPerSecond.toFixed(0)} ops/sec`,
       );
-      expect(result.operationsPerSecond).toBeGreaterThan(200); // Should generate 200+ parsers per second
+      if (STRICT_PERF) {
+        expect(result.operationsPerSecond).toBeGreaterThan(200); // Should generate 200+ parsers per second
+      }
     });
 
     it("should handle complex AST structures efficiently", () => {
@@ -242,7 +266,9 @@ describe("TPEG Parser Performance Benchmarks", () => {
       console.log(
         `${result.name}: ${result.operationsPerSecond.toFixed(0)} ops/sec`,
       );
-      expect(result.operationsPerSecond).toBeGreaterThan(100);
+      if (STRICT_PERF) {
+        expect(result.operationsPerSecond).toBeGreaterThan(100);
+      }
     });
   });
 
@@ -264,7 +290,9 @@ describe("TPEG Parser Performance Benchmarks", () => {
       console.log(
         `Memory usage for 100 grammar parses: ${(memoryUsage.delta / 1024).toFixed(2)} KB`,
       );
-      expect(memoryUsage.delta).toBeLessThan(1024 * 1024); // Should use less than 1MB for 100 parses
+      if (STRICT_PERF) {
+        expect(memoryUsage.delta).toBeLessThan(1024 * 1024); // Should use less than 1MB for 100 parses
+      }
     });
 
     it("should generate code with minimal memory allocation", () => {
@@ -283,7 +311,9 @@ describe("TPEG Parser Performance Benchmarks", () => {
       console.log(
         `Memory usage for 100 code generations: ${(memoryUsage.delta / 1024).toFixed(2)} KB`,
       );
-      expect(memoryUsage.delta).toBeLessThan(2 * 1024 * 1024); // Should use less than 2MB for 100 generations
+      if (STRICT_PERF) {
+        expect(memoryUsage.delta).toBeLessThan(2 * 1024 * 1024); // Should use less than 2MB for 100 generations
+      }
     });
   });
 
@@ -363,7 +393,9 @@ describe("TPEG Parser Performance Benchmarks", () => {
       console.log(
         `Deep nesting (${depth} levels): ${result.operationsPerSecond.toFixed(1)} ops/sec`,
       );
-      expect(result.operationsPerSecond).toBeGreaterThan(10); // Should handle deep nesting without crashing
+      if (STRICT_PERF) {
+        expect(result.operationsPerSecond).toBeGreaterThan(10); // Should handle deep nesting without crashing
+      }
     });
   });
 
@@ -394,7 +426,9 @@ describe("TPEG Parser Performance Benchmarks", () => {
       console.log(
         `JSON Grammar: ${result.operationsPerSecond.toFixed(1)} ops/sec`,
       );
-      expect(result.operationsPerSecond).toBeGreaterThan(20);
+      if (STRICT_PERF) {
+        expect(result.operationsPerSecond).toBeGreaterThan(20);
+      }
     });
 
     it("should generate parsers for practical grammars quickly", () => {
@@ -446,8 +480,12 @@ describe("TPEG Parser Performance Benchmarks", () => {
         `Calculator Generate: ${generateTime.operationsPerSecond.toFixed(1)} ops/sec`,
       );
 
-      expect(parseTime.operationsPerSecond).toBeGreaterThan(50);
-      expect(generateTime.operationsPerSecond).toBeGreaterThan(100);
+      if (STRICT_PERF) {
+        expect(parseTime.operationsPerSecond).toBeGreaterThan(50);
+      }
+      if (STRICT_PERF) {
+        expect(generateTime.operationsPerSecond).toBeGreaterThan(100);
+      }
     });
   });
 });
@@ -494,11 +532,13 @@ describe("Performance Regression Prevention", () => {
     );
 
     // Allow 20% performance variance
-    expect(simpleResult.operationsPerSecond).toBeGreaterThan(
-      baselines.simpleGrammarParsing * 0.8,
-    );
-    expect(codeGenResult.operationsPerSecond).toBeGreaterThan(
-      baselines.codeGeneration * 0.8,
-    );
+    if (STRICT_PERF) {
+      expect(simpleResult.operationsPerSecond).toBeGreaterThan(
+        baselines.simpleGrammarParsing * 0.8,
+      );
+      expect(codeGenResult.operationsPerSecond).toBeGreaterThan(
+        baselines.codeGeneration * 0.8,
+      );
+    }
   });
 });

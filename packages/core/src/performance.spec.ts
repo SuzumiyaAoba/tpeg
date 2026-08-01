@@ -9,6 +9,23 @@ import {
   unicodeLength,
 } from "./utils";
 
+/**
+ * Every assertion in this file is an absolute wall-clock (ms) or
+ * absolute heap-byte threshold. Those are machine-dependent and flaky on
+ * shared CI runners -- see the plan's Phase 1.5 rationale (bench harness
+ * added in `packages/parser/bench/` for throughput measurement that
+ * *is* meant to be read across commits; this file predates it and
+ * measures single-primitive wall-clock time instead).
+ *
+ * By default (plain `bun test`, what CI runs) these tests still execute
+ * the timed operation and log the result, so a thrown error or an
+ * infinite loop still fails the suite -- only the numeric threshold
+ * check is skipped. Set `TPEG_STRICT_PERF=1` to enforce the thresholds,
+ * e.g. for a local investigation of a suspected regression
+ * (`TPEG_STRICT_PERF=1 bun test src/performance.spec.ts`).
+ */
+const STRICT_PERF = process.env["TPEG_STRICT_PERF"] === "1";
+
 describe("Performance Tests", () => {
   describe("Unicode handling performance", () => {
     it("should handle large Unicode strings efficiently", () => {
@@ -23,7 +40,9 @@ describe("Performance Tests", () => {
       const duration = endTime - startTime;
 
       // Should complete within 400ms (adjusted for slower systems)
-      expect(duration).toBeLessThan(400);
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(400);
+      }
     });
 
     it("should handle mixed ASCII and Unicode efficiently", () => {
@@ -38,7 +57,9 @@ describe("Performance Tests", () => {
       const duration = endTime - startTime;
 
       // Should complete within 400ms (adjusted for slower systems)
-      expect(duration).toBeLessThan(400);
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(400);
+      }
     });
   });
 
@@ -56,7 +77,9 @@ describe("Performance Tests", () => {
       const duration = endTime - startTime;
 
       // Should complete within 100ms (adjusted for slower systems)
-      expect(duration).toBeLessThan(100);
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(100);
+      }
     });
 
     it("should advance position efficiently for Unicode strings", () => {
@@ -72,7 +95,9 @@ describe("Performance Tests", () => {
       const duration = endTime - startTime;
 
       // Should complete within 100ms
-      expect(duration).toBeLessThan(100);
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(100);
+      }
     });
 
     it("should handle newlines efficiently", () => {
@@ -88,7 +113,9 @@ describe("Performance Tests", () => {
       const duration = endTime - startTime;
 
       // Should complete within 100ms (adjusted for slower systems)
-      expect(duration).toBeLessThan(100);
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(100);
+      }
     });
   });
 
@@ -107,7 +134,9 @@ describe("Performance Tests", () => {
       const duration = endTime - startTime;
 
       // Should complete within 100ms
-      expect(duration).toBeLessThan(100);
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(100);
+      }
     });
 
     it("should extract characters efficiently from Unicode strings", () => {
@@ -124,7 +153,9 @@ describe("Performance Tests", () => {
       const duration = endTime - startTime;
 
       // Should complete within 100ms
-      expect(duration).toBeLessThan(100);
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(100);
+      }
     });
   });
 
@@ -143,7 +174,9 @@ describe("Performance Tests", () => {
       const duration = endTime - startTime;
 
       // Should complete within 50ms
-      expect(duration).toBeLessThan(50);
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(50);
+      }
     });
 
     it("should classify newline characters efficiently", () => {
@@ -160,7 +193,9 @@ describe("Performance Tests", () => {
       const duration = endTime - startTime;
 
       // Should complete within 50ms
-      expect(duration).toBeLessThan(50);
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(50);
+      }
     });
   });
 
@@ -176,7 +211,9 @@ describe("Performance Tests", () => {
       const duration = endTime - startTime;
 
       // Should complete within 50ms
-      expect(duration).toBeLessThan(50);
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(50);
+      }
     });
   });
 
@@ -205,7 +242,9 @@ describe("Performance Tests", () => {
       const memoryIncrease = finalMemory - initialMemory;
 
       // Memory increase should be reasonable (less than 10MB)
-      expect(memoryIncrease).toBeLessThan(10 * 1024 * 1024);
+      if (STRICT_PERF) {
+        expect(memoryIncrease).toBeLessThan(10 * 1024 * 1024);
+      }
     });
   });
 
@@ -222,7 +261,9 @@ describe("Performance Tests", () => {
 
       expect(length).toBe(100000);
       expect(pos.offset).toBe(100000);
-      expect(duration).toBeLessThan(100); // Should complete within 100ms
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(100); // Should complete within 100ms
+      }
     });
 
     it("should handle many small operations", () => {
@@ -241,7 +282,9 @@ describe("Performance Tests", () => {
       const duration = endTime - startTime;
 
       // Should complete within 100ms
-      expect(duration).toBeLessThan(100);
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(100);
+      }
     });
   });
 
@@ -259,7 +302,9 @@ describe("Performance Tests", () => {
       const duration = endTime - startTime;
 
       // Should complete within 50ms
-      expect(duration).toBeLessThan(50);
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(50);
+      }
     });
 
     it("should handle single character strings efficiently", () => {
@@ -276,7 +321,9 @@ describe("Performance Tests", () => {
       const duration = endTime - startTime;
 
       // Should complete within 50ms
-      expect(duration).toBeLessThan(50);
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(50);
+      }
     });
   });
 });
