@@ -18,12 +18,14 @@ import {
   createAnyChar,
   createCharRange,
   createCharacterClass,
+  createChoice,
   createGrammarDefinition,
   createIdentifier,
   createLabeledExpression,
   createPlus,
   createQualifiedIdentifier,
   createRuleDefinition,
+  createSequence,
   createStringLiteral,
   createTransformDefinition,
   createTransformFunction,
@@ -279,5 +281,61 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
       next: { offset: 3, column: 3, line: 1 },
     });
     expect(number("abc", pos).success).toBe(false);
+  });
+
+  it("preserves declaration order of Choice alternatives instead of sorting by AST size", async () => {
+    // PEG's ordered choice (`/`) is defined by "first alternative that
+    // matches wins" -- declaration order is part of the grammar's
+    // semantics. This pins the fix for a bug where the optimized
+    // generator sorted `choice()` arguments by AST node count ("simple
+    // first"), which silently changes which language is accepted: a
+    // grammar for `"==" / "="` (modeled here as `seq("=", "=") / "="`, so
+    // the two alternatives have different node counts) would have its
+    // alternatives reordered to `"=" / "=="`, making `==` unmatchable --
+    // the shorter alternative would now be tried, and would succeed,
+    // before the longer one ever got a chance.
+    const core = await import("@suzumiyaaoba/tpeg-core");
+
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "op",
+          createChoice([
+            createSequence([
+              createStringLiteral("=", '"'),
+              createStringLiteral("=", '"'),
+            ]),
+            createStringLiteral("=", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      includeImports: true,
+      optimize: true,
+    });
+
+    const body = result.code
+      .replace(/^import[^\n]*\n?/gm, "")
+      .replace(/^export const (\w+): Parser<[^>]*>/gm, "const $1");
+    const moduleFactory = new Function(
+      ...Object.keys(core),
+      `${body}\nreturn { op };`,
+    );
+    const { op } = moduleFactory(...Object.values(core));
+
+    const pos = { offset: 0, column: 0, line: 1 };
+    const parsed = op("==", pos);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      // Must consume both "=" characters (the first, longer alternative),
+      // not just one (which the buggy nodeCount-ascending sort would try
+      // first since a single StringLiteral has a smaller AST than the
+      // Sequence).
+      expect(parsed.next.offset).toBe(2);
+    }
   });
 });

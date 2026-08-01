@@ -39,7 +39,6 @@ import {
 } from "./codegen";
 import { escapeStringLiteral } from "./constants";
 import {
-  analyzeExpressionComplexity,
   analyzeGrammarPerformance,
   globalPerformanceMonitor,
   stringInterner,
@@ -529,20 +528,18 @@ export class OptimizedTPEGCodeGenerator {
       }
     }
 
-    // Sort alternatives by complexity for better performance (simple first)
-    if (this.options.optimize) {
-      const alternatives = expr.alternatives.map((alt) => ({
-        expr: alt,
-        code: this.generateOptimizedExpression(alt),
-        complexity: analyzeExpressionComplexity(alt),
-      }));
-
-      alternatives.sort(
-        (a, b) => a.complexity.nodeCount - b.complexity.nodeCount,
-      );
-      return `choice(${alternatives.map((a) => a.code).join(", ")})`;
-    }
-
+    // NOTE: alternatives must NOT be reordered here. PEG's ordered choice
+    // (`/`) is defined by "first alternative that matches wins" — the
+    // declaration order is part of the grammar's semantics, not an
+    // implementation detail. A previous version of this method sorted
+    // alternatives by AST node count ("simple first") to try cheaper
+    // parsers first, but that silently changes which language is
+    // accepted: e.g. `"==" / "="` reordered to `"=" / "=="` makes `==`
+    // permanently unmatchable, since `"="` (fewer nodes) would now be
+    // tried — and would succeed — before `"=="` ever gets a chance.
+    // Any future "try cheap alternatives first" optimization must prove
+    // it preserves the original match result for every input, e.g. via
+    // static FIRST-set disjointness, not by reordering unconditionally.
     const alternatives = expr.alternatives.map((alt) =>
       this.generateOptimizedExpression(alt),
     );
