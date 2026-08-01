@@ -68,21 +68,18 @@ describe("leftFactorChoices", () => {
     const factored = leftFactorChoices(parsed.val);
     const sumRule = factored.rules.find((r) => r.name === "sum");
     expect(sumRule).toBeDefined();
-    // Factored shape: Sequence[ product, Choice[ Sequence["+",sum], Sequence["-",sum] ] ]
-    // with the trailing bare "product" alternative promoted to a second
-    // top-level Choice alternative (see doc comment on tryLeftFactorChoice).
-    expect(sumRule?.pattern.type).toBe("Choice");
-    if (sumRule?.pattern.type !== "Choice") return;
-    expect(sumRule.pattern.alternatives).toHaveLength(2);
-    const [grouped, bare] = sumRule.pattern.alternatives;
-    expect(grouped?.type).toBe("Sequence");
-    expect(bare?.type).toBe("Identifier");
-    if (bare?.type === "Identifier") {
-      expect(bare.name).toBe("product");
-    }
-    if (grouped?.type === "Sequence") {
-      expect(grouped.elements[0]).toEqual(createIdentifier("product"));
-      expect(grouped.elements[1]?.type).toBe("Choice");
+    // Factored shape: Sequence[ product, Optional[ Choice[ Sequence["+",sum], Sequence["-",sum] ] ] ]
+    // -- the trailing bare "product" alternative is folded into an
+    // `Optional` around the inner choice rather than kept as a second
+    // top-level alternative (see doc comment on tryLeftFactorChoice).
+    expect(sumRule?.pattern.type).toBe("Sequence");
+    if (sumRule?.pattern.type !== "Sequence") return;
+    expect(sumRule.pattern.elements).toHaveLength(2);
+    const [prefix, optionalPart] = sumRule.pattern.elements;
+    expect(prefix).toEqual(createIdentifier("product"));
+    expect(optionalPart?.type).toBe("Optional");
+    if (optionalPart?.type === "Optional") {
+      expect(optionalPart.expression.type).toBe("Choice");
     }
   });
 

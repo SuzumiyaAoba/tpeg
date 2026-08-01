@@ -91,15 +91,22 @@
  *
  * At most one alternative may be the bare shared prefix with nothing
  * following it (remainder length 0), and it must be the *last*
- * alternative -- e.g. the trailing `/ product` above. That alternative's
- * value (just `Pval`, not sequence-wrapped) cannot be reproduced through
- * the same `Sequence(P, inner)` wrapper as the others, so it is left
- * as a second, un-grouped top-level alternative instead of being folded
- * into the inner choice; this preserves both its exact `.val` shape and
- * its relative try-order. A bare-prefix alternative anywhere other than
- * last, or more than one of them, is left untouched (not factored) --
- * handling arbitrary interleaving isn't needed by any grammar in this
- * repo and isn't implemented.
+ * alternative -- e.g. the trailing `/ product` above. That case is folded
+ * into `Sequence(P, Optional(inner))` rather than `Sequence(P, inner)`:
+ * `product "+" sum / product "-" sum / product` becomes
+ * `product (("+" sum) / ("-" sum))?`. This is sound for the same reason
+ * as the non-bare case (calling `P` twice at one position reproduces the
+ * same result) -- if `inner` fails to match right after `P`, `optional`
+ * succeeds having consumed nothing, so the whole sequence still stops
+ * exactly where the bare `P` alternative would have, without reparsing
+ * `P` a second time to get there. Its `.val` shape becomes `[Pval,
+ * [Xval]]` (`inner` matched) or `[Pval, []]` (it didn't) -- a different
+ * shape from the non-bare case's `[Pval, Xval]`, on top of the difference
+ * from the original grammar's unfactored shapes already described above;
+ * still gated by the same `isShapeSensitiveRule` check. A bare-prefix
+ * alternative anywhere other than last, or more than one of them, is left
+ * untouched (not factored) -- handling arbitrary interleaving isn't
+ * needed by any grammar in this repo and isn't implemented.
  */
 
 import type {
@@ -113,7 +120,7 @@ import type {
   Sequence,
   StringLiteral,
 } from "./types";
-import { createChoice, createSequence } from "./types";
+import { createChoice, createOptional, createSequence } from "./types";
 
 /** Node types that cannot themselves embed an `ActionExpression` or
  * `LabeledExpression`, so a single-type check on the node itself
@@ -259,19 +266,18 @@ const tryLeftFactorChoice = (choice: Choice): Expression => {
   const innerAlternatives = groupedParts.map((parts) =>
     toSingleExpression(parts.slice(1)),
   );
-  const groupedExpr = createSequence([
-    prefix,
+  const innerExpr =
     innerAlternatives.length === 1
       ? (innerAlternatives[0] as Expression)
-      : createChoice(innerAlternatives),
-  ]);
+      : createChoice(innerAlternatives);
 
   if (bareIndices.length === 0) {
-    return groupedExpr;
+    return createSequence([prefix, innerExpr]);
   }
-  // Trailing bare-prefix alternative: kept as its own top-level
-  // alternative (see doc comment for why it can't be folded in).
-  return createChoice([groupedExpr, prefix]);
+  // Trailing bare-prefix alternative: fold into `prefix (inner)?` rather
+  // than reparsing `prefix` a second time for a separate bare alternative
+  // -- see the module doc comment's "Alternative shapes handled" section.
+  return createSequence([prefix, createOptional(innerExpr)]);
 };
 
 /** Recursively applies `tryLeftFactorChoice` to every `Choice` reachable
