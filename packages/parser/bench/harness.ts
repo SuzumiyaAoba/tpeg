@@ -33,6 +33,7 @@
 import * as tpegCombinator from "@suzumiyaaoba/tpeg-combinator";
 import * as tpegCore from "@suzumiyaaoba/tpeg-core";
 import type { Parser, Pos } from "@suzumiyaaoba/tpeg-core";
+import { leftFactorChoices } from "../src/ast-optimize";
 import { generateTypeScriptParser } from "../src/codegen";
 import { generateOptimizedTypeScriptParser } from "../src/codegen-optimized";
 import { grammarDefinition } from "../src/grammar";
@@ -93,6 +94,16 @@ export interface CompileRuleOptions {
    * when attributing a benchmark delta to memoization specifically.
    */
   enableMemoization?: boolean;
+  /**
+   * Applies `leftFactorChoices` (packages/parser/src/ast-optimize.ts) to
+   * the parsed grammar before codegen. Independent of `optimize`/
+   * `enableMemoization`: this changes leaf-invocation *count* (less
+   * redundant re-parsing), whereas memoization changes what happens to
+   * an already-fixed amount of redundant work (caches it instead of
+   * redoing it). Combine both to compare "eliminate the work" against
+   * "cache the work" on the same grammar.
+   */
+  leftFactor?: boolean;
   // NOTE: `includeImports`/`includeTypes` are deliberately NOT
   // caller-overridable. `compileRule` strips `export` and evals the body
   // directly via `new Function`; `includeImports: true` would leave a
@@ -116,6 +127,9 @@ export function compileRule(
       `bench grammar failed to parse: ${parsed.error.message} at offset ${parsed.error.pos.offset}`,
     );
   }
+  const grammar = options.leftFactor
+    ? leftFactorChoices(parsed.val)
+    : parsed.val;
 
   // `exactOptionalPropertyTypes` treats `namePrefix: undefined` as a
   // different (disallowed) thing from omitting `namePrefix` entirely, so
@@ -126,14 +140,14 @@ export function compileRule(
     : {};
 
   const generated = options.optimize
-    ? generateOptimizedTypeScriptParser(parsed.val, {
+    ? generateOptimizedTypeScriptParser(grammar, {
         includeImports: false,
         includeTypes: false,
         optimize: true,
         enableMemoization: options.enableMemoization ?? true,
         ...namePrefixOverride,
       })
-    : generateTypeScriptParser(parsed.val, {
+    : generateTypeScriptParser(grammar, {
         includeImports: false,
         includeTypes: false,
         ...namePrefixOverride,

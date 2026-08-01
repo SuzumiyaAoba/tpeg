@@ -56,6 +56,26 @@ const CONFIGS: { label: string; options: CompileRuleOptions }[] = [
   },
 ];
 
+/**
+ * Only meaningful for `BENCH_UNFACTORED_ARITHMETIC_GRAMMAR`, whose choices
+ * have a uniform single-element prefix (`leftFactorChoices` no-ops on
+ * `BENCH_JSON_GRAMMAR`'s choices, which don't). Left factoring and
+ * memoization attack the same redundant-reparsing cost from different
+ * angles -- eliminating it vs. caching it -- so both are included
+ * standalone and combined to see whether they're additive.
+ */
+const ARITHMETIC_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
+  ...CONFIGS,
+  {
+    label: "left-factored, no memoization",
+    options: { optimize: false, leftFactor: true },
+  },
+  {
+    label: "left-factored + memoization",
+    options: { optimize: true, enableMemoization: true, leftFactor: true },
+  },
+];
+
 function section(title: string): void {
   console.log(`\n=== ${title} ===`);
 }
@@ -85,9 +105,10 @@ function runSection(
   ruleName: string,
   timedInputs: string[],
   warmupInputs: string[],
+  configs: { label: string; options: CompileRuleOptions }[] = CONFIGS,
 ): void {
   section(title);
-  for (const { label, options } of CONFIGS) {
+  for (const { label, options } of configs) {
     const compiled = compileRule(grammarSrc, ruleName, options);
     const result = runParseThroughput(label, compiled, timedInputs, {
       warmupInputs,
@@ -124,6 +145,7 @@ function run(): void {
       BENCH_UNFACTORED_ARITHMETIC_ROOT_RULE,
       timedInputs,
       warmupInputs,
+      ARITHMETIC_CONFIGS,
     );
   }
 
@@ -140,6 +162,7 @@ function run(): void {
       BENCH_UNFACTORED_ARITHMETIC_ROOT_RULE,
       timedInputs,
       warmupInputs,
+      ARITHMETIC_CONFIGS,
     );
   }
 
