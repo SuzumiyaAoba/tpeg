@@ -38,6 +38,8 @@ import {
   wrapWithTransform,
 } from "./codegen";
 import { escapeStringLiteral } from "./constants";
+import type { GrammarFirstSetAnalysis } from "./first-sets";
+import { analyzeFirstSets, predictiveFilterForExpression } from "./first-sets";
 import {
   analyzeGrammarPerformance,
   globalPerformanceMonitor,
@@ -62,6 +64,18 @@ export interface OptimizedCodeGenOptions {
   enableMemoization?: boolean;
   /** Generate performance monitoring code */
   includeMonitoring?: boolean;
+  /**
+   * Emit `predictiveChoice(...)` instead of `choice(...)` for a `Choice`
+   * whenever at least one alternative has a statically computable,
+   * non-nullable FIRST set (see `packages/parser/src/first-sets.ts`).
+   * Default `false`: this is a narrowly-scoped, explicitly opt-in
+   * experiment (see the plan's Phase 3 section) -- unlike
+   * `enableMemoization`, it is NOT wired into `optimize: true` by
+   * default, following the same reasoning as `ast-optimize.ts`'s
+   * rewrites (Phase 0's lesson: an "optimization" must not silently
+   * change existing callers' output).
+   */
+  enablePredictiveDispatch?: boolean;
 }
 
 /**
@@ -115,6 +129,11 @@ export class OptimizedTPEGCodeGenerator {
   /** Declaration index of the rule currently being generated. */
   private currentRuleIndex = -1;
   private templateCache = new CodeTemplateCache();
+  /** Converged FIRST-set analysis for the grammar currently being
+   * generated, computed once per `generateGrammar` call when
+   * `enablePredictiveDispatch` is on; `null` otherwise (including before
+   * the first `generateGrammar` call). */
+  private firstSetAnalysis: GrammarFirstSetAnalysis | null = null;
 
   constructor(options: OptimizedCodeGenOptions = { language: "typescript" }) {
     this.options = {
@@ -125,6 +144,7 @@ export class OptimizedTPEGCodeGenerator {
       optimize: options.optimize ?? true,
       enableMemoization: options.enableMemoization ?? true,
       includeMonitoring: options.includeMonitoring ?? false,
+      enablePredictiveDispatch: options.enablePredictiveDispatch ?? false,
     };
   }
 
@@ -139,6 +159,9 @@ export class OptimizedTPEGCodeGenerator {
     this.ruleNames.clear();
     this.ruleIndex.clear();
     this.templateCache.clear();
+    this.firstSetAnalysis = this.options.enablePredictiveDispatch
+      ? analyzeFirstSets(grammar)
+      : null;
 
     const performanceAnalysis = analyzeGrammarPerformance(grammar);
     const imports: string[] = [];
@@ -281,6 +304,19 @@ export class OptimizedTPEGCodeGenerator {
         break;
       case "Choice":
         combinators.add("choice");
+        // Whether this *particular* Choice ends up eligible for
+        // `predictiveChoice` depends on FIRST-set analysis this pass
+        // doesn't have (it only walks the raw AST) -- import it
+        // whenever the option is on and there's more than one
+        // alternative, rather than duplicating that analysis here. An
+        // unused import in the rare all-unknown-FIRST-set case is
+        // harmless in generated code.
+        if (
+          this.options.enablePredictiveDispatch &&
+          expr.alternatives.length > 1
+        ) {
+          combinators.add("predictiveChoice");
+        }
         for (const alternative of expr.alternatives) {
           this.collectUsedCombinators(
             alternative,
@@ -537,13 +573,64 @@ export class OptimizedTPEGCodeGenerator {
     // accepted: e.g. `"==" / "="` reordered to `"=" / "=="` makes `==`
     // permanently unmatchable, since `"="` (fewer nodes) would now be
     // tried — and would succeed — before `"=="` ever gets a chance.
-    // Any future "try cheap alternatives first" optimization must prove
-    // it preserves the original match result for every input, e.g. via
-    // static FIRST-set disjointness, not by reordering unconditionally.
+    // The predictive-dispatch path below is the "prove it preserves the
+    // original match result" version of that idea: it FILTERS (never
+    // reorders) alternatives by a statically-proven-safe FIRST-set check,
+    // so declaration order among whatever survives is untouched.
+    if (this.options.enablePredictiveDispatch && this.firstSetAnalysis) {
+      const predictive = this.tryGeneratePredictiveChoice(
+        expr,
+        this.firstSetAnalysis,
+      );
+      if (predictive) return predictive;
+    }
+
     const alternatives = expr.alternatives.map((alt) =>
       this.generateOptimizedExpression(alt),
     );
     return `choice(${alternatives.join(", ")})`;
+  }
+
+  /**
+   * Attempts to generate a `predictiveChoice(...)` call for `expr`.
+   * Returns `null` (caller falls back to plain `choice`) if not a single
+   * alternative has a computable, non-nullable FIRST set -- in that case
+   * `predictiveChoice` would filter nothing and just add overhead over
+   * `choice`.
+   */
+  private tryGeneratePredictiveChoice(
+    expr: Choice,
+    analysis: GrammarFirstSetAnalysis,
+  ): string | null {
+    const filters = expr.alternatives.map((alt) =>
+      predictiveFilterForExpression(alt, analysis),
+    );
+    if (!filters.some((f) => f !== null)) {
+      return null;
+    }
+
+    const entries = expr.alternatives.map((alt, i) => {
+      const code = this.generateOptimizedExpression(alt);
+      const filter = filters[i];
+      return `[${code}, ${filter ? this.renderFirstCharFilter(filter) : "null"}]`;
+    });
+    return `predictiveChoice([${entries.join(", ")}])`;
+  }
+
+  private renderFirstCharFilter(filter: {
+    chars: ReadonlySet<string>;
+    ranges: readonly { start: string; end: string }[];
+  }): string {
+    const chars = [...filter.chars]
+      .map((c) => `"${escapeStringLiteral(c)}"`)
+      .join(", ");
+    const ranges = filter.ranges
+      .map(
+        (r) =>
+          `{ start: "${escapeStringLiteral(r.start)}", end: "${escapeStringLiteral(r.end)}" }`,
+      )
+      .join(", ");
+    return `{ chars: new Set([${chars}]), ranges: [${ranges}] }`;
   }
 
   private generateQuantified(expr: Quantified): string {

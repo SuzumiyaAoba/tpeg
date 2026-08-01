@@ -57,6 +57,38 @@ const CONFIGS: { label: string; options: CompileRuleOptions }[] = [
 ];
 
 /**
+ * Only meaningful for `BENCH_JSON_GRAMMAR`'s `value` rule, a 7-way
+ * FIRST-disjoint `Choice` (object/array/string/number/true/false/null all
+ * start with a different character) -- exactly the shape
+ * `enablePredictiveDispatch` targets (Phase 3's FIRST-set dispatch, see
+ * `packages/parser/src/first-sets.ts` and
+ * `codegen-optimized.ts`'s `tryGeneratePredictiveChoice`). This is also
+ * the one workload in this file where plain memoization *hurts*
+ * (0% cache hit rate -- see the plan's Phase 1 results), so it's the
+ * natural place to check whether predictive dispatch helps where
+ * memoization can't.
+ */
+const JSON_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
+  ...CONFIGS,
+  {
+    label: "optimized codegen, predictive dispatch on, memoization off",
+    options: {
+      optimize: true,
+      enableMemoization: false,
+      enablePredictiveDispatch: true,
+    },
+  },
+  {
+    label: "optimized codegen, predictive dispatch on, memoization on",
+    options: {
+      optimize: true,
+      enableMemoization: true,
+      enablePredictiveDispatch: true,
+    },
+  },
+];
+
+/**
  * Only meaningful for `BENCH_UNFACTORED_ARITHMETIC_GRAMMAR`, whose choices
  * have a uniform single-element prefix (`leftFactorChoices` no-ops on
  * `BENCH_JSON_GRAMMAR`'s choices, which don't). Left factoring and
@@ -130,6 +162,7 @@ function run(): void {
       BENCH_JSON_ROOT_RULE,
       timedInputs,
       warmupInputs,
+      JSON_CONFIGS,
     );
   }
 

@@ -228,6 +228,118 @@ export const choice = <T extends unknown[]>(
 };
 
 /**
+ * A statically-computed set of characters an alternative's match could
+ * start with, as used by {@link predictiveChoice}. `chars`/`ranges` list
+ * concrete characters/inclusive ranges; there is no "negated" or
+ * "unknown" flag here because a `null` filter (not a `FirstCharFilter`
+ * value) is how a caller says "this alternative's FIRST set couldn't be
+ * computed -- always attempt it" (see `packages/parser/src/first-sets.ts`
+ * for how these are derived from a grammar).
+ */
+export interface FirstCharFilter {
+  readonly chars: ReadonlySet<string>;
+  readonly ranges: readonly { readonly start: string; readonly end: string }[];
+}
+
+const firstCharFilterMatches = (filter: FirstCharFilter, c: string): boolean =>
+  filter.chars.has(c) || filter.ranges.some((r) => r.start <= c && c <= r.end);
+
+const describeFirstCharFilter = (filter: FirstCharFilter): string => {
+  const parts = [
+    ...Array.from(filter.chars, (c) => `"${c}"`),
+    ...filter.ranges.map((r) => `[${r.start}-${r.end}]`),
+  ];
+  return parts.join(" or ");
+};
+
+/**
+ * Predictive (FIRST-set-gated) variant of {@link choice}: before running
+ * any alternative, checks the next input character against each
+ * alternative's precomputed `FirstCharFilter` and skips any alternative
+ * whose filter provably excludes that character -- it cannot possibly
+ * match there, so running it would only reproduce a failure at `pos`
+ * itself. A `null` filter means "unknown FIRST set" and is never skipped.
+ *
+ * This realizes FIRST-set-based predictive dispatch (the PEG-theory
+ * optimization referenced in the project's performance plan) *without*
+ * changing codegen's output format: it's an ordinary combinator call,
+ * like `choice(...)`, not a generated `switch`. See
+ * `packages/parser/src/first-sets.ts` for how a grammar's alternatives
+ * are turned into `FirstCharFilter`s (always a safe over-approximation --
+ * see that module's doc comment on soundness).
+ *
+ * Ordered-choice semantics are fully preserved: surviving candidates are
+ * tried via {@link choice}, in their original relative order, so which
+ * alternative wins on an input where more than one's filter matches is
+ * unaffected by this filtering step.
+ *
+ * ## Failure diagnostics differ from `choice`
+ *
+ * If a character is provided (not EOF) and it matches zero alternatives'
+ * filters, this returns an immediate, precise failure whose `expected`
+ * lists every alternative's filter (not just the ones that would have
+ * been tried, since none were) -- more informative than running each and
+ * aggregating their errors would be, and cheaper.
+ *
+ * If at least one alternative survives filtering but all of them still
+ * fail, the failure comes from `choice`'s usual farthest-error
+ * aggregation over *only the surviving candidates*. A skipped
+ * alternative's hypothetical failure (it would have failed at `pos`
+ * itself, immediately, since its filter proved it can't start there) is
+ * never farther than a surviving candidate's failure, *unless* a
+ * surviving candidate also fails at `pos` with zero progress -- in that
+ * exact tie, this function's `expected` will be missing the skipped
+ * alternatives' filter chars, a narrower diagnostic than plain `choice`
+ * would give in the same spot. This never affects whether a parse
+ * succeeds or where it stops, only the completeness of an error message
+ * in that one narrow case; deliberately accepted rather than paying to
+ * pre-seed `expected` from every skipped alternative on every call.
+ */
+export const predictiveChoice = <T extends unknown[]>(
+  alternatives: readonly (readonly [
+    Parser<T[number]>,
+    FirstCharFilter | null,
+  ])[],
+): Parser<T[number]> => {
+  const predictiveChoiceParser = (input: string, pos: Pos) => {
+    if (alternatives.length === 0) {
+      return createFailure("Empty choice", pos, {
+        parserName: "predictiveChoice",
+      });
+    }
+
+    const c = input[pos.offset];
+    const candidates =
+      c === undefined
+        ? alternatives.map(([p]) => p)
+        : alternatives
+            .filter(
+              ([, filter]) => !filter || firstCharFilterMatches(filter, c),
+            )
+            .map(([p]) => p);
+
+    if (candidates.length === 0) {
+      const expected = alternatives
+        .map(([, filter]) => (filter ? describeFirstCharFilter(filter) : null))
+        .filter((d): d is string => d !== null);
+      return createFailure(
+        `None of the parsers matched. Expected one of: ${expected.join(", ")}`,
+        pos,
+        {
+          parserName: "predictiveChoice",
+          ...(expected.length > 0 && { expected }),
+          ...(c !== undefined && { found: c }),
+        },
+      );
+    }
+
+    return choice(...(candidates as Parser<T[number]>[]))(input, pos);
+  };
+
+  return predictiveChoiceParser;
+};
+
+/**
  * Parser that tries to parse with the given parser and returns a default value if it fails.
  *
  * This combinator makes a parser optional by providing a fallback value when parsing fails.

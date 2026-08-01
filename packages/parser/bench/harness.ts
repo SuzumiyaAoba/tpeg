@@ -104,6 +104,14 @@ export interface CompileRuleOptions {
    * "cache the work" on the same grammar.
    */
   leftFactor?: boolean;
+  /**
+   * Only meaningful when `optimize: true`. Forwarded to
+   * `generateOptimizedTypeScriptParser`'s `enablePredictiveDispatch` --
+   * emits `predictiveChoice(...)` (FIRST-set-gated) instead of
+   * `choice(...)` for eligible `Choice` nodes. Defaults to `false`,
+   * matching the codegen option's own opt-in default.
+   */
+  enablePredictiveDispatch?: boolean;
   // NOTE: `includeImports`/`includeTypes` are deliberately NOT
   // caller-overridable. `compileRule` strips `export` and evals the body
   // directly via `new Function`; `includeImports: true` would leave a
@@ -145,6 +153,7 @@ export function compileRule(
         includeTypes: false,
         optimize: true,
         enableMemoization: options.enableMemoization ?? true,
+        enablePredictiveDispatch: options.enablePredictiveDispatch ?? false,
         ...namePrefixOverride,
       })
     : generateTypeScriptParser(grammar, {

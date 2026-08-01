@@ -339,3 +339,185 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
     }
   });
 });
+
+describe("enablePredictiveDispatch", () => {
+  const JSON_LIKE_GRAMMAR = createGrammarDefinition(
+    "Test",
+    [],
+    [
+      createRuleDefinition(
+        "value",
+        createChoice([
+          createIdentifier("str"),
+          createIdentifier("num"),
+          createIdentifier("bool"),
+        ]),
+      ),
+      createRuleDefinition(
+        "str",
+        createSequence([
+          createStringLiteral('"', '"'),
+          createStringLiteral('"', '"'),
+        ]),
+      ),
+      createRuleDefinition(
+        "num",
+        createCharacterClass([createCharRange("0", "9")], false),
+      ),
+      createRuleDefinition(
+        "bool",
+        createChoice([
+          createStringLiteral("true", '"'),
+          createStringLiteral("false", '"'),
+        ]),
+      ),
+    ],
+  );
+
+  it("does not emit predictiveChoice when the option is off (default)", () => {
+    const result = generateOptimizedTypeScriptParser(JSON_LIKE_GRAMMAR, {
+      enableMemoization: false,
+    });
+    expect(result.code).not.toContain("predictiveChoice(");
+    expect(result.code).toContain("choice(");
+  });
+
+  it("emits predictiveChoice with the correct per-alternative FIRST-char filters for a FIRST-disjoint Choice", () => {
+    const result = generateOptimizedTypeScriptParser(JSON_LIKE_GRAMMAR, {
+      enableMemoization: false,
+      enablePredictiveDispatch: true,
+    });
+    expect(result.code).toContain("predictiveChoice([");
+    expect(result.code).toContain('chars: new Set(["\\""])');
+    expect(result.code).toContain('chars: new Set(["t", "f"])');
+    // `num`'s filter is a range, not discrete chars.
+    expect(result.code).toContain('ranges: [{ start: "0", end: "9" }]');
+  });
+
+  it("falls back to plain choice() for a Choice with no computable, non-nullable FIRST set on any alternative", () => {
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createChoice([createAnyChar(), createAnyChar()]),
+        ),
+      ],
+    );
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      enableMemoization: false,
+      enablePredictiveDispatch: true,
+    });
+    expect(result.code).not.toContain("predictiveChoice(");
+    expect(result.code).toContain("choice(anyChar(), anyChar())");
+  });
+
+  it("produces code that parses identically to enablePredictiveDispatch:false for a battery of inputs", async () => {
+    const core = await import("@suzumiyaaoba/tpeg-core");
+
+    const compileValue = (enablePredictiveDispatch: boolean) => {
+      const result = generateOptimizedTypeScriptParser(JSON_LIKE_GRAMMAR, {
+        includeImports: false,
+        includeTypes: false,
+        enableMemoization: false,
+        enablePredictiveDispatch,
+      });
+      const ruleNames = [...result.code.matchAll(/^export const (\w+)/gm)].map(
+        (m) => m[1] as string,
+      );
+      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+      const factory = new Function(
+        ...Object.keys(core),
+        `${body}\nreturn { ${ruleNames.join(", ")} };`,
+      );
+      const built = factory(...Object.values(core)) as Record<
+        string,
+        (typeof core)["choice"]
+      >;
+      return built["value"] as unknown as (
+        input: string,
+        pos: { offset: number; column: number; line: number },
+      ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
+    };
+
+    const plain = compileValue(false);
+    const predictive = compileValue(true);
+    const pos = { offset: 0, column: 0, line: 1 };
+
+    for (const input of ['""', "5", "true", "false", "x", "", '"a']) {
+      const plainResult = plain(input, pos);
+      const predictiveResult = predictive(input, pos);
+      expect(predictiveResult.success).toBe(plainResult.success);
+      if (plainResult.success && predictiveResult.success) {
+        expect(predictiveResult.next).toEqual(plainResult.next);
+      }
+    }
+  });
+
+  it("regression: never predictively dispatches on a Choice alternative that starts with an externally-supplied rule reference", async () => {
+    // `r = ext "x" / "y"`, where `ext` is NOT a rule of this grammar --
+    // codegen emits it as a bare, unresolved identifier (an externally
+    // injected parser, same as e.g. `math.expr` minus the qualifier).
+    // Its FIRST set is unknowable from this grammar alone; predictively
+    // filtering alternative 0 by `{"x"}` would be unsound the moment
+    // `ext` can start with something other than what makes `"x"` follow.
+    const core = await import("@suzumiyaaoba/tpeg-core");
+
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createChoice([
+            createSequence([
+              createIdentifier("ext"),
+              createStringLiteral("x", '"'),
+            ]),
+            createStringLiteral("y", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      includeImports: false,
+      includeTypes: false,
+      enableMemoization: false,
+      enablePredictiveDispatch: true,
+    });
+
+    // `ext` matches a single "a" and nothing else.
+    const ext = (input: string, pos: { offset: number }) =>
+      input[pos.offset] === "a"
+        ? {
+            success: true as const,
+            val: "a",
+            current: pos,
+            next: { ...pos, offset: pos.offset + 1 },
+          }
+        : { success: false as const, error: { message: "not a", pos } };
+
+    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+    const factory = new Function(
+      ...Object.keys(core),
+      "ext",
+      `${body}\nreturn { r };`,
+    );
+    const { r } = factory(...Object.values(core), ext) as {
+      r: (
+        input: string,
+        pos: { offset: number; column: number; line: number },
+      ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
+    };
+
+    const pos = { offset: 0, column: 0, line: 1 };
+    // "ax": ext consumes "a", then "x" matches -- alternative 0 must
+    // still be attempted even though the *first* character is "a", not
+    // "x". A buggy `{chars: {"x"}}` filter on alternative 0 would skip
+    // it here and wrongly fail (or wrongly fall through if "a" happened
+    // to also start alternative 1, which it doesn't in this grammar).
+    expect(r("ax", pos).success).toBe(true);
+  });
+});
