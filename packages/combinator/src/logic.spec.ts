@@ -40,7 +40,11 @@ describe("logic combinators", () => {
       expect(callCount).toBe(3);
     });
 
-    it("should bound the number of distinct inputs tracked, not just positions within one input", () => {
+    it("discards the whole cache the moment a different input arrives, regardless of maxCacheSize", () => {
+      // Not an eviction policy anymore -- the cache is always scoped to
+      // exactly the most recently seen input. `maxCacheSize` (even unset
+      // here) has no bearing on this: switching inputs always starts a
+      // fresh table.
       let callCount = 0;
       const parser = (input: string, pos: Pos) => {
         callCount++;
@@ -50,14 +54,79 @@ describe("logic combinators", () => {
         }
         return literal(char)(input, pos);
       };
-      const memoized = memoize(parser, { maxCacheSize: 1 });
+      const memoized = memoize(parser);
       const pos = { offset: 0, line: 1, column: 1 };
 
-      memoized("a", pos); // tracks input "a"
-      memoized("b", pos); // tracks input "b", evicts input "a"
-      memoized("a", pos); // input "a" was evicted from the outer cache -> cache miss
+      memoized("a", pos); // caches input "a"
+      memoized("b", pos); // different input -> fresh table, discards "a"'s cache
+      memoized("a", pos); // different input again -> fresh table, discards "b"'s cache
 
       expect(callCount).toBe(3);
+    });
+
+    it("never returns a cached result from a different input at the same offset", () => {
+      // The correctness property the cache-reset behavior exists to
+      // guarantee: two inputs that differ only after a shared offset
+      // must each get their own (correct) result there, never the other
+      // input's cached one.
+      const parser = (input: string, pos: Pos) =>
+        literal(input[0] as string)(input, pos);
+      const memoized = memoize(parser);
+      const pos = { offset: 0, line: 1, column: 1 };
+
+      const resultA = memoized("aX", pos);
+      const resultB = memoized("bY", pos);
+      const resultAAgain = memoized("aX", pos);
+
+      expect(resultA.success).toBe(true);
+      expect(resultB.success).toBe(true);
+      if (resultA.success && resultB.success) {
+        expect(resultA.val).toBe("a");
+        expect(resultB.val).toBe("b");
+      }
+      expect(resultAAgain).toEqual(resultA);
+    });
+
+    it("does not evict cached positions for one input when maxCacheSize is left unset (default: unbounded per input)", () => {
+      let callCount = 0;
+      const parser = (input: string, pos: Pos) => {
+        callCount++;
+        const char = input[pos.offset];
+        if (char === undefined) {
+          return { success: false, error: { message: "EOF", pos } } as const;
+        }
+        return literal(char)(input, pos);
+      };
+      const memoized = memoize(parser);
+      const input = "abc";
+
+      memoized(input, { offset: 0, line: 1, column: 1 });
+      memoized(input, { offset: 1, line: 1, column: 2 });
+      memoized(input, { offset: 2, line: 1, column: 3 });
+      expect(callCount).toBe(3);
+
+      // Re-visiting offset 0 must be a cache hit -- nothing evicted it.
+      memoized(input, { offset: 0, line: 1, column: 1 });
+      expect(callCount).toBe(3);
+    });
+
+    it("keys on offset alone: a different Pos with the same offset still hits the cache", () => {
+      // line/column are fully determined by (input, offset), so once the
+      // cache is scoped to one input, including them in the key would be
+      // redundant. This pins that the implementation actually relies on
+      // that instead of accidentally requiring an exact Pos match.
+      let callCount = 0;
+      const parser = (input: string, pos: Pos) => {
+        callCount++;
+        return literal("a")(input, pos);
+      };
+      const memoized = memoize(parser);
+
+      memoized("a", { offset: 0, line: 1, column: 1 });
+      // Same offset, deliberately "wrong" line/column -- must still hit.
+      memoized("a", { offset: 0, line: 99, column: 99 });
+
+      expect(callCount).toBe(1);
     });
   });
 
