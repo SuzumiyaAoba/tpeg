@@ -48,6 +48,8 @@
     "demo": "cd packages/parser-sample && bun run demo",
     "demo:basic": "cd packages/parser-sample && bun run demo:basic",
     "demo:grammar": "cd packages/parser-sample && bun run demo:grammar",
-    "demo:files": "cd packages/parser-sample && bun run demo:files"
+    "demo:files": "cd packages/parser-sample && bun run demo:files",
+    "bench": "bun run bench:parser",
+    "bench:parser": "cd packages/parser && bun run bench"
   }
 }
