@@ -311,6 +311,34 @@ export interface LabeledExpression {
 }
 
 /**
+ * Semantic action node in TPEG grammar AST.
+ * Represents an expression followed by a `{ ... }` code block that runs on
+ * a successful match, e.g. `digits:[0-9]+ { return parseInt(digits.join("")) }`.
+ * The action's return value replaces the expression's own value as the
+ * result of the enclosing alternative. Inside the code, `$$` is bound to the
+ * raw match value, and (if the wrapped expression is a labeled expression,
+ * or a sequence of them) each label is additionally bound as its own
+ * variable, mirroring how `captureSequence` merges labels at runtime.
+ *
+ * @example
+ * ```typescript
+ * const action: ActionExpression = {
+ *   type: "ActionExpression",
+ *   expression: labeledDigits,
+ *   code: "return parseInt(digits.join(\"\"), 10);"
+ * };
+ * ```
+ */
+export interface ActionExpression {
+  /** The node type identifier */
+  type: "ActionExpression";
+  /** The expression that must match before the action runs */
+  expression: Expression;
+  /** Raw source text of the action's code block, minus the enclosing braces */
+  code: string;
+}
+
+/**
  * Union type for all TPEG expression nodes.
  * This discriminated union allows type-safe handling of all expression types.
  */
@@ -329,7 +357,8 @@ export type Expression =
   | Quantified
   | PositiveLookahead
   | NegativeLookahead
-  | LabeledExpression;
+  | LabeledExpression
+  | ActionExpression;
 
 /**
  * Grammar annotation in TPEG grammar AST.
@@ -924,6 +953,28 @@ export const createLabeledExpression = (
 });
 
 /**
+ * Create an ActionExpression AST node.
+ *
+ * @param expression - The expression that must match before the action runs
+ * @param code - Raw source text of the action's code block, minus the braces
+ * @returns A new ActionExpression AST node
+ *
+ * @example
+ * ```typescript
+ * const action = createActionExpression(labeledDigits, "return parseInt(digits.join(\"\"));");
+ * // Returns: { type: "ActionExpression", expression: labeledDigits, code: "..." }
+ * ```
+ */
+export const createActionExpression = (
+  expression: Expression,
+  code: string,
+): ActionExpression => ({
+  type: "ActionExpression",
+  expression,
+  code,
+});
+
+/**
  * Create a GrammarAnnotation AST node.
  *
  * @param key - The annotation key
@@ -1294,6 +1345,15 @@ export const isNegativeLookahead = (expr: unknown): expr is NegativeLookahead =>
  */
 export const isLabeledExpression = (expr: unknown): expr is LabeledExpression =>
   hasNodeType(expr, "LabeledExpression");
+
+/**
+ * Type guard to check if an expression is an ActionExpression.
+ *
+ * @param expr - The expression to check
+ * @returns True if the expression is an ActionExpression
+ */
+export const isActionExpression = (expr: unknown): expr is ActionExpression =>
+  hasNodeType(expr, "ActionExpression");
 
 /**
  * Type guard to check if a grammar definition is a ModularGrammarDefinition.

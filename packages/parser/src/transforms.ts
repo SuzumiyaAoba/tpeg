@@ -20,6 +20,7 @@ import {
   star,
   star as zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
+import { scanBalancedBraces } from "./brace-scanner";
 import {
   GRAMMAR_KEYWORDS,
   SUPPORTED_LANGUAGES,
@@ -319,85 +320,12 @@ const returnTypeSpec: Parser<TransformReturnType> = map(
 // ============================================================================
 
 /**
- * Parse function body content
- * This is a simplified parser that captures everything between { and }
- * In a full implementation, this would parse language-specific syntax
+ * Parse function body content: everything between a `{` and its matching
+ * `}`, skipping over string/comment contents so an embedded `}` doesn't
+ * close the block early. See `brace-scanner.ts` for the shared scanner
+ * (also used by the semantic action block parser in `composition.ts`).
  */
-const functionBody: Parser<string> = (
-  input: string,
-  pos: { offset: number; line: number; column: number },
-) => {
-  // Find the opening brace
-  const openBracePos = input.indexOf("{", pos.offset);
-  if (openBracePos === -1) {
-    return {
-      success: false,
-      error: {
-        message: "Expected opening brace '{'",
-        pos,
-        expected: ["{"],
-        found: input[pos.offset] || "",
-        parserName: "functionBody",
-      },
-    };
-  }
-
-  // Find the matching closing brace
-  let braceCount = 0;
-  let closeBracePos = -1;
-
-  for (let i = openBracePos; i < input.length; i++) {
-    if (input[i] === "{") {
-      braceCount++;
-    } else if (input[i] === "}") {
-      braceCount--;
-      if (braceCount === 0) {
-        closeBracePos = i;
-        break;
-      }
-    }
-  }
-
-  if (closeBracePos === -1) {
-    return {
-      success: false,
-      error: {
-        message: "Expected closing brace '}'",
-        pos,
-        expected: ["}"],
-        found: input[input.length - 1] || "",
-        parserName: "functionBody",
-      },
-    };
-  }
-
-  // Extract the body content (excluding the braces)
-  const bodyContent = input.slice(openBracePos + 1, closeBracePos);
-
-  // nextは「}」の直後のみを返す
-  const nextOffset = closeBracePos + 1;
-  const consumed = nextOffset - pos.offset;
-  // 行・カラムの更新（簡易: 複数行対応は必要に応じて拡張）
-  let nextLine = pos.line;
-  let nextColumn = pos.column + consumed;
-  const consumedText = input.slice(pos.offset, nextOffset);
-  const lines = consumedText.split("\n");
-  if (lines.length > 1) {
-    nextLine += lines.length - 1;
-    nextColumn = (lines[lines.length - 1] ?? "").length + 1;
-  }
-
-  return {
-    success: true,
-    val: bodyContent,
-    current: pos,
-    next: {
-      offset: nextOffset,
-      line: nextLine,
-      column: nextColumn,
-    },
-  };
-};
+const functionBody: Parser<string> = scanBalancedBraces;
 
 // ============================================================================
 // Transform Function Parser

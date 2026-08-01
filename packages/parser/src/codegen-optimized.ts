@@ -9,6 +9,7 @@
  */
 
 import type {
+  ActionExpression,
   CharacterClass,
   Choice,
   Expression,
@@ -29,7 +30,12 @@ import type {
   TransformFunction,
 } from "./types";
 
-import { collectTransformFunctions, wrapWithTransform } from "./codegen";
+import {
+  collectTopLevelLabels,
+  collectTransformFunctions,
+  wrapWithAction,
+  wrapWithTransform,
+} from "./codegen";
 import { escapeStringLiteral } from "./constants";
 import {
   analyzeExpressionComplexity,
@@ -264,7 +270,11 @@ export class OptimizedTPEGCodeGenerator {
         break;
       }
       case "Sequence":
-        combinators.add("sequence");
+        combinators.add(
+          collectTopLevelLabels(expr).length > 0
+            ? "captureSequence"
+            : "sequence",
+        );
         for (const element of expr.elements) {
           this.collectUsedCombinators(element, combinators, currentRuleIndex);
         }
@@ -328,6 +338,13 @@ export class OptimizedTPEGCodeGenerator {
         break;
       case "LabeledExpression":
         combinators.add("capture");
+        this.collectUsedCombinators(
+          expr.expression,
+          combinators,
+          currentRuleIndex,
+        );
+        break;
+      case "ActionExpression":
         this.collectUsedCombinators(
           expr.expression,
           combinators,
@@ -420,6 +437,8 @@ export class OptimizedTPEGCodeGenerator {
           return `notPredicate(${this.generateOptimizedExpression((expr as NegativeLookahead).expression)})`;
         case "LabeledExpression":
           return this.generateLabeledExpression(expr as LabeledExpression);
+        case "ActionExpression":
+          return this.generateActionExpression(expr as ActionExpression);
         default:
           throw new Error(
             `Unsupported expression type: ${(expr as { type: string }).type}`,
@@ -489,7 +508,12 @@ export class OptimizedTPEGCodeGenerator {
     const elements = expr.elements.map((el) =>
       this.generateOptimizedExpression(el),
     );
-    return `sequence(${elements.join(", ")})`;
+    // A sequence with labeled elements needs its per-element captured
+    // objects merged into one - `sequence()` returns a positional tuple
+    // instead, which would leave labels unreachable by name.
+    return collectTopLevelLabels(expr).length > 0
+      ? `captureSequence(${elements.join(", ")})`
+      : `sequence(${elements.join(", ")})`;
   }
 
   private generateOptimizedChoice(expr: Choice): string {
@@ -559,6 +583,12 @@ export class OptimizedTPEGCodeGenerator {
   private generateLabeledExpression(expr: LabeledExpression): string {
     const inner = this.generateOptimizedExpression(expr.expression);
     return `capture("${expr.label}", ${inner})`;
+  }
+
+  private generateActionExpression(expr: ActionExpression): string {
+    const inner = this.generateOptimizedExpression(expr.expression);
+    const labels = collectTopLevelLabels(expr.expression);
+    return wrapWithAction(inner, expr.code, labels);
   }
 
   /**

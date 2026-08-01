@@ -3,6 +3,13 @@ import { generateTypeScriptParser } from "./codegen";
 import { generateOptimizedTypeScriptParser } from "./codegen-optimized";
 import { expression } from "./composition";
 import { createPositionAt } from "./test-utils";
+import {
+  createGrammarDefinition,
+  createLabeledExpression,
+  createRuleDefinition,
+  createSequence,
+  createStringLiteral,
+} from "./types";
 import type { GrammarDefinition, LabeledExpression, Sequence } from "./types";
 
 describe("Capture Integration Tests", () => {
@@ -125,7 +132,9 @@ describe("Capture Integration Tests", () => {
 
       expect(result.code).toContain('capture("name"');
       expect(result.code).toContain('capture("age"');
-      expect(result.code).toContain("sequence(");
+      // Two of the three elements are labeled, so the sequence must merge
+      // their captures into one object rather than a positional tuple.
+      expect(result.code).toContain("captureSequence(");
     });
 
     it("should handle nested labeled expressions", () => {
@@ -383,7 +392,9 @@ describe("Capture Integration Tests", () => {
       expect(result.code).toContain('capture("left"');
       expect(result.code).toContain('capture("operator"');
       expect(result.code).toContain('capture("right"');
-      expect(result.code).toContain("sequence(");
+      // All three elements are labeled, so the sequence must merge their
+      // captures into one object rather than returning a positional tuple.
+      expect(result.code).toContain("captureSequence(");
       expect(result.code).toContain("choice(");
       expect(result.code).toContain("charClass");
     });
@@ -489,7 +500,48 @@ describe("Capture Integration Tests", () => {
 
       // Should include proper imports
       expect(result.code).toContain("capture");
-      expect(result.code).toContain("sequence");
+      // All ten elements are labeled, so the sequence must merge their
+      // captures into one object rather than a positional tuple.
+      expect(result.code).toContain("captureSequence");
+    });
+  });
+
+  describe("runtime capture merging", () => {
+    it("merges multiple labeled elements of a sequence into one object at runtime", async () => {
+      const core = await import("@suzumiyaaoba/tpeg-core");
+
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "pair",
+            createSequence([
+              createLabeledExpression("left", createStringLiteral("a")),
+              createLabeledExpression("right", createStringLiteral("b")),
+            ]),
+          ),
+        ],
+      );
+
+      const result = generateTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+      });
+      expect(result.code).toContain("captureSequence(");
+
+      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+      const moduleFactory = new Function(
+        ...Object.keys(core),
+        `${body}\nreturn { pair };`,
+      );
+      const { pair } = moduleFactory(...Object.values(core));
+
+      const result1 = pair("ab", createPositionAt(0));
+      expect(result1.success).toBe(true);
+      if (result1.success) {
+        expect(result1.val).toEqual({ left: "a", right: "b" });
+      }
     });
   });
 });

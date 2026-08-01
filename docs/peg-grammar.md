@@ -6,7 +6,8 @@ TPEG (TypeScript Parsing Expression Grammar) is an extended PEG grammar definiti
 
 This specification covers:
 - **PEG Grammar Definition Syntax** - Language-agnostic grammar rules
-- **Transform Definition Syntax** - Language-specific semantic actions
+- **Semantic Actions** - Inline `{ code }` blocks attached to an alternative
+- **Transform Definition Syntax** - Rule-level, typed, language-specific transforms
 - **Type Inference System** - Automatic type derivation from transforms
 
 This specification does **NOT** cover:
@@ -180,8 +181,10 @@ Labeled expressions are automatically converted to capture functions in generate
 // Grammar definition
 greeting = name:"hello" " " target:"world"
 
-// Generated code
-export const greeting = sequence(
+// Generated code - a sequence with one or more labeled elements merges
+// their captures into a single object (captureSequence), rather than the
+// positional tuple a plain sequence() would produce.
+export const greeting = captureSequence(
   capture("name", literal("hello")),
   literal(" "),
   capture("target", literal("world"))
@@ -199,6 +202,7 @@ export const greeting = sequence(
 | `label:pattern` | `{ label: T }` | Labeled pattern creates named capture |
 | `pattern1 pattern2` | `[T1, T2]` | Unlabeled sequence captures array of elements |
 | `left:pattern1 right:pattern2` | `{ left: T1, right: T2 }` | Labeled sequence creates object with named fields |
+| `name:pattern1 pattern2 age:pattern3` | `{ name: T1, age: T3 }` | A sequence with *some* labeled elements still merges into an object - the unlabeled `pattern2` match is captured but has no key, so it's dropped rather than appearing positionally |
 | `pattern1 / pattern2` | `T1 \| T2` | Unlabeled choice captures union type |
 | `a:pattern1 / b:pattern2` | `{ a?: T1, b?: T2 }` | Labeled choice creates optional fields |
 | `pattern*` | `T[]` | Unlabeled repetition captures array of matches |
@@ -210,6 +214,94 @@ export const greeting = sequence(
 | `group:(pattern1 / pattern2)` | `{ group: T1 \| T2 }` | Labeled group creates named capture |
 | `&pattern` | `null` | Positive lookahead doesn't capture |
 | `!pattern` | `null` | Negative lookahead doesn't capture |
+
+## Semantic Actions
+
+An alternative may be followed by a `{ ... }` code block: a semantic action
+that runs on a successful match and replaces the alternative's own captured
+value with whatever the action returns.
+
+```tpeg
+number = digits:[0-9]+ { return parseInt(digits.join(""), 10); }
+```
+
+### Scope Inside an Action
+
+Two things are in scope inside the action's code:
+
+- **`$$`** - the alternative's raw captured value, exactly as it would have
+  been without the action (a string, an array, a capture object, etc.).
+- **Each label from the wrapped expression, destructured as its own
+  variable** - if the expression is a single labeled expression, or a
+  sequence containing one or more labeled elements, every label is bound by
+  name. This is the same label set the sequence's own `captureSequence` merge
+  produces (see the [Capture Structure Reference Table](#capture-structure-reference-table)
+  above), so `$$.someLabel` and the bare variable `someLabel` are always the
+  same value.
+
+```tpeg
+// Single label: `digits` is bound directly (here, $$ is { digits: [...] })
+number = digits:[0-9]+ { return parseInt(digits.join(""), 10); }
+
+// Multiple labels: both `left` and `right` are bound directly
+sum = left:number "+" right:number { return left + right; }
+
+// No labels at all: only $$ is available, holding the raw match
+raw = [0-9]+ { return $$.join(""); }
+```
+
+There is no positional `$1`/`$2` capture syntax - every value an action can
+see is reached by label name (or `$$` for the whole match), matching TPEG's
+existing label-based capture model rather than introducing a second,
+position-based one.
+
+**Mixed labeled/unlabeled sequences:** as the
+[Capture Structure Reference Table](#capture-structure-reference-table) notes,
+a sequence with *some* labeled elements still merges into one object, and the
+unlabeled elements' matches have no key to be merged under - so they're
+dropped from `$$` entirely, not present positionally either. `name:"a" " " age:[0-9]`
+gives an action `{ name, age }`, with the `" "` match unreachable.
+
+**Labels nested under `?`/`*`/`+` are not destructured as bare variables:**
+only labels that are a direct element of the action's own expression (or of
+a `Sequence` that is) are bound by name. A label one level deeper, e.g.
+`left:a ("+" right:b)?`, still ends up merged into `$$` when that optional
+matches (the same runtime merge the table describes), so `$$.right` works -
+but the bare variable `right` does not, since the action's own destructuring
+only looks at the top level. Reach into `$$` by label name for these cases.
+
+### Actions Attach Per Alternative
+
+An action attaches to the specific alternative it follows, not to the whole
+rule. Each side of a choice can have its own action, or none:
+
+```tpeg
+value = digits:[0-9]+ { return parseInt(digits.join(""), 10); }
+      / "true" { return true; }
+      / "false" { return false; }
+```
+
+### Actions vs. Transform Functions
+
+TPEG has two ways to turn a parsed result into an output value: semantic
+actions (this section) and [transform functions](#transform-function-specification).
+They operate at different granularity and aren't meant to be combined on the
+same rule:
+
+- A **semantic action** is inline, attaches to one alternative, and has no
+  declared parameter or return type - it runs as plain code in the generated
+  parser's target language (currently TypeScript) as soon as that
+  alternative matches.
+- A **transform function** is declared separately (`transforms Name@language { ... }`),
+  attaches to an entire rule by name, has an explicit typed signature, and
+  returns the `Result<T>` contract described in
+  [Transform Error Handling Contract](#transform-error-handling-contract) -
+  including the ability to signal failure after a structural match succeeds.
+
+Prefer a semantic action for small, inline conversions (parsing a number,
+building a simple literal); prefer a transform function when the output
+needs a declared type signature, needs to fail with a custom error after
+matching, or is shared/generated across multiple target languages.
 
 ## Grammar Definition
 

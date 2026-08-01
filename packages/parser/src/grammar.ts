@@ -24,6 +24,11 @@ import {
   star as zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
+import {
+  skipBlockComment,
+  skipLineComment,
+  skipStringLiteral,
+} from "./brace-scanner";
 import { expression } from "./composition";
 import { GRAMMAR_KEYWORDS, GRAMMAR_SYMBOLS } from "./constants";
 import { identifier } from "./identifier";
@@ -73,13 +78,64 @@ const isLineBreakOrSpaceOrTab = (char: string | undefined): boolean =>
  * can legitimately span multiple lines (e.g. a labeled choice with `/`
  * alternatives on their own lines) as long as what follows isn't actually
  * the start of another rule or the block's end.
+ *
+ * A rule body may itself contain a semantic action block, `{ ... }`
+ * (possibly multi-line, possibly with its own nested `{`/`}` or a `}`
+ * embedded in a string/comment) - so this tracks brace depth (skipping over
+ * string literals and comments the same way `brace-scanner.ts` does for the
+ * action block itself) and only treats a line-broken "}" as *this* rule's
+ * end, or the grammar block's end, while that depth is back to zero. Without
+ * this, an action's own closing brace on its own line would be misread as
+ * the enclosing grammar block's "}" and truncate the rule mid-action.
  */
 const grammarRuleExpression: Parser<Expression> = (input: string, pos) => {
   let endPos = pos.offset;
   let foundEnd = false;
+  let activeBraceDepth = 0;
 
   while (endPos < input.length && !foundEnd) {
     const char = input[endPos];
+
+    if (char === '"' || char === "'") {
+      endPos = skipStringLiteral(input, endPos, char);
+      continue;
+    }
+
+    // A character class, e.g. `[^"]`, can contain a quote character that
+    // isn't a string literal delimiter at all - skip its content atomically
+    // (respecting `\]` escapes) so it's never mistaken for the start of a
+    // string literal above.
+    if (char === "[") {
+      let i = endPos + 1;
+      while (i < input.length && input[i] !== "]") {
+        if (input[i] === "\\") i++;
+        i++;
+      }
+      endPos = Math.min(i + 1, input.length);
+      continue;
+    }
+
+    if (char === "/" && input[endPos + 1] === "/") {
+      endPos = skipLineComment(input, endPos);
+      continue;
+    }
+
+    if (char === "/" && input[endPos + 1] === "*") {
+      endPos = skipBlockComment(input, endPos);
+      continue;
+    }
+
+    if (char === "{") {
+      activeBraceDepth++;
+      endPos++;
+      continue;
+    }
+
+    if (char === "}" && activeBraceDepth > 0) {
+      activeBraceDepth--;
+      endPos++;
+      continue;
+    }
 
     if (isLineBreakOrSpaceOrTab(char)) {
       // Look ahead past this whitespace run (without committing to
@@ -105,13 +161,24 @@ const grammarRuleExpression: Parser<Expression> = (input: string, pos) => {
         // a line break: every real grammar block closes on its own line, so
         // this can't confuse a "}" that appears same-line inside a string
         // literal or character class (e.g. `sep = " }"`), which has no
-        // line break to cross before reaching it.
-        if (boundaryChar === "}" && crossedLineBreak) {
+        // line break to cross before reaching it. Also require brace depth
+        // zero, so a multi-line action's own closing "}" (still "inside" an
+        // unclosed `{` from earlier in this same rule) is never mistaken for
+        // the grammar block's end.
+        if (
+          boundaryChar === "}" &&
+          crossedLineBreak &&
+          activeBraceDepth === 0
+        ) {
           foundEnd = true;
           break;
         }
 
-        if (boundaryChar && IDENTIFIER_START_CHAR.test(boundaryChar)) {
+        if (
+          activeBraceDepth === 0 &&
+          boundaryChar &&
+          IDENTIFIER_START_CHAR.test(boundaryChar)
+        ) {
           let identEnd = checkPos + 1;
           while (
             identEnd < input.length &&

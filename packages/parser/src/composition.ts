@@ -18,11 +18,14 @@ import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   charClass,
   choice,
+  createFailure,
   literal,
   map,
+  optional,
   seq,
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
+import { scanBalancedBraces } from "./brace-scanner";
 import { characterClass } from "./character-class";
 import { identifier } from "./identifier";
 import { withOptionalLabel } from "./label";
@@ -31,6 +34,7 @@ import { qualifiedIdentifier } from "./module";
 import { withRepetition } from "./repetition";
 import { stringLiteral } from "./string-literal";
 import type {
+  ActionExpression,
   BasicSyntaxNode,
   Choice,
   Expression,
@@ -122,6 +126,51 @@ const groupExpression = (): Parser<Group> => {
 };
 
 /**
+ * Matches a semantic action block only when `{` is the very next character
+ * (`scanBalancedBraces` alone searches forward for the next `{` anywhere in
+ * the remaining input, which is fine for the mandatory `{ ... }` in a
+ * transform function but unsafe here: since this is tried speculatively
+ * inside `optional()`, that forward search could otherwise skip past
+ * unrelated content - e.g. the rest of the rule, or even the grammar's own
+ * closing `}` - and misparse a much later brace pair as this alternative's
+ * action).
+ */
+const actionBlock: Parser<string> = (input, pos) => {
+  if (input[pos.offset] !== "{") {
+    return createFailure("Expected opening brace '{'", pos, {
+      expected: ["{"],
+      found: input[pos.offset] ?? "",
+      parserName: "actionBlock",
+    });
+  }
+  return scanBalancedBraces(input, pos);
+};
+
+/**
+ * Parses an optional trailing semantic action attached to an alternative:
+ * `{ ... }` immediately (modulo whitespace) after the expression, e.g.
+ * `digits:[0-9]+ { return parseInt(digits.join("")); }`. Brace matching is
+ * string/comment-aware (see `brace-scanner.ts`), since the action's code can
+ * itself contain `}` inside string literals or comments.
+ */
+const withOptionalAction = (parser: Parser<Expression>): Parser<Expression> => {
+  return map(
+    seq(parser, optional(seq(whitespace, actionBlock))),
+    ([expr, action]): Expression => {
+      if (action.length === 0) {
+        return expr;
+      }
+      const [, code] = action[0];
+      return {
+        type: "ActionExpression",
+        expression: expr,
+        code,
+      } as ActionExpression;
+    },
+  );
+};
+
+/**
  * Parses a sequence of labeled expressions, optionally separated by
  * whitespace. Whitespace between elements is optional (not required): PEG
  * juxtaposition doesn't require a separator, so `[a-z][0-9]*` must parse as
@@ -129,23 +178,31 @@ const groupExpression = (): Parser<Group> => {
  * element itself always consumes at least one character when it matches
  * (primary() can't match zero-width), so relaxing this to zeroOrMore can't
  * introduce a zero-progress loop iteration.
+ *
+ * An alternative may be followed by a semantic action block (see
+ * `withOptionalAction`), which wraps the whole sequence (or, for a
+ * single-element alternative, that one expression) in an `ActionExpression`.
  */
 const sequenceExpression = (): Parser<Expression> => {
-  return map(
-    seq(
-      labeled(),
-      zeroOrMore(seq(zeroOrMore(charClass(" ", "\t", "\n", "\r")), labeled())),
+  return withOptionalAction(
+    map(
+      seq(
+        labeled(),
+        zeroOrMore(
+          seq(zeroOrMore(charClass(" ", "\t", "\n", "\r")), labeled()),
+        ),
+      ),
+      ([first, rest]) => {
+        if (rest.length === 0) {
+          return first;
+        }
+        const elements = [first, ...rest.map(([_, expr]) => expr)];
+        return {
+          type: "Sequence" as const,
+          elements,
+        } as Sequence;
+      },
     ),
-    ([first, rest]) => {
-      if (rest.length === 0) {
-        return first;
-      }
-      const elements = [first, ...rest.map(([_, expr]) => expr)];
-      return {
-        type: "Sequence" as const,
-        elements,
-      } as Sequence;
-    },
   );
 };
 

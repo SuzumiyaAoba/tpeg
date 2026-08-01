@@ -7,6 +7,7 @@
 
 // Import and re-export all shared grammar types from core
 import type {
+  ActionExpression,
   AnyChar,
   CharRange,
   CharacterClass,
@@ -46,6 +47,7 @@ export type {
   PositiveLookahead,
   NegativeLookahead,
   LabeledExpression,
+  ActionExpression,
   Expression,
   GrammarAnnotation,
   RuleDefinition,
@@ -362,6 +364,21 @@ export const createLabeledExpression = (
   type: "LabeledExpression",
   label,
   expression,
+});
+
+/**
+ * Create an ActionExpression AST node
+ * @param expression The expression that must match before the action runs
+ * @param code Raw source text of the action's code block, minus the braces
+ * @returns ActionExpression node
+ */
+export const createActionExpression = (
+  expression: Expression,
+  code: string,
+): ActionExpression => ({
+  type: "ActionExpression",
+  expression,
+  code,
 });
 
 /**

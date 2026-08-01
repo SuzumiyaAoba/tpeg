@@ -7,6 +7,7 @@
 
 import { escapeStringLiteral } from "./constants";
 import type {
+  ActionExpression,
   AnyChar,
   CharacterClass,
   Choice,
@@ -92,6 +93,71 @@ ${transformFn.body}
   return {
     success: true,
     val: __transformed.value,
+    current: __result.current,
+    next: __result.next,
+  };
+}`;
+};
+
+/**
+ * Returns the label a single expression is bound to, unwrapping a `Group`
+ * (which is transparent at codegen time) - or undefined if the expression
+ * isn't a (possibly grouped) `LabeledExpression`.
+ */
+const labelOf = (expr: Expression): string | undefined => {
+  if (expr.type === "LabeledExpression") {
+    return (expr as LabeledExpression).label;
+  }
+  if (expr.type === "Group") {
+    return labelOf((expr as Group).expression);
+  }
+  return undefined;
+};
+
+/**
+ * Collects the label names directly visible on an expression: either the
+ * expression itself is a (possibly grouped) `LabeledExpression`, or - if
+ * it's a `Sequence` - each of its immediate elements that is one. This
+ * mirrors the runtime merge performed by `captureSequence`/`mergeCaptures`
+ * (`@suzumiyaaoba/tpeg-core`'s `capture.ts`), which merges each direct
+ * child's captured object into one - so the label set computed here always
+ * matches the keys actually present on the merged value at runtime.
+ */
+export const collectTopLevelLabels = (expr: Expression): string[] => {
+  if (expr.type === "Sequence") {
+    return (expr as Sequence).elements
+      .map(labelOf)
+      .filter((label): label is string => label !== undefined);
+  }
+  const single = labelOf(expr);
+  return single !== undefined ? [single] : [];
+};
+
+/**
+ * Wraps an alternative's generated parser expression so that, on a
+ * successful parse, the semantic action code runs with `$$` bound to the
+ * raw match value and (if the wrapped expression carries labeled captures)
+ * each label destructured as its own named variable, then returns the
+ * action's own return value as the parser's result.
+ */
+export const wrapWithAction = (
+  parserCode: string,
+  actionCode: string,
+  labels: string[],
+): string => {
+  const destructure =
+    labels.length > 0 ? `    const { ${labels.join(", ")} } = $$;\n` : "";
+  return `(input, pos) => {
+  const __base = (${parserCode});
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$ = __result.val;
+${destructure}${actionCode}
+  })();
+  return {
+    success: true,
+    val: __val,
     current: __result.current,
     next: __result.next,
   };
@@ -261,6 +327,8 @@ export class TPEGCodeGenerator {
         return this.generateNegativeLookahead(expr as NegativeLookahead);
       case "LabeledExpression":
         return this.generateLabeledExpression(expr as LabeledExpression);
+      case "ActionExpression":
+        return this.generateActionExpression(expr as ActionExpression);
       default:
         throw new Error(
           `Unsupported expression type: ${(expr as { type: string }).type}`,
@@ -322,7 +390,12 @@ export class TPEGCodeGenerator {
     const elements = expr.elements
       .map((el) => this.generateExpression(el))
       .join(", ");
-    return `sequence(${elements})`;
+    // A sequence with labeled elements needs its per-element captured
+    // objects merged into one - `sequence()` returns a positional tuple
+    // instead, which would leave labels unreachable by name.
+    return collectTopLevelLabels(expr).length > 0
+      ? `captureSequence(${elements})`
+      : `sequence(${elements})`;
   }
 
   private generateChoice(expr: Choice): string {
@@ -404,6 +477,12 @@ export class TPEGCodeGenerator {
     return `capture("${expr.label}", ${inner})`;
   }
 
+  private generateActionExpression(expr: ActionExpression): string {
+    const inner = this.generateExpression(expr.expression);
+    const labels = collectTopLevelLabels(expr.expression);
+    return wrapWithAction(inner, expr.code, labels);
+  }
+
   /**
    * Collect all combinators used in an expression
    */
@@ -433,7 +512,11 @@ export class TPEGCodeGenerator {
         break;
       }
       case "Sequence":
-        combinators.add("sequence");
+        combinators.add(
+          collectTopLevelLabels(expr).length > 0
+            ? "captureSequence"
+            : "sequence",
+        );
         for (const element of expr.elements) {
           this.collectUsedCombinators(element, combinators, currentRuleIndex);
         }
@@ -497,6 +580,13 @@ export class TPEGCodeGenerator {
         break;
       case "LabeledExpression":
         combinators.add("capture");
+        this.collectUsedCombinators(
+          expr.expression,
+          combinators,
+          currentRuleIndex,
+        );
+        break;
+      case "ActionExpression":
         this.collectUsedCombinators(
           expr.expression,
           combinators,
