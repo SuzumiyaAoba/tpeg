@@ -20,12 +20,15 @@
 
 import {
   DEFAULT_PATHOLOGICAL_DEPTH,
+  generateChainInput,
   generateJsonCorpus,
   generateMultiplicationChain,
   generateNestedParens,
   generateVariedInputs,
 } from "./corpus";
 import {
+  BENCH_ACYCLIC_CHAIN_GRAMMAR,
+  BENCH_ACYCLIC_CHAIN_ROOT_RULE,
   BENCH_JSON_GRAMMAR,
   BENCH_JSON_ROOT_RULE,
   BENCH_UNFACTORED_ARITHMETIC_GRAMMAR,
@@ -196,6 +199,46 @@ function run(): void {
       timedInputs,
       warmupInputs,
       ARITHMETIC_CONFIGS,
+    );
+  }
+
+  {
+    // `generateChainInput` always returns a single digit -- this
+    // grammar's cost comes entirely from its unfactored-choice *shape*,
+    // not input length, so there is nothing to scale up here.
+    const { timedInputs, warmupInputs } = buildInputSets(
+      200,
+      WARMUP_COUNT,
+      generateChainInput,
+    );
+    section(
+      "Acyclic chain grammar (10 unfactored levels, none recursive -- " +
+        "see grammars.ts: demonstrates that hasRecursion/nodeCount was " +
+        "the wrong memoization trigger)",
+    );
+    for (const { label, options } of CONFIGS) {
+      const compiled = compileRule(
+        BENCH_ACYCLIC_CHAIN_GRAMMAR,
+        BENCH_ACYCLIC_CHAIN_ROOT_RULE,
+        options,
+      );
+      const result = runParseThroughput(label, compiled, timedInputs, {
+        warmupInputs,
+      });
+      console.log(formatResult(result));
+    }
+    console.log(
+      "  'optimized codegen, memoization on' should show leaf " +
+        "invocations/parse collapse from ~59000 (~3^9, standard/memo-off) " +
+        "to ~20 and ops/sec jump ~1000x: `codegen-optimized.ts` now " +
+        "decides memoization via `reentrancy.ts`'s analysis (which of " +
+        "rules a1..a9 -- shared by every alternative of their caller's " +
+        "3-way Choice -- can actually be re-invoked at an offset already " +
+        "parsed) instead of the old hasRecursion/complexity proxy, which " +
+        "flagged none of this grammar's 10 rules despite none being " +
+        "recursive or individually complex. See " +
+        "`packages/parser/src/reentrancy.ts` and its spec for the " +
+        "algorithm and its acceptance-test predictions.",
     );
   }
 

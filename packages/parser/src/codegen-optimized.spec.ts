@@ -34,6 +34,37 @@ import {
   createTransformSet,
 } from "./types";
 
+/**
+ * A minimal grammar where `shared` is reachable from every alternative of
+ * `big`'s Choice -- the canonical reentrant shape (see
+ * `packages/parser/src/reentrancy.ts`), used below wherever a test needs
+ * *some* rule the current memoization trigger will flag, without the test
+ * itself being about which shapes get flagged.
+ */
+function reentrantSharedRuleGrammar() {
+  return createGrammarDefinition(
+    "Test",
+    [],
+    [
+      createRuleDefinition(
+        "big",
+        createChoice([
+          createSequence([
+            createIdentifier("shared"),
+            createStringLiteral("x", '"'),
+          ]),
+          createSequence([
+            createIdentifier("shared"),
+            createStringLiteral("y", '"'),
+          ]),
+          createIdentifier("shared"),
+        ]),
+      ),
+      createRuleDefinition("shared", createStringLiteral("a", '"')),
+    ],
+  );
+}
+
 describe("OptimizedTPEGCodeGenerator structural correctness", () => {
   it("gives every rule its own name, even when several rules share the same memoization/type-annotation shape", () => {
     const grammar = createGrammarDefinition(
@@ -57,17 +88,16 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
   });
 
   it("never wraps a memoized rule in memoize() twice", () => {
-    // A large Sequence pushes estimated complexity to "high", which is one
-    // of the two conditions that trigger memoization.
-    const bigSequence = {
-      type: "Sequence" as const,
-      elements: Array.from({ length: 60 }, () => createStringLiteral("a", '"')),
-    };
-    const grammar = createGrammarDefinition(
-      "Test",
-      [],
-      [createRuleDefinition("big", bigSequence)],
-    );
+    // `shared` is invoked from all 3 alternatives of `big`'s Choice, so
+    // `reentrancy.ts`'s analysis flags it for memoization (see
+    // `packages/parser/src/reentrancy.ts` and its spec for the algorithm
+    // this replaced `estimatedComplexity === "high" || hasRecursion`
+    // with). A single large, non-alternated Sequence -- what this test
+    // used before -- no longer triggers memoization at all under the new
+    // analysis, correctly: nothing in a straight-line sequence of
+    // distinct literals is ever re-invoked at the same offset, so
+    // memoizing it would be pure overhead.
+    const grammar = reentrantSharedRuleGrammar();
 
     const result = generateOptimizedTypeScriptParser(grammar);
 
@@ -76,15 +106,7 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
   });
 
   it("imports memoize exactly once, from tpeg-combinator, never from tpeg-core", () => {
-    const bigSequence = {
-      type: "Sequence" as const,
-      elements: Array.from({ length: 60 }, () => createStringLiteral("a", '"')),
-    };
-    const grammar = createGrammarDefinition(
-      "Test",
-      [],
-      [createRuleDefinition("big", bigSequence)],
-    );
+    const grammar = reentrantSharedRuleGrammar();
 
     const result = generateOptimizedTypeScriptParser(grammar, {
       includeImports: true,

@@ -557,6 +557,26 @@ export class EtaTPEGCodeGenerator {
 
   /**
    * Determine if a rule should be memoized
+   *
+   * KNOWN GAP (not yet fixed here): this is the same
+   * `hasRecursion || estimatedComplexity === "high"` proxy that
+   * `packages/parser/src/codegen-optimized.ts` used before being
+   * replaced by the reentrancy analysis in
+   * `packages/parser/src/reentrancy.ts` -- see that module's doc comment
+   * for why the proxy under-memoizes some non-recursive grammars (e.g.
+   * `BENCH_ACYCLIC_CHAIN_GRAMMAR` in `packages/parser/bench/grammars.ts`)
+   * and over-memoizes some recursive ones (a FIRST-disjoint recursive
+   * choice, e.g. JSON's `value`). This path was left unported rather
+   * than duplicated: `tpeg-generator` has no dependency on `tpeg-parser`
+   * (see `packages/generator/package.json` and the dependency graph in
+   * the repo root `CLAUDE.md`), and `packages/cli/src/cli.ts` generates
+   * code via `tpeg-parser`'s `generateTypeScriptParser`/
+   * `generateOptimizedTypeScriptParser` directly, not via this Eta-based
+   * generator -- so this heuristic doesn't sit on the path the `tpeg`
+   * CLI actually exercises. Porting or sharing the reentrancy analysis
+   * properly needs a package-boundary decision (duplicate it here the
+   * way `performance-utils.ts` already is, or add a `tpeg-parser`
+   * dependency to `tpeg-generator`), not a same-file patch.
    */
   private shouldMemoize(
     _rule: RuleDefinition,

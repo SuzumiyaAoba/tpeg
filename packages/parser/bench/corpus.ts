@@ -80,6 +80,20 @@ export function generateNestedParens(depth: number, digit = "1"): string {
 export const DEFAULT_PATHOLOGICAL_DEPTH = 5;
 
 /**
+ * A single digit (0-9), the entire input `BENCH_ACYCLIC_CHAIN_GRAMMAR`'s
+ * `a0` needs to succeed. The grammar's cost is driven entirely by its
+ * *shape* (10 levels of unfactored 3-way choice), not by input length --
+ * unlike `generateJsonCorpus`/`generateMultiplicationChain`, scaling this
+ * up wouldn't change what's being measured, only add irrelevant parse
+ * work after the pathological part. `seed` only varies which digit, for
+ * `generateVariedInputs` (so a memoizing config's cache can't be primed
+ * by warmup on the exact strings the timed loop measures).
+ */
+export function generateChainInput(seed: number): string {
+  return String(seed % 10);
+}
+
+/**
  * Builds `count` inputs of (approximately) the same size/shape by calling
  * `generate(seed)` with `seed = 0, 1, 2, ...`.
  *

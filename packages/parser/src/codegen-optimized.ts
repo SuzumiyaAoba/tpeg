@@ -47,6 +47,8 @@ import {
   globalPerformanceMonitor,
   stringInterner,
 } from "./performance-utils";
+import type { ReentrancyAnalysis } from "./reentrancy";
+import { analyzeReentrancy } from "./reentrancy";
 
 /**
  * Enhanced code generation options with performance settings
@@ -136,6 +138,12 @@ export class OptimizedTPEGCodeGenerator {
    * `enablePredictiveDispatch` is on; `null` otherwise (including before
    * the first `generateGrammar` call). */
   private firstSetAnalysis: GrammarFirstSetAnalysis | null = null;
+  /** Converged reentrancy analysis (`./reentrancy.ts`) for the grammar
+   * currently being generated -- the memoization trigger, replacing the
+   * old `hasRecursion || estimatedComplexity === "high"` heuristic.
+   * Computed once per `generateGrammar` call when `enableMemoization` is
+   * on; `null` otherwise. */
+  private reentrancyAnalysis: ReentrancyAnalysis | null = null;
 
   constructor(options: OptimizedCodeGenOptions = { language: "typescript" }) {
     this.options = {
@@ -164,6 +172,9 @@ export class OptimizedTPEGCodeGenerator {
     this.firstSetAnalysis = this.options.enablePredictiveDispatch
       ? analyzeFirstSets(grammar)
       : null;
+    this.reentrancyAnalysis = this.options.enableMemoization
+      ? analyzeReentrancy(grammar)
+      : null;
 
     const performanceAnalysis = analyzeGrammarPerformance(grammar);
     const imports: string[] = [];
@@ -181,9 +192,7 @@ export class OptimizedTPEGCodeGenerator {
 
     // Add optimized imports based on usage analysis
     if (this.options.includeImports) {
-      imports.push(
-        ...this.generateOptimizedImports(grammar, performanceAnalysis),
-      );
+      imports.push(...this.generateOptimizedImports(grammar));
     }
 
     // Generate parser for each rule with optimization, applying a matching
@@ -193,7 +202,6 @@ export class OptimizedTPEGCodeGenerator {
       this.currentRuleIndex = index;
       const ruleCode = this.generateOptimizedRule(
         rule,
-        performanceAnalysis,
         transformsByRuleName.get(rule.name),
       );
       parts.push(ruleCode);
@@ -231,10 +239,7 @@ export class OptimizedTPEGCodeGenerator {
   /**
    * Generate optimized imports based on grammar analysis
    */
-  private generateOptimizedImports(
-    grammar: GrammarDefinition,
-    analysis: ReturnType<typeof analyzeGrammarPerformance>,
-  ): string[] {
+  private generateOptimizedImports(grammar: GrammarDefinition): string[] {
     const imports = [];
 
     // Core imports
@@ -251,12 +256,23 @@ export class OptimizedTPEGCodeGenerator {
     // not tpeg-core, so it must not also be folded into the tpeg-core
     // import below -- that would import a name tpeg-core doesn't export.
     // An explicit `@memoize` annotation on any rule forces the import
-    // regardless of `enableMemoization`/complexity -- see
+    // regardless of `enableMemoization`/reentrancy -- see
     // `generateOptimizedRule`, which applies it independently of the
-    // automatic heuristic below.
+    // automatic trigger below.
+    //
+    // This used to gate on `analysis.estimatedParseComplexity !== "low"`
+    // -- the same proxy `generateOptimizedRule` used to use for the
+    // per-rule decision (see `reentrancy.ts`'s module doc comment for why
+    // that's unsound). That mattered here specifically: a grammar can
+    // have every individual rule classified "low" complexity (small,
+    // non-recursive) while still containing rules the reentrancy analysis
+    // correctly flags as needing memoization (`BENCH_ACYCLIC_CHAIN_GRAMMAR`
+    // in `bench/grammars.ts` is exactly such a case) -- the old gate would
+    // have emitted `memoize(...)` calls in the rule bodies below without
+    // importing `memoize` at all, a `ReferenceError` at runtime.
     if (
-      (this.options.enableMemoization &&
-        analysis.estimatedParseComplexity !== "low") ||
+      (this.reentrancyAnalysis &&
+        this.reentrancyAnalysis.reentrantRules.size > 0) ||
       grammar.rules.some((rule) => findMemoizeAnnotation(rule))
     ) {
       imports.push('import { memoize } from "@suzumiyaaoba/tpeg-combinator";');
@@ -420,13 +436,12 @@ export class OptimizedTPEGCodeGenerator {
    */
   private generateOptimizedRule(
     rule: RuleDefinition,
-    analysis: ReturnType<typeof analyzeGrammarPerformance>,
     transformFn?: TransformFunction,
   ): string {
     const innerCode = this.generateOptimizedExpression(rule.pattern);
 
     // An explicit `@memoize` annotation wins over the automatic
-    // high-complexity/recursion heuristic below (and applies regardless of
+    // reentrancy-based trigger below (and applies regardless of
     // `enableMemoization`) -- it's the user directly saying "memoize this
     // rule", not a suggestion this generator inferred on its own.
     const memoizeAnnotation = findMemoizeAnnotation(rule);
@@ -434,11 +449,19 @@ export class OptimizedTPEGCodeGenerator {
     if (memoizeAnnotation) {
       parserCode = wrapWithMemoize(innerCode, memoizeAnnotation);
     } else {
-      const complexity = analysis.ruleComplexity.get(rule.name);
+      // `reentrancyAnalysis` is non-null exactly when `enableMemoization`
+      // is on (see `generateGrammar`) -- memoizing here iff this rule can
+      // actually be re-invoked at an offset it was already parsed at,
+      // per `./reentrancy.ts`. This replaced a proxy
+      // (`hasRecursion || estimatedComplexity === "high"`) that neither
+      // caught every rule worth memoizing (a chain of small, non-
+      // recursive, unfactored-choice rules is exponential but trips
+      // neither condition -- see `BENCH_ACYCLIC_CHAIN_GRAMMAR` in
+      // `bench/grammars.ts`) nor avoided memoizing rules it doesn't help
+      // (a recursive rule whose alternatives are FIRST-disjoint, e.g.
+      // JSON's `value`, is never actually re-invoked at a shared offset).
       const shouldMemoize =
-        this.options.enableMemoization &&
-        complexity &&
-        (complexity.estimatedComplexity === "high" || complexity.hasRecursion);
+        this.reentrancyAnalysis?.reentrantRules.has(rule.name) ?? false;
       parserCode = shouldMemoize ? `memoize(${innerCode})` : innerCode;
     }
 

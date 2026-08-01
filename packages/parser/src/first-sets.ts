@@ -239,6 +239,16 @@ export const isNullable = (
     case "NegativeLookahead":
       // Zero-width assertions: never consume input themselves.
       return true;
+    case "Cut":
+      // The `~` cut/commit marker: consumes nothing and occupies no
+      // tuple slot (`docs/peg-grammar.md`'s capture table), so a
+      // sequence's nullability is unaffected by its presence either way
+      // -- treating it as nullable lets `sequenceFirstSet` (and
+      // `reentrancy.ts`'s mirror of it) continue past it to whatever
+      // comes next, which is correct: a cut never itself blocks the
+      // "did this element consume a character" question the nullable-
+      // prefix walk is asking.
+      return true;
     case "LabeledExpression":
     case "ActionExpression":
       return isNullable(expr.expression, nullableRules);
@@ -354,6 +364,11 @@ export const firstSetOfExpression = (
         ruleFirstSets,
         nullableRules,
       );
+    case "Cut":
+      // Consumes nothing and (per `isNullable` above) is always
+      // nullable, so it contributes no characters of its own -- same
+      // shape as the lookahead cases just above.
+      return EMPTY_FIRST_SET;
     default:
       return UNKNOWN_FIRST_SET;
   }
