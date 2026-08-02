@@ -121,6 +121,16 @@ export interface CompileRuleOptions {
    * not change this default to track the codegen option's.
    */
   enablePredictiveDispatch?: boolean;
+  /**
+   * Only meaningful when `optimize: true`. Forwarded to
+   * `generateOptimizedTypeScriptParser`'s `enableRegexFusion` -- compiles
+   * a wholly-non-terminal-free rule to a single `regexFused(...)` call
+   * (see `packages/parser/src/regex-fusion.ts`) instead of a combinator
+   * tree. Defaults to `false` here for the same isolation reason
+   * `enablePredictiveDispatch` does: `CONFIGS`/`JSON_CONFIGS` in
+   * `run.ts` rely on this axis being off unless explicitly requested.
+   */
+  enableRegexFusion?: boolean;
   // NOTE: `includeImports`/`includeTypes` are deliberately NOT
   // caller-overridable. `compileRule` strips `export` and evals the body
   // directly via `new Function`; `includeImports: true` would leave a
@@ -163,6 +173,7 @@ export function compileRule(
         optimize: true,
         enableMemoization: options.enableMemoization ?? true,
         enablePredictiveDispatch: options.enablePredictiveDispatch ?? false,
+        enableRegexFusion: options.enableRegexFusion ?? false,
         ...namePrefixOverride,
       })
     : generateTypeScriptParser(grammar, {

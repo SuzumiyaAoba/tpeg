@@ -89,6 +89,27 @@ const JSON_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
       enablePredictiveDispatch: true,
     },
   },
+  {
+    // Pillar 4b: `string`/`number`/`boolean`/`nullLiteral` (everything
+    // but `value`/`object`/`pair`/`array`, which reference other rules)
+    // compile to a single `regexFused(...)` call each instead of a
+    // combinator tree -- see `packages/parser/src/regex-fusion.ts`. The
+    // Pillar 4a gate measurement (see the perf plan) found ~82% of leaf
+    // invocations on this grammar belong to exactly these rules, with a
+    // ~6.65x collapse factor (leaf invocations per rule entry) -- this
+    // arm measures how much of that survives shape reconstruction
+    // (`Array.from` for repetitions, tuple/marker literals for
+    // Sequence/Choice/Optional) against the predictive-dispatch-only
+    // baseline above.
+    label:
+      "optimized codegen, predictive dispatch on, regex fusion on, memoization on",
+    options: {
+      optimize: true,
+      enableMemoization: true,
+      enablePredictiveDispatch: true,
+      enableRegexFusion: true,
+    },
+  },
 ];
 
 /**
@@ -108,6 +129,20 @@ const ARITHMETIC_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
   {
     label: "left-factored + memoization",
     options: { optimize: true, enableMemoization: true, leftFactor: true },
+  },
+  {
+    // Pillar 4b: only `number = [0-9]+` is non-terminal-free in this
+    // grammar (`expr`/`sum`/`product`/`atom` all reference other rules)
+    // -- the Pillar 4a gate measurement found it accounts for ~87% of
+    // this grammar's leaf invocations on the multiplication-chain
+    // corpus, with a ~6.77x collapse factor.
+    label: "left-factored + memoization + regex fusion",
+    options: {
+      optimize: true,
+      enableMemoization: true,
+      leftFactor: true,
+      enableRegexFusion: true,
+    },
   },
 ];
 

@@ -9,6 +9,7 @@ export * from "./combinators";
 export * from "./error";
 export * from "./error-handling";
 export * from "./lookahead";
+export * from "./regex-fused";
 export * from "./repetition";
 export * from "./test-utils";
 export * from "./transform";

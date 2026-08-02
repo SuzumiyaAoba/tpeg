@@ -129,7 +129,11 @@ const UNKNOWN_FIRST_SET: FirstSet = {
   unknown: true,
 };
 
-const EMPTY_FIRST_SET: FirstSet = {
+/** The empty `FirstSet`: matches nothing yet known / nothing follows.
+ * Exported for `regex-fusion.ts`'s top-level determinism check call
+ * (nothing follows an entire fused subtree -- see its module doc
+ * comment's "external tail is always empty" argument). */
+export const EMPTY_FIRST_SET: FirstSet = {
   set: EMPTY_SET,
   unknown: false,
 };
@@ -153,7 +157,14 @@ const singleCharFirstSet = (c: string): FirstSet => ({
   unknown: false,
 });
 
-const unionFirstSets = (a: FirstSet, b: FirstSet): FirstSet => {
+/**
+ * Exported for `regex-fusion.ts`'s determinism check, which needs to fold
+ * a `tail` `FirstSet` (what follows a fusable subtree, from an enclosing
+ * call) backward through a `Sequence`'s elements the same nullable-aware
+ * way `sequenceFirstSetFrom` does internally, but starting from a
+ * caller-supplied base instead of always `EMPTY_FIRST_SET`.
+ */
+export const unionFirstSets = (a: FirstSet, b: FirstSet): FirstSet => {
   if (a.unknown || b.unknown) return UNKNOWN_FIRST_SET;
   if (a === EMPTY_FIRST_SET) return b;
   if (b === EMPTY_FIRST_SET) return a;

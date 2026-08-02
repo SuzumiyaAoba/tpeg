@@ -50,6 +50,7 @@ import {
 } from "./performance-utils";
 import type { ReentrancyAnalysis } from "./reentrancy";
 import { analyzeReentrancy } from "./reentrancy";
+import { emitFusedRule, isRuleFusable } from "./regex-fusion";
 
 /**
  * Enhanced code generation options with performance settings
@@ -95,6 +96,31 @@ export interface OptimizedCodeGenOptions {
    * 1.45x -> 1.15x. Set to `false` to opt back out.
    */
   enablePredictiveDispatch?: boolean;
+  /**
+   * Compiles a rule's ENTIRE pattern to a single `regexFused(...)` call
+   * (`packages/core/src/regex-fused.ts`) instead of a combinator tree,
+   * whenever `./regex-fusion.ts`'s `isRuleFusable` proves it safe (no
+   * non-terminal references, and every repetition/choice inside the
+   * pattern is provably deterministic -- see that module's doc comment
+   * for both conditions and why they're each necessary).
+   *
+   * Default `false`, unlike `enablePredictiveDispatch`: fusion changes
+   * how a rule's value is PRODUCED (one regex match plus a
+   * reconstruction expression built from its capture groups, in place
+   * of nested combinator calls), even though `./regex-fusion.ts` builds
+   * that reconstruction to be byte-identical to the unfused shape. This
+   * is a much larger, newer piece of machinery than predictive dispatch
+   * (which only ever filters an existing `choice`'s alternative list),
+   * so it stays opt-in pending more real-world grammar coverage, the
+   * same conservative posture `./ast-optimize.ts`'s rewrites take.
+   *
+   * Gate measurement backing this option (see the perf plan's Pillar 4a
+   * section): on the JSON and unfactored-arithmetic bench grammars,
+   * ~82-87% of leaf-parser invocations belong to wholly-clean rules,
+   * with a ~6.7x collapse factor (leaf invocations saved per rule
+   * entry) -- both high enough to justify building this.
+   */
+  enableRegexFusion?: boolean;
 }
 
 /**
@@ -159,6 +185,15 @@ export class OptimizedTPEGCodeGenerator {
    * Computed once per `generateGrammar` call when `enableMemoization` is
    * on; `null` otherwise. */
   private reentrancyAnalysis: ReentrancyAnalysis | null = null;
+  /** Names of rules `generateGrammar` decided to compile via
+   * `regexFused(...)` instead of a combinator tree -- computed once per
+   * `generateGrammar` call (empty when `enableRegexFusion` is off) and
+   * consulted by both `generateOptimizedImports` (to import
+   * `regexFused`/`map` instead of walking a fused rule's AST for its
+   * normal combinator set) and `generateOptimizedRule` (to actually emit
+   * the fused code), so the two passes can never disagree about which
+   * rules are fused. */
+  private fusedRuleNames: Set<string> = new Set();
 
   constructor(options: OptimizedCodeGenOptions = { language: "typescript" }) {
     this.options = {
@@ -170,6 +205,7 @@ export class OptimizedTPEGCodeGenerator {
       enableMemoization: options.enableMemoization ?? true,
       includeMonitoring: options.includeMonitoring ?? false,
       enablePredictiveDispatch: options.enablePredictiveDispatch ?? true,
+      enableRegexFusion: options.enableRegexFusion ?? false,
     };
   }
 
@@ -184,12 +220,22 @@ export class OptimizedTPEGCodeGenerator {
     this.ruleNames.clear();
     this.ruleIndex.clear();
     this.templateCache.clear();
-    this.firstSetAnalysis = this.options.enablePredictiveDispatch
-      ? analyzeFirstSets(grammar)
-      : null;
+    this.fusedRuleNames.clear();
+    this.firstSetAnalysis =
+      this.options.enablePredictiveDispatch || this.options.enableRegexFusion
+        ? analyzeFirstSets(grammar)
+        : null;
     this.reentrancyAnalysis = this.options.enableMemoization
       ? analyzeReentrancy(grammar)
       : null;
+    if (this.options.enableRegexFusion && this.firstSetAnalysis) {
+      const analysis = this.firstSetAnalysis;
+      for (const rule of grammar.rules) {
+        if (isRuleFusable(rule, analysis)) {
+          this.fusedRuleNames.add(rule.name);
+        }
+      }
+    }
 
     const performanceAnalysis = analyzeGrammarPerformance(grammar);
     const imports: string[] = [];
@@ -264,7 +310,13 @@ export class OptimizedTPEGCodeGenerator {
     // Analyze which combinators are actually needed
     const usedCombinators = new Set<string>();
 
+    // A fused rule (see `fusedRuleNames`'s doc comment) is compiled to
+    // `map(regexFused(...), ...)` in `generateOptimizedRule`, not to any
+    // of the combinators `collectUsedCombinators` would find by walking
+    // its AST -- skip that walk for fused rules so this pass and the
+    // actual per-rule codegen never disagree about what a rule needs.
     grammar.rules.forEach((rule, index) => {
+      if (this.fusedRuleNames.has(rule.name)) return;
       this.collectUsedCombinators(
         rule.pattern,
         usedCombinators,
@@ -272,6 +324,10 @@ export class OptimizedTPEGCodeGenerator {
         index === 0,
       );
     });
+    if (this.fusedRuleNames.size > 0) {
+      usedCombinators.add("regexFused");
+      usedCombinators.add("map");
+    }
 
     // Add performance imports if needed. memoize and commitAtTopLevel
     // both live in tpeg-combinator, not tpeg-core, so they must not also
@@ -487,10 +543,9 @@ export class OptimizedTPEGCodeGenerator {
     transformFn?: TransformFunction,
     isStartRule = false,
   ): string {
-    const innerCode = this.generateOptimizedExpression(
-      rule.pattern,
-      isStartRule,
-    );
+    const innerCode = this.fusedRuleNames.has(rule.name)
+      ? this.generateFusedRule(rule)
+      : this.generateOptimizedExpression(rule.pattern, isStartRule);
 
     // An explicit `@memoize` annotation wins over the automatic
     // reentrancy-based trigger below (and applies regardless of
@@ -525,6 +580,24 @@ export class OptimizedTPEGCodeGenerator {
     const typeAnnotation = this.options.includeTypes ? ": Parser<any>" : "";
 
     return `export const ${name}${typeAnnotation} = ${parserCode};`;
+  }
+
+  /**
+   * Emits `map(regexFused(source, description), (m) => { const g =
+   * m.groups; return <valueExpr>; })` for a rule `fusedRuleNames` already
+   * confirmed fusable -- `./regex-fusion.ts`'s `emitFusedRule` builds
+   * both `source` (regex pattern text) and `valueExpr` (a JS expression,
+   * as source text, reconstructing the rule's original value shape from
+   * `m.groups`) from the same AST subtree, so the value produced here is
+   * byte-identical to what the unfused combinator tree would have
+   * produced -- see that module's doc comment's "Shape reconstruction"
+   * section. `JSON.stringify` on `source`/`rule.name` is what safely
+   * embeds them as JS string literals regardless of what characters
+   * they contain (backslashes from `\u{...}` escapes, quotes, etc.).
+   */
+  private generateFusedRule(rule: RuleDefinition): string {
+    const { source, valueExpr } = emitFusedRule(rule);
+    return `map(regexFused(${JSON.stringify(source)}, ${JSON.stringify(rule.name)}), (m) => { const g = m.groups; return ${valueExpr}; })`;
   }
 
   /**
