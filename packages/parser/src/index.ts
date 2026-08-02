@@ -93,7 +93,6 @@ export {
 export {
   hashString,
   stringInterner,
-  createCharClassLookup,
   analyzeExpressionComplexity,
   analyzeGrammarPerformance,
   PerformanceMonitor,

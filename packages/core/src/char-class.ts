@@ -18,36 +18,80 @@ const classToString = (charOrRange: CharClassSpec): string => {
   return `${charOrRange[0]}-${charOrRange[1]}`;
 };
 
-type CompiledSpec =
-  | { readonly isSingle: true; readonly char: NonEmptyString }
-  | { readonly isSingle: false; readonly start: number; readonly end: number };
+/** A single character is just the degenerate range `[cp, cp]` -- folding
+ * both spec shapes into one uniform `{start, end}` pair removes a branch
+ * from the hot per-character match loop below and lets a single char
+ * participate in the same code-point range check a `["a","z"]` pair
+ * does, with no separate string-equality path to keep in sync with it. */
+interface CompiledSpec {
+  readonly start: number;
+  readonly end: number;
+}
 
 /**
- * Pre-compiles character class specifications into code points for high performance
+ * Pre-compiles character class specifications into code-point ranges for
+ * high performance.
  */
 const compileSpecs = (charOrRanges: readonly CharClassSpec[]): CompiledSpec[] =>
   charOrRanges.map((spec) => {
     if (typeof spec === "string") {
-      return { isSingle: true, char: spec };
+      const code = spec.codePointAt(0) ?? 0;
+      return { start: code, end: code };
     }
     const startCode = spec[0].codePointAt(0) ?? 0;
     const endCode = spec[1].codePointAt(0) ?? 0;
-    return { isSingle: false, start: startCode, end: endCode };
+    return { start: startCode, end: endCode };
   });
 
 /**
- * Checks whether a character matches any of the compiled specifications
+ * Checks whether a code point matches any of the compiled specifications.
+ * A plain `for` loop rather than `.some()` -- avoids the extra closure
+ * `.some()`'s callback allocates on every call and the megamorphic
+ * property access `.some()` incurs iterating a mixed-shape array (moot
+ * now that every element has the same shape, but a plain loop is still
+ * the cheaper iteration form for a function called once per character).
  */
-const matchesSpecs = (
-  char: string,
+const matchesSpecsSlow = (
   charCode: number,
   compiledSpecs: readonly CompiledSpec[],
+): boolean => {
+  for (let i = 0; i < compiledSpecs.length; i++) {
+    const spec = compiledSpecs[i] as CompiledSpec;
+    if (charCode >= spec.start && charCode <= spec.end) return true;
+  }
+  return false;
+};
+
+/**
+ * Builds a 128-entry ASCII membership table from `compiledSpecs`, once at
+ * `charClass`/`negatedCharClass` construction time: `table[code] === 1`
+ * iff code point `code` (0-127) matches some spec. Every ASCII input
+ * character then costs one array lookup instead of a scan over
+ * `compiledSpecs`; only a non-ASCII code point falls through to
+ * `matchesSpecsSlow`. Built here (in `tpeg-core`, where `charClass`
+ * itself lives) rather than reusing `packages/parser/src/
+ * performance-utils.ts`'s `createCharClassLookup` -- that function is
+ * unreachable dead code in `tpeg-parser`, and CLAUDE.md's dependency
+ * graph has no core -> parser edge to reuse it across anyway.
+ */
+const buildAsciiTable = (
+  compiledSpecs: readonly CompiledSpec[],
+): Uint8Array => {
+  const table = new Uint8Array(128);
+  for (let code = 0; code < 128; code++) {
+    table[code] = matchesSpecsSlow(code, compiledSpecs) ? 1 : 0;
+  }
+  return table;
+};
+
+const matchesSpecs = (
+  charCode: number,
+  compiledSpecs: readonly CompiledSpec[],
+  asciiTable: Uint8Array,
 ): boolean =>
-  compiledSpecs.some((spec) =>
-    spec.isSingle
-      ? char === spec.char
-      : charCode >= spec.start && charCode <= spec.end,
-  );
+  charCode < 128
+    ? asciiTable[charCode] === 1
+    : matchesSpecsSlow(charCode, compiledSpecs);
 
 /**
  * Parser that matches a character against a set of characters or character ranges.
@@ -65,6 +109,7 @@ export const charClass = (
 ): Parser<string> => {
   const expected = charOrRanges.map(classToString).join(", ");
   const compiledSpecs = compileSpecs(charOrRanges);
+  const asciiTable = buildAsciiTable(compiledSpecs);
 
   return (input: string, pos: Pos) => {
     const char = getCharAt(input, pos.offset);
@@ -83,7 +128,7 @@ export const charClass = (
 
     const charCode = char.codePointAt(0) ?? 0;
 
-    if (matchesSpecs(char, charCode, compiledSpecs)) {
+    if (matchesSpecs(charCode, compiledSpecs, asciiTable)) {
       return {
         success: true,
         val: char,
@@ -118,6 +163,7 @@ export const negatedCharClass = (
 ): Parser<string> => {
   const expected = `not one of: ${charOrRanges.map(classToString).join(", ")}`;
   const compiledSpecs = compileSpecs(charOrRanges);
+  const asciiTable = buildAsciiTable(compiledSpecs);
 
   return (input: string, pos: Pos) => {
     const char = getCharAt(input, pos.offset);
@@ -136,7 +182,7 @@ export const negatedCharClass = (
 
     const charCode = char.codePointAt(0) ?? 0;
 
-    if (matchesSpecs(char, charCode, compiledSpecs)) {
+    if (matchesSpecs(charCode, compiledSpecs, asciiTable)) {
       return createFailure(
         `Unexpected character "${char}", expected ${expected}`,
         pos,

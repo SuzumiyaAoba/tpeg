@@ -58,45 +58,6 @@ class StringInterner {
 export const stringInterner = new StringInterner();
 
 /**
- * Fast character classification using lookup tables
- * Pre-computed for common character ranges
- */
-const charClassCache = new Map<string, boolean[]>();
-
-export function createCharClassLookup(
-  ranges: Array<{ start: string; end?: string | undefined }>,
-): boolean[] {
-  const key = JSON.stringify(ranges);
-
-  const cached = charClassCache.get(key);
-  if (cached !== undefined) {
-    return cached;
-  }
-
-  const lookup = new Array(256).fill(false);
-
-  for (const range of ranges) {
-    if (range.end) {
-      // Character range
-      const start = range.start.charCodeAt(0);
-      const end = range.end.charCodeAt(0);
-      for (let i = start; i <= end && i < 256; i++) {
-        lookup[i] = true;
-      }
-    } else {
-      // Single character
-      const code = range.start.charCodeAt(0);
-      if (code < 256) {
-        lookup[code] = true;
-      }
-    }
-  }
-
-  charClassCache.set(key, lookup);
-  return lookup;
-}
-
-/**
  * Expression complexity analyzer for optimization decisions
  * Helps determine when to apply memoization or other optimizations
  *
