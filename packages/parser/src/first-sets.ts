@@ -4,13 +4,24 @@
  *
  * This is the classic compiler-theory FIRST-set analysis (see e.g. Aho,
  * Sethi, Ullman), adapted for PEG's ordered choice and codegen's runtime
- * value representation (single characters and inclusive ranges, not
- * arbitrary regex classes). It's the static analysis `predictiveChoice`
+ * value representation. It's the static analysis `predictiveChoice`
  * (`packages/core/src/combinators.ts`) needs to skip alternatives that
- * provably cannot match at the current position, without running them --
- * see the plan's Phase 3 section for why this does NOT require changing
- * codegen's output format (predictiveChoice is a combinator, not a
- * generated `switch`).
+ * provably cannot match at the current position, without running them.
+ *
+ * ## Representation: a closed Boolean algebra over code points
+ *
+ * A `FirstSet`'s concrete part is a `CharSet` (`./char-set.ts`): a
+ * canonical sorted list of code-point intervals, closed under union,
+ * intersection, complement, and difference. This replaced an earlier
+ * `{ chars: Set<string>, ranges: CharRangeLiteral[] }` shape that was only
+ * closed under union -- which is exactly why a negated character class
+ * (`[^"]`) or a negative lookahead's subtraction (`!a b`) had nowhere to
+ * go but `unknown`. Working over code points (not UTF-16 code units) also
+ * means a surrogate-pair (astral) character is just another interval
+ * endpoint, with no special-casing needed here (the lowering to UTF-16
+ * code units happens once, at the runtime `FirstCharFilter` boundary in
+ * `packages/core/src/combinators.ts`, since that's the only place that
+ * actually needs code units -- it compares against `input[pos.offset]`).
  *
  * ## Soundness: always an over-approximation
  *
@@ -18,14 +29,14 @@
  * `ActionExpression`'s code can't be statically analyzed at all), so this
  * module can only ever produce a *safe superset* of the characters an
  * expression might actually start with. The representation encodes that
- * directly: a `FirstSet` is either a concrete `{ chars, ranges }` (every
- * character in this set, and only characters in this set, may start a
- * match) or `{ unknown: true }` ("could not be determined -- assume it
- * could start with anything, including matching zero characters"). Never
- * the reverse: it is always safe to fall back to `unknown`, never safe to
- * guess a smaller set than the truth. `predictiveChoice` treats `unknown`
- * as "always attempt this alternative," so an `unknown` result can only
- * cost a skipped fast-path, never cause a valid parse to be missed.
+ * directly: a `FirstSet` is either a concrete `{ set }` (every code point
+ * in this set, and only code points in this set, may start a match) or
+ * `{ unknown: true }` ("could not be determined -- assume it could start
+ * with anything, including matching zero characters"). Never the reverse:
+ * it is always safe to fall back to `unknown`, never safe to guess a
+ * smaller set than the truth. `predictiveChoice` treats `unknown` as
+ * "always attempt this alternative," so an `unknown` result can only cost
+ * a skipped fast-path, never cause a valid parse to be missed.
  *
  * `firstSetOfExpression` itself computes only "if this expression
  * consumes at least one character, what could the first one be" --
@@ -48,44 +59,41 @@
  * result as a filter on its own. `predictiveFilterForExpression` below
  * does exactly this and is the intended entry point for that use case.
  *
- * `unknown` (from `firstSetOfExpression` itself) is used for:
- * - `AnyChar` (`.`) -- matches every character; representing that as an
- *   unbounded range is possible but pointless, since it would never
- *   filter anything a real FIRST set couldn't already subsume.
- * - A negated `CharacterClass` (`[^...]`) -- "everything except these
- *   ranges" is not expressible as this module's `{ chars, ranges }` shape
- *   without computing a complement, which `mergeCharacterClasses` in
- *   `ast-optimize.ts` deliberately avoids for the same reason (De
- *   Morgan's law wants an intersection of ranges, not a union).
+ * `unknown` (from `firstSetOfExpression` itself) is now used only for the
+ * genuinely unresolvable cases -- both `AnyChar` and negated character
+ * classes are exact (⊤ and a real complement, respectively) since the
+ * `CharSet` representation can express them:
  * - `QualifiedIdentifier` (a cross-module `module.rule` reference) --
  *   this module only sees one `GrammarDefinition`'s rules, so a
  *   cross-module reference's FIRST set is opaque here.
  * - An `Identifier` naming something that isn't a rule of this grammar --
  *   an externally-supplied parser reference, whose FIRST set this module
  *   simply has no way to see.
- * - A `CharacterClass` with a non-BMP/astral endpoint (see `isAstralChar`)
- *   -- the runtime range check in `predictiveChoice`
- *   (`packages/core/src/combinators.ts`) compares single UTF-16 code
- *   units, which doesn't correspond to code-point order for a surrogate
- *   pair.
  *
-
  * ## Rule references: fixpoint, not one-shot recursion
  *
  * A naive recursive walk over `Identifier` references would infinite-loop
  * on any recursive grammar (e.g. `value = ... / array`, `array = "[" ...
  * value ...`). Instead, `computeFirstSets` runs the standard iterative
- * dataflow fixpoint: every rule starts at `{ chars: {}, ranges: [],
- * unknown: false }` (the *least* element -- "matches nothing yet
- * known"), and each pass recomputes every rule's FIRST set using the
- * previous pass's results for `Identifier` lookups, monotonically
- * growing (`unknown` is sticky once set) until nothing changes. This
- * always terminates because the state per rule is bounded (the earlier
- * ranges/chars encountered from the grammar's own DP, or the number of
- * grammar-string chars ever encountered, whichever comes first; `unknown`
- * is a one-way flag).
+ * dataflow fixpoint: every rule starts at the empty set (the *least*
+ * element -- "matches nothing yet known"), and each pass recomputes every
+ * rule's FIRST set using the previous pass's results for `Identifier`
+ * lookups, monotonically growing (`unknown` is sticky once set) until
+ * nothing changes. This always terminates because the state per rule is
+ * bounded (the grammar's own finite set of literal characters/ranges, or
+ * `unknown`, a one-way flag).
  */
 
+import {
+  type CharSet,
+  EMPTY_SET,
+  isDisjoint as charSetsDisjoint,
+  complement,
+  difference,
+  fromChar,
+  fromCodePointRange,
+  union,
+} from "./char-set";
 import type {
   CharacterClass,
   Expression,
@@ -93,6 +101,10 @@ import type {
   Sequence,
 } from "./types";
 
+/** A single grammar-source character range, as written in the AST
+ * (`start`/`end` are 1-code-point JS strings, astral characters included
+ * via surrogate pairs). Kept for callers that still want the
+ * grammar-source shape; `FirstSet` itself is `CharSet`-based. */
 export interface CharRangeLiteral {
   readonly start: string;
   readonly end: string;
@@ -100,114 +112,142 @@ export interface CharRangeLiteral {
 
 /**
  * A statically-computed, always-safe-to-over-approximate set of
- * characters an expression's match could start with.
+ * characters an expression's match could start with, as a `CharSet` (a
+ * closed Boolean algebra over code points -- see module doc comment).
  *
  * `unknown: true` means "could not be determined -- treat as matching
- * anything" (see module doc comment); `chars`/`ranges` are meaningless in
- * that case and callers should not read them.
+ * anything" (see module doc comment); `set` is meaningless in that case
+ * and callers should not read it.
  */
 export interface FirstSet {
-  readonly chars: ReadonlySet<string>;
-  readonly ranges: readonly CharRangeLiteral[];
+  readonly set: CharSet;
   readonly unknown: boolean;
 }
 
 const UNKNOWN_FIRST_SET: FirstSet = {
-  chars: new Set(),
-  ranges: [],
+  set: EMPTY_SET,
   unknown: true,
 };
 
 const EMPTY_FIRST_SET: FirstSet = {
-  chars: new Set(),
-  ranges: [],
+  set: EMPTY_SET,
+  unknown: false,
+};
+
+/** The top element for a *concrete* (non-`unknown`) FIRST set: matches
+ * every code point. Used for `AnyChar` (`.`), which -- unlike `unknown`
+ * -- is exact: there is no character `.` could match that isn't already
+ * in this set, so representing it precisely costs nothing and is
+ * strictly more informative to `firstSetsDisjoint`/`isDisjoint` than
+ * `unknown` would be (an `unknown` alternative can never be proven
+ * disjoint from anything; a `⊤` alternative correctly still can't be
+ * either, but arrives there by the same `isDisjoint` logic as every other
+ * concrete set, not a separate bail-out path). */
+const ALL_FIRST_SET: FirstSet = {
+  set: [{ lo: 0, hi: 0x10ffff }],
   unknown: false,
 };
 
 const singleCharFirstSet = (c: string): FirstSet => ({
-  chars: new Set([c]),
-  ranges: [],
+  set: fromChar(c),
   unknown: false,
 });
-
-/** Dedupes by `"start:end"` -- harmless either way for correctness (a
- * repeated range only makes the runtime membership scan in
- * `firstCharFilterMatches`, `packages/core/src/combinators.ts`, longer,
- * never wrong), but this keeps the fixpoint's repeated re-unioning of the same
- * rule's FIRST set into itself (e.g. a recursive grammar re-deriving
- * `sum`'s FIRST set on every pass) from accumulating duplicate entries
- * across iterations, which would otherwise also bloat any generated code
- * a `FirstSet` gets serialized into. */
-const dedupeRanges = (
-  ranges: readonly CharRangeLiteral[],
-): CharRangeLiteral[] => {
-  const seen = new Map<string, CharRangeLiteral>();
-  for (const r of ranges) seen.set(`${r.start}:${r.end}`, r);
-  return [...seen.values()];
-};
 
 const unionFirstSets = (a: FirstSet, b: FirstSet): FirstSet => {
   if (a.unknown || b.unknown) return UNKNOWN_FIRST_SET;
   if (a === EMPTY_FIRST_SET) return b;
   if (b === EMPTY_FIRST_SET) return a;
-  return {
-    chars: new Set([...a.chars, ...b.chars]),
-    ranges: dedupeRanges([...a.ranges, ...b.ranges]),
-    unknown: false,
-  };
+  return { set: union(a.set, b.set), unknown: false };
 };
 
 /**
- * A non-BMP (astral) character is 2 UTF-16 code units in a JS string
- * (a surrogate pair); a boundary/single-char entry longer than 1 means
- * this range endpoint is one. `firstCharFilterMatches`'s runtime
- * `<=`/`>=` range comparison (`packages/core/src/combinators.ts`)
- * compares that against `input[pos.offset]`, which is always exactly one
- * UTF-16 code unit -- lexicographic string comparison between a 1-unit
- * lone-surrogate value and a 2-unit range boundary does not correspond to
- * code-point order, so a range with an astral endpoint can't be safely
- * represented here. (A single non-range char is exact-match via `Set.has`
- * and stays safe either way, but is excluded here too for a uniform, easy
- * to state rule: any surrogate pair anywhere in this class bails the
- * whole class to `unknown`, rather than keeping some entries precise and
- * others not.)
+ * `FIRST(b) \ ALWAYS_FIRST(a)`, the subtraction `sequenceFirstSet` applies
+ * across a `!a` element on its way to a following `b` (see module doc
+ * comment's negative-lookahead handling and `alwaysMatchesSet` below): if
+ * a character is guaranteed to make `a` succeed, `!a` is guaranteed to
+ * fail there, so that character can never start a match of `!a b`. `a`
+ * being `unknown` never causes an unsound narrowing here, because
+ * `alwaysMatchesSet` only returns a non-empty set for constructs it can
+ * reason about exactly (see its doc comment) -- there is no `unknown`
+ * input to this function to begin with.
+ *
+ * If `first.unknown`, the result stays `unknown`: subtracting a known set
+ * from "could be anything" does NOT mean "could be anything except that
+ * known set" -- `unknown` isn't a concrete ⊤ value for this purpose, it's
+ * "we don't know," so no subtraction can safely narrow it.
  */
-const isAstralChar = (c: string): boolean => c.length > 1;
+const differenceFirstSet = (first: FirstSet, subtrahend: CharSet): FirstSet => {
+  if (first.unknown) return first;
+  return { set: difference(first.set, subtrahend), unknown: false };
+};
 
 const charClassFirstSet = (expr: CharacterClass): FirstSet => {
-  if (expr.negated) return UNKNOWN_FIRST_SET;
-  const chars = new Set<string>();
-  const ranges: CharRangeLiteral[] = [];
+  let raw: CharSet = EMPTY_SET;
   for (const r of expr.ranges) {
-    if (isAstralChar(r.start) || (r.end !== undefined && isAstralChar(r.end))) {
-      return UNKNOWN_FIRST_SET;
-    }
-    if (r.end === undefined) {
-      chars.add(r.start);
-    } else {
-      ranges.push({ start: r.start, end: r.end });
-    }
+    raw = union(
+      raw,
+      r.end === undefined
+        ? fromChar(r.start)
+        : fromCodePointRange(r.start, r.end),
+    );
   }
-  return { chars, ranges, unknown: false };
+  return { set: expr.negated ? complement(raw) : raw, unknown: false };
 };
 
 /**
- * `true` if `expr` might match zero characters. Unresolved constructs
- * (an as-yet-unconverged rule reference during fixpoint iteration, or a
- * cross-module `QualifiedIdentifier`) default to `true` -- the safe
- * direction for nullability specifically, since treating a possibly-
- * nullable element as non-nullable would stop a `Sequence`'s FIRST-set
- * computation short of characters a later element could actually start
- * the match with (see `sequenceFirstSet`).
- *
- * Exported for callers deciding whether a whole `Choice` alternative can
- * be used as a `predictiveChoice` filter at all (see module doc comment
- * and `predictiveFilterForExpression`) -- takes the converged
- * `nullableRules` map from `computeFirstSets`'s companion nullable-rules
- * output, not a rule name, so it works on an arbitrary sub-expression
- * (e.g. one alternative of a `Choice`), not just a whole rule's pattern.
+ * A sound *lower bound* on the characters guaranteed to make `expr`
+ * succeed at a position, used only to subtract from a following element's
+ * FIRST set across a negative lookahead (`!a b` -- see
+ * `sequenceFirstSet`). Deliberately conservative: exact only for a
+ * `CharacterClass` (any code point in its set makes it succeed, by
+ * definition) and a single-character `StringLiteral` (that one character
+ * makes it succeed, and nothing else does -- multi-character literals are
+ * NOT included here even though they're deterministic, since their
+ * "guaranteed success" set is a single length->1 string, not a set of
+ * *starting* characters distinct from other cases worth the complexity).
+ * Everything else returns the empty set, meaning "we don't guarantee
+ * anything, so no subtraction happens" -- the safe default, never an
+ * unsound one: `differenceFirstSet` subtracting the empty set is a no-op.
  */
-export const isNullable = (
+const alwaysMatchesSet = (expr: Expression): CharSet => {
+  switch (expr.type) {
+    case "CharacterClass":
+      return charClassFirstSet(expr).set;
+    case "StringLiteral":
+      return expr.value.length === 1 ? fromChar(expr.value) : EMPTY_SET;
+    default:
+      return EMPTY_SET;
+  }
+};
+
+// --- isNullable, with memoization scoped to a converged nullableRules map ---
+//
+// `isNullable` is called from three places with very different mutation
+// profiles for its `nullableRules` argument:
+//
+//   1. `computeNullableRules`'s own fixpoint loop below, which mutates
+//      the SAME `Map` instance in place across iterations as rules
+//      converge from `false` to `true`. Caching by `expr` identity alone
+//      here would go stale mid-loop -- a rule's nullability can change
+//      between passes while the map object itself never does.
+//   2. `analyzeFirstSets`'s FIRST-set fixpoint loop, and
+//   3. `ast-optimize.ts`'s `findCutPosition` (via
+//      `GrammarFirstSetAnalysis.nullableRules`),
+//
+//   both of which only ever see the *already-converged*, never-mutated-
+//   again `nullableRules` map that `computeNullableRules` returns. For
+//   those two, `(nullableRules, expr)` is a pure function -- exactly the
+//   case memoization is safe and valuable, since (2) alone re-derives the
+//   same sub-expressions' nullability on every one of its own passes, and
+//   (3) is called once per `Choice` alternative.
+//
+// The exported `isNullable` is the memoized wrapper, keyed by the
+// `nullableRules` map's own identity so results from two different
+// analyses (or two different snapshots) can never collide; the internal
+// `computeNullableRules` loop calls `isNullableUncached` directly to
+// avoid caching against its still-mutating map.
+
+const isNullableUncached = (
   expr: Expression,
   nullableRules: ReadonlyMap<string, boolean>,
 ): boolean => {
@@ -223,18 +263,22 @@ export const isNullable = (
     case "QualifiedIdentifier":
       return true;
     case "Sequence":
-      return expr.elements.every((el) => isNullable(el, nullableRules));
+      return expr.elements.every((el) => isNullableUncached(el, nullableRules));
     case "Choice":
-      return expr.alternatives.some((alt) => isNullable(alt, nullableRules));
+      return expr.alternatives.some((alt) =>
+        isNullableUncached(alt, nullableRules),
+      );
     case "Group":
-      return isNullable(expr.expression, nullableRules);
+      return isNullableUncached(expr.expression, nullableRules);
     case "Star":
     case "Optional":
       return true;
     case "Plus":
-      return isNullable(expr.expression, nullableRules);
+      return isNullableUncached(expr.expression, nullableRules);
     case "Quantified":
-      return expr.min === 0 || isNullable(expr.expression, nullableRules);
+      return (
+        expr.min === 0 || isNullableUncached(expr.expression, nullableRules)
+      );
     case "PositiveLookahead":
     case "NegativeLookahead":
       // Zero-width assertions: never consume input themselves.
@@ -251,31 +295,96 @@ export const isNullable = (
       return true;
     case "LabeledExpression":
     case "ActionExpression":
-      return isNullable(expr.expression, nullableRules);
+      return isNullableUncached(expr.expression, nullableRules);
     default:
       return true;
   }
+};
+
+const nullableMemo = new WeakMap<
+  ReadonlyMap<string, boolean>,
+  WeakMap<Expression, boolean>
+>();
+
+/**
+ * `true` if `expr` might match zero characters. Unresolved constructs
+ * (an as-yet-unconverged rule reference during fixpoint iteration, or a
+ * cross-module `QualifiedIdentifier`) default to `true` -- the safe
+ * direction for nullability specifically, since treating a possibly-
+ * nullable element as non-nullable would stop a `Sequence`'s FIRST-set
+ * computation short of characters a later element could actually start
+ * the match with (see `sequenceFirstSet`).
+ *
+ * Exported for callers deciding whether a whole `Choice` alternative can
+ * be used as a `predictiveChoice` filter at all (see module doc comment
+ * and `predictiveFilterForExpression`) -- takes the converged
+ * `nullableRules` map from `computeFirstSets`'s companion nullable-rules
+ * output, not a rule name, so it works on an arbitrary sub-expression
+ * (e.g. one alternative of a `Choice`), not just a whole rule's pattern.
+ *
+ * Memoized per `(nullableRules, expr)` pair for the OUTERMOST call only
+ * (see the block comment above `isNullableUncached` for why that's safe
+ * here but NOT inside `computeNullableRules`'s own fixpoint, which calls
+ * `isNullableUncached` directly and exclusively -- `isNullableUncached`
+ * always recurses into itself, never back into this memoized wrapper, so
+ * no cache entry is ever created against a map `computeNullableRules` is
+ * still mutating). Sub-expressions reached by recursing *within* a single
+ * call aren't individually cached, only whatever `expr` was passed in at
+ * the top -- still enough to avoid re-deriving the same sequence
+ * element's nullability on every one of `analyzeFirstSets`'s fixpoint
+ * passes, which is what motivated this in the first place.
+ */
+export const isNullable = (
+  expr: Expression,
+  nullableRules: ReadonlyMap<string, boolean>,
+): boolean => {
+  let perMap = nullableMemo.get(nullableRules);
+  if (!perMap) {
+    perMap = new WeakMap();
+    nullableMemo.set(nullableRules, perMap);
+  }
+  const cached = perMap.get(expr);
+  if (cached !== undefined) return cached;
+  const result = isNullableUncached(expr, nullableRules);
+  perMap.set(expr, result);
+  return result;
+};
+
+/**
+ * Computes the FIRST set of `elements[from..]` as a suffix of a
+ * `Sequence` -- the recursive core of `sequenceFirstSet`, split out so a
+ * `NegativeLookahead` element can subtract `alwaysMatchesSet` from
+ * everything that follows it in the same nullable-prefix run (see module
+ * doc comment: `FIRST(!a b) = FIRST(b) \ ALWAYS_FIRST(a)`).
+ *
+ * Elements before index `from` have already been unioned in by the
+ * caller; this function only accounts for `elements[from]` onward, and
+ * mirrors the original loop's "stop after the first non-nullable element"
+ * behavior exactly (see the two base-case returns below).
+ */
+const sequenceFirstSetFrom = (
+  elements: readonly Expression[],
+  from: number,
+  ctx: ReadonlyMap<string, FirstSet>,
+  nullableRules: ReadonlyMap<string, boolean>,
+): FirstSet => {
+  if (from >= elements.length) return EMPTY_FIRST_SET;
+  const element = elements[from] as Expression;
+  const own = firstSetOfExpression(element, ctx, nullableRules);
+  if (!isNullable(element, nullableRules)) return own;
+
+  let rest = sequenceFirstSetFrom(elements, from + 1, ctx, nullableRules);
+  if (element.type === "NegativeLookahead") {
+    rest = differenceFirstSet(rest, alwaysMatchesSet(element.expression));
+  }
+  return unionFirstSets(own, rest);
 };
 
 const sequenceFirstSet = (
   expr: Sequence,
   ctx: ReadonlyMap<string, FirstSet>,
   nullableRules: ReadonlyMap<string, boolean>,
-): FirstSet => {
-  let result = EMPTY_FIRST_SET;
-  for (const element of expr.elements) {
-    result = unionFirstSets(
-      result,
-      firstSetOfExpression(element, ctx, nullableRules),
-    );
-    if (!isNullable(element, nullableRules)) {
-      // This element can't match zero characters, so nothing after it
-      // can contribute to what the *sequence* might start with.
-      break;
-    }
-  }
-  return result;
-};
+): FirstSet => sequenceFirstSetFrom(expr.elements, 0, ctx, nullableRules);
 
 /**
  * Computes the FIRST set of a single expression, given already-known (or,
@@ -291,13 +400,23 @@ export const firstSetOfExpression = (
 ): FirstSet => {
   switch (expr.type) {
     case "StringLiteral":
+      // `singleCharFirstSet(expr.value)`, NOT `expr.value[0]`: `fromChar`
+      // (via `singleCharFirstSet`) calls `codePointAt(0)` on the string
+      // it's given, which decodes a leading surrogate pair into its one
+      // astral code point correctly -- but only if given the *whole*
+      // string. `expr.value[0]` is a single UTF-16 code *unit*, so for an
+      // astral first character (e.g. `"😀x"`) it would be the lone lead
+      // surrogate on its own, an invalid/different code point from what
+      // `predictiveChoice`'s runtime check (`input.codePointAt(offset)`,
+      // `packages/core/src/combinators.ts`) actually compares against --
+      // silently excluding an alternative that should have matched.
       return expr.value === ""
         ? EMPTY_FIRST_SET
-        : singleCharFirstSet(expr.value[0] as string);
+        : singleCharFirstSet(expr.value);
     case "CharacterClass":
       return charClassFirstSet(expr);
     case "AnyChar":
-      return UNKNOWN_FIRST_SET;
+      return ALL_FIRST_SET;
     case "Identifier": {
       // A name absent from `ruleFirstSets` is NOT "not yet converged" --
       // every in-grammar rule has an entry from the moment
@@ -355,7 +474,9 @@ export const firstSetOfExpression = (
       // Zero-width: never consumes, so it never "starts with" a
       // character of its own -- but as a standalone alternative it's
       // nullable, which callers gating on nullability already route to
-      // `unknown` before this ever matters in practice.
+      // `unknown` before this ever matters in practice. The subtraction
+      // a `NegativeLookahead` contributes to a *following* sequence
+      // element happens in `sequenceFirstSetFrom`, not here.
       return EMPTY_FIRST_SET;
     case "LabeledExpression":
     case "ActionExpression":
@@ -385,7 +506,7 @@ const computeNullableRules = (
     changed = false;
     for (const rule of grammar.rules) {
       if (nullable.get(rule.name)) continue;
-      if (isNullable(rule.pattern, nullable)) {
+      if (isNullableUncached(rule.pattern, nullable)) {
         nullable.set(rule.name, true);
         changed = true;
       }
@@ -397,12 +518,8 @@ const computeNullableRules = (
 const firstSetsEqual = (a: FirstSet, b: FirstSet): boolean => {
   if (a.unknown !== b.unknown) return false;
   if (a.unknown) return true;
-  if (a.chars.size !== b.chars.size) return false;
-  for (const c of a.chars) if (!b.chars.has(c)) return false;
-  if (a.ranges.length !== b.ranges.length) return false;
-  return a.ranges.every(
-    (r, i) => r.start === b.ranges[i]?.start && r.end === b.ranges[i]?.end,
-  );
+  if (a.set.length !== b.set.length) return false;
+  return a.set.every((r, i) => r.lo === b.set[i]?.lo && r.hi === b.set[i]?.hi);
 };
 
 export interface GrammarFirstSetAnalysis {
@@ -462,10 +579,7 @@ export const computeFirstSets = (
 export const predictiveFilterForExpression = (
   expr: Expression,
   analysis: GrammarFirstSetAnalysis,
-): {
-  chars: ReadonlySet<string>;
-  ranges: readonly CharRangeLiteral[];
-} | null => {
+): CharSet | null => {
   if (isNullable(expr, analysis.nullableRules)) return null;
   const fs = firstSetOfExpression(
     expr,
@@ -473,13 +587,13 @@ export const predictiveFilterForExpression = (
     analysis.nullableRules,
   );
   if (fs.unknown) return null;
-  return { chars: fs.chars, ranges: fs.ranges };
+  return fs.set;
 };
 
 /**
  * `true` iff `a` and `b` are provably disjoint: no character could
- * satisfy both. `unknown` on either side means "could match anything,"
- * so it is never safe to call the pair disjoint in that case -- matches
+ * satisfy both. `unknown` on either side means "could match anything," so
+ * it is never safe to call the pair disjoint in that case -- matches
  * `predictiveFilterForExpression`'s treatment of `unknown` as "always
  * attempt," here inverted to "never assume this one is excluded."
  *
@@ -492,22 +606,5 @@ export const predictiveFilterForExpression = (
  */
 export const firstSetsDisjoint = (a: FirstSet, b: FirstSet): boolean => {
   if (a.unknown || b.unknown) return false;
-
-  for (const c of a.chars) {
-    if (b.chars.has(c)) return false;
-    if (b.ranges.some((r) => r.start <= c && c <= r.end)) return false;
-  }
-  for (const c of b.chars) {
-    if (a.ranges.some((r) => r.start <= c && c <= r.end)) return false;
-  }
-  for (const ra of a.ranges) {
-    for (const rb of b.ranges) {
-      // Single-BMP-codepoint bounds only (see `isAstralChar`'s callers
-      // above), so lexicographic `<=`/`>=` on the 1-character strings is
-      // equivalent to numeric code-point comparison here.
-      if (ra.start <= rb.end && rb.start <= ra.end) return false;
-    }
-  }
-
-  return true;
+  return charSetsDisjoint(a.set, b.set);
 };

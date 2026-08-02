@@ -30,6 +30,7 @@ import type {
   TransformFunction,
 } from "./types";
 
+import type { CharSet } from "./char-set";
 import {
   collectTopLevelLabels,
   collectTransformFunctions,
@@ -72,12 +73,26 @@ export interface OptimizedCodeGenOptions {
    * Emit `predictiveChoice(...)` instead of `choice(...)` for a `Choice`
    * whenever at least one alternative has a statically computable,
    * non-nullable FIRST set (see `packages/parser/src/first-sets.ts`).
-   * Default `false`: this is a narrowly-scoped, explicitly opt-in
-   * experiment (see the plan's Phase 3 section) -- unlike
-   * `enableMemoization`, it is NOT wired into `optimize: true` by
-   * default, following the same reasoning as `ast-optimize.ts`'s
-   * rewrites (Phase 0's lesson: an "optimization" must not silently
-   * change existing callers' output).
+   *
+   * Default `true` (like `enableMemoization`), unlike this package's other
+   * grammar rewrites (`./ast-optimize.ts`'s `leftFactorChoices` and
+   * friends, which stay opt-in). The two have different safety
+   * properties: `predictiveChoice` only *filters* which alternatives are
+   * attempted, in their original relative order (see
+   * `packages/core/src/combinators.ts`'s doc comment on `predictiveChoice`
+   * for the exact guarantee) -- it never changes which alternative wins,
+   * never changes a value's shape, and doesn't need `ast-optimize.ts`'s
+   * `isShapeSensitiveRule` gate or its "does an ancestor rule's action
+   * read this rule's value shape" caveat, because no value shape changes.
+   * The only observable difference on a fully-failed parse is that
+   * `expected` may list fewer alternatives (see that doc comment's
+   * "Failure diagnostics differ from `choice`" section) -- strictly a
+   * diagnostic narrowing, not a behavior change. That's a much narrower
+   * risk surface than an AST rewrite, so it defaults on.
+   *
+   * Benchmark effect (`packages/parser/bench/run.ts`, JSON grammar,
+   * pre-Pillar-1 FIRST sets): ~1.73x throughput, leaf invocations/char
+   * 1.45x -> 1.15x. Set to `false` to opt back out.
    */
   enablePredictiveDispatch?: boolean;
 }
@@ -154,7 +169,7 @@ export class OptimizedTPEGCodeGenerator {
       optimize: options.optimize ?? true,
       enableMemoization: options.enableMemoization ?? true,
       includeMonitoring: options.includeMonitoring ?? false,
-      enablePredictiveDispatch: options.enablePredictiveDispatch ?? false,
+      enablePredictiveDispatch: options.enablePredictiveDispatch ?? true,
     };
   }
 
@@ -753,20 +768,18 @@ export class OptimizedTPEGCodeGenerator {
     return `predictiveChoice([${entries.join(", ")}])`;
   }
 
-  private renderFirstCharFilter(filter: {
-    chars: ReadonlySet<string>;
-    ranges: readonly { start: string; end: string }[];
-  }): string {
-    const chars = [...filter.chars]
-      .map((c) => `"${escapeStringLiteral(c)}"`)
-      .join(", ");
-    const ranges = filter.ranges
-      .map(
-        (r) =>
-          `{ start: "${escapeStringLiteral(r.start)}", end: "${escapeStringLiteral(r.end)}" }`,
-      )
-      .join(", ");
-    return `{ chars: new Set([${chars}]), ranges: [${ranges}] }`;
+  /**
+   * Renders a `CharSet` (`./char-set.ts`, a sorted list of inclusive
+   * code-point intervals) as a `FirstCharFilter` object literal
+   * (`packages/core/src/combinators.ts`) -- just numeric bounds, since
+   * both sides now agree on "code point" as the unit. No per-character
+   * escaping or lowering needed here; that's the point of matching
+   * `predictiveChoice`'s runtime check to `CharSet`'s own representation
+   * instead of a separate UTF-16-code-unit shape.
+   */
+  private renderFirstCharFilter(filter: CharSet): string {
+    const ranges = filter.map((r) => `{ lo: ${r.lo}, hi: ${r.hi} }`).join(", ");
+    return `{ ranges: [${ranges}] }`;
   }
 
   private generateQuantified(expr: Quantified): string {

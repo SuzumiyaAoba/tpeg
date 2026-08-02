@@ -108,8 +108,17 @@ export interface CompileRuleOptions {
    * Only meaningful when `optimize: true`. Forwarded to
    * `generateOptimizedTypeScriptParser`'s `enablePredictiveDispatch` --
    * emits `predictiveChoice(...)` (FIRST-set-gated) instead of
-   * `choice(...)` for eligible `Choice` nodes. Defaults to `false`,
-   * matching the codegen option's own opt-in default.
+   * `choice(...)` for eligible `Choice` nodes.
+   *
+   * Defaults to `false` here, deliberately diverging from
+   * `generateOptimizedTypeScriptParser`'s own default (`true`, as of
+   * Phase 0 of the perf plan). `CONFIGS`/`JSON_CONFIGS` in `run.ts` rely
+   * on this axis being off unless explicitly requested, to keep
+   * "standard" / "memoization off" / "memoization on" isolated from
+   * predictive dispatch's own effect -- if this defaulted to `true` too,
+   * every base config would silently include it and the dedicated
+   * "predictive dispatch on" arms would stop measuring anything new. Do
+   * not change this default to track the codegen option's.
    */
   enablePredictiveDispatch?: boolean;
   // NOTE: `includeImports`/`includeTypes` are deliberately NOT

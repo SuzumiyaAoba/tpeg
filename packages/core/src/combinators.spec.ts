@@ -253,8 +253,10 @@ describe("commit", () => {
 
 describe("predictiveChoice", () => {
   const charFilter = (...chars: string[]): FirstCharFilter => ({
-    chars: new Set(chars),
-    ranges: [],
+    ranges: chars.map((c) => {
+      const cp = c.codePointAt(0) as number;
+      return { lo: cp, hi: cp };
+    }),
   });
 
   it("skips an alternative whose filter excludes the next character, still succeeding via a later one", () => {
@@ -357,6 +359,29 @@ describe("predictiveChoice", () => {
     expect(result.success).toBe(false);
   });
 
+  it("matches an astral (surrogate-pair) character exactly via its code point, not its UTF-16 code units", () => {
+    // U+1F600 is 2 UTF-16 code units; a filter naming the code point
+    // directly must match the whole character, and a filter for an
+    // adjacent BMP character must not.
+    const face = "\u{1F600}";
+    const cp = face.codePointAt(0) as number;
+    const astralFilter: FirstCharFilter = { ranges: [{ lo: cp, hi: cp }] };
+    const succeedsOnFace: Parser<string> = (i, p) => lit(face)(i, p);
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+
+    const matched = predictiveChoice([[succeedsOnFace, astralFilter]])(
+      face,
+      pos,
+    );
+    expect(matched.success).toBe(true);
+
+    const excluded = predictiveChoice([[succeedsOnFace, charFilter("a")]])(
+      face,
+      pos,
+    );
+    expect(excluded.success).toBe(false);
+  });
+
   it("aggregates farthest-error expected values from the choice among surviving candidates when at least one survives", () => {
     const input = "xz";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
@@ -396,6 +421,190 @@ describe("predictiveChoice", () => {
         expect(predictiveResult.next).toEqual(plainResult.next);
       }
     }
+  });
+
+  // Pillar 2 of the perf plan factored `choice`'s fatal-handling and
+  // farthest-error aggregation out into a helper (`tryOrderedCandidates`)
+  // shared with `predictiveChoice`'s ASCII-table dispatch path. Before
+  // that, `predictiveChoice` got cut/commit semantics "for free" by
+  // delegating its filtered candidate list straight to `choice(...)`; the
+  // tests below exercise the same scenarios as `describe("choice")`'s
+  // fatal-handling tests above, but through `predictiveChoice`, to pin
+  // that the shared helper still gives it identical behavior now that it
+  // no longer calls `choice` at all.
+  describe("cut/commit semantics, exercised through predictiveChoice's dispatch table", () => {
+    it("does not try the next alternative once a committed sub-parser fails (ASCII dispatch-table path)", () => {
+      const input = "ix";
+      const pos: Pos = { offset: 0, column: 0, line: 1 };
+      const committedBranch = seq(lit("i"), commit(lit("f")));
+      // `fallback` would itself SUCCEED on this input ("ix" starts with
+      // "i") -- so the only way `result.success` can be `false` below is
+      // if the dispatch table's trial loop actually stopped at the
+      // committed branch's failure instead of falling through to try
+      // `fallback` too.
+      const fallback = lit("i");
+      const result = predictiveChoice<[unknown, string]>([
+        [committedBranch, charFilter("i")],
+        [fallback, charFilter("i")],
+      ])(input, pos);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toContain("f");
+        // `fatal` is absorbed at THIS predictiveChoice's own boundary,
+        // not forwarded -- same scoping rule as `choice`.
+        expect(result.error.fatal).toBeFalsy();
+      }
+    });
+
+    it("still tries the next alternative when the failure isn't fatal (ASCII dispatch-table path)", () => {
+      const input = "ix";
+      const pos: Pos = { offset: 0, column: 0, line: 1 };
+      const branch = seq(lit("i"), lit("f"));
+      const fallback = lit("i");
+      const result = predictiveChoice<[unknown, string]>([
+        [branch, charFilter("i")],
+        [fallback, charFilter("i")],
+      ])(input, pos);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("i");
+      }
+    });
+
+    it("a cut inside a nested predictiveChoice does not stop an ENCLOSING choice from trying its own remaining alternatives", () => {
+      // Same structure and regression rationale as `choice`'s "a cut
+      // inside a nested choice does not stop an ENCLOSING choice..."
+      // test above, with the inner choice replaced by a
+      // `predictiveChoice` -- the fatal-absorption boundary must hold
+      // regardless of which of the two combinators is nested inside the
+      // other.
+      const input = "ybz";
+      const pos: Pos = { offset: 0, column: 0, line: 1 };
+      const innerPredictiveChoice = predictiveChoice<[string, string]>([
+        [
+          seq(
+            lit("y"),
+            commit(lit("b")),
+            commit(lit("c")),
+          ) as unknown as Parser<string>,
+          charFilter("y"),
+        ],
+        [lit("x"), charFilter("x")],
+      ]);
+      const outerFallback = seq(lit("y"), lit("b"), lit("z"));
+      const result = choice(
+        innerPredictiveChoice as unknown as Parser<unknown>,
+        outerFallback as unknown as Parser<unknown>,
+      )(input, pos);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual(["y", "b", "z"]);
+        expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
+      }
+    });
+
+    it("does not try the next alternative once a committed sub-parser fails (non-ASCII fallback path)", () => {
+      // Same scenario as the ASCII-table test above, but with filters
+      // that exclude some ASCII code points, forcing the non-ASCII
+      // fallback branch to be exercised via an astral input character.
+      //
+      // Crucially, this needs an ASCII-only-filtered alternative in the
+      // mix too: `nonAsciiFallbackNeeded` (the flag that decides between
+      // reusing `allCandidates` directly vs. actually running the
+      // per-call `.filter()`) is only `true` when at least one
+      // alternative's filter tops out below the ASCII boundary. With
+      // every alternative astral-only (as an earlier version of this test
+      // had it), `nonAsciiFallbackNeeded` stays `false` and the assertions
+      // below would pass via the `allCandidates` early-return branch
+      // instead of the `.filter()` branch this test is meant to cover.
+      const astral = "\u{1F600}";
+      const input = `${astral}x`;
+      const pos: Pos = { offset: 0, column: 0, line: 1 };
+      const astralFilter: FirstCharFilter = {
+        ranges: [
+          {
+            lo: astral.codePointAt(0) as number,
+            hi: astral.codePointAt(0) as number,
+          },
+        ],
+      };
+      let asciiOnlyBranchRan = false;
+      const asciiOnlyBranch: Parser<string> = (i, p) => {
+        asciiOnlyBranchRan = true;
+        return lit("a")(i, p);
+      };
+      const committedBranch = seq(lit(astral), commit(lit("f")));
+      const fallback = lit(astral);
+      const result = predictiveChoice<[unknown, string, string]>([
+        [committedBranch, astralFilter],
+        [fallback, astralFilter],
+        [asciiOnlyBranch, charFilter("a")],
+      ])(input, pos);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toContain("f");
+        expect(result.error.fatal).toBeFalsy();
+      }
+      // Proves the ASCII-only alternative really was excluded by the
+      // exact per-call check (its filter can't match an astral code
+      // point), not merely absent from some unrelated table entry.
+      expect(asciiOnlyBranchRan).toBe(false);
+    });
+  });
+
+  describe("ASCII dispatch table construction", () => {
+    it("every ASCII code point admitted by a range filter independently reaches the same candidate (table dedup doesn't drop entries)", () => {
+      // A digit class filter admits every one of '0'-'9' identically --
+      // the table-construction dedup shares one candidate array instance
+      // across all ten entries (see the doc comment on the construction
+      // loop), but that must never mean only SOME of those ten code
+      // points actually get routed to it. Exercise all ten explicitly.
+      const digitFilter: FirstCharFilter = { ranges: [{ lo: 48, hi: 57 }] };
+      const parser = predictiveChoice([[lit("5"), digitFilter]]);
+      const pos: Pos = { offset: 0, column: 0, line: 1 };
+      for (const digit of "0123456789") {
+        const result = parser(digit, pos);
+        if (digit === "5") {
+          expect(result.success).toBe(true);
+        } else {
+          // Reached (and failed inside) `lit("5")`, not the "no
+          // candidates matched" fast-failure -- proves this code point's
+          // table entry does contain the candidate, not an empty array.
+          expect(result.success).toBe(false);
+          if (!result.success) {
+            expect(result.error.expected).toEqual(["5"]);
+          }
+        }
+      }
+    });
+
+    it("a filter range spanning the ASCII/non-ASCII boundary matches correctly on both sides", () => {
+      // `[a-é]` (lo=0x61 'a', hi=0xE9 'é') straddles the 128-entry
+      // table boundary: ASCII code points in range (e.g. 'z' = 0x7A) must
+      // still hit the table, and non-ASCII code points in range (e.g.
+      // 0xE9 itself) must be caught by the non-ASCII fallback -- neither
+      // side should treat this filter as excluding the other side's
+      // in-range characters.
+      const spanningFilter: FirstCharFilter = {
+        ranges: [{ lo: 0x61, hi: 0xe9 }],
+      };
+      const parser = predictiveChoice([
+        [
+          (input: string, p: Pos) => ({
+            success: true as const,
+            val: input[p.offset] as string,
+            current: p,
+            next: { offset: p.offset + 1, column: p.column + 1, line: p.line },
+          }),
+          spanningFilter,
+        ],
+      ]);
+      const pos: Pos = { offset: 0, column: 0, line: 1 };
+      expect(parser("z", pos).success).toBe(true);
+      expect(parser(String.fromCodePoint(0xe9), pos).success).toBe(true);
+      expect(parser("A", pos).success).toBe(false);
+    });
   });
 });
 

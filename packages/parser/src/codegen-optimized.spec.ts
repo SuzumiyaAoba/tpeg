@@ -550,9 +550,17 @@ describe("enablePredictiveDispatch", () => {
     ],
   );
 
-  it("does not emit predictiveChoice when the option is off (default)", () => {
+  it("emits predictiveChoice by default (Phase 0 of the perf plan: on unless explicitly disabled)", () => {
     const result = generateOptimizedTypeScriptParser(JSON_LIKE_GRAMMAR, {
       enableMemoization: false,
+    });
+    expect(result.code).toContain("predictiveChoice(");
+  });
+
+  it("does not emit predictiveChoice when explicitly disabled", () => {
+    const result = generateOptimizedTypeScriptParser(JSON_LIKE_GRAMMAR, {
+      enableMemoization: false,
+      enablePredictiveDispatch: false,
     });
     expect(result.code).not.toContain("predictiveChoice(");
     expect(result.code).toContain("choice(");
@@ -564,20 +572,33 @@ describe("enablePredictiveDispatch", () => {
       enablePredictiveDispatch: true,
     });
     expect(result.code).toContain("predictiveChoice([");
-    expect(result.code).toContain('chars: new Set(["\\""])');
-    expect(result.code).toContain('chars: new Set(["t", "f"])');
-    // `num`'s filter is a range, not discrete chars.
-    expect(result.code).toContain('ranges: [{ start: "0", end: "9" }]');
+    // `FirstCharFilter` (packages/core/src/combinators.ts) is now
+    // rendered as code-point intervals -- '"' is U+0022, and "f"/"t"
+    // (from `bool`'s "false"/"true") sort ascending by code point
+    // (0x66 < 0x74) regardless of the grammar's declaration order.
+    expect(result.code).toContain("{ ranges: [{ lo: 34, hi: 34 }] }");
+    expect(result.code).toContain(
+      "{ ranges: [{ lo: 102, hi: 102 }, { lo: 116, hi: 116 }] }",
+    );
+    // `num`'s filter is a single [0-9] range, not discrete code points.
+    expect(result.code).toContain("{ ranges: [{ lo: 48, hi: 57 }] }");
   });
 
   it("falls back to plain choice() for a Choice with no computable, non-nullable FIRST set on any alternative", () => {
+    // AnyChar is no longer a case that forces this fallback (Pillar 1:
+    // its FIRST set is now the exact universal set, not `unknown`) --
+    // a cross-module QualifiedIdentifier is still genuinely unresolvable
+    // here, so it's the regression case for this fallback path now.
     const grammar = createGrammarDefinition(
       "Test",
       [],
       [
         createRuleDefinition(
           "r",
-          createChoice([createAnyChar(), createAnyChar()]),
+          createChoice([
+            createQualifiedIdentifier("math", "expr"),
+            createQualifiedIdentifier("math", "expr"),
+          ]),
         ),
       ],
     );
@@ -586,7 +607,7 @@ describe("enablePredictiveDispatch", () => {
       enablePredictiveDispatch: true,
     });
     expect(result.code).not.toContain("predictiveChoice(");
-    expect(result.code).toContain("choice(anyChar(), anyChar())");
+    expect(result.code).toContain("choice(math.expr, math.expr)");
   });
 
   it("produces code that parses identically to enablePredictiveDispatch:false for a battery of inputs", async () => {
@@ -629,6 +650,56 @@ describe("enablePredictiveDispatch", () => {
         expect(predictiveResult.next).toEqual(plainResult.next);
       }
     }
+  });
+
+  it("regression: predictively dispatches correctly on a Choice alternative starting with an astral (surrogate-pair) StringLiteral", async () => {
+    // `r = "😀x" / "y"` -- U+1F600 is 2 UTF-16 code units. Both the FIRST
+    // set computed for this alternative and `predictiveChoice`'s runtime
+    // filter check must agree on treating it as one code point, or the
+    // "😀x" alternative gets predictively (and wrongly) excluded even
+    // when the input actually starts with it.
+    const core = await import("@suzumiyaaoba/tpeg-core");
+    const astral = "\u{1F600}";
+
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createChoice([
+            createStringLiteral(`${astral}x`, '"'),
+            createStringLiteral("y", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      includeImports: false,
+      includeTypes: false,
+      enableMemoization: false,
+      enablePredictiveDispatch: true,
+    });
+    expect(result.code).toContain("predictiveChoice([");
+
+    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+    const factory = new Function(
+      ...Object.keys(core),
+      `${body}\nreturn { r };`,
+    );
+    const built = factory(...Object.values(core)) as {
+      r: (
+        input: string,
+        pos: { offset: number; column: number; line: number },
+      ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
+    };
+
+    const pos = { offset: 0, column: 0, line: 1 };
+    const result1 = built.r(`${astral}x`, pos);
+    expect(result1.success).toBe(true);
+    const result2 = built.r("y", pos);
+    expect(result2.success).toBe(true);
   });
 
   it("regression: never predictively dispatches on a Choice alternative that starts with an externally-supplied rule reference", async () => {

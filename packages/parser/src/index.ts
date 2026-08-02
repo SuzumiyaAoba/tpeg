@@ -55,6 +55,40 @@ export {
 
 // NOTE: Eta template-based code generation moved to @SuzumiyaAoba/generator package
 
+// Export static grammar analyses (FIRST sets, nullability, reentrancy) --
+// these back the performance-optimized codegen path but are also useful
+// standalone, e.g. for a caller that wants to run `applyAstOptimizations`
+// or `insertAutomaticCuts` ahead of `generateTypeScriptParser` instead of
+// `generateOptimizedTypeScriptParser`.
+export {
+  isNullable,
+  firstSetOfExpression,
+  analyzeFirstSets,
+  computeFirstSets,
+  predictiveFilterForExpression,
+  firstSetsDisjoint,
+  type CharRangeLiteral,
+  type FirstSet,
+  type GrammarFirstSetAnalysis,
+} from "./first-sets";
+
+export { analyzeReentrancy, type ReentrancyAnalysis } from "./reentrancy";
+
+// Export AST rewrite passes (left-factoring, character-class merging,
+// negative-lookahead degeneration, automatic cut insertion). None of
+// these run by default in either codegen path -- see each function's
+// doc comment for why (mainly: `leftFactorChoices` and friends gate on
+// `isShapeSensitiveRule` but don't check ancestor rules' actions, so they
+// aren't safe to force on unconditionally). A caller opts in by applying
+// them to a `GrammarDefinition` before passing it to a code generator.
+export {
+  leftFactorChoices,
+  mergeCharacterClasses,
+  degenerateNegativeLookaheads,
+  applyAstOptimizations,
+  insertAutomaticCuts,
+} from "./ast-optimize";
+
 // Export performance utilities
 export {
   hashString,

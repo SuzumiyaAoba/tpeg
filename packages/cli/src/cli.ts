@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { parse } from "@suzumiyaaoba/tpeg-core";
 import {
+  applyAstOptimizations,
   generateOptimizedTypeScriptParser,
   generateTypeScriptParser,
   tpegFile,
@@ -22,6 +23,19 @@ Options:
   -o, --output <path>       Write generated code to this file (default: stdout)
       --name-prefix <name>  Prefix every generated parser export with <name>
       --optimize            Use the performance-optimized code generator
+                             (also enables FIRST-set predictive dispatch by
+                             default -- see --ast-optimize for rewrites
+                             that stay opt-in)
+      --ast-optimize         Rewrite the grammar before code generation:
+                             left-factor shared alternative prefixes, merge
+                             adjacent character classes, and degenerate
+                             "!x ." negative-lookahead pairs into a negated
+                             character class. Off by default because left-
+                             factoring's safety check does not look past an
+                             ancestor rule's own semantic action reading the
+                             factored rule's value shape -- review generated
+                             output for grammars with actions before relying
+                             on this in production.
       --no-types            Omit "Parser<T>" type annotations from output
   -h, --help                Show this help message
   -v, --version             Show the CLI version
@@ -29,12 +43,14 @@ Options:
 Examples:
   tpeg grammar.tpeg -o parser.ts
   tpeg grammar.tpeg --optimize --name-prefix my_ > parser.ts
+  tpeg grammar.tpeg --optimize --ast-optimize > parser.ts
 `;
 
 interface CliOptions {
   output?: string;
   namePrefix?: string;
   optimize: boolean;
+  astOptimize: boolean;
   types: boolean;
   help: boolean;
   version: boolean;
@@ -50,6 +66,7 @@ function parseCliArgs(argv: string[]): {
       output: { type: "string", short: "o" },
       "name-prefix": { type: "string" },
       optimize: { type: "boolean", default: false },
+      "ast-optimize": { type: "boolean", default: false },
       "no-types": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
@@ -64,6 +81,7 @@ function parseCliArgs(argv: string[]): {
         ? { namePrefix: values["name-prefix"] }
         : {}),
       optimize: values.optimize ?? false,
+      astOptimize: values["ast-optimize"] ?? false,
       types: !(values["no-types"] ?? false),
       help: values.help ?? false,
       version: values.version ?? false,
@@ -126,10 +144,18 @@ export function run(argv: string[]): number {
     return 1;
   }
 
+  // `applyAstOptimizations` (left-factoring, character-class merging,
+  // negative-lookahead degeneration -- see packages/parser/src/ast-optimize.ts)
+  // runs ahead of code generation, independently of which generator is
+  // chosen below: it rewrites the grammar's AST, not the emitted code.
+  const grammar = options.astOptimize
+    ? applyAstOptimizations(parseResult.val)
+    : parseResult.val;
+
   const generate = options.optimize
     ? generateOptimizedTypeScriptParser
     : generateTypeScriptParser;
-  const generated = generate(parseResult.val, {
+  const generated = generate(grammar, {
     includeTypes: options.types,
     ...(options.namePrefix !== undefined
       ? { namePrefix: options.namePrefix }
