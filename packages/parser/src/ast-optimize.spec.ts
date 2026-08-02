@@ -30,6 +30,7 @@ import {
   createCharRange,
   createCharacterClass,
   createChoice,
+  createCut,
   createGrammarDefinition,
   createGroup,
   createIdentifier,
@@ -1279,5 +1280,435 @@ describe("insertAutomaticCuts", () => {
         expect(cutResult.next).toEqual(originalResult.next);
       }
     }
+  });
+
+  describe("Pillar 3: partial exclusion via ordered-choice associativity", () => {
+    /**
+     * `r = "a" "1" / "b" / "c" / "a" "2"`. The first alternative's prefix
+     * FIRST is {"a"}, which is disjoint from "b" and "c" but NOT from the
+     * fourth alternative (also starting with "a") -- so the pre-Pillar-3
+     * all-or-nothing check (`findCutPosition`) gets ZERO benefit here: one
+     * non-excluded sibling (the fourth) means no cut at all, even though
+     * the first alternative provably excludes its two immediate
+     * neighbors. This is the exact "crossing" shape the plan's advisor
+     * review flagged as needing its own bench grammar to demonstrate.
+     */
+    const crossingGrammar = () =>
+      createGrammarDefinition(
+        "Crossing",
+        [],
+        [
+          createRuleDefinition(
+            "r",
+            createChoice([
+              createSequence([
+                createStringLiteral("a", '"'),
+                createStringLiteral("1", '"'),
+              ]),
+              createStringLiteral("b", '"'),
+              createStringLiteral("c", '"'),
+              createSequence([
+                createStringLiteral("a", '"'),
+                createStringLiteral("2", '"'),
+              ]),
+            ]),
+          ),
+        ],
+      );
+
+    it("regroups a partially-excluding alternative into a nested Choice instead of inserting no cut at all", () => {
+      const grammar = crossingGrammar();
+      const withCuts = insertAutomaticCuts(grammar);
+      const pattern = withCuts.rules[0]?.pattern;
+      expect(pattern?.type).toBe("Choice");
+      if (pattern?.type !== "Choice") return;
+
+      // Top level: the excluded run [alt0, "b", "c"] regrouped into one
+      // nested Choice, with the fourth alternative ("a" "2") left OUTSIDE
+      // it -- exactly because it's the one sibling alt0 could NOT prove
+      // excluded.
+      expect(pattern.alternatives.length).toBe(2);
+      const [innerGroup, lastAlt] = pattern.alternatives;
+      expect(innerGroup?.type).toBe("Choice");
+      expect(lastAlt?.type).toBe("Sequence");
+
+      if (innerGroup?.type !== "Choice") return;
+      expect(innerGroup.alternatives.length).toBe(3);
+      const [cutAlt, bAlt, cAlt] = innerGroup.alternatives;
+      expect(cutAlt?.type).toBe("Sequence");
+      if (cutAlt?.type === "Sequence") {
+        expect(cutAlt.elements.map((e) => e.type)).toEqual([
+          "StringLiteral",
+          "Cut",
+          "StringLiteral",
+        ]);
+      }
+      expect(bAlt?.type).toBe("StringLiteral");
+      expect(cAlt?.type).toBe("StringLiteral");
+
+      // The fourth alternative is NOT wrapped into the inner group (the
+      // whole point of this test), but it IS independently the last
+      // alternative at the top level once the first group is consumed,
+      // so it still gets its own vacuous "nothing left to exclude" cut --
+      // same mechanism as the pre-Pillar-3 last-alternative case,
+      // unrelated to the partial-exclusion grouping this test targets.
+      if (lastAlt?.type === "Sequence") {
+        expect(lastAlt.elements.map((e) => e.type)).toEqual([
+          "StringLiteral",
+          "Cut",
+          "StringLiteral",
+        ]);
+      }
+    });
+
+    it('produces code that parses identically to the un-cut grammar, INCLUDING reaching the fourth alternative past the inner group\'s cut boundary ("a2")', async () => {
+      const grammar = crossingGrammar();
+      const withCuts = insertAutomaticCuts(grammar);
+
+      const original = await compileRuleFor(grammar, "r");
+      const cut = await compileRuleFor(withCuts, "r");
+
+      const inputs = [
+        "a1", // matches via the first (cut-protected) alternative
+        "b", // matches via the second, inside the same inner group
+        "c", // matches via the third, inside the same inner group
+        // The critical case: "a" matches the first alternative's prefix,
+        // triggering its cut, but "1" doesn't follow -- if the cut
+        // incorrectly leaked past the inner group's boundary, "a2" would
+        // now fail instead of falling through to the fourth alternative.
+        "a2",
+        "a3", // "a" matches, cut fires, everything after fails: no alternative matches "a3" either way
+        "x", // matches nothing
+        "", // empty input
+      ];
+
+      for (const input of inputs) {
+        const originalResult = original(input, ORIGIN);
+        const cutResult = cut(input, ORIGIN);
+        expect(cutResult.success).toBe(originalResult.success);
+        if (originalResult.success && cutResult.success) {
+          expect(cutResult.next).toEqual(originalResult.next);
+        }
+      }
+    });
+
+    it('negative control: a bare top-level cut (the naive, non-nested placement Pillar 3 avoids) DOES incorrectly reject "a2", proving the nested Choice above is load-bearing rather than incidental', async () => {
+      // Same crossing grammar, but this test does NOT call
+      // `insertAutomaticCuts`. Instead it hand-builds the cut placement a
+      // naive "runLength > 0 somewhere -> insert a cut" implementation
+      // would produce if it DIDN'T wrap the excluded run in its own
+      // nested Choice: the Cut spliced directly into the first
+      // alternative at the TOP level of the outer Choice, sitting
+      // alongside "b", "c", and the fourth alternative as flat siblings.
+      //
+      // Under `choice`'s cut semantics (packages/core/src/combinators.ts),
+      // a fatal failure after this cut aborts the *entire* enclosing
+      // choice -- there's no inner boundary to absorb it, so it also
+      // takes out the fourth alternative ("a" "2"), even though nothing
+      // about the fourth alternative was ever proven excluded. This is
+      // exactly the bug the nested-Choice construction in
+      // `buildCutGroups` exists to prevent.
+      const grammar = crossingGrammar();
+      const flatCutGrammar = createGrammarDefinition(
+        "CrossingFlatCut",
+        [],
+        [
+          createRuleDefinition(
+            "r",
+            createChoice([
+              createSequence([
+                createStringLiteral("a", '"'),
+                createCut(),
+                createStringLiteral("1", '"'),
+              ]),
+              createStringLiteral("b", '"'),
+              createStringLiteral("c", '"'),
+              createSequence([
+                createStringLiteral("a", '"'),
+                createStringLiteral("2", '"'),
+              ]),
+            ]),
+          ),
+        ],
+      );
+
+      const flatCut = await compileRuleFor(flatCutGrammar, "r");
+      const properlyNested = await compileRuleFor(
+        insertAutomaticCuts(grammar),
+        "r",
+      );
+
+      // The naive flat placement: "a" matches, the cut commits, "1"
+      // fails to match "2" -- and because there's no nested choice
+      // boundary to absorb the resulting fatal failure, the whole rule
+      // fails instead of falling through to the fourth alternative.
+      const flatResult = flatCut("a2", ORIGIN);
+      expect(flatResult.success).toBe(false);
+
+      // The actual `insertAutomaticCuts` output, which nests [alt0, b, c]
+      // inside their own Choice specifically so alt0's cut can't reach
+      // past that boundary, correctly falls through to the fourth
+      // alternative instead.
+      const nestedResult = properlyNested("a2", ORIGIN);
+      expect(nestedResult.success).toBe(true);
+    });
+
+    it("a run's own excluded members are truncated to that run's boundary -- a sibling further out never benefits from what an INNER member could have excluded on its own", () => {
+      // `r = "a" "x" / "b" "y" / "c" "z" / "a" "w"`. alt0 ("a" "x") excludes
+      // alt1 and alt2 (their FIRST sets {b}/{c} are disjoint from alt0's
+      // {a}) but NOT alt3 ("a" "w"), which shares alt0's own prefix -- so
+      // alt0's run stops at length 2, covering only [alt1, alt2].
+      //
+      // In isolation, alt1 ("b" "y") could ALSO exclude alt3 (FIRST {b} is
+      // disjoint from FIRST {a}) -- but `buildCutGroups` never gives it
+      // the chance: alt1's own candidate is computed via a recursive call
+      // bounded to `alts.slice(i + 1, i + 1 + runLength)`, i.e. only
+      // [alt2], never alt3, because alt3 already fell outside alt0's run
+      // before alt1 is ever considered. This is the documented
+      // under-delivery from the module doc comment ("never backtracks to
+      // ask whether a different starting alternative would have excluded
+      // strictly more") -- this test pins the resulting shape so a future
+      // change to the grouping/tie-break strategy doesn't silently alter
+      // it. It is NOT a soundness claim: alt3 sitting outside the inner
+      // group is what's checked below, and per-alternative cut safety is
+      // unaffected either way.
+      const grammar = createGrammarDefinition(
+        "Crossing2",
+        [],
+        [
+          createRuleDefinition(
+            "r",
+            createChoice([
+              createSequence([
+                createStringLiteral("a", '"'),
+                createStringLiteral("x", '"'),
+              ]),
+              createSequence([
+                createStringLiteral("b", '"'),
+                createStringLiteral("y", '"'),
+              ]),
+              createSequence([
+                createStringLiteral("c", '"'),
+                createStringLiteral("z", '"'),
+              ]),
+              createSequence([
+                createStringLiteral("a", '"'),
+                createStringLiteral("w", '"'),
+              ]),
+            ]),
+          ),
+        ],
+      );
+
+      const withCuts = insertAutomaticCuts(grammar);
+      const pattern = withCuts.rules[0]?.pattern;
+      expect(pattern?.type).toBe("Choice");
+      if (pattern?.type !== "Choice") return;
+
+      // Top level: [alt0, alt1, alt2] regrouped into one nested Choice
+      // (alt0's own run, itself further regrouped so alt1 can exclude
+      // alt2), with alt3 left outside it since alt0 never proved it
+      // excluded.
+      expect(pattern.alternatives.length).toBe(2);
+      const [innerGroup, lastAlt] = pattern.alternatives;
+      expect(innerGroup?.type).toBe("Choice");
+      if (innerGroup?.type !== "Choice") return;
+      expect(innerGroup.alternatives.length).toBe(3);
+      const [cutA, cutB, cutC] = innerGroup.alternatives;
+      for (const alt of [cutA, cutB, cutC]) {
+        expect(alt?.type).toBe("Sequence");
+        if (alt?.type === "Sequence") {
+          expect(alt.elements.map((e) => e.type)).toEqual([
+            "StringLiteral",
+            "Cut",
+            "StringLiteral",
+          ]);
+        }
+      }
+
+      // alt3, now the sole alternative outside the group, still gets its
+      // own vacuous last-alternative cut -- unrelated to (and unaffected
+      // by) the exclusion power alt1 was denied above.
+      expect(lastAlt?.type).toBe("Sequence");
+      if (lastAlt?.type === "Sequence") {
+        expect(lastAlt.elements.map((e) => e.type)).toEqual([
+          "StringLiteral",
+          "Cut",
+          "StringLiteral",
+        ]);
+      }
+    });
+
+    it('does not cut a Sequence alternative whose provable prefix is NOT disjoint from the very next alternative -- the "==" / "=" prefix-collision shape', () => {
+      // `r = "=" "=" / "="`. alt0's provable prefix is just its first
+      // element ("="), which is NOT disjoint from alt1's FIRST (also
+      // "="): `computeCutCandidate` must return `null` for alt0 rather
+      // than inserting an unsound cut that would fatal-stop the "="
+      // alternative on backtrack. Guards against a regression where the
+      // `runLength === 0 && laterAlternatives.length > 0 -> null` check
+      // in `computeCutCandidate` gets weakened or bypassed.
+      const grammar = createGrammarDefinition(
+        "PrefixCollision",
+        [],
+        [
+          createRuleDefinition(
+            "r",
+            createChoice([
+              createSequence([
+                createStringLiteral("=", '"'),
+                createStringLiteral("=", '"'),
+              ]),
+              createStringLiteral("=", '"'),
+            ]),
+          ),
+        ],
+      );
+
+      const withCuts = insertAutomaticCuts(grammar);
+      const pattern = withCuts.rules[0]?.pattern;
+      expect(pattern?.type).toBe("Choice");
+      if (pattern?.type !== "Choice") return;
+
+      // No cut anywhere: both alternatives come back byte-for-byte
+      // unchanged from the input grammar.
+      expect(pattern.alternatives).toEqual(
+        (grammar.rules[0]?.pattern as Extract<Expression, { type: "Choice" }>)
+          .alternatives,
+      );
+    });
+
+    it("a Sequence that receives a vacuous cut as the LAST member of a nested group is still safe when a later top-level alternative follows the group", async () => {
+      // `r = "a" "1" / "b" "1" / "a" "2"`. alt0 excludes only alt1 (alt2
+      // shares alt0's own prefix, so alt0's run stops there), producing a
+      // nested group [alt0(cut), alt1(cut)] with alt2 left outside it.
+      // alt1, now the LAST member of that inner group, gets its own
+      // vacuous cut (nothing left inside the group to exclude) even
+      // though alt2 still follows at the OUTER level -- this is safe
+      // only because the inner Choice absorbs alt1's fatal failure at
+      // its own boundary before it can reach the outer Choice and
+      // wrongly take alt2 down with it. This exercises a case the
+      // existing tests above don't: a NESTED (not top-level) member
+      // itself receiving a vacuous cut while a sibling still follows one
+      // level up.
+      const grammar = createGrammarDefinition(
+        "NestedVacuousCut",
+        [],
+        [
+          createRuleDefinition(
+            "r",
+            createChoice([
+              createSequence([
+                createStringLiteral("a", '"'),
+                createStringLiteral("1", '"'),
+              ]),
+              createSequence([
+                createStringLiteral("b", '"'),
+                createStringLiteral("1", '"'),
+              ]),
+              createSequence([
+                createStringLiteral("a", '"'),
+                createStringLiteral("2", '"'),
+              ]),
+            ]),
+          ),
+        ],
+      );
+
+      const withCuts = insertAutomaticCuts(grammar);
+      const pattern = withCuts.rules[0]?.pattern;
+      expect(pattern?.type).toBe("Choice");
+      if (pattern?.type !== "Choice") return;
+      expect(pattern.alternatives.length).toBe(2);
+      const [innerGroup, lastAlt] = pattern.alternatives;
+      expect(innerGroup?.type).toBe("Choice");
+      if (innerGroup?.type === "Choice") {
+        expect(innerGroup.alternatives.length).toBe(2);
+        for (const alt of innerGroup.alternatives) {
+          expect(alt.type).toBe("Sequence");
+          if (alt.type === "Sequence") {
+            expect(alt.elements.map((e) => e.type)).toEqual([
+              "StringLiteral",
+              "Cut",
+              "StringLiteral",
+            ]);
+          }
+        }
+      }
+      expect(lastAlt?.type).toBe("Sequence");
+
+      const original = await compileRuleFor(grammar, "r");
+      const cut = await compileRuleFor(withCuts, "r");
+      for (const input of ["a1", "b1", "a2", "a3", "b2", "", "x"]) {
+        const originalResult = original(input, ORIGIN);
+        const cutResult = cut(input, ORIGIN);
+        expect(cutResult.success).toBe(originalResult.success);
+        if (originalResult.success && cutResult.success) {
+          expect(cutResult.next).toEqual(originalResult.next);
+        }
+      }
+    });
+
+    it("does not restructure a Choice containing a LabeledExpression, falling back to the pre-Pillar-3 all-or-nothing check instead", () => {
+      // Same crossing shape as above, but the fourth alternative carries
+      // a label -- `containsLabel` must make this Choice bail out of
+      // regrouping entirely. Under the all-or-nothing fallback, the first
+      // alternative gets NO cut (the fourth isn't excluded), while the
+      // fourth alternative -- now the last one -- still gets its own
+      // vacuous "nothing left to exclude" cut, exactly as it would have
+      // before Pillar 3 existed.
+      const grammar = createGrammarDefinition(
+        "CrossingLabeled",
+        [],
+        [
+          createRuleDefinition(
+            "r",
+            createChoice([
+              createSequence([
+                createStringLiteral("a", '"'),
+                createStringLiteral("1", '"'),
+              ]),
+              createStringLiteral("b", '"'),
+              createStringLiteral("c", '"'),
+              createSequence([
+                createLabeledExpression("x", createStringLiteral("a", '"')),
+                createStringLiteral("2", '"'),
+              ]),
+            ]),
+          ),
+        ],
+      );
+
+      const withCuts = insertAutomaticCuts(grammar);
+      const pattern = withCuts.rules[0]?.pattern;
+      expect(pattern?.type).toBe("Choice");
+      if (pattern?.type !== "Choice") return;
+
+      // Flat, 4 alternatives -- no nesting at all.
+      expect(pattern.alternatives.length).toBe(4);
+      const [aAlt, bAlt, cAlt, labeledAlt] = pattern.alternatives;
+
+      // The first alternative gets NO cut: it can't prove the (labeled)
+      // fourth alternative excluded, and with the Choice bailed out of
+      // regrouping, there's no nested boundary to protect a partial
+      // exclusion with.
+      expect(aAlt).toEqual(
+        (grammar.rules[0]?.pattern as Extract<Expression, { type: "Choice" }>)
+          .alternatives[0] as Expression,
+      );
+      expect(bAlt?.type).toBe("StringLiteral");
+      expect(cAlt?.type).toBe("StringLiteral");
+
+      // The (labeled) fourth alternative, now last, still gets its own
+      // vacuous cut -- unaffected by the label, since that mechanism
+      // never restructures the Choice.
+      expect(labeledAlt?.type).toBe("Sequence");
+      if (labeledAlt?.type === "Sequence") {
+        expect(labeledAlt.elements.map((e) => e.type)).toEqual([
+          "LabeledExpression",
+          "Cut",
+          "StringLiteral",
+        ]);
+      }
+    });
   });
 });
