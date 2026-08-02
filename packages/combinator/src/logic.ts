@@ -145,11 +145,23 @@ export const commitAtTopLevel =
  * unrelated bound). Pruning is lazy and per-cache: rather than an eager
  * sweep of every live `memoize` cache the instant the watermark moves
  * (which would need a global registry of them), each cache compares the
- * watermark against `prunedUpTo` -- the offset *it* has already pruned
- * below -- on its own next call, and only actually walks its `Map` when
- * there's something new to discard. A cache nobody calls again before
- * the parse ends simply never gets swept, which is fine: nothing reads
- * it either.
+ * watermark against `base` -- the offset *it* has already pruned below --
+ * on its own next call, and only actually touches storage when there's
+ * something new to discard. A cache nobody calls again before the parse
+ * ends simply never gets swept, which is fine: nothing reads it either.
+ *
+ * ## Storage: a dense, offset-based window, not a hash map
+ *
+ * The key is always `pos.offset`, a small non-negative integer, so a
+ * plain array indexed by `offset - base` (`base` being the oldest offset
+ * still live, i.e. what pruning has not yet discarded) is a direct
+ * packrat *matrix* row -- no hashing, no boxed key objects -- while still
+ * bounding memory to the *live window* rather than the whole input:
+ * pruning shifts `base` forward and `splice`s the discarded prefix out,
+ * so the array's length tracks `(highest offset seen) - base`, not the
+ * input's total length. `undefined` (a genuine array hole, not a stored
+ * value) means "not cached"; `ParseResult<T>` never legitimately
+ * contains `undefined` itself.
  */
 export const memoize = <T>(
   parser: Parser<T>,
@@ -157,8 +169,12 @@ export const memoize = <T>(
 ): Parser<T> => {
   const { maxCacheSize, parserName } = options;
   let cachedInput: string | null = null;
-  let cache: Map<number, ParseResult<T>> | null = null;
-  let prunedUpTo = 0;
+  let cache: (ParseResult<T> | undefined)[] | null = null;
+  // Offset that cache[0] corresponds to; entries before this are pruned.
+  let base = 0;
+  // Offsets currently cached, oldest first -- only maintained when
+  // maxCacheSize is set, purely to know which entry to evict.
+  let insertionOrder: number[] | null = null;
 
   const memoizedParser: Parser<T> = (input: string, pos: Pos) => {
     if (input !== cachedInput || !cache) {
@@ -166,34 +182,47 @@ export const memoize = <T>(
       // this is a new parse. Start a fresh table rather than retaining
       // the previous input's entries.
       cachedInput = input;
-      cache = new Map<number, ParseResult<T>>();
-      prunedUpTo = 0;
+      cache = [];
+      base = 0;
+      insertionOrder = maxCacheSize !== undefined ? [] : null;
     }
 
-    if (watermarkInput === input && watermarkOffset > prunedUpTo) {
-      for (const key of cache.keys()) {
-        if (key < watermarkOffset) {
-          cache.delete(key);
-        }
+    if (watermarkInput === input && watermarkOffset > base) {
+      const shiftBy = watermarkOffset - base;
+      cache.splice(0, shiftBy);
+      if (insertionOrder) {
+        insertionOrder = insertionOrder.filter(
+          (offset) => offset >= watermarkOffset,
+        );
       }
-      prunedUpTo = watermarkOffset;
+      base = watermarkOffset;
     }
 
-    const cached = cache.get(pos.offset);
-    if (cached) {
-      return cached;
+    const index = pos.offset - base;
+    if (index >= 0) {
+      const cached = cache[index];
+      if (cached) {
+        return cached;
+      }
     }
 
     const result = parser(input, pos);
 
-    if (maxCacheSize !== undefined && cache.size >= maxCacheSize) {
-      const firstKey = cache.keys().next().value;
-      if (firstKey !== undefined) {
-        cache.delete(firstKey);
+    if (index >= 0) {
+      if (
+        maxCacheSize !== undefined &&
+        insertionOrder &&
+        insertionOrder.length >= maxCacheSize
+      ) {
+        const oldest = insertionOrder.shift();
+        if (oldest !== undefined) {
+          cache[oldest - base] = undefined;
+        }
       }
+      cache[index] = result;
+      insertionOrder?.push(pos.offset);
     }
 
-    cache.set(pos.offset, result);
     return result;
   };
 
