@@ -98,11 +98,25 @@ describe("choice", () => {
     const input = "ix";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
     const committedBranch = seq(lit("i"), commit(lit("f")));
+    // `fallback` would itself SUCCEED on this input ("ix" starts with
+    // "i") -- so the only way `result.success` can be `false` below is
+    // if `choice` actually stopped at the committed branch's failure
+    // instead of falling through to try `fallback` too.
     const fallback = lit("i");
     const result = choice(committedBranch, fallback)(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.fatal).toBe(true);
+      // The specific inner failure (expected "f") surfaces, not a
+      // generic "none of the parsers matched" aggregate.
+      expect(result.error.message).toContain("f");
+      // `fatal` is NOT forwarded on `choice`'s own returned failure: a
+      // cut is scoped to protect only the choice it's directly inside,
+      // not whatever encloses that choice (see `docs/peg-grammar.md` and
+      // `choice`'s own doc comment). This `choice(...)` call isn't
+      // nested inside anything here, but the field's value is still
+      // observable and worth pinning so a future change can't silently
+      // reintroduce fatal-leaking past this boundary.
+      expect(result.error.fatal).toBeFalsy();
     }
   });
 
@@ -115,6 +129,37 @@ describe("choice", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toBe("i");
+    }
+  });
+
+  it("a cut inside a nested choice does not stop an ENCLOSING choice from trying its own remaining alternatives", () => {
+    // Regression test for a real bug found while building
+    // `ast-optimize.ts`'s `insertAutomaticCuts`: this is the minimal
+    // hand-written-`~`-equivalent repro of
+    // `docs/peg-grammar.md`'s stated cut scope ("a cut inside a nested
+    // group does not protect the outer sequence's siblings"), using only
+    // `choice`/`commit`/`seq` directly -- no codegen, no automatic cut
+    // insertion involved.
+    //
+    // Structure: an OUTER choice's first alternative is itself an INNER
+    // choice containing a cut. Before the fix, the inner choice's
+    // absorbed-but-still-`fatal`-marked failure (pre-fix: NOT absorbed at
+    // all, forwarded as-is) caused the OUTER choice to ALSO stop early
+    // and refuse to try its own second alternative -- incorrectly
+    // rejecting input the second alternative would have matched.
+    const input = "ybz";
+    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const innerChoice = choice(
+      seq(lit("y"), commit(lit("b")), commit(lit("c"))), // commits after "y", then fails on "z" != "c"
+      lit("x"), // irrelevant: FIRST-disjoint from "y", never reachable here regardless
+    );
+    const outerFallback = seq(lit("y"), lit("b"), lit("z")); // the alternative that SHOULD match "ybz"
+    const result = choice(innerChoice, outerFallback)(input, pos);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toEqual(["y", "b", "z"]);
+      expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
     }
   });
 

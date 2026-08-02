@@ -200,7 +200,31 @@ describe("capture", () => {
       const result = parser("hx", pos);
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.fatal).toBe(true);
+        // `fatal` is absorbed at `captureChoice`'s own boundary, not
+        // forwarded -- see the identical note in `combinators.spec.ts`'s
+        // `choice` test and `captureChoice`'s own doc comment. The
+        // short-circuit itself (not falling through to "farewell") is
+        // what `result.success === false` already proves, since the
+        // second alternative would otherwise have matched "h" and
+        // succeeded.
+        expect(result.error.fatal).toBeFalsy();
+      }
+    });
+
+    it("a cut inside a nested captureChoice does not stop an ENCLOSING captureChoice from trying its own remaining alternatives", () => {
+      // Symmetric regression test to `combinators.spec.ts`'s identically-
+      // named `choice` test -- see that test's comment for the full
+      // rationale and the bug this pins.
+      const innerChoice = captureChoice(
+        sequence(literal("y"), commit(literal("b")), commit(literal("c"))),
+        literal("x"),
+      );
+      const outerFallback = sequence(literal("y"), literal("b"), literal("z"));
+      const result = captureChoice(innerChoice, outerFallback)("ybz", pos);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual(["y", "b", "z"]);
       }
     });
 

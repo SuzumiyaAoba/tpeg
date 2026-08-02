@@ -220,14 +220,27 @@ export const choice = <T extends unknown[]>(
 
       if (isFailure(result)) {
         // A cut/commit (see `commit`) inside this alternative: stop trying
-        // the remaining alternatives and propagate this failure as-is,
-        // rather than folding it into the usual "none of the parsers
+        // the remaining alternatives and surface this specific failure
+        // instead of folding it into the usual "none of the parsers
         // matched" aggregate -- the whole point of `~` is that once
         // reached, this alternative was the intended one, so a sibling
         // alternative succeeding later at a farther offset must not paper
         // over what's actually a real error in this one.
+        //
+        // The `fatal` marker itself is NOT forwarded: per
+        // `docs/peg-grammar.md`, a cut is scoped to its own choice (e.g. a
+        // cut inside a nested group does not protect an outer choice's
+        // siblings) -- this choice absorbs it at its own boundary. If it
+        // were forwarded unchanged, ANY choice enclosing this one --
+        // whether via direct nesting, a `Group`, or a rule reference this
+        // whole `choice(...)` sits behind -- would ALSO stop early and
+        // refuse to try its own remaining alternatives, silently rejecting
+        // inputs that a sibling elsewhere could otherwise have matched.
         if (result.error.fatal) {
-          return result;
+          return {
+            success: false,
+            error: { ...result.error, fatal: false },
+          } as const;
         }
 
         const error = result.error;

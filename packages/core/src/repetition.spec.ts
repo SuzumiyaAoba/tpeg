@@ -123,6 +123,13 @@ describe("oneOrMore", () => {
 
 describe("fatal (cut/commit) propagation", () => {
   it("optional re-raises a fatal failure instead of matching zero times", () => {
+    // No Choice sits between the cut and this `optional` -- `commit`'s
+    // `fatal` marker reaches `optional` unchanged, and this is exactly
+    // the case `optional`/`zeroOrMore`/`oneOrMore`/`quantified`'s
+    // re-raise logic (repetition.ts) exists for: once a cut has fired
+    // inside the wrapped parser, a subsequent failure must be a real
+    // error, not silently treated as "the optional part just isn't
+    // here."
     const input = "ax";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
     const parser = seq(lit("a"), commit(lit("b")));
@@ -133,36 +140,63 @@ describe("fatal (cut/commit) propagation", () => {
     }
   });
 
-  it("zeroOrMore re-raises a fatal failure from a later iteration", () => {
+  // The three tests below wrap the committed parser in a `choice(...)`
+  // -- unlike the `optional` case above, there IS a Choice directly
+  // between the cut and the repetition combinator. `choice` now absorbs
+  // `fatal` at its own boundary instead of forwarding it (see
+  // `combinators.ts`'s `choice` doc comment): a cut protects only the
+  // choice it's directly inside, never anything that choice's own
+  // result gets returned to next, whether that's an enclosing choice
+  // (the bug this fixed -- see `combinators.spec.ts`'s "does not try the
+  // next alternative..." test) or, as here, a repetition wrapping the
+  // choice.
+  //
+  // Consequence, stated plainly: `(choice("b" ~ "c", "a"))*` no longer
+  // hard-fails when an iteration commits via "b" and then fails on "c"
+  // -- the repetition sees an ordinary (non-fatal) failed iteration and
+  // stops gracefully, returning success with whatever it already
+  // matched. This is usually caught downstream by whatever follows the
+  // repetition (an EOF check, a required terminator) reporting "expected
+  // end of input" instead of a more specific "malformed X" message; a
+  // repetition with nothing after it to enforce full consumption would
+  // silently accept a shorter match. That tradeoff is inherent to a
+  // single `fatal` boolean with no notion of which choice a cut belongs
+  // to -- making it caller-aware would need scope information threaded
+  // through the whole combinator API, well beyond what this fix does.
+
+  it("zeroOrMore stops gracefully (does not hard-fail) once fatal is absorbed by an inner choice", () => {
     const input = "aabx";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
     const parser = choice(seq(lit("b"), commit(lit("c"))), lit("a"));
     const result = zeroOrMore(parser)(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.fatal).toBe(true);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toEqual(["a", "a"]);
+      expect(result.next).toEqual({ offset: 2, column: 2, line: 1 });
     }
   });
 
-  it("oneOrMore re-raises a fatal failure from a later iteration", () => {
+  it("oneOrMore stops gracefully (does not hard-fail) once fatal is absorbed by an inner choice", () => {
     const input = "aabx";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
     const parser = choice(seq(lit("b"), commit(lit("c"))), lit("a"));
     const result = oneOrMore(parser)(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.fatal).toBe(true);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toEqual(["a", "a"]);
+      expect(result.next).toEqual({ offset: 2, column: 2, line: 1 });
     }
   });
 
-  it("quantified re-raises a fatal failure from an optional repetition", () => {
+  it("quantified stops gracefully (does not hard-fail) once fatal is absorbed by an inner choice", () => {
     const input = "aabx";
     const pos: Pos = { offset: 0, column: 0, line: 1 };
     const parser = choice(seq(lit("b"), commit(lit("c"))), lit("a"));
     const result = quantified(parser, 0)(input, pos);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.fatal).toBe(true);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toEqual(["a", "a"]);
+      expect(result.next).toEqual({ offset: 2, column: 2, line: 1 });
     }
   });
 });
