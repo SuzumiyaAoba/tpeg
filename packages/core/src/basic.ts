@@ -1,4 +1,4 @@
-import type { NonEmptyString, ParseResult, Parser, Pos } from "./types";
+import type { NonEmptyString, ParseResult, Parser } from "./types";
 import { advancePos, createFailure, getCharAt, nextPos } from "./utils";
 
 /**
@@ -25,20 +25,20 @@ import { advancePos, createFailure, getCharAt, nextPos } from "./utils";
  * ```typescript
  * // Basic usage
  * const parser = anyChar();
- * const result = parser("hello", { offset: 0, line: 1, column: 0 });
+ * const result = parser("hello", 0);
  * // result: { success: true, val: "h", current: {...}, next: {...} }
  *
  * // End of input handling
- * const endResult = parser("", { offset: 0, line: 1, column: 0 });
+ * const endResult = parser("", 0);
  * // endResult: { success: false, error: "Unexpected EOI", ... }
  *
  * // Unicode support
- * const unicodeResult = parser("🌍", { offset: 0, line: 1, column: 0 });
+ * const unicodeResult = parser("🌍", 0);
  * // unicodeResult: { success: true, val: "🌍", current: {...}, next: {...} }
  *
  * // Custom parser name for debugging
  * const customParser = anyChar("character");
- * const debugResult = customParser("", { offset: 0, line: 1, column: 0 });
+ * const debugResult = customParser("", 0);
  * // debugResult.error.parserName === "character"
  * ```
  *
@@ -46,7 +46,7 @@ import { advancePos, createFailure, getCharAt, nextPos } from "./utils";
  * ```typescript
  * // Real-world usage: parsing user input
  * const userInput = "Hello 🌍 World!";
- * let pos = { offset: 0, line: 1, column: 0 };
+ * let pos = 0;
  *
  * const charParser = anyChar("user input character");
  * const result = charParser(userInput, pos);
@@ -68,14 +68,14 @@ import { advancePos, createFailure, getCharAt, nextPos } from "./utils";
  *   anyChar("next character")
  * );
  *
- * const result = greetingParser("Hello! How are you?", { offset: 0, line: 1, column: 0 });
+ * const result = greetingParser("Hello! How are you?", 0);
  * // result.val will be ["Hello", "!", " "]
  * ```
  */
 export const anyChar =
   (parserName = "anyChar"): Parser<string> =>
-  (input: string, pos: Pos) => {
-    const char = getCharAt(input, pos.offset);
+  (input: string, pos: number) => {
+    const char = getCharAt(input, pos);
 
     if (!char) {
       return createFailure("Unexpected EOI", pos, {
@@ -151,18 +151,18 @@ const canUseOptimizedPath = (() => {
  *
  * @example
  * ```typescript
- * const result = parseSimpleString("hello", "hello world", { offset: 0, line: 1, column: 0 });
+ * const result = parseSimpleString("hello", "hello world", 0);
  * // result: { success: true, val: "hello", current: {...}, next: {...} }
  * ```
  */
 const parseSimpleString = <T extends string>(
   str: NonEmptyString<T>,
   input: string,
-  pos: Pos,
+  pos: number,
   parserName = "literal",
 ): ParseResult<T> => {
   // Fast path for ASCII-only strings with no newlines
-  const { offset, column, line } = pos;
+  const offset = pos;
 
   // Check if the input has enough characters left
   if (offset + str.length > input.length) {
@@ -179,11 +179,7 @@ const parseSimpleString = <T extends string>(
     const inputSlice = input.slice(offset, offset + str.length);
     for (let i = 0; i < str.length; i++) {
       if (inputSlice[i] !== str[i]) {
-        const errorPos = {
-          offset: offset + i,
-          column: column + i,
-          line,
-        };
+        const errorPos = offset + i;
         const foundChar = inputSlice[i] ?? "EOF";
         const expectedChar = str[i] ?? "EOF";
         return createFailure(
@@ -215,11 +211,7 @@ const parseSimpleString = <T extends string>(
     success: true,
     val: str,
     current: pos,
-    next: {
-      offset: offset + str.length,
-      column: column + str.length,
-      line,
-    },
+    next: offset + str.length,
   };
 };
 
@@ -242,17 +234,17 @@ const parseSimpleString = <T extends string>(
  *
  * @example
  * ```typescript
- * const result = parseComplexString("café", "café au lait", { offset: 0, line: 1, column: 0 });
+ * const result = parseComplexString("café", "café au lait", 0);
  * // result: { success: true, val: "café", current: {...}, next: {...} }
  * ```
  */
 const parseComplexString = <T extends string>(
   str: NonEmptyString<T>,
   input: string,
-  pos: Pos,
+  pos: number,
   parserName = "literal",
 ): ParseResult<T> => {
-  const { offset } = pos;
+  const offset = pos;
 
   // Check if the input has enough characters left
   if (offset + str.length > input.length) {
@@ -274,7 +266,7 @@ const parseComplexString = <T extends string>(
   }
 
   // Fallback: character-by-character search to find the precise mismatch point
-  let currentPos = { ...pos };
+  let currentPos = pos;
   let i = 0;
 
   while (i < str.length) {
@@ -286,7 +278,7 @@ const parseComplexString = <T extends string>(
     const strChar = String.fromCodePoint(strCode);
     const strCharLen = strChar.length;
 
-    const inputChar = getCharAt(input, currentPos.offset);
+    const inputChar = getCharAt(input, currentPos);
 
     if (inputChar === "") {
       return createFailure(
@@ -302,7 +294,7 @@ const parseComplexString = <T extends string>(
 
     if (inputChar !== strChar) {
       return createFailure(
-        `Expected "${strChar}" but found "${inputChar}" at position ${currentPos.offset}`,
+        `Expected "${strChar}" but found "${inputChar}" at position ${currentPos}`,
         currentPos,
         {
           expected: strChar,
@@ -316,7 +308,7 @@ const parseComplexString = <T extends string>(
     i += strCharLen;
   }
 
-  const inputSlice = input.slice(offset, currentPos.offset);
+  const inputSlice = input.slice(offset, currentPos);
   return createFailure(`Expected "${str}" but got "${inputSlice}"`, pos, {
     expected: str,
     found: inputSlice,
@@ -335,7 +327,7 @@ export const benchmarkParser = <T>(
   input: string,
   iterations = 1000,
 ): { name: string; avgTime: number; totalTime: number; iterations: number } => {
-  const pos = { offset: 0, line: 1, column: 0 };
+  const pos = 0;
 
   // Warm up
   for (let i = 0; i < 10; i++) {
@@ -380,7 +372,7 @@ export const benchmarkParser = <T>(
  * ```typescript
  * // Basic usage
  * const helloParser = literal("hello");
- * const result = helloParser("hello world", { offset: 0, line: 1, column: 0 });
+ * const result = helloParser("hello world", 0);
  * // result: { success: true, val: "hello", current: {...}, next: {...} }
  *
  * // With custom parser name for debugging
@@ -388,11 +380,11 @@ export const benchmarkParser = <T>(
  *
  * // Unicode support
  * const unicodeParser = literal("café");
- * const unicodeResult = unicodeParser("café", { offset: 0, line: 1, column: 0 });
+ * const unicodeResult = unicodeParser("café", 0);
  * // result: { success: true, val: "café", current: {...}, next: {...} }
  *
  * // Failure case
- * const failResult = helloParser("hi there", { offset: 0, line: 1, column: 0 });
+ * const failResult = helloParser("hi there", 0);
  * // failResult: { success: false, error: "Unexpected character...", ... }
  * ```
  *
@@ -403,7 +395,7 @@ export const benchmarkParser = <T>(
  * const keywordParsers = keywords.map(kw => literal(kw, `keyword:${kw}`));
  *
  * const functionParser = keywordParsers[0];
- * const result = functionParser("function myFunc() {}", { offset: 0, line: 1, column: 0 });
+ * const result = functionParser("function myFunc() {}", 0);
  * // result: { success: true, val: "function", ... }
  * ```
  *
@@ -411,7 +403,7 @@ export const benchmarkParser = <T>(
  * ```typescript
  * // Multi-line string parsing
  * const multilineParser = literal("line1\nline2");
- * const result = multilineParser("line1\nline2\nline3", { offset: 0, line: 1, column: 0 });
+ * const result = multilineParser("line1\nline2\nline3", 0);
  * // result: { success: true, val: "line1\nline2", next: { line: 3, column: 0, ... } }
  * ```
  *
@@ -422,8 +414,8 @@ export const benchmarkParser = <T>(
  * const unicodeParser = literal("こんにちは"); // Uses Unicode path
  *
  * // Both work correctly, but ASCII strings are faster
- * const asciiResult = asciiParser("hello world extra", { offset: 0, line: 1, column: 0 });
- * const unicodeResult = unicodeParser("こんにちは世界", { offset: 0, line: 1, column: 0 });
+ * const asciiResult = asciiParser("hello world extra", 0);
+ * const unicodeResult = unicodeParser("こんにちは世界", 0);
  * ```
  */
 export const literal = <T extends string>(
@@ -433,7 +425,7 @@ export const literal = <T extends string>(
   // Check once during parser creation to avoid repeated checks
   const useOptimizedPath = canUseOptimizedPath(str);
 
-  return (input: string, pos: Pos) => {
+  return (input: string, pos: number) => {
     if (useOptimizedPath) {
       return parseSimpleString(str, input, pos, parserName);
     }

@@ -1,38 +1,24 @@
 import { describe, expect, it } from "bun:test";
 import { any, anyChar, benchmarkParser, lit, literal } from "./basic";
-import type { Pos } from "./types";
 import { parse } from "./utils";
 
 /**
- * Helper function to create a position object for cleaner test setup
+ * Helper function to create a position (offset) for cleaner test setup
  */
-const createPos = (offset = 0, column = 0, line = 1): Pos => ({
-  offset,
-  column,
-  line,
-});
+const createPos = (offset = 0): number => offset;
 
 /**
- * Helper function to create expected next position for ASCII characters
+ * Helper function to create the expected next offset after consuming
+ * `length` UTF-16 code units. Position is a plain offset now (see
+ * `Parser` in `./types.ts`), so newlines no longer affect the
+ * arithmetic -- `hasNewline` is kept as a no-op parameter so call sites
+ * that pass it don't all need editing.
  */
 const nextAsciiPos = (
-  current: Pos,
+  current: number,
   length: number,
-  hasNewline = false,
-): Pos => {
-  if (hasNewline) {
-    return {
-      offset: current.offset + length,
-      column: 0,
-      line: current.line + 1,
-    };
-  }
-  return {
-    offset: current.offset + length,
-    column: current.column + length,
-    line: current.line,
-  };
-};
+  _hasNewline = false,
+): number => current + length;
 
 describe("anyChar parser", () => {
   describe("Basic character parsing", () => {
@@ -79,11 +65,7 @@ describe("anyChar parser", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe("あ");
-        expect(result.next).toEqual({
-          offset: 1,
-          column: 1,
-          line: 1,
-        });
+        expect(result.next).toBe(1);
       }
     });
 
@@ -96,11 +78,7 @@ describe("anyChar parser", () => {
       if (result.success) {
         expect(result.val).toBe(emoji);
         // Emoji uses 2 UTF-16 code units but is treated as 1 character
-        expect(result.next).toEqual({
-          offset: 2, // 2 bytes in UTF-16 encoding
-          column: 1, // 1 character for display
-          line: 1,
-        });
+        expect(result.next).toBe(2);
       }
     });
 
@@ -112,11 +90,7 @@ describe("anyChar parser", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe(musicalSymbol);
-        expect(result.next).toEqual({
-          offset: 2, // Surrogate pair requires 2 bytes
-          column: 1, // 1 character for display
-          line: 1,
-        });
+        expect(result.next).toBe(2);
       }
     });
   });
@@ -129,11 +103,7 @@ describe("anyChar parser", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe("\n");
-        expect(result.next).toEqual({
-          offset: 1,
-          column: 0, // Reset to column 0 after newline
-          line: 2, // Increment line number
-        });
+        expect(result.next).toBe(1);
       }
     });
 
@@ -176,7 +146,7 @@ describe("anyChar parser", () => {
 
     it("should return error for out-of-bounds position", () => {
       // Purpose: Verify boundary error handling
-      const result = anyChar()("a", createPos(1, 1, 1));
+      const result = anyChar()("a", createPos(1));
 
       expect(result.success).toBe(false);
       if (!result.success) {
@@ -264,11 +234,7 @@ describe("literal parser", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe("こんにちは");
-        expect(result.next).toEqual({
-          offset: 5, // 5 characters
-          column: 5,
-          line: 1,
-        });
+        expect(result.next).toBe(5);
       }
     });
 
@@ -280,11 +246,7 @@ describe("literal parser", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe("🙂👍🎉");
-        expect(result.next).toEqual({
-          offset: 6, // Each emoji is 2 bytes
-          column: 3, // 3 characters for display
-          line: 1,
-        });
+        expect(result.next).toBe(6);
       }
     });
 
@@ -296,11 +258,7 @@ describe("literal parser", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe("Hello 🌍 World");
-        expect(result.next).toEqual({
-          offset: 14, // 6(Hello ) + 2(🌍) + 6( World)
-          column: 13, // 13 characters for display
-          line: 1,
-        });
+        expect(result.next).toBe(14);
       }
     });
   });
@@ -314,11 +272,7 @@ describe("literal parser", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe("line1\nline2");
-        expect(result.next).toEqual({
-          offset: 11,
-          column: 5, // Length of "line2"
-          line: 2,
-        });
+        expect(result.next).toBe(11);
       }
     });
 
@@ -330,11 +284,7 @@ describe("literal parser", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe("a\n\nb");
-        expect(result.next).toEqual({
-          offset: 4,
-          column: 1, // Position after "b"
-          line: 3, // Line 3 due to 2 newlines
-        });
+        expect(result.next).toBe(4);
       }
     });
 
@@ -358,11 +308,7 @@ describe("literal parser", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe("line1\r\nline2");
-        expect(result.next).toEqual({
-          offset: 12,
-          column: 5,
-          line: 2,
-        });
+        expect(result.next).toBe(12);
       }
     });
   });
@@ -371,16 +317,12 @@ describe("literal parser", () => {
     it("should handle parsing from non-zero offset correctly", () => {
       // Purpose: Verify position tracking in streaming parsing scenarios
       const parser = literal("test");
-      const result = parser("prefix_test_suffix", createPos(7, 7, 1));
+      const result = parser("prefix_test_suffix", createPos(7));
 
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe("test");
-        expect(result.next).toEqual({
-          offset: 11,
-          column: 11,
-          line: 1,
-        });
+        expect(result.next).toBe(11);
       }
     });
 
@@ -388,18 +330,14 @@ describe("literal parser", () => {
       // Purpose: Verify position management in complex document parsing
       const parser = literal("target");
       const input = "line1\nline2\ntarget here";
-      const startPos = createPos(12, 0, 3); // Start position of "target"
+      const startPos = createPos(12); // Start position of "target"
 
       const result = parser(input, startPos);
 
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe("target");
-        expect(result.next).toEqual({
-          offset: 18,
-          column: 6,
-          line: 3,
-        });
+        expect(result.next).toBe(18);
       }
     });
   });
@@ -413,11 +351,7 @@ describe("literal parser", () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message).toContain("Unexpected character");
-        expect(result.error.pos).toEqual({
-          offset: 4, // Position of 'X'
-          column: 4,
-          line: 1,
-        });
+        expect(result.error.pos).toBe(4);
         expect(result.error.expected).toBe("c");
         expect(result.error.found).toBe("X");
       }
@@ -462,11 +396,7 @@ describe("literal parser", () => {
       if (!result.success) {
         expect(result.error.message).toContain("Expected");
         expect(result.error.message).toContain("but found");
-        expect(result.error.pos).toEqual({
-          offset: 2, // Position of "ば"
-          column: 2,
-          line: 1,
-        });
+        expect(result.error.pos).toBe(2);
       }
     });
 
@@ -479,11 +409,7 @@ describe("literal parser", () => {
       if (!result.success) {
         expect(result.error.message).toContain("Expected");
         expect(result.error.message).toContain("but found");
-        expect(result.error.pos).toEqual({
-          offset: 2, // Position of second emoji
-          column: 1, // Second character for display
-          line: 1,
-        });
+        expect(result.error.pos).toBe(2);
       }
     });
 
@@ -509,7 +435,7 @@ describe("literal parser", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe(longString);
-        expect(result.next.offset).toBe(1000);
+        expect(result.next).toBe(1000);
       }
     });
 

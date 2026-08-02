@@ -1,4 +1,4 @@
-import type { ParseError, ParseFailure, ParseResult, Pos } from "./types";
+import type { ParseError, ParseFailure, ParseResult } from "./types";
 
 /**
  * Error severity levels for better error categorization and handling.
@@ -32,8 +32,8 @@ export enum ErrorCategory {
 export interface EnhancedParseError {
   /** Basic error message */
   message: string;
-  /** Position where error occurred */
-  pos: Pos;
+  /** Offset where error occurred */
+  pos: number;
   /** What was expected at this position */
   expected?: string | string[];
   /** What was actually found */
@@ -145,7 +145,7 @@ export class ErrorHandler {
   attemptRecovery(
     error: EnhancedParseError,
     input: string,
-    pos: Pos,
+    pos: number,
     context?: Record<string, unknown>,
   ): RecoveryResult {
     if (!this.config.enableRecovery || !error.recoverable) {
@@ -156,7 +156,7 @@ export class ErrorHandler {
       };
     }
 
-    const errorKey = `${error.category}_${error.severity}_${pos.offset}`;
+    const errorKey = `${error.category}_${error.severity}_${pos}`;
     const attempts = this.recoveryAttempts.get(errorKey) || 0;
 
     if (attempts >= this.config.maxRecoveryAttempts) {
@@ -222,7 +222,7 @@ export class ErrorHandler {
     strategy: RecoveryStrategy,
     error: EnhancedParseError,
     _input: string,
-    _pos: Pos,
+    _pos: number,
     context?: Record<string, unknown>,
   ): RecoveryResult {
     switch (strategy) {
@@ -249,7 +249,7 @@ export class ErrorHandler {
   private skipError(
     _error: EnhancedParseError,
     input: string,
-    pos: Pos,
+    pos: number,
   ): RecoveryResult {
     // Find the next safe position to continue parsing
     const nextPos = this.findNextSafePosition(input, pos);
@@ -287,7 +287,7 @@ export class ErrorHandler {
   private retryError(
     _error: EnhancedParseError,
     _input: string,
-    _pos: Pos,
+    _pos: number,
   ): RecoveryResult {
     // For retry, we return success but indicate that retry should be attempted
     return {
@@ -313,9 +313,8 @@ export class ErrorHandler {
   /**
    * Finds the next safe position to continue parsing after an error.
    */
-  private findNextSafePosition(input: string, pos: Pos): Pos {
-    let offset = pos.offset;
-    let column = pos.column;
+  private findNextSafePosition(input: string, pos: number): number {
+    let offset = pos;
 
     // Skip until we find a safe character (whitespace, newline, or common delimiter)
     while (offset < input.length) {
@@ -330,10 +329,9 @@ export class ErrorHandler {
         break;
       }
       offset++;
-      column++;
     }
 
-    return { ...pos, offset, column };
+    return offset;
   }
 
   /**
@@ -480,12 +478,12 @@ export function createErrorHandler(
  * Wraps a parser with enhanced error handling.
  */
 export function withErrorHandling<T>(
-  parser: (input: string, pos: Pos) => ParseResult<T>,
+  parser: (input: string, pos: number) => ParseResult<T>,
   errorHandler: ErrorHandler,
   severity: ErrorSeverity = ErrorSeverity.MEDIUM,
   category: ErrorCategory = ErrorCategory.SYNTAX,
-): (_input: string, _pos: Pos) => ParseResult<T> {
-  return (_input: string, _pos: Pos) => {
+): (_input: string, _pos: number) => ParseResult<T> {
+  return (_input: string, _pos: number) => {
     const result = parser(_input, _pos);
 
     if (!result.success) {
@@ -506,7 +504,7 @@ export function withErrorHandling<T>(
           recovery.value &&
           typeof recovery.value === "object" &&
           "nextPosition" in recovery.value
-            ? (recovery.value as { nextPosition: Pos }).nextPosition
+            ? (recovery.value as { nextPosition: number }).nextPosition
             : _pos;
 
         // Return a modified result with the recovered value

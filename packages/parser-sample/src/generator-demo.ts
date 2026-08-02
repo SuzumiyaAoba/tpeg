@@ -8,6 +8,7 @@
  * 3. Showing the generated output
  */
 
+import { offsetToPos } from "@suzumiyaaoba/tpeg-core";
 import {
   generateTypeScriptParser,
   grammarDefinition,
@@ -37,9 +38,10 @@ const parseResult = grammarDefinition(grammarText, pos);
 if (!parseResult.success) {
   console.error("❌ Failed to parse grammar:");
   console.error(`   Error: ${parseResult.error?.message}`);
-  console.error(
-    `   Position: line ${parseResult.error?.pos.line}, column ${parseResult.error?.pos.column}`,
-  );
+  if (parseResult.error?.pos !== undefined) {
+    const { line, column } = offsetToPos(grammarText, parseResult.error.pos);
+    console.error(`   Position: line ${line}, column ${column}`);
+  }
   process.exit(1);
 }
 
@@ -103,7 +105,7 @@ console.log(`
 
 import { calc_expression, calc_number } from './calculator-parser';
 
-const pos = { offset: 0, line: 1, column: 1 };
+const pos = 0;
 
 // Parse a number
 const numberResult = calc_number("123", pos);

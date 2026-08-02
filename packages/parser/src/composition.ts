@@ -136,10 +136,10 @@ const groupExpression = (): Parser<Group> => {
  * action).
  */
 const actionBlock: Parser<string> = (input, pos) => {
-  if (input[pos.offset] !== "{") {
+  if (input[pos] !== "{") {
     return createFailure("Expected opening brace '{'", pos, {
       expected: ["{"],
-      found: input[pos.offset] ?? "",
+      found: input[pos] ?? "",
       parserName: "actionBlock",
     });
   }
@@ -266,13 +266,13 @@ setExpressionParser(choiceExpression());
  * @example
  * ```typescript
  * // Parse a simple sequence
- * const result1 = expression()('"hello" " " "world"', { offset: 0, line: 1, column: 1 });
+ * const result1 = expression()('"hello" " " "world"', 0);
  *
  * // Parse a choice
- * const result2 = expression()('"true" / "false"', { offset: 0, line: 1, column: 1 });
+ * const result2 = expression()('"true" / "false"', 0);
  *
  * // Parse a grouped expression
- * const result3 = expression()('("a" / "b") "c"', { offset: 0, line: 1, column: 1 });
+ * const result3 = expression()('("a" / "b") "c"', 0);
  * ```
  */
 export const expression = (): Parser<Expression> => {

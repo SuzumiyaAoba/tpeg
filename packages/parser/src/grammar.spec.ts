@@ -456,11 +456,7 @@ describe("Grammar Definition Block Tests", () => {
       const result = testParse(grammarDefinition, input);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.next).toEqual({
-          offset: input.length,
-          line: 5,
-          column: 1,
-        });
+        expect(result.next).toEqual(input.length);
       }
     });
 

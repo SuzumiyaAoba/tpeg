@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { expression as handExpression } from "../composition";
 import { choiceExpr as genExpression } from "./generated/composition.generated";
 
-const pos = { offset: 0, line: 1, column: 1 };
+const pos = 0;
 
 const cases = [
   // leaf constructs

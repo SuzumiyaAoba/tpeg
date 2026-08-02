@@ -1,17 +1,16 @@
 import { describe, expect, it } from "bun:test";
-import type { Pos } from "@suzumiyaaoba/tpeg-core";
 import { parse } from "@suzumiyaaoba/tpeg-core";
 import { literal } from "@suzumiyaaoba/tpeg-core";
 import { commitAtTopLevel, memoize, recursive, withPosition } from "./logic";
 
-const pos = (offset: number): Pos => ({ offset, line: 1, column: offset });
+const pos = (offset: number): number => offset;
 
 /** Wraps `literal(char)` so every actual invocation increments `counter`,
  * the same technique `packages/parser/bench/harness.ts` uses -- a cache
  * hit never reaches the wrapped parser, so this counts real re-parses. */
 function countedLiteral(char: string, counter: { count: number }) {
   const inner = literal(char);
-  return (input: string, p: Pos) => {
+  return (input: string, p: number) => {
     counter.count++;
     return inner(input, p);
   };
@@ -21,13 +20,13 @@ describe("logic combinators", () => {
   describe("memoize", () => {
     it("should cache results", () => {
       let callCount = 0;
-      const parser = (input: string, pos: Pos) => {
+      const parser = (input: string, pos: number) => {
         callCount++;
         return literal("a")(input, pos);
       };
       const memoized = memoize(parser);
 
-      const pos = { offset: 0, line: 1, column: 1 };
+      const pos = 0;
       memoized("a", pos);
       memoized("a", pos);
 
@@ -36,9 +35,9 @@ describe("logic combinators", () => {
 
     it("should evict from cache when full", () => {
       let callCount = 0;
-      const parser = (input: string, pos: Pos) => {
+      const parser = (input: string, pos: number) => {
         callCount++;
-        const char = input[pos.offset];
+        const char = input[pos];
         if (char === undefined) {
           return { success: false, error: { message: "EOF", pos } } as const;
         }
@@ -46,9 +45,9 @@ describe("logic combinators", () => {
       };
       const memoized = memoize(parser, { maxCacheSize: 1 });
 
-      memoized("ab", { offset: 0, line: 1, column: 1 }); // Key 0
-      memoized("ab", { offset: 1, line: 1, column: 2 }); // Key 1, evicts Key 0
-      memoized("ab", { offset: 0, line: 1, column: 1 }); // Key 0 again, cache miss
+      memoized("ab", 0); // Key 0
+      memoized("ab", 1); // Key 1, evicts Key 0
+      memoized("ab", 0); // Key 0 again, cache miss
 
       expect(callCount).toBe(3);
     });
@@ -59,16 +58,16 @@ describe("logic combinators", () => {
       // here) has no bearing on this: switching inputs always starts a
       // fresh table.
       let callCount = 0;
-      const parser = (input: string, pos: Pos) => {
+      const parser = (input: string, pos: number) => {
         callCount++;
-        const char = input[pos.offset];
+        const char = input[pos];
         if (char === undefined) {
           return { success: false, error: { message: "EOF", pos } } as const;
         }
         return literal(char)(input, pos);
       };
       const memoized = memoize(parser);
-      const pos = { offset: 0, line: 1, column: 1 };
+      const pos = 0;
 
       memoized("a", pos); // caches input "a"
       memoized("b", pos); // different input -> fresh table, discards "a"'s cache
@@ -82,10 +81,10 @@ describe("logic combinators", () => {
       // guarantee: two inputs that differ only after a shared offset
       // must each get their own (correct) result there, never the other
       // input's cached one.
-      const parser = (input: string, pos: Pos) =>
+      const parser = (input: string, pos: number) =>
         literal(input[0] as string)(input, pos);
       const memoized = memoize(parser);
-      const pos = { offset: 0, line: 1, column: 1 };
+      const pos = 0;
 
       const resultA = memoized("aX", pos);
       const resultB = memoized("bY", pos);
@@ -102,9 +101,9 @@ describe("logic combinators", () => {
 
     it("does not evict cached positions for one input when maxCacheSize is left unset (default: unbounded per input)", () => {
       let callCount = 0;
-      const parser = (input: string, pos: Pos) => {
+      const parser = (input: string, pos: number) => {
         callCount++;
-        const char = input[pos.offset];
+        const char = input[pos];
         if (char === undefined) {
           return { success: false, error: { message: "EOF", pos } } as const;
         }
@@ -113,13 +112,13 @@ describe("logic combinators", () => {
       const memoized = memoize(parser);
       const input = "abc";
 
-      memoized(input, { offset: 0, line: 1, column: 1 });
-      memoized(input, { offset: 1, line: 1, column: 2 });
-      memoized(input, { offset: 2, line: 1, column: 3 });
+      memoized(input, 0);
+      memoized(input, 1);
+      memoized(input, 2);
       expect(callCount).toBe(3);
 
       // Re-visiting offset 0 must be a cache hit -- nothing evicted it.
-      memoized(input, { offset: 0, line: 1, column: 1 });
+      memoized(input, 0);
       expect(callCount).toBe(3);
     });
 
@@ -129,15 +128,15 @@ describe("logic combinators", () => {
       // redundant. This pins that the implementation actually relies on
       // that instead of accidentally requiring an exact Pos match.
       let callCount = 0;
-      const parser = (input: string, pos: Pos) => {
+      const parser = (input: string, pos: number) => {
         callCount++;
         return literal("a")(input, pos);
       };
       const memoized = memoize(parser);
 
-      memoized("a", { offset: 0, line: 1, column: 1 });
+      memoized("a", 0);
       // Same offset, deliberately "wrong" line/column -- must still hit.
-      memoized("a", { offset: 0, line: 99, column: 99 });
+      memoized("a", 0);
 
       expect(callCount).toBe(1);
     });

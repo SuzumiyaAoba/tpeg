@@ -64,7 +64,7 @@ describe("primitive combinators", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe("hello");
-        expect(result.next.offset).toBe(9);
+        expect(result.next).toBe(9);
       }
     });
 
@@ -119,7 +119,7 @@ describe("primitive combinators", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe(123);
-        expect(result.next.offset).toBe(3);
+        expect(result.next).toBe(3);
       }
     });
   });
@@ -155,27 +155,27 @@ describe("primitive combinators", () => {
 
   describe("startOfLine", () => {
     it("should succeed at offset 0", () => {
-      const result = startOfLine()("", { offset: 0, line: 1, column: 1 });
+      const result = startOfLine()("", 0);
       expect(result.success).toBe(true);
     });
 
     it("should fail at offset > 0", () => {
-      const result = startOfLine()("a", { offset: 1, line: 1, column: 2 });
+      const result = startOfLine()("a", 1);
       expect(result.success).toBe(false);
     });
 
     it("should succeed right after a newline", () => {
-      const result = startOfLine()("a\nb", { offset: 2, line: 2, column: 1 });
+      const result = startOfLine()("a\nb", 2);
       expect(result.success).toBe(true);
     });
 
     it("should succeed after a CRLF line ending (position after the \\n)", () => {
-      const result = startOfLine()("a\r\nb", { offset: 3, line: 2, column: 1 });
+      const result = startOfLine()("a\r\nb", 3);
       expect(result.success).toBe(true);
     });
 
     it("should fail between the \\r and \\n of a CRLF line ending", () => {
-      const result = startOfLine()("a\r\nb", { offset: 2, line: 1, column: 3 });
+      const result = startOfLine()("a\r\nb", 2);
       expect(result.success).toBe(false);
     });
   });

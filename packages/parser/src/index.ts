@@ -139,16 +139,16 @@ import { whitespace } from "./whitespace-utils";
  *
  * @example
  * ```typescript
- * const result1 = basicSyntax('"hello"', { offset: 0, line: 1, column: 1 });
+ * const result1 = basicSyntax('"hello"', 0);
  * // result1.success === true, result1.val.type === "StringLiteral"
  *
- * const result2 = basicSyntax('[a-z]', { offset: 0, line: 1, column: 1 });
+ * const result2 = basicSyntax('[a-z]', 0);
  * // result2.success === true, result2.val.type === "CharacterClass"
  *
- * const result3 = basicSyntax('identifier', { offset: 0, line: 1, column: 1 });
+ * const result3 = basicSyntax('identifier', 0);
  * // result3.success === true, result3.val.type === "Identifier"
  *
- * const result4 = basicSyntax('math.expr', { offset: 0, line: 1, column: 1 });
+ * const result4 = basicSyntax('math.expr', 0);
  * // result4.success === true, result4.val.type === "QualifiedIdentifier"
  * ```
  */
@@ -168,16 +168,16 @@ export const basicSyntax: Parser<BasicSyntaxNode> = coreChoice(
  * @example
  * ```typescript
  * // Parse basic syntax
- * const result1 = tpegExpression('"hello"', { offset: 0, line: 1, column: 1 });
+ * const result1 = tpegExpression('"hello"', 0);
  *
  * // Parse sequence
- * const result2 = tpegExpression('"hello" " " "world"', { offset: 0, line: 1, column: 1 });
+ * const result2 = tpegExpression('"hello" " " "world"', 0);
  *
  * // Parse choice
- * const result3 = tpegExpression('"true" / "false"', { offset: 0, line: 1, column: 1 });
+ * const result3 = tpegExpression('"true" / "false"', 0);
  *
  * // Parse group with complex precedence
- * const result4 = tpegExpression('("a" / "b") "c"', { offset: 0, line: 1, column: 1 });
+ * const result4 = tpegExpression('("a" / "b") "c"', 0);
  * ```
  */
 export const tpegExpression = expression();

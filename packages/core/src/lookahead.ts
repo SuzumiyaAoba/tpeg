@@ -35,9 +35,7 @@ const LOOKAHEAD_SUCCESS_BASE = {
  *
  * @internal This function is optimized for high-frequency lookahead operations
  */
-const createSuccessResult = (
-  pos: import("./types").Pos,
-): ParseSuccess<undefined> => ({
+const createSuccessResult = (pos: number): ParseSuccess<undefined> => ({
   ...LOOKAHEAD_SUCCESS_BASE,
   current: pos,
   next: pos,
@@ -94,7 +92,7 @@ const createSuccessResult = (
  *
  * // Example 4: Error case demonstration
  * const parser = andPredicate(literal("hello"));
- * const result = parser("world", { offset: 0, line: 1, column: 0 });
+ * const result = parser("world", 0);
  * // result.success === false, detailed error context preserved
  * ```
  *
@@ -263,7 +261,7 @@ export const assert = andPredicate;
  *
  * // Example 5: Success case demonstration
  * const parser = notPredicate(literal("hello"));
- * const result = parser("world", { offset: 0, line: 1, column: 0 });
+ * const result = parser("world", 0);
  * // result.success === true because "world" doesn't start with "hello"
  * ```
  *

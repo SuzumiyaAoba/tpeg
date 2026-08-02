@@ -224,7 +224,7 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
       ...Object.values(core),
     );
 
-    const pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     expect(letter("m", pos).success).toBe(true);
     expect(notDigit("m", pos).success).toBe(true);
     expect(notDigit("5", pos).success).toBe(false);
@@ -295,12 +295,12 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
     );
     const { number } = moduleFactory(...Object.values(core));
 
-    const pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     expect(number("123abc", pos)).toEqual({
       success: true,
       val: 123,
-      current: { offset: 0, column: 0, line: 1 },
-      next: { offset: 3, column: 3, line: 1 },
+      current: 0,
+      next: 3,
     });
     expect(number("abc", pos).success).toBe(false);
   });
@@ -349,7 +349,7 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
     );
     const { op } = moduleFactory(...Object.values(core));
 
-    const pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const parsed = op("==", pos);
     expect(parsed.success).toBe(true);
     if (parsed.success) {
@@ -357,7 +357,7 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
       // not just one (which the buggy nodeCount-ascending sort would try
       // first since a single StringLiteral has a smaller AST than the
       // Sequence).
-      expect(parsed.next.offset).toBe(2);
+      expect(parsed.next).toBe(2);
     }
   });
 
@@ -634,13 +634,13 @@ describe("enablePredictiveDispatch", () => {
       >;
       return built["value"] as unknown as (
         input: string,
-        pos: { offset: number; column: number; line: number },
+        pos: number,
       ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
     };
 
     const plain = compileValue(false);
     const predictive = compileValue(true);
-    const pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
 
     for (const input of ['""', "5", "true", "false", "x", "", '"a']) {
       const plainResult = plain(input, pos);
@@ -691,11 +691,11 @@ describe("enablePredictiveDispatch", () => {
     const built = factory(...Object.values(core)) as {
       r: (
         input: string,
-        pos: { offset: number; column: number; line: number },
+        pos: number,
       ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
     };
 
-    const pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result1 = built.r(`${astral}x`, pos);
     expect(result1.success).toBe(true);
     const result2 = built.r("y", pos);
@@ -736,13 +736,13 @@ describe("enablePredictiveDispatch", () => {
     });
 
     // `ext` matches a single "a" and nothing else.
-    const ext = (input: string, pos: { offset: number }) =>
-      input[pos.offset] === "a"
+    const ext = (input: string, pos: number) =>
+      input[pos] === "a"
         ? {
             success: true as const,
             val: "a",
             current: pos,
-            next: { ...pos, offset: pos.offset + 1 },
+            next: pos + 1,
           }
         : { success: false as const, error: { message: "not a", pos } };
 
@@ -755,11 +755,11 @@ describe("enablePredictiveDispatch", () => {
     const { r } = factory(...Object.values(core), ext) as {
       r: (
         input: string,
-        pos: { offset: number; column: number; line: number },
+        pos: number,
       ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
     };
 
-    const pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     // "ax": ext consumes "a", then "x" matches -- alternative 0 must
     // still be attempted even though the *first* character is "a", not
     // "x". A buggy `{chars: {"x"}}` filter on alternative 0 would skip

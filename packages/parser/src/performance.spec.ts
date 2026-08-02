@@ -116,7 +116,7 @@ describe("TPEG Parser Performance Benchmarks", () => {
       const result = benchmark(
         "Simple Grammar Parsing",
         () => {
-          const pos = { offset: 0, line: 1, column: 1 };
+          const pos = 0;
           grammarDefinition(simpleGrammar, pos);
         },
         1000,
@@ -146,7 +146,7 @@ describe("TPEG Parser Performance Benchmarks", () => {
       const result = benchmark(
         "Complex Grammar Parsing",
         () => {
-          const pos = { offset: 0, line: 1, column: 1 };
+          const pos = 0;
           grammarDefinition(complexGrammar, pos);
         },
         500,
@@ -177,7 +177,7 @@ describe("TPEG Parser Performance Benchmarks", () => {
       const result = benchmark(
         "Large Grammar Parsing",
         () => {
-          const pos = { offset: 0, line: 1, column: 1 };
+          const pos = 0;
           grammarDefinition(largeGrammar, pos);
         },
         50,
@@ -281,7 +281,7 @@ describe("TPEG Parser Performance Benchmarks", () => {
 
       const memoryUsage = measureMemory(() => {
         for (let i = 0; i < 100; i++) {
-          const pos = { offset: 0, line: 1, column: 1 };
+          const pos = 0;
           const result = grammarDefinition(grammar, pos);
           if (!result.success) throw new Error("Parse failed");
         }
@@ -336,7 +336,7 @@ describe("TPEG Parser Performance Benchmarks", () => {
         const result = benchmark(
           `Grammar Size ${size}`,
           () => {
-            const pos = { offset: 0, line: 1, column: 1 };
+            const pos = 0;
             grammarDefinition(grammar, pos);
           },
           Math.max(10, 200 / size), // Fewer iterations for larger grammars
@@ -416,7 +416,7 @@ describe("TPEG Parser Performance Benchmarks", () => {
       const result = benchmark(
         "JSON Grammar Parsing",
         () => {
-          const pos = { offset: 0, line: 1, column: 1 };
+          const pos = 0;
           const parseResult = grammarDefinition(jsonGrammar, pos);
           if (!parseResult.success) throw new Error("Parse failed");
         },
@@ -446,18 +446,14 @@ describe("TPEG Parser Performance Benchmarks", () => {
       const parseTime = benchmark(
         "Calculator Parse",
         () => {
-          const pos = { offset: 0, line: 1, column: 1 };
+          const pos = 0;
           const parseResult = grammarDefinition(calculatorGrammar, pos);
           if (!parseResult.success) throw new Error("Parse failed");
         },
         200,
       );
 
-      const freshParseResult = grammarDefinition(calculatorGrammar, {
-        offset: 0,
-        line: 1,
-        column: 1,
-      });
+      const freshParseResult = grammarDefinition(calculatorGrammar, 0);
       if (!freshParseResult.success) throw new Error("Parse failed");
       const parsedCalculatorGrammar = freshParseResult.val;
 
@@ -502,7 +498,7 @@ describe("Performance Regression Prevention", () => {
     const simpleResult = benchmark(
       "Baseline Simple Grammar",
       () => {
-        const pos = { offset: 0, line: 1, column: 1 };
+        const pos = 0;
         grammarDefinition('grammar Test { rule = "test" }', pos);
       },
       1000,

@@ -13,7 +13,7 @@ import {
 import { choice, commit, sequence } from "./combinators";
 
 describe("capture", () => {
-  const pos = { offset: 0, column: 0, line: 1 };
+  const pos = 0;
 
   describe("basic capture functionality", () => {
     it("should capture a simple value with a label", () => {
@@ -23,7 +23,7 @@ describe("capture", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toEqual({ name: "hello" });
-        expect(result.next.offset).toBe(5);
+        expect(result.next).toBe(5);
       }
     });
 

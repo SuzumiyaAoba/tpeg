@@ -34,14 +34,17 @@ export type NonEmptyString<T extends string = string> = T extends ""
   : T;
 
 /**
- * Input position information in the source string.
- *
- * Represents a specific location within the input text being parsed.
- * All positions are tracked to provide accurate error reporting and
- * position-aware parsing operations.
+ * A fully-resolved position in the source string: offset plus the
+ * line/column it falls on. This is NOT what threads through parsing
+ * anymore (see `Parser`/`ParseSuccess`/`ParseError`, which all use a
+ * plain `offset: number`) -- it survives only as an OUTPUT shape, for
+ * callers that explicitly ask for line/column (`withPosition` in
+ * `tpeg-combinator`, and error formatting in `./error.ts`), computed
+ * lazily on demand via `offsetToPos` (`./utils.ts`) rather than
+ * maintained incrementally on every character consumed.
  *
  * @property offset - The absolute offset from the start of the input (0-based)
- * @property column - The column number within the current line (0-based)
+ * @property column - The column number within the current line (0-based, counted in code points, not UTF-16 code units)
  * @property line - The line number in the input (1-based)
  * @example
  * ```typescript
@@ -62,28 +65,28 @@ export type Pos = {
  * Result of successful parsing.
  *
  * When a parser successfully matches input, it returns a ParseSuccess
- * object containing the parsed value and position information.
+ * object containing the parsed value and the offsets it spans.
  *
  * @template T - The type of the parsed value
  * @property success - Always true for successful parse results
  * @property val - The parsed value of type T
- * @property current - The position in the input before parsing began
- * @property next - The position in the input after parsing completed
+ * @property current - The offset in the input before parsing began
+ * @property next - The offset in the input after parsing completed
  * @example
  * ```typescript
  * const result: ParseSuccess<string> = {
  *   success: true,
  *   val: "parsed text",
- *   current: { offset: 0, column: 0, line: 1 },
- *   next: { offset: 11, column: 11, line: 1 }
+ *   current: 0,
+ *   next: 11
  * };
  * ```
  */
 export type ParseSuccess<T> = {
   success: true;
   val: T;
-  current: Pos;
-  next: Pos;
+  current: number;
+  next: number;
 };
 
 /**
@@ -100,7 +103,7 @@ export type ParseSuccess<T> = {
  *   success: false,
  *   error: {
  *     message: "Expected digit",
- *     pos: { offset: 5, column: 5, line: 1 },
+ *     pos: 5,
  *     expected: ["0-9"],
  *     found: "a",
  *     parserName: "digit"
@@ -144,7 +147,7 @@ export type ParseResult<T> = ParseSuccess<T> | ParseFailure;
  * and context about the parser that failed.
  *
  * @property message - Human-readable error message describing the failure
- * @property pos - Position in the input where the error occurred
+ * @property pos - Offset in the input where the error occurred (see `offsetToPos` in `./utils.ts` to recover line/column for display)
  * @property expected - What was expected at this position (optional)
  * @property found - What was actually found at this position (optional)
  * @property parserName - Name of the parser that caused the error (optional)
@@ -153,7 +156,7 @@ export type ParseResult<T> = ParseSuccess<T> | ParseFailure;
  * ```typescript
  * const error: ParseError = {
  *   message: "Expected a number",
- *   pos: { offset: 10, column: 10, line: 2 },
+ *   pos: 10,
  *   expected: ["digit"],
  *   found: "x",
  *   parserName: "number",
@@ -163,7 +166,7 @@ export type ParseResult<T> = ParseSuccess<T> | ParseFailure;
  */
 export interface ParseError {
   message: string;
-  pos: Pos;
+  pos: number;
   expected?: string | string[];
   found?: string;
   parserName?: string;
@@ -186,24 +189,33 @@ export interface ParseError {
 /**
  * Parser function type.
  *
- * A parser is a function that takes an input string and a starting position,
- * and returns a parse result indicating success or failure. Parsers are
- * the fundamental building blocks of the parsing system.
+ * A parser is a function that takes an input string and a starting
+ * offset, and returns a parse result indicating success or failure.
+ * Parsers are the fundamental building blocks of the parsing system.
+ *
+ * The threaded position is a plain `number` (a UTF-16 code unit offset
+ * into `input`), not a `Pos` -- line/column bookkeeping used to be
+ * maintained incrementally on every character consumed (`nextPos`
+ * building a fresh `Pos` object per call), which is pure overhead for
+ * the overwhelming majority of a parse that never fails or asks for a
+ * line/column. `Pos` still exists as an output shape: call `offsetToPos`
+ * (`./utils.ts`) to recover line/column on demand, e.g. when formatting
+ * an error or in `withPosition` (`tpeg-combinator`).
  *
  * @template T - The type of the parse result value
  * @param input - The input string to parse
- * @param pos - The current position in the input where parsing should begin
+ * @param pos - The current offset in the input where parsing should begin
  * @returns ParseResult<T> - The result of parsing (success or failure)
  * @example
  * ```typescript
- * const digitParser: Parser<number> = (input: string, pos: Pos) => {
- *   const char = input[pos.offset];
+ * const digitParser: Parser<number> = (input: string, pos: number) => {
+ *   const char = input[pos];
  *   if (char >= '0' && char <= '9') {
  *     return {
  *       success: true,
  *       val: parseInt(char),
  *       current: pos,
- *       next: { ...pos, offset: pos.offset + 1, column: pos.column + 1 }
+ *       next: pos + 1
  *     };
  *   } else {
  *     return {
@@ -220,4 +232,4 @@ export interface ParseError {
  * };
  * ```
  */
-export type Parser<T> = (input: string, pos: Pos) => ParseResult<T>;
+export type Parser<T> = (input: string, pos: number) => ParseResult<T>;

@@ -19,7 +19,7 @@ import {
 } from "./repetition";
 import type { Expression } from "./types";
 
-const pos = { offset: 0, line: 1, column: 1 };
+const pos = 0;
 
 // Helper function to create a test expression
 const createTestExpression = (): Expression => ({
@@ -317,7 +317,7 @@ describe("repetition operators", () => {
         expect(result1.success).toBe(true);
         if (result1.success) {
           expect(result1.val).toBe("*");
-          expect(result1.next.offset).toBe(1); // Should stop after first operator
+          expect(result1.next).toBe(1); // Should stop after first operator
         }
       });
     });

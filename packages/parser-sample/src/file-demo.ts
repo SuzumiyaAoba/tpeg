@@ -8,6 +8,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { offsetToPos } from "@suzumiyaaoba/tpeg-core";
 import {
   characterClass,
   grammarDefinition,
@@ -78,10 +79,9 @@ const demoGrammarFile = (filename: string) => {
   } else {
     console.log("❌ Failed to parse grammar");
     console.log(`   Error: ${result.error?.message || "Parse failed"}`);
-    if (result.error?.pos) {
-      console.log(
-        `   Position: line ${result.error.pos.line}, column ${result.error.pos.column}`,
-      );
+    if (result.error?.pos !== undefined) {
+      const { line, column } = offsetToPos(grammarContent, result.error.pos);
+      console.log(`   Position: line ${line}, column ${column}`);
     }
   }
 

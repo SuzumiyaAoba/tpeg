@@ -1,4 +1,4 @@
-import type { ParseFailure, Parser, Pos } from "@suzumiyaaoba/tpeg-core";
+import type { ParseFailure, Parser } from "@suzumiyaaoba/tpeg-core";
 
 /**
  * Creates a parser with detailed error reporting that includes context and position information.
@@ -15,7 +15,7 @@ export const withDetailedError = <T>(
   parser: Parser<T>,
   parserName: string,
 ): Parser<T> => {
-  return (input: string, pos: Pos) => {
+  return (input: string, pos: number) => {
     const result = parser(input, pos);
 
     if (!result.success) {
@@ -25,15 +25,13 @@ export const withDetailedError = <T>(
 
       const failurePos = failure.error.pos ?? pos;
       const found =
-        failurePos.offset < input.length
-          ? (input[failurePos.offset] ?? "EOF")
-          : "EOF";
+        failurePos < input.length ? (input[failurePos] ?? "EOF") : "EOF";
 
       enhancedError.found = found;
 
-      if (failurePos.offset < input.length) {
-        const contextStart = Math.max(0, failurePos.offset - 5);
-        const contextEnd = Math.min(input.length, failurePos.offset + 5);
+      if (failurePos < input.length) {
+        const contextStart = Math.max(0, failurePos - 5);
+        const contextEnd = Math.min(input.length, failurePos + 5);
         enhancedError.context = input.substring(contextStart, contextEnd);
       }
 
@@ -84,7 +82,7 @@ export const labeled =
     errorMessage: string,
     parserName?: string,
   ): Parser<T> =>
-  (input: string, pos: Pos) => {
+  (input: string, pos: number) => {
     const result = parser(input, pos);
     if (!result.success) {
       const errorObj = {
@@ -121,7 +119,7 @@ export const labeledWithContext =
     context: string | string[],
     parserName?: string,
   ): Parser<T> =>
-  (input: string, pos: Pos) => {
+  (input: string, pos: number) => {
     const result = parser(input, pos);
     if (!result.success) {
       const contextArray = Array.isArray(context) ? context : [context];

@@ -90,8 +90,11 @@ const isLineBreakOrSpaceOrTab = (char: string | undefined): boolean =>
  * this, an action's own closing brace on its own line would be misread as
  * the enclosing grammar block's "}" and truncate the rule mid-action.
  */
-const grammarRuleExpression: Parser<Expression> = (input: string, pos) => {
-  let endPos = pos.offset;
+const grammarRuleExpression: Parser<Expression> = (
+  input: string,
+  pos: number,
+) => {
+  let endPos = pos;
   let foundEnd = false;
   let activeBraceDepth = 0;
 
@@ -218,43 +221,25 @@ const grammarRuleExpression: Parser<Expression> = (input: string, pos) => {
   }
 
   // Create a substring that only includes the current rule expression
-  const ruleContent = input.slice(pos.offset, endPos);
+  const ruleContent = input.slice(pos, endPos);
 
-  // Parse the expression within this bounded content
-  const result = expression()(ruleContent, {
-    offset: 0,
-    line: pos.line,
-    column: pos.column,
-  });
+  // Parse the expression within this bounded content, then shift the
+  // resulting offset back to be relative to the original input.
+  const result = expression()(ruleContent, 0);
 
   if (result.success) {
-    // Only offset needs adjusting back to the original input - line/column
-    // are already correct absolute positions, since the sub-parse was
-    // seeded with the outer pos.line/pos.column and every core combinator
-    // that consumes a "\n" (see nextPos/advancePos in tpeg-core) advances
-    // line and resets column accordingly. Recomputing them here from
-    // pos.line/pos.column instead (as this used to) is wrong for any rule
-    // body that spans multiple lines.
     return {
       success: true,
       val: result.val,
       current: pos,
-      next: {
-        offset: pos.offset + result.next.offset,
-        line: result.next.line,
-        column: result.next.column,
-      },
+      next: pos + result.next,
     };
   }
   return {
     success: false,
     error: {
       message: result.error.message,
-      pos: {
-        offset: pos.offset + result.error.pos.offset,
-        line: result.error.pos.line,
-        column: result.error.pos.column,
-      },
+      pos: pos + result.error.pos,
     },
   };
 };
@@ -263,11 +248,11 @@ const grammarRuleExpression: Parser<Expression> = (input: string, pos) => {
  * Parse any character except newline
  * Uses a simple approach by rejecting newline characters
  */
-const nonNewlineChar: Parser<string> = (input: string, pos) => {
-  if (pos.offset >= input.length) {
+const nonNewlineChar: Parser<string> = (input: string, pos: number) => {
+  if (pos >= input.length) {
     return { success: false, error: { message: "EOF", pos } };
   }
-  const char = input[pos.offset];
+  const char = input[pos];
   if (!char || char === "\n" || char === "\r") {
     return { success: false, error: { message: "Newline or EOF", pos } };
   }
@@ -275,7 +260,7 @@ const nonNewlineChar: Parser<string> = (input: string, pos) => {
     success: true,
     val: char,
     current: pos,
-    next: { offset: pos.offset + 1, line: pos.line, column: pos.column + 1 },
+    next: pos + 1,
   };
 };
 

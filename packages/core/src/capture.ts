@@ -6,7 +6,7 @@
  * instead of just arrays or raw values.
  */
 
-import type { ParseError, Parser, Pos } from "./types";
+import type { ParseError, Parser } from "./types";
 import { createFailure, isFailure } from "./utils";
 
 /**
@@ -30,7 +30,7 @@ export type CaptureResult<T> = T extends CapturedValue ? T : never;
  * @example
  * ```typescript
  * const nameParser = capture("name", literal("hello"));
- * const result = nameParser("hello", { offset: 0, line: 1, column: 0 });
+ * const result = nameParser("hello", 0);
  * // result.val = { name: "hello" }
  * ```
  */
@@ -38,7 +38,7 @@ export const capture = <T, L extends string>(
   label: L,
   parser: Parser<T>,
 ): Parser<{ [K in L]: T }> => {
-  return (input: string, pos: Pos) => {
+  return (input: string, pos: number) => {
     const result = parser(input, pos);
 
     if (isFailure(result)) {
@@ -96,7 +96,7 @@ export const mergeCaptures = (captures: unknown[]): CapturedValue => {
  *   capture("name", literal("hello")),
  *   capture("value", literal("world"))
  * );
- * const result = parser("helloworld", { offset: 0, line: 1, column: 0 });
+ * const result = parser("helloworld", 0);
  * // result.val = { name: "hello", value: "world" }
  * ```
  */
@@ -105,7 +105,7 @@ export const captureSequence = <P extends Parser<unknown>[]>(
 ): Parser<
   CapturedValue | { [K in keyof P]: P[K] extends Parser<infer T> ? T : never }
 > => {
-  return (input: string, pos: Pos) => {
+  return (input: string, pos: number) => {
     if (parsers.length === 0) {
       return {
         success: true as const,
@@ -183,16 +183,16 @@ export const captureSequence = <P extends Parser<unknown>[]>(
  *   capture("name", literal("hello")),
  *   capture("value", literal("world"))
  * );
- * const result1 = parser("hello", { offset: 0, line: 1, column: 0 });
+ * const result1 = parser("hello", 0);
  * // result1.val = { name: "hello" }
- * const result2 = parser("world", { offset: 0, line: 1, column: 0 });
+ * const result2 = parser("world", 0);
  * // result2.val = { value: "world" }
  * ```
  */
 export const captureChoice = <T extends unknown[]>(
   ...parsers: { [K in keyof T]: Parser<T[K]> }
 ): Parser<T[number]> => {
-  return (input: string, pos: Pos) => {
+  return (input: string, pos: number) => {
     let longestError: ParseError | null = null;
 
     for (let i = 0; i < parsers.length; i++) {
@@ -219,7 +219,7 @@ export const captureChoice = <T extends unknown[]>(
       }
 
       // Track the longest error for better error reporting
-      if (!longestError || result.error.pos.offset > longestError.pos.offset) {
+      if (!longestError || result.error.pos > longestError.pos) {
         longestError = result.error;
       }
     }

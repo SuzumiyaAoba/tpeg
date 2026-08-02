@@ -17,7 +17,7 @@ describe("string combinators", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe("part1");
-        expect(result.next.offset).toBe(5);
+        expect(result.next).toBe(5);
       }
     });
 

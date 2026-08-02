@@ -346,11 +346,7 @@ export class ModuleResolver {
       const trimmed = line.trim();
       if (trimmed.startsWith("import ")) {
         try {
-          const result = importStatement(trimmed, {
-            offset: 0,
-            line: 1,
-            column: 1,
-          });
+          const result = importStatement(trimmed, 0);
           if (result.success) {
             imports.push(result.val);
           }

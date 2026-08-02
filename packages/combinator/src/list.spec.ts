@@ -20,7 +20,7 @@ describe("list combinators", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toEqual([]);
-        expect(result.next.offset).toBe(0);
+        expect(result.next).toBe(0);
       }
     });
   });

@@ -10,7 +10,7 @@ import {
   stringLiteral as genStringLiteral,
 } from "./generated/leaf.generated";
 
-const pos = { offset: 0, line: 1, column: 1 };
+const pos = 0;
 
 describe("self-hosted leaf grammar vs hand-written parser", () => {
   describe("stringLiteral", () => {

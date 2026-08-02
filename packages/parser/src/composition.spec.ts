@@ -12,7 +12,7 @@ import {
   sequenceOperator,
 } from "./composition";
 
-const pos = { offset: 0, line: 1, column: 1 };
+const pos = 0;
 
 describe("composition operators", () => {
   describe("expression parser", () => {
@@ -53,7 +53,7 @@ describe("composition operators", () => {
         const result = expression()(input, pos);
         expect(result.success).toBe(true);
         if (result.success) {
-          expect(result.next.offset).toBe(input.length);
+          expect(result.next).toBe(input.length);
           expect(result.val.type).toBe("QualifiedIdentifier");
           if (result.val.type === "QualifiedIdentifier") {
             expect(result.val.module).toBe("math");
@@ -79,7 +79,7 @@ describe("composition operators", () => {
         const result = expression()(input, pos);
         expect(result.success).toBe(true);
         if (result.success) {
-          expect(result.next.offset).toBe(input.length);
+          expect(result.next).toBe(input.length);
           expect(result.val.type).toBe("Sequence");
           if (result.val.type === "Sequence") {
             expect(result.val.elements.map((e) => e.type)).toEqual([
@@ -95,7 +95,7 @@ describe("composition operators", () => {
         const result = expression()(input, pos);
         expect(result.success).toBe(true);
         if (result.success) {
-          expect(result.next.offset).toBe(input.length);
+          expect(result.next).toBe(input.length);
           expect(result.val.type).toBe("LabeledExpression");
           if (result.val.type === "LabeledExpression") {
             expect(result.val.label).toBe("label");
@@ -109,7 +109,7 @@ describe("composition operators", () => {
         const result = expression()(input, pos);
         expect(result.success).toBe(true);
         if (result.success) {
-          expect(result.next.offset).toBe(input.length);
+          expect(result.next).toBe(input.length);
           expect(result.val.type).toBe("Sequence");
           if (result.val.type === "Sequence") {
             expect(result.val.elements.map((e) => e.type)).toEqual([
@@ -171,7 +171,7 @@ describe("composition operators", () => {
         const result = expression()(input, pos);
         expect(result.success).toBe(true);
         if (result.success) {
-          expect(result.next.offset).toBe(input.length);
+          expect(result.next).toBe(input.length);
           expect(result.val.type).toBe("Sequence");
           if (result.val.type === "Sequence") {
             expect(result.val.elements).toHaveLength(2);
@@ -184,7 +184,7 @@ describe("composition operators", () => {
         const result = expression()(input, pos);
         expect(result.success).toBe(true);
         if (result.success) {
-          expect(result.next.offset).toBe(input.length);
+          expect(result.next).toBe(input.length);
           expect(result.val.type).toBe("Sequence");
         }
       });
@@ -194,7 +194,7 @@ describe("composition operators", () => {
         const result = expression()(input, pos);
         expect(result.success).toBe(true);
         if (result.success) {
-          expect(result.next.offset).toBe(input.length);
+          expect(result.next).toBe(input.length);
         }
       });
 
@@ -232,7 +232,7 @@ describe("composition operators", () => {
         const result = expression()('"a"~"b"', pos);
         expect(result.success).toBe(true);
         if (result.success) {
-          expect(result.next.offset).toBe('"a"~"b"'.length);
+          expect(result.next).toBe('"a"~"b"'.length);
           expect(result.val.type).toBe("Sequence");
           if (result.val.type === "Sequence") {
             expect(result.val.elements).toHaveLength(3);
@@ -401,7 +401,7 @@ describe("composition operators", () => {
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val.type).toBe("StringLiteral");
-          expect(result.next.offset).toBe(3); // Should stop after "a"
+          expect(result.next).toBe(3); // Should stop after "a"
         }
       });
 

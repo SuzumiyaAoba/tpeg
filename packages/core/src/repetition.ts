@@ -1,5 +1,5 @@
 import type { NonEmptyArray, ParseFailure, Parser } from "./types";
-import { createFailure, prependContext } from "./utils";
+import { createFailure, offsetToPos, prependContext } from "./utils";
 
 /**
  * Creates a standardized infinite loop error for repetition parsers.
@@ -7,22 +7,23 @@ import { createFailure, prependContext } from "./utils";
  */
 const createInfiniteLoopError = (
   input: string,
-  position: { offset: number; line: number; column: number },
+  position: number,
   parserName: string,
   additionalContext?: string,
 ) => {
-  const inputPreview = input.slice(position.offset, position.offset + 10);
-  const truncated = input.length > position.offset + 10 ? "..." : "";
+  const inputPreview = input.slice(position, position + 10);
+  const truncated = input.length > position + 10 ? "..." : "";
+  const { line, column } = offsetToPos(input, position);
 
   return createFailure(
-    `Infinite loop detected in ${parserName}: Parser succeeded but consumed no input at position ${position.offset}`,
+    `Infinite loop detected in ${parserName}: Parser succeeded but consumed no input at position ${position}`,
     position,
     {
       parserName,
       context: [
         "Parser matched but did not consume any input",
         `Input: "${inputPreview}${truncated}"`,
-        `Position: line ${position.line}, column ${position.column}`,
+        `Position: line ${line}, column ${column}`,
         ...(additionalContext ? [additionalContext] : []),
       ],
     },
@@ -105,7 +106,7 @@ export const zeroOrMore =
       }
 
       // Check for infinite loop (position doesn't advance)
-      if (result.next.offset === currentPos.offset) {
+      if (result.next === currentPos) {
         return createInfiniteLoopError(input, currentPos, parserName);
       }
 
@@ -177,7 +178,7 @@ export const oneOrMore =
       }
 
       // Check for infinite loop (position doesn't advance)
-      if (result.next.offset === currentPos.offset) {
+      if (result.next === currentPos) {
         return createInfiniteLoopError(
           input,
           currentPos,
@@ -271,7 +272,7 @@ export const quantified = <T>(
       }
 
       // Check for infinite loop (position doesn't advance)
-      if (result.next.offset === currentPos.offset) {
+      if (result.next === currentPos) {
         return createInfiniteLoopError(
           input,
           currentPos,
@@ -300,7 +301,7 @@ export const quantified = <T>(
       }
 
       // Check for infinite loop (position doesn't advance)
-      if (result.next.offset === currentPos.offset) {
+      if (result.next === currentPos) {
         return createInfiniteLoopError(
           input,
           currentPos,

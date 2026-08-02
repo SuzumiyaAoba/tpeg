@@ -6,7 +6,6 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { Pos } from "@suzumiyaaoba/tpeg-core";
 import { expression } from "./composition";
 import type {
   Choice,
@@ -19,11 +18,7 @@ import type {
   Star,
 } from "./types";
 
-const createPosition = (offset = 0, line = 1, column = 1): Pos => ({
-  offset,
-  line,
-  column,
-});
+const createPosition = (offset = 0): number => offset;
 
 describe("Label Integration Tests", () => {
   describe("labels with basic syntax", () => {
@@ -462,7 +457,7 @@ describe("Label Integration Tests", () => {
       expect(result1.success).toBe(true);
       if (result1.success) {
         expect(result1.val.type).toBe("Sequence");
-        expect(result1.next.offset).toBe(input1.length);
+        expect(result1.next).toBe(input1.length);
       }
 
       // Invalid label characters - this should still parse as an identifier (partial)

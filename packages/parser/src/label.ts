@@ -28,7 +28,7 @@ import { createLabeledExpression } from "./types";
  * @example
  * ```typescript
  * const parser = labeledExpression(someExpressionParser);
- * const result = parser('name:"hello"', { offset: 0, line: 1, column: 1 });
+ * const result = parser('name:"hello"', 0);
  * // result.value = { type: 'LabeledExpression', label: 'name', expression: ... }
  * ```
  */
@@ -53,10 +53,10 @@ export const labeledExpression = (
  * @example
  * ```typescript
  * const parser = withOptionalLabel(basicSyntaxParser);
- * const result1 = parser('name:"hello"', { offset: 0, line: 1, column: 1 });
+ * const result1 = parser('name:"hello"', 0);
  * // result1.value = { type: 'LabeledExpression', label: 'name', expression: ... }
  *
- * const result2 = parser('"hello"', { offset: 0, line: 1, column: 1 });
+ * const result2 = parser('"hello"', 0);
  * // result2.value = { type: 'StringLiteral', value: 'hello', quote: '"' }
  * ```
  */

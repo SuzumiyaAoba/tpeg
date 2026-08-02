@@ -4,7 +4,7 @@
  * `Identifier`/`QualifiedIdentifier`/`ActionExpression`/
  * `LabeledExpression`/lookahead/`Cut`) -- such a subexpression denotes a
  * regular language, so it can be compiled to one DFA-backed match instead
- * of a tree of combinator calls that each allocate a `Pos`/`ParseSuccess`
+ * of a tree of combinator calls that each allocate a `ParseSuccess`
  * per character consumed.
  *
  * This module only performs the match and hands back the raw capture
@@ -19,7 +19,7 @@
  * completely and does no validation of `source` itself.
  */
 
-import type { Parser, Pos } from "./types";
+import type { Parser } from "./types";
 import { advancePos, createFailure, getCharAt } from "./utils";
 
 /** The raw result of a successful `regexFused` match: `text` is the
@@ -48,11 +48,11 @@ export const regexFused = (
   description: string,
 ): Parser<FusedMatch> => {
   const re = new RegExp(source, "yu");
-  return (input: string, pos: Pos) => {
-    re.lastIndex = pos.offset;
+  return (input: string, pos: number) => {
+    re.lastIndex = pos;
     const m = re.exec(input);
     if (m === null) {
-      const found = getCharAt(input, pos.offset) || "end of input";
+      const found = getCharAt(input, pos) || "end of input";
       return createFailure(`Expected ${description}`, pos, {
         expected: description,
         found,

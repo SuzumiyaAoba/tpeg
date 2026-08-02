@@ -267,7 +267,7 @@ describe("EtaTPEGCodeGenerator", () => {
         ...Object.values(core),
       );
 
-      const pos = { offset: 0, column: 0, line: 1 };
+      const pos = 0;
       expect(letter("m", pos).success).toBe(true);
       expect(notDigit("m", pos).success).toBe(true);
       expect(notDigit("5", pos).success).toBe(false);
@@ -391,12 +391,12 @@ describe("EtaTPEGCodeGenerator", () => {
       );
       const { number } = moduleFactory(...Object.values(core));
 
-      const pos = { offset: 0, column: 0, line: 1 };
+      const pos = 0;
       expect(number("123abc", pos)).toEqual({
         success: true,
         val: 123,
-        current: { offset: 0, column: 0, line: 1 },
-        next: { offset: 3, column: 3, line: 1 },
+        current: 0,
+        next: 3,
       });
       expect(number("abc", pos).success).toBe(false);
     });

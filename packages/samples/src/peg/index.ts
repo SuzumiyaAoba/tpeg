@@ -1,6 +1,5 @@
 import {
   type ParseResult,
-  type Pos,
   any,
   charClass,
   choice,
@@ -359,7 +358,7 @@ export const Identifier = mapResult(
  *          / DOT
  * ```
  */
-export function Primary(input: string, pos: Pos): ParseResult<Expr> {
+export function Primary(input: string, pos: number): ParseResult<Expr> {
   return choice(
     map(seq(Identifier, not(LEFTARROW)), ($) => $[0]),
     map(seq(OPEN, Expression, CLOSE), ($) => $[1]),

@@ -34,14 +34,14 @@ const identCont: Parser<string> = charClass(
  *
  * @example
  * ```typescript
- * const result1 = identifier()("expression", { offset: 0, line: 1, column: 1 });
+ * const result1 = identifier()("expression", 0);
  * // result1.success === true, result1.val.type === "Identifier"
  * // result1.val.name === "expression"
  *
- * const result2 = identifier()("_private", { offset: 0, line: 1, column: 1 });
+ * const result2 = identifier()("_private", 0);
  * // result2.success === true, result2.val.name === "_private"
  *
- * const result3 = identifier()("rule123", { offset: 0, line: 1, column: 1 });
+ * const result3 = identifier()("rule123", 0);
  * // result3.success === true, result3.val.name === "rule123"
  * ```
  */

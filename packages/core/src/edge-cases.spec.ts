@@ -15,7 +15,7 @@ describe("Edge Cases and Stress Tests", () => {
       let count = 0;
 
       // Parse the entire large string
-      while (pos.offset < largeString.length) {
+      while (pos < largeString.length) {
         const result = parser(largeString, pos);
         if (result.success) {
           count++;
@@ -40,7 +40,7 @@ describe("Edge Cases and Stress Tests", () => {
       let pos = createPos();
       let count = 0;
 
-      while (pos.offset < unicodeString.length) {
+      while (pos < unicodeString.length) {
         const result = parser(unicodeString, pos);
         if (result.success) {
           count++;
@@ -84,17 +84,15 @@ describe("Edge Cases and Stress Tests", () => {
       expect(memoryIncrease).toBeLessThan(50 * 1024 * 1024);
     });
 
-    it("should create many position objects without corrupting their values", () => {
+    it("should create many positions without corrupting their values", () => {
       const positions: ReturnType<typeof createPos>[] = [];
 
       for (let i = 0; i < 1000; i++) {
-        positions.push(createPos(i, i % 100, Math.floor(i / 100) + 1));
+        positions.push(createPos(i));
       }
 
       for (const pos of positions) {
-        expect(pos.offset).toBeGreaterThanOrEqual(0);
-        expect(pos.column).toBeGreaterThanOrEqual(0);
-        expect(pos.line).toBeGreaterThanOrEqual(1);
+        expect(pos).toBeGreaterThanOrEqual(0);
       }
     });
   });
@@ -274,7 +272,7 @@ describe("Edge Cases and Stress Tests", () => {
 
       // Test with position at end of string
       const input = "hello";
-      const endPos = createPos(input.length, input.length, 1);
+      const endPos = createPos(input.length);
       const result = parser(input, endPos);
 
       expect(result.success).toBe(false);

@@ -12,7 +12,7 @@
  * TypeScript source text between braces.
  */
 
-import type { Parser, Pos } from "@suzumiyaaoba/tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { createFailure } from "@suzumiyaaoba/tpeg-core";
 
 /**
@@ -61,12 +61,15 @@ export const skipBlockComment = (input: string, start: number): number => {
  * text between the braces. Braces, quotes, and comments inside string
  * literals/comments are ignored when counting depth.
  */
-export const scanBalancedBraces: Parser<string> = (input: string, pos: Pos) => {
-  const openBracePos = input.indexOf("{", pos.offset);
+export const scanBalancedBraces: Parser<string> = (
+  input: string,
+  pos: number,
+) => {
+  const openBracePos = input.indexOf("{", pos);
   if (openBracePos === -1) {
     return createFailure("Expected opening brace '{'", pos, {
       expected: ["{"],
-      found: input[pos.offset] ?? "",
+      found: input[pos] ?? "",
       parserName: "scanBalancedBraces",
     });
   }
@@ -117,24 +120,11 @@ export const scanBalancedBraces: Parser<string> = (input: string, pos: Pos) => {
 
   const bodyContent = input.slice(openBracePos + 1, closeBracePos);
   const nextOffset = closeBracePos + 1;
-  const consumed = nextOffset - pos.offset;
-  let nextLine = pos.line;
-  let nextColumn = pos.column + consumed;
-  const consumedText = input.slice(pos.offset, nextOffset);
-  const lines = consumedText.split("\n");
-  if (lines.length > 1) {
-    nextLine += lines.length - 1;
-    nextColumn = (lines[lines.length - 1] ?? "").length + 1;
-  }
 
   return {
     success: true as const,
     val: bodyContent,
     current: pos,
-    next: {
-      offset: nextOffset,
-      line: nextLine,
-      column: nextColumn,
-    },
+    next: nextOffset,
   };
 };

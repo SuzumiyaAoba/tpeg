@@ -8,7 +8,7 @@ describe("formatParseError", () => {
   it("should format a parse error with line and column information", () => {
     const error: ParseError = {
       message: "Unexpected character",
-      pos: { offset: 5, line: 2, column: 1 },
+      pos: 5,
     };
     const input = "abc\nxyz";
 
@@ -21,7 +21,7 @@ describe("formatParseError", () => {
   it("should include context when provided", () => {
     const error: ParseError = {
       message: "Unexpected character",
-      pos: { offset: 5, line: 2, column: 1 },
+      pos: 5,
       context: ["in expression", "while parsing number"],
     };
     const input = "abc\nxyz";
@@ -34,7 +34,7 @@ describe("formatParseError", () => {
   it("should include expected and found information", () => {
     const error: ParseError = {
       message: "Unexpected character",
-      pos: { offset: 5, line: 2, column: 1 },
+      pos: 5,
       expected: "digit",
       found: "x",
     };
@@ -48,7 +48,7 @@ describe("formatParseError", () => {
   it("should include parser name when provided", () => {
     const error: ParseError = {
       message: "Unexpected character",
-      pos: { offset: 5, line: 2, column: 1 },
+      pos: 5,
       parserName: "numberParser",
     };
     const input = "abc\nxyz";
@@ -60,7 +60,7 @@ describe("formatParseError", () => {
   it("should format error with single context string", () => {
     const error: ParseError = {
       message: "Unexpected character",
-      pos: { offset: 5, line: 2, column: 1 },
+      pos: 5,
       context: "in expression",
     };
     const input = "abc\nxyz";
@@ -72,7 +72,7 @@ describe("formatParseError", () => {
   it("should handle formatting without colorization", () => {
     const error: ParseError = {
       message: "Unexpected character",
-      pos: { offset: 5, line: 2, column: 1 },
+      pos: 5,
     };
     const input = "abc\nxyz";
 
@@ -84,7 +84,16 @@ describe("formatParseError", () => {
   it("should format with custom context lines", () => {
     const error: ParseError = {
       message: "Unexpected character",
-      pos: { offset: 10, line: 3, column: 2 },
+      // offset 14 is the "n" in "line3" (line 3, column 2) -- the original
+      // (pre-Pillar-5) version of this test specified line/column directly
+      // as `{ offset: 10, line: 3, column: 2 }`, an offset/line pair that
+      // was never actually consistent for this input (offset 10 is really
+      // on line 2). That was invisible before because formatting trusted
+      // the caller-supplied line/column directly; now line/column are
+      // always derived from `pos` via `offsetToPos`, so the offset has to
+      // genuinely correspond to line 3 to preserve this test's intent
+      // (context lines centered on line 3).
+      pos: 14,
     };
     const input = "line1\nline2\nline3\nline4\nline5";
 
@@ -102,7 +111,7 @@ describe("formatParseError", () => {
   it("should format without highlighting errors", () => {
     const error: ParseError = {
       message: "Unexpected character",
-      pos: { offset: 5, line: 2, column: 1 },
+      pos: 5,
     };
     const input = "abc\nxyz";
 
@@ -113,7 +122,7 @@ describe("formatParseError", () => {
   it("should format without showing position", () => {
     const error: ParseError = {
       message: "Unexpected character",
-      pos: { offset: 5, line: 2, column: 1 },
+      pos: 5,
     };
     const input = "abc\nxyz";
 
@@ -129,8 +138,8 @@ describe("formatParseResult", () => {
     const result: ParseResult<string> = {
       success: true,
       val: "abc",
-      current: { offset: 0, line: 1, column: 0 },
-      next: { offset: 3, line: 1, column: 3 },
+      current: 0,
+      next: 3,
     };
 
     const formatted = formatParseResult(result, input);
@@ -141,7 +150,7 @@ describe("formatParseResult", () => {
   it("should format a failed parse result", () => {
     const error: ParseError = {
       message: "Unexpected character",
-      pos: { offset: 5, line: 2, column: 1 },
+      pos: 5,
     };
 
     const result: ParseResult<string> = {
@@ -159,7 +168,7 @@ describe("formatParseResult", () => {
   it("should pass options to formatParseError", () => {
     const error: ParseError = {
       message: "Unexpected character",
-      pos: { offset: 5, line: 2, column: 1 },
+      pos: 5,
     };
 
     const result: ParseResult<string> = {
@@ -229,7 +238,7 @@ describe("Complex Error Formatting Scenarios", () => {
     const input = "あいうえお\nかきくけこ";
     const error: ParseError = {
       message: "Unexpected character",
-      pos: { offset: 8, line: 2, column: 2 }, // 'く' (index 2 in line 2)
+      pos: 8, // 'く' (index 2 in line 2)
     };
 
     const result = formatParseError(error, input, {
@@ -253,7 +262,7 @@ describe("Complex Error Formatting Scenarios", () => {
     const input = longLine;
     const error: ParseError = {
       message: "Error",
-      pos: { offset: 0, line: 1, column: 0 },
+      pos: 0,
     };
 
     const result = formatParseError(error, input, {
@@ -274,7 +283,7 @@ describe("Complex Error Formatting Scenarios", () => {
     const input = "aあb";
     const error: ParseError = {
       message: "Error",
-      pos: { offset: 2, line: 1, column: 2 },
+      pos: 2,
     };
 
     const result = formatParseError(error, input, {

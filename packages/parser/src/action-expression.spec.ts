@@ -211,7 +211,7 @@ describe("ActionExpression code generation (runtime)", () => {
     );
     const { number } = moduleFactory(...Object.values(core));
 
-    const parsed = number("123abc", { offset: 0, line: 1, column: 1 });
+    const parsed = number("123abc", 0);
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.val).toBe(123);
@@ -251,7 +251,7 @@ describe("ActionExpression code generation (runtime)", () => {
     );
     const { pair } = moduleFactory(...Object.values(core));
 
-    const parsed = pair("ab", { offset: 0, line: 1, column: 1 });
+    const parsed = pair("ab", 0);
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.val).toBe("a-b");
@@ -289,7 +289,7 @@ describe("ActionExpression code generation (runtime)", () => {
     );
     const { number } = moduleFactory(...Object.values(core));
 
-    const parsed = number("abc", { offset: 0, line: 1, column: 1 });
+    const parsed = number("abc", 0);
     expect(parsed.success).toBe(false);
   });
 
@@ -326,7 +326,7 @@ describe("ActionExpression code generation (runtime)", () => {
     );
     const { pair } = moduleFactory(...Object.values(core));
 
-    const parsed = pair("ab", { offset: 0, line: 1, column: 1 });
+    const parsed = pair("ab", 0);
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.val).toBe("a-b");

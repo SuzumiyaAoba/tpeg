@@ -28,7 +28,7 @@ import { createNegativeLookahead, createPositiveLookahead } from "./types";
 const asExpressionParser = (parser: Parser<string>): Parser<Expression> =>
   parser as unknown as Parser<Expression>;
 
-const pos = { offset: 0, line: 1, column: 1 };
+const pos = 0;
 
 describe("lookahead operators", () => {
   describe("operator parsing", () => {
@@ -38,7 +38,7 @@ describe("lookahead operators", () => {
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val).toBe("&");
-          expect(result.next.offset).toBe(1);
+          expect(result.next).toBe(1);
         }
       });
 
@@ -59,7 +59,7 @@ describe("lookahead operators", () => {
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.val).toBe("!");
-          expect(result.next.offset).toBe(1);
+          expect(result.next).toBe(1);
         }
       });
 
@@ -188,7 +188,7 @@ describe("lookahead operators", () => {
             '"hello"' as unknown as Expression,
           );
         }
-        expect(result.next.offset).toBe(8); // & + "hello"
+        expect(result.next).toBe(8); // & + "hello"
       }
     });
 
@@ -202,7 +202,7 @@ describe("lookahead operators", () => {
             '"hello"' as unknown as Expression,
           );
         }
-        expect(result.next.offset).toBe(8); // ! + "hello"
+        expect(result.next).toBe(8); // ! + "hello"
       }
     });
 
@@ -211,7 +211,7 @@ describe("lookahead operators", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe('"hello"' as unknown as Expression);
-        expect(result.next.offset).toBe(7); // "hello"
+        expect(result.next).toBe(7); // "hello"
       }
     });
 

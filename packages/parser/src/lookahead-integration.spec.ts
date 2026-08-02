@@ -7,7 +7,7 @@
 import { describe, expect, it } from "bun:test";
 import { expression } from "./composition";
 
-const pos = { offset: 0, line: 1, column: 1 };
+const pos = 0;
 
 describe("lookahead-composition integration", () => {
   describe("lookahead with basic syntax", () => {

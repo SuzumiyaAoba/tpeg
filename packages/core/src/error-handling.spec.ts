@@ -36,7 +36,7 @@ describe("Error Handling", () => {
       const handler = createErrorHandler();
       const baseError = {
         message: "Test error",
-        pos: { offset: 0, column: 0, line: 1 },
+        pos: 0,
         expected: "string",
         found: "number",
       };
@@ -60,7 +60,7 @@ describe("Error Handling", () => {
       const handler = createErrorHandler();
       const baseError = {
         message: "Test error",
-        pos: { offset: 0, column: 0, line: 1 },
+        pos: 0,
       };
       const recoverableFor = (severity: ErrorSeverity) =>
         handler.createEnhancedError(baseError, severity).recoverable;
@@ -77,17 +77,13 @@ describe("Error Handling", () => {
       const enhancedError = handler.createEnhancedError(
         {
           message: "Test error",
-          pos: { offset: 0, column: 0, line: 1 },
+          pos: 0,
         },
         ErrorSeverity.LOW,
         ErrorCategory.SYNTAX,
       );
 
-      const recovery = handler.attemptRecovery(enhancedError, "test input", {
-        offset: 0,
-        column: 0,
-        line: 1,
-      });
+      const recovery = handler.attemptRecovery(enhancedError, "test input", 0);
 
       expect(recovery.success).toBe(true);
       expect(recovery.strategy).toBe(RecoveryStrategy.SKIP);
@@ -98,17 +94,13 @@ describe("Error Handling", () => {
       const enhancedError = handler.createEnhancedError(
         {
           message: "Critical error",
-          pos: { offset: 0, column: 0, line: 1 },
+          pos: 0,
         },
         ErrorSeverity.CRITICAL,
         ErrorCategory.SYSTEM,
       );
 
-      const recovery = handler.attemptRecovery(enhancedError, "test input", {
-        offset: 0,
-        column: 0,
-        line: 1,
-      });
+      const recovery = handler.attemptRecovery(enhancedError, "test input", 0);
 
       expect(recovery.success).toBe(false);
       expect(recovery.strategy).toBe(RecoveryStrategy.ABORT);
@@ -119,26 +111,18 @@ describe("Error Handling", () => {
       const enhancedError = handler.createEnhancedError(
         {
           message: "Test error",
-          pos: { offset: 0, column: 0, line: 1 },
+          pos: 0,
         },
         ErrorSeverity.LOW,
         ErrorCategory.SYNTAX,
       );
 
       // First attempt should succeed
-      const recovery1 = handler.attemptRecovery(enhancedError, "test input", {
-        offset: 0,
-        column: 0,
-        line: 1,
-      });
+      const recovery1 = handler.attemptRecovery(enhancedError, "test input", 0);
       expect(recovery1.success).toBe(true);
 
       // Second attempt should fail due to max attempts
-      const recovery2 = handler.attemptRecovery(enhancedError, "test input", {
-        offset: 0,
-        column: 0,
-        line: 1,
-      });
+      const recovery2 = handler.attemptRecovery(enhancedError, "test input", 0);
       expect(recovery2.success).toBe(false);
       expect(recovery2.message).toContain("Maximum recovery attempts exceeded");
     });
@@ -162,17 +146,13 @@ describe("Error Handling", () => {
         const enhancedError = handler.createEnhancedError(
           {
             message: "Test error",
-            pos: { offset: 0, column: 0, line: 1 },
+            pos: 0,
           },
           errorInfo.severity,
           errorInfo.category,
         );
 
-        handler.attemptRecovery(enhancedError, "test input", {
-          offset: 0,
-          column: 0,
-          line: 1,
-        });
+        handler.attemptRecovery(enhancedError, "test input", 0);
       }
 
       const stats = handler.getErrorStats();
@@ -194,17 +174,13 @@ describe("Error Handling", () => {
       const enhancedError = handler.createEnhancedError(
         {
           message: "Test error",
-          pos: { offset: 0, column: 0, line: 1 },
+          pos: 0,
         },
         ErrorSeverity.LOW,
         ErrorCategory.SYNTAX,
       );
 
-      handler.attemptRecovery(enhancedError, "test input", {
-        offset: 0,
-        column: 0,
-        line: 1,
-      });
+      handler.attemptRecovery(enhancedError, "test input", 0);
 
       expect(handler.getErrorStats().totalErrors).toBe(1);
 
@@ -233,17 +209,13 @@ describe("Error Handling", () => {
       const enhancedError = handler.createEnhancedError(
         {
           message: "Test error",
-          pos: { offset: 0, column: 0, line: 1 },
+          pos: 0,
         },
         ErrorSeverity.LOW,
         ErrorCategory.SYNTAX,
       );
 
-      const recovery = handler.attemptRecovery(enhancedError, "test input", {
-        offset: 0,
-        column: 0,
-        line: 1,
-      });
+      const recovery = handler.attemptRecovery(enhancedError, "test input", 0);
 
       expect(recovery.success).toBe(true);
       expect(recovery.strategy).toBe(RecoveryStrategy.SKIP);
@@ -258,18 +230,14 @@ describe("Error Handling", () => {
       const enhancedError = handler.createEnhancedError(
         {
           message: "Test error",
-          pos: { offset: 0, column: 0, line: 1 },
+          pos: 0,
           expected: "number",
         },
         ErrorSeverity.MEDIUM,
         ErrorCategory.SEMANTIC,
       );
 
-      const recovery = handler.attemptRecovery(enhancedError, "test input", {
-        offset: 0,
-        column: 0,
-        line: 1,
-      });
+      const recovery = handler.attemptRecovery(enhancedError, "test input", 0);
 
       expect(recovery.success).toBe(true);
       expect(recovery.strategy).toBe(RecoveryStrategy.REPLACE);
@@ -284,7 +252,7 @@ describe("Error Handling", () => {
       const enhancedError = handler.createEnhancedError(
         {
           message: "Test error",
-          pos: { offset: 0, column: 0, line: 1 },
+          pos: 0,
         },
         ErrorSeverity.LOW,
         ErrorCategory.SYNTAX,
@@ -295,7 +263,7 @@ describe("Error Handling", () => {
       const recovery = handler.attemptRecovery(
         enhancedError,
         "test input",
-        { offset: 0, column: 0, line: 1 },
+        0,
         context,
       );
 
@@ -319,11 +287,7 @@ describe("Error Handling", () => {
       const parser = literal("hello");
       const wrappedParser = withErrorHandling(parser, handler);
 
-      const result = wrappedParser("hello world", {
-        offset: 0,
-        column: 0,
-        line: 1,
-      });
+      const result = wrappedParser("hello world", 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -341,7 +305,7 @@ describe("Error Handling", () => {
         ErrorCategory.SYNTAX,
       );
 
-      const result = wrappedParser("world", { offset: 0, column: 0, line: 1 });
+      const result = wrappedParser("world", 0);
 
       // The parser should fail, but recovery might provide a fallback
       // This test verifies the error handling is invoked
@@ -362,11 +326,7 @@ describe("Error Handling", () => {
         ErrorCategory.SYNTAX,
       );
 
-      const result = wrappedParser("world hello", {
-        offset: 0,
-        column: 0,
-        line: 1,
-      });
+      const result = wrappedParser("world hello", 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -375,8 +335,8 @@ describe("Error Handling", () => {
         expect(result.val).toBeUndefined();
         // Position advances to the next safe character rather than staying put,
         // so the caller does not re-parse the same failing input.
-        expect(result.next.offset).toBe(5);
-        expect(result.current.offset).toBe(0);
+        expect(result.next).toBe(5);
+        expect(result.current).toBe(0);
       }
     });
   });
@@ -387,7 +347,7 @@ describe("Error Handling", () => {
       const enhancedError = handler.createEnhancedError(
         {
           message: "Syntax error",
-          pos: { offset: 0, column: 0, line: 1 },
+          pos: 0,
           expected: "string",
           found: "number",
         },
@@ -406,7 +366,7 @@ describe("Error Handling", () => {
       const enhancedError = handler.createEnhancedError(
         {
           message: "Semantic error",
-          pos: { offset: 0, column: 0, line: 1 },
+          pos: 0,
         },
         ErrorSeverity.HIGH,
         ErrorCategory.SEMANTIC,
@@ -423,7 +383,7 @@ describe("Error Handling", () => {
       const enhancedError = handler.createEnhancedError(
         {
           message: "Resource error",
-          pos: { offset: 0, column: 0, line: 1 },
+          pos: 0,
         },
         ErrorSeverity.HIGH,
         ErrorCategory.RESOURCE,
@@ -440,7 +400,7 @@ describe("Error Handling", () => {
       const enhancedError = handler.createEnhancedError(
         {
           message: "System error",
-          pos: { offset: 0, column: 0, line: 1 },
+          pos: 0,
         },
         ErrorSeverity.CRITICAL,
         ErrorCategory.SYSTEM,
@@ -457,17 +417,13 @@ describe("Error Handling", () => {
       const enhancedError = handler.createEnhancedError(
         {
           message: "Empty input",
-          pos: { offset: 0, column: 0, line: 1 },
+          pos: 0,
         },
         ErrorSeverity.LOW,
         ErrorCategory.SYNTAX,
       );
 
-      const recovery = handler.attemptRecovery(enhancedError, "", {
-        offset: 0,
-        column: 0,
-        line: 1,
-      });
+      const recovery = handler.attemptRecovery(enhancedError, "", 0);
 
       expect(recovery.success).toBe(true);
     });
@@ -477,7 +433,7 @@ describe("Error Handling", () => {
       const enhancedError = handler.createEnhancedError(
         {
           message: "Test error",
-          pos: { offset: 0, column: 0, line: 1 },
+          pos: 0,
         },
         ErrorSeverity.LOW,
         ErrorCategory.SYNTAX,
@@ -486,7 +442,7 @@ describe("Error Handling", () => {
       const recovery = handler.attemptRecovery(
         enhancedError,
         "test input",
-        { offset: 0, column: 0, line: 1 },
+        0,
         undefined,
       );
 
@@ -498,17 +454,13 @@ describe("Error Handling", () => {
       const enhancedError = handler.createEnhancedError(
         {
           message: "Test error",
-          pos: { offset: 0, column: 0, line: 1 },
+          pos: 0,
         },
         ErrorSeverity.LOW,
         ErrorCategory.SYNTAX,
       );
 
-      const recovery = handler.attemptRecovery(enhancedError, "test input", {
-        offset: 0,
-        column: 0,
-        line: 1,
-      });
+      const recovery = handler.attemptRecovery(enhancedError, "test input", 0);
 
       expect(recovery.success).toBe(false);
       expect(recovery.message).toContain("Recovery not enabled");

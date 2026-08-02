@@ -7,7 +7,7 @@ import { identifier } from "./identifier";
 
 describe("identifier", () => {
   const parser = identifier;
-  const pos = { offset: 0, line: 1, column: 1 };
+  const pos = 0;
 
   describe("valid identifiers", () => {
     it("should parse simple identifiers", () => {
@@ -84,7 +84,7 @@ describe("identifier", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.name).toBe("rule");
-        expect(result.next.offset).toBe(4); // Should stop before '-'
+        expect(result.next).toBe(4); // Should stop before '-'
       }
     });
 
@@ -93,7 +93,7 @@ describe("identifier", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.name).toBe("rule");
-        expect(result.next.offset).toBe(4); // Should stop before space
+        expect(result.next).toBe(4); // Should stop before space
       }
     });
 
@@ -109,7 +109,7 @@ describe("identifier", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.name).toBe("rule123");
-        expect(result.next.offset).toBe(7); // Should stop before '+'
+        expect(result.next).toBe(7); // Should stop before '+'
       }
     });
 
@@ -118,7 +118,7 @@ describe("identifier", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val.name).toBe("identifier");
-        expect(result.next.offset).toBe(10); // Should stop before space
+        expect(result.next).toBe(10); // Should stop before space
       }
     });
   });

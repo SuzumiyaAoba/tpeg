@@ -1,4 +1,4 @@
-import type { ParseError, ParseResult, Parser, Pos } from "./types";
+import type { ParseError, ParseResult, Parser } from "./types";
 import { createFailure, isFailure, prependContext } from "./utils";
 
 /** How many distinct expectations `error` carries -- used by `choice` to
@@ -43,7 +43,7 @@ const mergeExpectedInto = (target: Set<string>, error: ParseError): void => {
 const tryOrderedCandidates = <T>(
   parsers: readonly Parser<T>[],
   input: string,
-  pos: Pos,
+  pos: number,
   parserName: string,
 ): ParseResult<T> => {
   let expectedSet: Set<string> | null = null;
@@ -71,14 +71,14 @@ const tryOrderedCandidates = <T>(
       }
 
       const error = result.error;
-      if (!farthestError || error.pos.offset > farthestError.pos.offset) {
+      if (!farthestError || error.pos > farthestError.pos) {
         farthestError = error;
         expectedSet = null;
         if (error.expected) {
           expectedSet = new Set();
           mergeExpectedInto(expectedSet, error);
         }
-      } else if (error.pos.offset === farthestError.pos.offset) {
+      } else if (error.pos === farthestError.pos) {
         if (error.expected) {
           if (!expectedSet) expectedSet = new Set();
           mergeExpectedInto(expectedSet, error);
@@ -138,7 +138,7 @@ const tryOrderedCandidates = <T>(
 export const sequence = <P extends Parser<unknown>[]>(
   ...parsers: P
 ): Parser<{ [K in keyof P]: P[K] extends Parser<infer T> ? T : never }> => {
-  const sequenceParser = (input: string, pos: Pos) => {
+  const sequenceParser = (input: string, pos: number) => {
     if (parsers.length === 0) {
       return {
         success: true,
@@ -236,7 +236,7 @@ export const seq = sequence;
  */
 export const commit =
   <T>(parser: Parser<T>): Parser<T> =>
-  (input: string, pos: Pos) => {
+  (input: string, pos: number) => {
     const result = parser(input, pos);
     if (isFailure(result)) {
       return {
@@ -280,13 +280,13 @@ export const choice = <T extends unknown[]>(
   ...parsers: { [K in keyof T]: Parser<T[K]> }
 ): Parser<T[number]> => {
   if (parsers.length === 0) {
-    const emptyChoiceParser = (_input: string, pos: Pos) =>
+    const emptyChoiceParser = (_input: string, pos: number) =>
       createFailure("Empty choice", pos, { parserName: "choice" });
     return emptyChoiceParser;
   }
 
   const candidates = parsers as unknown as readonly Parser<T[number]>[];
-  const choiceParser = (input: string, pos: Pos) =>
+  const choiceParser = (input: string, pos: number) =>
     tryOrderedCandidates(candidates, input, pos, "choice");
 
   return choiceParser;
@@ -419,7 +419,7 @@ export const predictiveChoice = <T extends unknown[]>(
   ])[],
 ): Parser<T[number]> => {
   if (alternatives.length === 0) {
-    const emptyPredictiveChoiceParser = (_input: string, pos: Pos) =>
+    const emptyPredictiveChoiceParser = (_input: string, pos: number) =>
       createFailure("Empty choice", pos, { parserName: "predictiveChoice" });
     return emptyPredictiveChoiceParser;
   }
@@ -485,7 +485,7 @@ export const predictiveChoice = <T extends unknown[]>(
     .filter((d): d is string => d !== null);
 
   const noCandidatesFailure = (
-    pos: Pos,
+    pos: number,
     codePoint: number,
   ): ParseResult<T[number]> =>
     createFailure(
@@ -500,9 +500,9 @@ export const predictiveChoice = <T extends unknown[]>(
 
   const predictiveChoiceParser = (
     input: string,
-    pos: Pos,
+    pos: number,
   ): ParseResult<T[number]> => {
-    if (pos.offset >= input.length) {
+    if (pos >= input.length) {
       // EOF: no character to filter by, so every alternative is
       // attempted -- matches `choice`'s own behavior on an empty match
       // attempt at end of input.
@@ -514,7 +514,7 @@ export const predictiveChoice = <T extends unknown[]>(
       );
     }
 
-    const code = input.charCodeAt(pos.offset);
+    const code = input.charCodeAt(pos);
     if (code < ASCII_TABLE_SIZE) {
       const candidates = asciiTable[code] as readonly Parser<T[number]>[];
       if (candidates.length === 0) {
@@ -526,7 +526,7 @@ export const predictiveChoice = <T extends unknown[]>(
     // Non-ASCII: decode the full code point (correct for a surrogate
     // pair) and, only if some alternative's filter could actually
     // exclude it, filter the reduced candidate list exactly.
-    const codePoint = input.codePointAt(pos.offset) as number;
+    const codePoint = input.codePointAt(pos) as number;
     if (!nonAsciiFallbackNeeded) {
       return tryOrderedCandidates(
         allCandidates,

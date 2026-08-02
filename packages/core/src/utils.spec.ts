@@ -82,59 +82,59 @@ describe("Utils", () => {
 
     describe("nextPos", () => {
       it("should advance position for ASCII characters", () => {
-        const pos = { offset: 0, column: 0, line: 1 };
+        const pos = 0;
         const next = nextPos("a", pos);
-        expect(next).toEqual({ offset: 1, column: 1, line: 1 });
+        expect(next).toBe(1);
       });
 
       it("should handle newlines", () => {
-        const pos = { offset: 0, column: 5, line: 1 };
+        const pos = 0;
         const next = nextPos("\n", pos);
-        expect(next).toEqual({ offset: 1, column: 0, line: 2 });
+        expect(next).toBe(1);
       });
 
       it("should handle Unicode characters", () => {
-        const pos = { offset: 0, column: 0, line: 1 };
+        const pos = 0;
         const next = nextPos("🌍", pos);
-        expect(next).toEqual({ offset: 2, column: 1, line: 1 });
+        expect(next).toBe(2);
       });
 
       it("should handle carriage returns", () => {
-        const pos = { offset: 0, column: 5, line: 1 };
+        const pos = 0;
         const next = nextPos("\r", pos);
-        expect(next).toEqual({ offset: 1, column: 6, line: 1 });
+        expect(next).toBe(1);
       });
     });
 
     describe("advancePos", () => {
       it("should advance position by string length", () => {
-        const pos = { offset: 0, column: 0, line: 1 };
+        const pos = 0;
         const next = advancePos("Hello", pos);
-        expect(next).toEqual({ offset: 5, column: 5, line: 1 });
+        expect(next).toBe(5);
       });
 
       it("should handle newlines in string", () => {
-        const pos = { offset: 0, column: 0, line: 1 };
+        const pos = 0;
         const next = advancePos("Hello\nWorld", pos);
-        expect(next).toEqual({ offset: 11, column: 5, line: 2 });
+        expect(next).toBe(11);
       });
 
       it("should handle Unicode characters", () => {
-        const pos = { offset: 0, column: 0, line: 1 };
+        const pos = 0;
         const next = advancePos("こんにちは", pos);
-        expect(next).toEqual({ offset: 5, column: 5, line: 1 });
+        expect(next).toBe(5);
       });
 
       it("should handle mixed ASCII and Unicode", () => {
-        const pos = { offset: 0, column: 0, line: 1 };
+        const pos = 0;
         const next = advancePos("Hello🌍World", pos);
-        expect(next).toEqual({ offset: 12, column: 11, line: 1 });
+        expect(next).toBe(12);
       });
 
       it("should handle empty string", () => {
-        const pos = { offset: 10, column: 5, line: 2 };
+        const pos = 10;
         const next = advancePos("", pos);
-        expect(next).toEqual({ offset: 10, column: 5, line: 2 });
+        expect(next).toBe(10);
       });
     });
 
@@ -192,16 +192,16 @@ describe("Utils", () => {
   describe("Position utilities", () => {
     describe("createPos", () => {
       it("should create position with defaults", () => {
-        expect(createPos()).toEqual({ offset: 0, column: 0, line: 1 });
+        expect(createPos()).toBe(0);
       });
 
       it("should create position with custom values", () => {
-        expect(createPos(10, 5, 2)).toEqual({ offset: 10, column: 5, line: 2 });
+        expect(createPos(10)).toBe(10);
       });
 
       it("should handle partial parameters", () => {
-        expect(createPos(5)).toEqual({ offset: 5, column: 0, line: 1 });
-        expect(createPos(5, 3)).toEqual({ offset: 5, column: 3, line: 1 });
+        expect(createPos(5)).toBe(5);
+        expect(createPos(5)).toBe(5);
       });
     });
   });
@@ -212,8 +212,8 @@ describe("Utils", () => {
         const success = {
           success: true,
           val: "test",
-          current: { offset: 0, column: 0, line: 1 },
-          next: { offset: 4, column: 4, line: 1 },
+          current: 0,
+          next: 4,
         } as const;
         expect(isSuccess(success)).toBe(true);
       });
@@ -223,7 +223,7 @@ describe("Utils", () => {
           success: false,
           error: {
             message: "Parse failed",
-            pos: { offset: 0, column: 0, line: 1 },
+            pos: 0,
           },
         } as const;
         expect(isSuccess(failure)).toBe(false);
@@ -236,7 +236,7 @@ describe("Utils", () => {
           success: false,
           error: {
             message: "Parse failed",
-            pos: { offset: 0, column: 0, line: 1 },
+            pos: 0,
           },
         } as const;
         expect(isFailure(failure)).toBe(true);
@@ -246,8 +246,8 @@ describe("Utils", () => {
         const success = {
           success: true,
           val: "test",
-          current: { offset: 0, column: 0, line: 1 },
-          next: { offset: 4, column: 4, line: 1 },
+          current: 0,
+          next: 4,
         } as const;
         expect(isFailure(success)).toBe(false);
       });
@@ -258,8 +258,8 @@ describe("Utils", () => {
         const success = {
           success: true,
           val: "test",
-          current: { offset: 0, column: 0, line: 1 },
-          next: { offset: 4, column: 4, line: 1 },
+          current: 0,
+          next: 4,
         } as const;
         expect(extractValue(success)).toBe("test");
       });
@@ -269,7 +269,7 @@ describe("Utils", () => {
           success: false,
           error: {
             message: "Parse failed",
-            pos: { offset: 0, column: 0, line: 1 },
+            pos: 0,
           },
         } as const;
         expect(() => extractValue(failure)).toThrow(
@@ -283,8 +283,8 @@ describe("Utils", () => {
         const success = {
           success: true,
           val: "test",
-          current: { offset: 0, column: 0, line: 1 },
-          next: { offset: 4, column: 4, line: 1 },
+          current: 0,
+          next: 4,
         } as const;
         expect(safeExtractValue(success)).toBe("test");
       });
@@ -294,7 +294,7 @@ describe("Utils", () => {
           success: false,
           error: {
             message: "Parse failed",
-            pos: { offset: 0, column: 0, line: 1 },
+            pos: 0,
           },
         } as const;
         expect(safeExtractValue(failure)).toBeUndefined();
@@ -329,7 +329,7 @@ describe("Utils", () => {
   describe("Error utilities", () => {
     describe("createFailure", () => {
       it("should create a failure result", () => {
-        const pos = { offset: 0, column: 0, line: 1 };
+        const pos = 0;
         const failure = createFailure("Test error", pos);
         expect(failure.success).toBe(false);
         expect(failure.error.message).toBe("Test error");
@@ -337,7 +337,7 @@ describe("Utils", () => {
       });
 
       it("should include optional error details", () => {
-        const pos = { offset: 0, column: 0, line: 1 };
+        const pos = 0;
         const failure = createFailure("Test error", pos, {
           expected: ["hello", "world"],
           found: "test",
@@ -359,9 +359,7 @@ describe("Utils", () => {
     it("should handle null/undefined gracefully", () => {
       // These functions should handle edge cases without throwing
       expect(() => createPos()).not.toThrow();
-      expect(() =>
-        createFailure("test", { offset: 0, column: 0, line: 1 }),
-      ).not.toThrow();
+      expect(() => createFailure("test", 0)).not.toThrow();
     });
 
     it("should handle Unicode surrogate pairs correctly", () => {

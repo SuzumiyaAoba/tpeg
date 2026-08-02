@@ -26,7 +26,7 @@ describe("@SuzumiyaAoba/combinator", () => {
         expect(successResult.success).toBe(true);
         if (successResult.success) {
           expect(successResult.val).toBe("a");
-          expect(successResult.next.offset).toBe(1);
+          expect(successResult.next).toBe(1);
         }
 
         const failureResult = parse(parser)("");
@@ -41,7 +41,7 @@ describe("@SuzumiyaAoba/combinator", () => {
         expect(successResult.success).toBe(true);
         if (successResult.success) {
           expect(successResult.val).toBe("hello");
-          expect(successResult.next.offset).toBe(5);
+          expect(successResult.next).toBe(5);
         }
 
         const failureResult1 = parse(parser)("world hello");
@@ -59,7 +59,7 @@ describe("@SuzumiyaAoba/combinator", () => {
         expect(successResult1.success).toBe(true);
         if (successResult1.success) {
           expect(successResult1.val).toBe("b");
-          expect(successResult1.next.offset).toBe(1);
+          expect(successResult1.next).toBe(1);
         }
 
         const failureResult1 = parse(lowerCaseParser)("B");
@@ -70,7 +70,7 @@ describe("@SuzumiyaAoba/combinator", () => {
         expect(successResult2.success).toBe(true);
         if (successResult2.success) {
           expect(successResult2.val).toBe("5");
-          expect(successResult2.next.offset).toBe(1);
+          expect(successResult2.next).toBe(1);
         }
 
         const abcParser = charClass("a", "b", "c");
@@ -78,7 +78,7 @@ describe("@SuzumiyaAoba/combinator", () => {
         expect(successResult3.success).toBe(true);
         if (successResult3.success) {
           expect(successResult3.val).toBe("a");
-          expect(successResult3.next.offset).toBe(1);
+          expect(successResult3.next).toBe(1);
         }
 
         const failureResult3 = parse(abcParser)("d");
@@ -93,7 +93,7 @@ describe("@SuzumiyaAoba/combinator", () => {
         expect(successResult4.success).toBe(true);
         if (successResult4.success) {
           expect(successResult4.val).toBe("Z");
-          expect(successResult4.next.offset).toBe(1);
+          expect(successResult4.next).toBe(1);
         }
       });
     });
@@ -105,7 +105,7 @@ describe("@SuzumiyaAoba/combinator", () => {
         expect(successResult.success).toBe(true);
         if (successResult.success) {
           expect(successResult.val).toEqual(["hello", "5"]);
-          expect(successResult.next.offset).toBe(6);
+          expect(successResult.next).toBe(6);
         }
 
         const failureResult1 = parse(parser)("hello");
@@ -119,7 +119,7 @@ describe("@SuzumiyaAoba/combinator", () => {
         expect(successResult2.success).toBe(true);
         if (successResult2.success) {
           expect(successResult2.val).toEqual(["a", "b", "c"]);
-          expect(successResult2.next.offset).toBe(3);
+          expect(successResult2.next).toBe(3);
         }
       });
     });
@@ -131,14 +131,14 @@ describe("@SuzumiyaAoba/combinator", () => {
         expect(successResult1.success).toBe(true);
         if (successResult1.success) {
           expect(successResult1.val).toBe("hello");
-          expect(successResult1.next.offset).toBe(5);
+          expect(successResult1.next).toBe(5);
         }
 
         const successResult2 = parse(parser)("world");
         expect(successResult2.success).toBe(true);
         if (successResult2.success) {
           expect(successResult2.val).toBe("world");
-          expect(successResult2.next.offset).toBe(5);
+          expect(successResult2.next).toBe(5);
         }
 
         const failureResult = parse(parser)("other");
@@ -153,14 +153,14 @@ describe("@SuzumiyaAoba/combinator", () => {
         expect(successResult1.success).toBe(true);
         if (successResult1.success) {
           expect(successResult1.val).toEqual(["hello"]);
-          expect(successResult1.next.offset).toBe(5);
+          expect(successResult1.next).toBe(5);
         }
 
         const successResult2 = parse(parser)("world");
         expect(successResult2.success).toBe(true);
         if (successResult2.success) {
           expect(successResult2.val).toEqual([]);
-          expect(successResult2.next.offset).toBe(0);
+          expect(successResult2.next).toBe(0);
         }
       });
     });
@@ -172,14 +172,14 @@ describe("@SuzumiyaAoba/combinator", () => {
         expect(successResult1.success).toBe(true);
         if (successResult1.success) {
           expect(successResult1.val).toEqual(["a", "a", "a"]);
-          expect(successResult1.next.offset).toBe(3);
+          expect(successResult1.next).toBe(3);
         }
 
         const successResult2 = parse(parser)("bbb");
         expect(successResult2.success).toBe(true);
         if (successResult2.success) {
           expect(successResult2.val).toEqual([]);
-          expect(successResult2.next.offset).toBe(0);
+          expect(successResult2.next).toBe(0);
         }
       });
     });
@@ -191,14 +191,14 @@ describe("@SuzumiyaAoba/combinator", () => {
         expect(successResult1.success).toBe(true);
         if (successResult1.success) {
           expect(successResult1.val).toEqual(["a", "a", "a"]);
-          expect(successResult1.next.offset).toBe(3);
+          expect(successResult1.next).toBe(3);
         }
 
         const successResult2 = parse(parser)("a");
         expect(successResult2.success).toBe(true);
         if (successResult2.success) {
           expect(successResult2.val).toEqual(["a"]);
-          expect(successResult2.next.offset).toBe(1);
+          expect(successResult2.next).toBe(1);
         }
 
         const failureResult = parse(parser)("bbb");
@@ -212,13 +212,13 @@ describe("@SuzumiyaAoba/combinator", () => {
         const successResult1 = parse(parser)("abc");
         expect(successResult1.success).toBe(true);
         if (successResult1.success) {
-          expect(successResult1.next.offset).toBe(0);
+          expect(successResult1.next).toBe(0);
         }
         const successResult2 = parse(sequence(parser, anyChar()))("abc");
         expect(successResult2.success).toBe(true);
         if (successResult2.success) {
           expect(successResult2.val).toEqual([undefined as never, "a"]);
-          expect(successResult2.next.offset).toBe(1);
+          expect(successResult2.next).toBe(1);
         }
 
         const failureResult = parse(parser)("bbc");
@@ -232,13 +232,13 @@ describe("@SuzumiyaAoba/combinator", () => {
         const successResult1 = parse(parser)("bbc");
         expect(successResult1.success).toBe(true);
         if (successResult1.success) {
-          expect(successResult1.next.offset).toBe(0);
+          expect(successResult1.next).toBe(0);
         }
         const successResult2 = parse(sequence(parser, anyChar()))("bbc");
         expect(successResult2.success).toBe(true);
         if (successResult2.success) {
           expect(successResult2.val).toEqual([undefined as never, "b"]);
-          expect(successResult2.next.offset).toBe(1);
+          expect(successResult2.next).toBe(1);
         }
 
         const failureResult = parse(parser)("abc");
@@ -253,7 +253,7 @@ describe("@SuzumiyaAoba/combinator", () => {
         expect(successResult.success).toBe(true);
         if (successResult.success) {
           expect(successResult.val).toBe("HELLO");
-          expect(successResult.next.offset).toBe(5);
+          expect(successResult.next).toBe(5);
         }
 
         const failureResult = parse(parser)("world");
@@ -268,7 +268,7 @@ describe("@SuzumiyaAoba/combinator", () => {
           (result: ParseSuccess<string>) => {
             return {
               val: result.val.toUpperCase(),
-              offset: result.next.offset,
+              offset: result.next,
             };
           },
         );
@@ -276,7 +276,7 @@ describe("@SuzumiyaAoba/combinator", () => {
         expect(successResult.success).toBe(true);
         if (successResult.success) {
           expect(successResult.val).toEqual({ val: "HELLO", offset: 5 });
-          expect(successResult.next.offset).toBe(5);
+          expect(successResult.next).toBe(5);
         }
 
         const failureResult = parse(parser)("world");

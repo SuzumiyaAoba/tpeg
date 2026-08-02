@@ -118,15 +118,15 @@ const anyCharDot: Parser<AnyChar> = map(literal("."), () => ({
  *
  * @example
  * ```typescript
- * const result1 = characterClass()("[a-z]", { offset: 0, line: 1, column: 1 });
+ * const result1 = characterClass()("[a-z]", 0);
  * // result1.success === true, result1.val.type === "CharacterClass"
  * // result1.val.ranges === [{ start: 'a', end: 'z' }]
  * // result1.val.negated === false
  *
- * const result2 = characterClass()("[^0-9]", { offset: 0, line: 1, column: 1 });
+ * const result2 = characterClass()("[^0-9]", 0);
  * // result2.success === true, result2.val.negated === true
  *
- * const result3 = characterClass()(".", { offset: 0, line: 1, column: 1 });
+ * const result3 = characterClass()(".", 0);
  * // result3.success === true, result3.val.type === "AnyChar"
  * ```
  */

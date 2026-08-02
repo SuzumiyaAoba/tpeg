@@ -8,7 +8,7 @@ describe("Grammar", () => {
       path.resolve(__dirname, "peg.peg"),
     ).text();
 
-    const actual = Grammar(pegGrammar, { offset: 0, column: 0, line: 1 });
+    const actual = Grammar(pegGrammar, 0);
 
     expect(actual.success).toBe(true);
   });

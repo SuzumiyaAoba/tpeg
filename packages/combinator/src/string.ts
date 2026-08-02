@@ -1,4 +1,4 @@
-import type { Parser, Pos } from "@suzumiyaaoba/tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   anyChar,
   choice,
@@ -25,18 +25,18 @@ import { labeled, named } from "./error";
  */
 export const takeUntil =
   <T>(condition: Parser<T>, _parserName?: string): Parser<string> =>
-  (input: string, pos: Pos) => {
+  (input: string, pos: number) => {
     const startPos = pos;
 
     let currentPos = startPos;
 
-    while (currentPos.offset < input.length) {
+    while (currentPos < input.length) {
       const condResult = condition(input, currentPos);
       if (condResult.success) {
         break;
       }
 
-      const char = getCharAt(input, currentPos.offset);
+      const char = getCharAt(input, currentPos);
       if (!char) break;
 
       currentPos = nextPos(char, currentPos);
@@ -44,7 +44,7 @@ export const takeUntil =
 
     return {
       success: true,
-      val: input.slice(startPos.offset, currentPos.offset),
+      val: input.slice(startPos, currentPos),
       current: startPos,
       next: currentPos,
     } as const;
@@ -66,7 +66,7 @@ export const between = <O, C>(
   );
   const parser = named(base, parserName);
 
-  return (input: string, pos: Pos) => parser(input, pos);
+  return (input: string, pos: number) => parser(input, pos);
 };
 
 /**

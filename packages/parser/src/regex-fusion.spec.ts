@@ -8,7 +8,6 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Pos } from "@suzumiyaaoba/tpeg-core";
 import { generateOptimizedTypeScriptParser } from "./codegen-optimized";
 import { analyzeFirstSets } from "./first-sets";
 import { grammarDefinition } from "./grammar";
@@ -31,7 +30,7 @@ import {
 } from "./types";
 import type { GrammarDefinition } from "./types";
 
-const ORIGIN: Pos = { offset: 0, column: 0, line: 1 };
+const ORIGIN = 0;
 
 /** Parses `src`, computes FIRST-set analysis, and returns a lookup from
  * rule name to `isRuleFusable`'s verdict -- the shape most tests below
@@ -69,12 +68,12 @@ async function compileRuleFor(grammar: GrammarDefinition, ruleName: string) {
     string,
     (
       input: string,
-      pos: Pos,
+      pos: number,
     ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>
   >;
   return built[ruleName] as (
     input: string,
-    pos: Pos,
+    pos: number,
   ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
 }
 
@@ -165,13 +164,13 @@ describe("isRuleFusable: structural + determinism gates", () => {
     expect(ab.success).toBe(true);
     if (ab.success) {
       expect(ab.val).toBe("ab");
-      expect(ab.next.offset).toBe(2);
+      expect(ab.next).toBe(2);
     }
     const ac = r("ac", ORIGIN);
     expect(ac.success).toBe(true);
     if (ac.success) {
       expect(ac.val).toBe("ac");
-      expect(ac.next.offset).toBe(2);
+      expect(ac.next).toBe(2);
     }
     // "a" alone: neither alternative fully matches ("ab"/"ac" both need
     // a 2nd character) -- must fail, not partially match "a".
@@ -251,12 +250,12 @@ describe("isRuleFusable: structural + determinism gates", () => {
         string,
         (
           input: string,
-          pos: Pos,
+          pos: number,
         ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>
       >;
       return built["r"] as (
         input: string,
-        pos: Pos,
+        pos: number,
       ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
     };
 
@@ -413,12 +412,12 @@ describe("generateOptimizedTypeScriptParser({ enableRegexFusion: true, includeIm
       string,
       (
         input: string,
-        pos: Pos,
+        pos: number,
       ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>
     >;
     const value = built["value"] as (
       input: string,
-      pos: Pos,
+      pos: number,
     ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
 
     const result = value('{"a":1}', ORIGIN);
@@ -454,12 +453,12 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
         string,
         (
           input: string,
-          pos: Pos,
+          pos: number,
         ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>
       >;
       return built["value"] as (
         input: string,
-        pos: Pos,
+        pos: number,
       ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
     };
 
@@ -517,13 +516,13 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
     expect(nonEmpty.success).toBe(true);
     if (nonEmpty.success) {
       expect(nonEmpty.val).toEqual(["1", "2", "3"]);
-      expect(nonEmpty.next.offset).toBe(3);
+      expect(nonEmpty.next).toBe(3);
     }
     const empty = r("x", ORIGIN);
     expect(empty.success).toBe(true);
     if (empty.success) {
       expect(empty.val).toEqual([]);
-      expect(empty.next.offset).toBe(0);
+      expect(empty.next).toBe(0);
     }
   });
 
@@ -620,7 +619,7 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toEqual(["\u{1F600}", "\u{1F601}"]);
-      expect(result.next.offset).toBe(4); // 2 astral chars = 4 UTF-16 code units
+      expect(result.next).toBe(4); // 2 astral chars = 4 UTF-16 code units
     }
   });
 
@@ -685,12 +684,12 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
       string,
       (
         input: string,
-        pos: Pos,
+        pos: number,
       ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>
     >;
     const pair = built["pair"] as (
       input: string,
-      pos: Pos,
+      pos: number,
     ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
 
     const result = pair("123:45", ORIGIN);
@@ -758,12 +757,12 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
         string,
         (
           input: string,
-          pos: Pos,
+          pos: number,
         ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>
       >;
       return built["expression"] as (
         input: string,
-        pos: Pos,
+        pos: number,
       ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
     };
 
@@ -840,12 +839,12 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
         string,
         (
           input: string,
-          pos: Pos,
+          pos: number,
         ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>
       >;
       return built["whitespace"] as (
         input: string,
-        pos: Pos,
+        pos: number,
       ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
     };
 
@@ -906,12 +905,12 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
         string,
         (
           input: string,
-          pos: Pos,
+          pos: number,
         ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>
       >;
       return built["sum"] as (
         input: string,
-        pos: Pos,
+        pos: number,
       ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
     };
 

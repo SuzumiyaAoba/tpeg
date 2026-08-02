@@ -259,7 +259,7 @@ export const ERROR_MESSAGES = {
 export const PARSER_CONFIG = {
   MAX_RECURSION_DEPTH: 1000,
   MAX_INPUT_LENGTH: 1_000_000,
-  DEFAULT_POSITION: { offset: 0, line: 1, column: 1 },
+  DEFAULT_POSITION: 0,
 } as const;
 
 /**

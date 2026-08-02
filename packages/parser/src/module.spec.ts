@@ -19,7 +19,7 @@ describe("Module System Parsers", () => {
   describe("importStatement", () => {
     it("should parse simple import statement", () => {
       const input = 'import "base.tpeg" as base';
-      const result = importStatement(input, { offset: 0, line: 1, column: 1 });
+      const result = importStatement(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -33,7 +33,7 @@ describe("Module System Parsers", () => {
 
     it("should parse import without alias", () => {
       const input = 'import "utils.tpeg"';
-      const result = importStatement(input, { offset: 0, line: 1, column: 1 });
+      const result = importStatement(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -44,7 +44,7 @@ describe("Module System Parsers", () => {
 
     it("should parse selective import", () => {
       const input = 'import "base.tpeg" { identifier, whitespace }';
-      const result = importStatement(input, { offset: 0, line: 1, column: 1 });
+      const result = importStatement(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -56,7 +56,7 @@ describe("Module System Parsers", () => {
 
     it("should parse selective import with empty list", () => {
       const input = 'import "base.tpeg" { }';
-      const result = importStatement(input, { offset: 0, line: 1, column: 1 });
+      const result = importStatement(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -66,7 +66,7 @@ describe("Module System Parsers", () => {
 
     it("should parse versioned import", () => {
       const input = 'import "base.tpeg" version "^1.0" as base';
-      const result = importStatement(input, { offset: 0, line: 1, column: 1 });
+      const result = importStatement(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -78,7 +78,7 @@ describe("Module System Parsers", () => {
 
     it("should parse versioned import without alias", () => {
       const input = 'import "base.tpeg" version ">=2.0, <3.0"';
-      const result = importStatement(input, { offset: 0, line: 1, column: 1 });
+      const result = importStatement(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -92,11 +92,7 @@ describe("Module System Parsers", () => {
   describe("exportDeclaration", () => {
     it("should parse export declaration", () => {
       const input = "@export: [identifier, whitespace, number]";
-      const result = exportDeclaration(input, {
-        offset: 0,
-        line: 1,
-        column: 1,
-      });
+      const result = exportDeclaration(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -111,11 +107,7 @@ describe("Module System Parsers", () => {
 
     it("should parse empty export declaration", () => {
       const input = "@export: []";
-      const result = exportDeclaration(input, {
-        offset: 0,
-        line: 1,
-        column: 1,
-      });
+      const result = exportDeclaration(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -125,11 +117,7 @@ describe("Module System Parsers", () => {
 
     it("should parse single rule export", () => {
       const input = "@export: [identifier]";
-      const result = exportDeclaration(input, {
-        offset: 0,
-        line: 1,
-        column: 1,
-      });
+      const result = exportDeclaration(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -141,11 +129,7 @@ describe("Module System Parsers", () => {
   describe("moduleInfoListAnnotation", () => {
     it("should parse @dependencies: [...]", () => {
       const input = '@dependencies: ["base.tpeg", "utils.tpeg"]';
-      const result = moduleInfoListAnnotation(input, {
-        offset: 0,
-        line: 1,
-        column: 1,
-      });
+      const result = moduleInfoListAnnotation(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -159,11 +143,7 @@ describe("Module System Parsers", () => {
 
     it("should parse @conflicts: [...] with a single entry", () => {
       const input = '@conflicts: ["legacy.tpeg"]';
-      const result = moduleInfoListAnnotation(input, {
-        offset: 0,
-        line: 1,
-        column: 1,
-      });
+      const result = moduleInfoListAnnotation(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -174,11 +154,7 @@ describe("Module System Parsers", () => {
 
     it("should parse an empty list", () => {
       const input = "@dependencies: []";
-      const result = moduleInfoListAnnotation(input, {
-        offset: 0,
-        line: 1,
-        column: 1,
-      });
+      const result = moduleInfoListAnnotation(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -193,11 +169,7 @@ describe("Module System Parsers", () => {
         "base.tpeg": "^1.0",
         "operators.tpeg": ">=2.0, <3.0"
       }`;
-      const result = moduleInfoRecordAnnotation(input, {
-        offset: 0,
-        line: 1,
-        column: 1,
-      });
+      const result = moduleInfoRecordAnnotation(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -214,11 +186,7 @@ describe("Module System Parsers", () => {
 
     it("should parse a single-entry record on one line", () => {
       const input = '@requires: { "base.tpeg": "^1.0" }';
-      const result = moduleInfoRecordAnnotation(input, {
-        offset: 0,
-        line: 1,
-        column: 1,
-      });
+      const result = moduleInfoRecordAnnotation(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -228,11 +196,7 @@ describe("Module System Parsers", () => {
 
     it("should parse an empty record", () => {
       const input = "@requires: {}";
-      const result = moduleInfoRecordAnnotation(input, {
-        offset: 0,
-        line: 1,
-        column: 1,
-      });
+      const result = moduleInfoRecordAnnotation(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -244,11 +208,7 @@ describe("Module System Parsers", () => {
   describe("qualifiedIdentifier", () => {
     it("should parse qualified identifier", () => {
       const input = "base.identifier";
-      const result = qualifiedIdentifier(input, {
-        offset: 0,
-        line: 1,
-        column: 1,
-      });
+      const result = qualifiedIdentifier(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -260,11 +220,7 @@ describe("Module System Parsers", () => {
 
     it("should parse complex qualified identifier", () => {
       const input = "Math_Core.expression_parser";
-      const result = qualifiedIdentifier(input, {
-        offset: 0,
-        line: 1,
-        column: 1,
-      });
+      const result = qualifiedIdentifier(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -275,11 +231,7 @@ describe("Module System Parsers", () => {
 
     it("should fail on simple identifier", () => {
       const input = "identifier";
-      const result = qualifiedIdentifier(input, {
-        offset: 0,
-        line: 1,
-        column: 1,
-      });
+      const result = qualifiedIdentifier(input, 0);
 
       expect(result.success).toBe(false);
     });
@@ -288,7 +240,7 @@ describe("Module System Parsers", () => {
   describe("extendsClause", () => {
     it("should parse extends with simple identifier", () => {
       const input = "extends BaseGrammar";
-      const result = extendsClause(input, { offset: 0, line: 1, column: 1 });
+      const result = extendsClause(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -298,7 +250,7 @@ describe("Module System Parsers", () => {
 
     it("should parse extends with qualified identifier", () => {
       const input = "extends base.Grammar";
-      const result = extendsClause(input, { offset: 0, line: 1, column: 1 });
+      const result = extendsClause(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -308,7 +260,7 @@ describe("Module System Parsers", () => {
 
     it("should parse extends with namespace", () => {
       const input = "extends Math.Core";
-      const result = extendsClause(input, { offset: 0, line: 1, column: 1 });
+      const result = extendsClause(input, 0);
 
       expect(result.success).toBe(true);
       if (result.success) {

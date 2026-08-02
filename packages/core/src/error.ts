@@ -1,5 +1,5 @@
 import type { ParseError, ParseResult } from "./types";
-import { isFailure } from "./utils";
+import { isFailure, offsetToPos } from "./utils";
 
 /**
  * Internationalization message definitions for error formatting.
@@ -474,7 +474,7 @@ const normalizeExpected = (
  * ```typescript
  * if (validateParseError(someError)) {
  *   // someError is now typed as ParseError
- *   console.log(`Error at line ${someError.pos.line}`);
+ *   console.log(`Error at offset ${someError.pos}`);
  * }
  * ```
  */
@@ -484,13 +484,7 @@ const validateParseError = (error: unknown): error is ParseError => {
   }
 
   const err = error as ParseError;
-  return (
-    err.pos != null &&
-    typeof err.pos.line === "number" &&
-    typeof err.pos.column === "number" &&
-    err.pos.line >= 1 &&
-    err.pos.column >= 0
-  );
+  return typeof err.pos === "number" && err.pos >= 0;
 };
 
 /**
@@ -612,7 +606,7 @@ const truncateLine = (line: string, maxLength: number): string => {
  * @example
  * ```typescript
  * const error: ParseError = {
- *   pos: { line: 3, column: 5 },
+ *   pos: 42, // offset; formatParseError recovers line/column from `sourceCode`
  *   message: "Unexpected token",
  *   expected: ["identifier", "number"],
  *   found: ";"
@@ -667,7 +661,7 @@ export const formatParseError = (
 
   const color = createColorHelper(effectiveColorize);
   const { pos, message, expected, found, parserName, context } = error;
-  const { line, column } = pos;
+  const { line, column } = offsetToPos(input, pos);
 
   const parts: string[] = [];
 

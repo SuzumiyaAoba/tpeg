@@ -5,7 +5,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { parse } from "@suzumiyaaoba/tpeg-core";
+import { offsetToPos, parse } from "@suzumiyaaoba/tpeg-core";
 import {
   applyAstOptimizations,
   generateOptimizedTypeScriptParser,
@@ -129,8 +129,9 @@ export function run(argv: string[]): number {
   const parseResult = parse(tpegFile)(source);
   if (!parseResult.success) {
     const { message, pos, expected, found } = parseResult.error;
+    const { line, column } = offsetToPos(source, pos);
     process.stderr.write(
-      `error: failed to parse "${inputPath}" at line ${pos.line}, column ${pos.column}: ${message}\n`,
+      `error: failed to parse "${inputPath}" at line ${line}, column ${column}: ${message}\n`,
     );
     if (expected) {
       const expectedList = Array.isArray(expected)

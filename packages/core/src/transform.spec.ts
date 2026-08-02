@@ -1,23 +1,23 @@
 import { describe, expect, it } from "bun:test";
 import { lit } from "./basic";
 import { filter, map, mapError, mapResult, tap } from "./transform";
-import type { ParseSuccess, Pos } from "./types";
+import type { ParseSuccess } from "./types";
 
 describe("map", () => {
   it("should transform the result value", () => {
     const input = "abc";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = map(lit("abc"), (val) => val.length)(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toBe(3);
-      expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
+      expect(result.next).toBe(3);
     }
   });
 
   it("should propagate failure", () => {
     const input = "def";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = map(lit("abc"), (val) => val.length)(input, pos);
     expect(result.success).toBe(false);
   });
@@ -26,7 +26,7 @@ describe("map", () => {
 describe("mapResult(parser, f)", () => {
   it("should transform the success result", () => {
     const input = "abc";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = mapResult(lit("abc"), (result: ParseSuccess<string>) =>
       result.val.toUpperCase(),
     )(input, pos);
@@ -34,13 +34,13 @@ describe("mapResult(parser, f)", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toBe("ABC");
-      expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
+      expect(result.next).toBe(3);
     }
   });
 
   it("should propagate failure", () => {
     const input = "def";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = mapResult(lit("abc"), (result: ParseSuccess<string>) =>
       result.val.toUpperCase(),
     )(input, pos);
@@ -52,7 +52,7 @@ describe("mapResult(parser, f)", () => {
 describe("mapError", () => {
   it("should transform error on failure", () => {
     const input = "def";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = mapError(lit("abc"), (error) => ({
       ...error,
       message: "Custom error message",
@@ -68,7 +68,7 @@ describe("mapError", () => {
 
   it("should propagate success", () => {
     const input = "abc";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = mapError(lit("abc"), (error) => ({
       ...error,
       message: "This shouldn't be called",
@@ -84,7 +84,7 @@ describe("mapError", () => {
 describe("filter", () => {
   it("should succeed when predicate returns true", () => {
     const input = "abc";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = filter(
       lit("abc"),
       (val) => val.length === 3,
@@ -99,7 +99,7 @@ describe("filter", () => {
 
   it("should fail when predicate returns false", () => {
     const input = "abc";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = filter(
       lit("abc"),
       (val) => val.length === 5,
@@ -115,7 +115,7 @@ describe("filter", () => {
 
   it("should propagate parsing failure", () => {
     const input = "def";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = filter(
       lit("abc"),
       (val) => val.length === 3,
@@ -130,7 +130,7 @@ describe("tap", () => {
   it("should execute side effect on success", () => {
     let sideEffectValue = "";
     const input = "abc";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
 
     const result = tap(lit("abc"), (val: string) => {
       sideEffectValue = val;
@@ -146,7 +146,7 @@ describe("tap", () => {
   it("should not execute side effect on failure", () => {
     let sideEffectCalled = false;
     const input = "def";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
 
     const result = tap(lit("abc"), () => {
       sideEffectCalled = true;
@@ -158,7 +158,7 @@ describe("tap", () => {
 
   it("should return original result unchanged", () => {
     const input = "abc";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
 
     const originalResult = lit("abc")(input, pos);
     const tappedResult = tap(lit("abc"), () => {

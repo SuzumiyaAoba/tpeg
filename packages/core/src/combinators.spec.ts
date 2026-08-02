@@ -12,31 +12,31 @@ import {
   withDefault,
 } from "./combinators";
 import type { FirstCharFilter } from "./combinators";
-import type { Parser, Pos } from "./types";
+import type { Parser } from "./types";
 import { createFailure } from "./utils";
 
 describe("seq", () => {
   it("should parse a sequence of parsers", () => {
     const input = "abc";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = seq(lit("a"), lit("b"), lit("c"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toEqual(["a", "b", "c"]);
-      expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
+      expect(result.next).toBe(3);
     }
   });
 
   it("should return error if any parser fails", () => {
     const input = "abd";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = seq(lit("a"), lit("b"), lit("c"))(input, pos);
     expect(result.success).toBe(false);
   });
 
   it("should handle empty sequence", () => {
     const input = "abc";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = seq()(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
@@ -47,7 +47,7 @@ describe("seq", () => {
 
   it("should fail if a parser is undefined", () => {
     const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     // @ts-ignore
     const result = seq(lit("a"), undefined)(input, pos);
     expect(result.success).toBe(false);
@@ -60,43 +60,43 @@ describe("seq", () => {
 describe("choice", () => {
   it("should parse with the first matching parser", () => {
     const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = choice(lit("a"), lit("b"), lit("c"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toBe("a");
-      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
+      expect(result.next).toBe(1);
     }
   });
 
   it("should try the next parser if the previous one fails", () => {
     const input = "b";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = choice(lit("a"), lit("b"), lit("c"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toBe("b");
-      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
+      expect(result.next).toBe(1);
     }
   });
 
   it("should return error if all parsers fail", () => {
     const input = "d";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = choice(lit("a"), lit("b"), lit("c"))(input, pos);
     expect(result.success).toBe(false);
   });
 
   it("should handle empty choice", () => {
     const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = choice()(input, pos);
     expect(result.success).toBe(false);
   });
 
   it("does not try the next alternative once a committed sub-parser fails", () => {
     const input = "ix";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const committedBranch = seq(lit("i"), commit(lit("f")));
     // `fallback` would itself SUCCEED on this input ("ix" starts with
     // "i") -- so the only way `result.success` can be `false` below is
@@ -122,7 +122,7 @@ describe("choice", () => {
 
   it("still tries the next alternative when the failure isn't fatal", () => {
     const input = "ix";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const branch = seq(lit("i"), lit("f"));
     const fallback = lit("i");
     const result = choice(branch, fallback)(input, pos);
@@ -148,7 +148,7 @@ describe("choice", () => {
     // and refuse to try its own second alternative -- incorrectly
     // rejecting input the second alternative would have matched.
     const input = "ybz";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const innerChoice = choice(
       seq(lit("y"), commit(lit("b")), commit(lit("c"))), // commits after "y", then fails on "z" != "c"
       lit("x"), // irrelevant: FIRST-disjoint from "y", never reachable here regardless
@@ -159,13 +159,13 @@ describe("choice", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toEqual(["y", "b", "z"]);
-      expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
+      expect(result.next).toBe(3);
     }
   });
 
   it("should fail if a parser is undefined", () => {
     const input = "b";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     // @ts-ignore
     const result = choice(lit("a"), undefined)(input, pos);
     expect(result.success).toBe(false);
@@ -176,7 +176,7 @@ describe("choice", () => {
 
   it("should aggregate expected values from failures", () => {
     const input = "d";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = choice(lit("a"), lit("b"))(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -186,8 +186,8 @@ describe("choice", () => {
 
   it("should handle nested expected arrays in failures", () => {
     const input = "d";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
-    const parserWithNestedExpected = (_: string, pos: Pos) =>
+    const pos = 0;
+    const parserWithNestedExpected = (_: string, pos: number) =>
       createFailure("fail", pos, { expected: ["x", "y"] });
     const result = choice(lit("a"), parserWithNestedExpected)(input, pos);
     expect(result.success).toBe(false);
@@ -202,12 +202,12 @@ describe("choice", () => {
     // alt1's "a" is from a strictly closer (less useful) failure and
     // must not be merged in alongside it.
     const input = "xz";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = choice(lit("a"), sequence(lit("x"), lit("y")))(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.expected).toEqual(["y"]);
-      expect(result.error.pos).toEqual({ offset: 1, column: 1, line: 1 });
+      expect(result.error.pos).toBe(1);
     }
   });
 
@@ -215,7 +215,7 @@ describe("choice", () => {
     // alt1 and alt3 both fail at offset 1 (after consuming "x"); alt2
     // fails immediately at offset 0 and must be excluded from the merge.
     const input = "xz";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = choice(
       sequence(lit("x"), lit("y")),
       lit("a"),
@@ -224,7 +224,7 @@ describe("choice", () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.expected).toEqual(["y", "w"]);
-      expect(result.error.pos).toEqual({ offset: 1, column: 1, line: 1 });
+      expect(result.error.pos).toBe(1);
     }
   });
 });
@@ -232,7 +232,7 @@ describe("choice", () => {
 describe("commit", () => {
   it("passes through a successful parse unchanged", () => {
     const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = commit(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
@@ -242,7 +242,7 @@ describe("commit", () => {
 
   it("marks a failure as fatal", () => {
     const input = "b";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = commit(lit("a"))(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -261,7 +261,7 @@ describe("predictiveChoice", () => {
 
   it("skips an alternative whose filter excludes the next character, still succeeding via a later one", () => {
     const input = "b";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = predictiveChoice([
       [lit("a"), charFilter("a")],
       [lit("b"), charFilter("b")],
@@ -276,7 +276,7 @@ describe("predictiveChoice", () => {
     // Both filters admit "a"; the *first* one in declaration order must
     // still win, exactly like plain `choice`.
     const input = "ax";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = predictiveChoice<[string, string]>([
       [lit("a"), charFilter("a")],
       [seq(lit("a"), lit("y")) as unknown as Parser<string>, charFilter("a")],
@@ -289,7 +289,7 @@ describe("predictiveChoice", () => {
 
   it("always attempts an alternative with a null filter, regardless of the next character", () => {
     const input = "z";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = predictiveChoice([
       [lit("a"), charFilter("a")],
       [lit("z"), null],
@@ -302,7 +302,7 @@ describe("predictiveChoice", () => {
 
   it("always attempts every alternative at end-of-input, since there's no character to filter by", () => {
     const input = "";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const succeedsOnEmpty: Parser<string> = (_input, p) => ({
       success: true,
       val: "empty",
@@ -321,7 +321,7 @@ describe("predictiveChoice", () => {
 
   it("fails fast, without running any alternative, when the next character matches no filter", () => {
     const input = "z";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     let ran = false;
     const trackedA: Parser<string> = (i, p) => {
       ran = true;
@@ -341,7 +341,7 @@ describe("predictiveChoice", () => {
 
   it("reports the union of all alternatives' filter chars as `expected` on a fast failure", () => {
     const input = "z";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = predictiveChoice([
       [lit("a"), charFilter("a")],
       [lit("b"), charFilter("b")],
@@ -354,7 +354,7 @@ describe("predictiveChoice", () => {
 
   it("handles empty choice", () => {
     const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = predictiveChoice([])(input, pos);
     expect(result.success).toBe(false);
   });
@@ -367,7 +367,7 @@ describe("predictiveChoice", () => {
     const cp = face.codePointAt(0) as number;
     const astralFilter: FirstCharFilter = { ranges: [{ lo: cp, hi: cp }] };
     const succeedsOnFace: Parser<string> = (i, p) => lit(face)(i, p);
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
 
     const matched = predictiveChoice([[succeedsOnFace, astralFilter]])(
       face,
@@ -384,7 +384,7 @@ describe("predictiveChoice", () => {
 
   it("aggregates farthest-error expected values from the choice among surviving candidates when at least one survives", () => {
     const input = "xz";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = predictiveChoice([
       [
         sequence(lit("x"), lit("y")) as unknown as Parser<string>,
@@ -395,7 +395,7 @@ describe("predictiveChoice", () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.expected).toEqual(["y"]);
-      expect(result.error.pos).toEqual({ offset: 1, column: 1, line: 1 });
+      expect(result.error.pos).toBe(1);
     }
   });
 
@@ -412,7 +412,7 @@ describe("predictiveChoice", () => {
     ]);
 
     for (const input of ["a", "b", "cd", "c", "cx", "z", ""]) {
-      const pos: Pos = { offset: 0, column: 0, line: 1 };
+      const pos = 0;
       const plainResult = plain(input, pos);
       const predictiveResult = predictive(input, pos);
       expect(predictiveResult.success).toBe(plainResult.success);
@@ -435,7 +435,7 @@ describe("predictiveChoice", () => {
   describe("cut/commit semantics, exercised through predictiveChoice's dispatch table", () => {
     it("does not try the next alternative once a committed sub-parser fails (ASCII dispatch-table path)", () => {
       const input = "ix";
-      const pos: Pos = { offset: 0, column: 0, line: 1 };
+      const pos = 0;
       const committedBranch = seq(lit("i"), commit(lit("f")));
       // `fallback` would itself SUCCEED on this input ("ix" starts with
       // "i") -- so the only way `result.success` can be `false` below is
@@ -458,7 +458,7 @@ describe("predictiveChoice", () => {
 
     it("still tries the next alternative when the failure isn't fatal (ASCII dispatch-table path)", () => {
       const input = "ix";
-      const pos: Pos = { offset: 0, column: 0, line: 1 };
+      const pos = 0;
       const branch = seq(lit("i"), lit("f"));
       const fallback = lit("i");
       const result = predictiveChoice<[unknown, string]>([
@@ -479,7 +479,7 @@ describe("predictiveChoice", () => {
       // regardless of which of the two combinators is nested inside the
       // other.
       const input = "ybz";
-      const pos: Pos = { offset: 0, column: 0, line: 1 };
+      const pos = 0;
       const innerPredictiveChoice = predictiveChoice<[string, string]>([
         [
           seq(
@@ -500,7 +500,7 @@ describe("predictiveChoice", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toEqual(["y", "b", "z"]);
-        expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
+        expect(result.next).toBe(3);
       }
     });
 
@@ -520,7 +520,7 @@ describe("predictiveChoice", () => {
       // instead of the `.filter()` branch this test is meant to cover.
       const astral = "\u{1F600}";
       const input = `${astral}x`;
-      const pos: Pos = { offset: 0, column: 0, line: 1 };
+      const pos = 0;
       const astralFilter: FirstCharFilter = {
         ranges: [
           {
@@ -562,7 +562,7 @@ describe("predictiveChoice", () => {
       // points actually get routed to it. Exercise all ten explicitly.
       const digitFilter: FirstCharFilter = { ranges: [{ lo: 48, hi: 57 }] };
       const parser = predictiveChoice([[lit("5"), digitFilter]]);
-      const pos: Pos = { offset: 0, column: 0, line: 1 };
+      const pos = 0;
       for (const digit of "0123456789") {
         const result = parser(digit, pos);
         if (digit === "5") {
@@ -591,16 +591,16 @@ describe("predictiveChoice", () => {
       };
       const parser = predictiveChoice([
         [
-          (input: string, p: Pos) => ({
+          (input: string, p: number) => ({
             success: true as const,
-            val: input[p.offset] as string,
+            val: input[p] as string,
             current: p,
-            next: { offset: p.offset + 1, column: p.column + 1, line: p.line },
+            next: p + 1,
           }),
           spanningFilter,
         ],
       ]);
-      const pos: Pos = { offset: 0, column: 0, line: 1 };
+      const pos = 0;
       expect(parser("z", pos).success).toBe(true);
       expect(parser(String.fromCodePoint(0xe9), pos).success).toBe(true);
       expect(parser("A", pos).success).toBe(false);
@@ -611,12 +611,12 @@ describe("predictiveChoice", () => {
 describe("sequence", () => {
   it("should be an alias for seq", () => {
     const input = "abc";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = sequence(lit("a"), lit("b"), lit("c"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toEqual(["a", "b", "c"]);
-      expect(result.next).toEqual({ offset: 3, column: 3, line: 1 });
+      expect(result.next).toBe(3);
     }
   });
 });
@@ -624,18 +624,18 @@ describe("sequence", () => {
 describe("maybe", () => {
   it("should return the result if parser succeeds", () => {
     const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = maybe(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toBe("a");
-      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
+      expect(result.next).toBe(1);
     }
   });
 
   it("should return null if parser fails", () => {
     const input = "b";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = maybe(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
@@ -648,18 +648,18 @@ describe("maybe", () => {
 describe("withDefault", () => {
   it("should return the parsed value if parser succeeds", () => {
     const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = withDefault(lit("a"), "default")(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toBe("a");
-      expect(result.next).toEqual({ offset: 1, column: 1, line: 1 });
+      expect(result.next).toBe(1);
     }
   });
 
   it("should return the default value if parser fails", () => {
     const input = "b";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = withDefault(lit("a"), "default")(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
@@ -672,7 +672,7 @@ describe("withDefault", () => {
 describe("reject", () => {
   it("should succeed if the given parser fails", () => {
     const input = "b";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = reject(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
@@ -683,7 +683,7 @@ describe("reject", () => {
 
   it("should fail if the given parser succeeds", () => {
     const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = reject(lit("a"))(input, pos);
     expect(result.success).toBe(false);
   });
@@ -692,7 +692,7 @@ describe("reject", () => {
 describe("lazy", () => {
   it("delegates to the parser returned by the thunk", () => {
     const input = "a";
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = lazy(() => lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
@@ -713,11 +713,11 @@ describe("lazy", () => {
     );
     const b: Parser<unknown> = choice(a, lit("x"));
 
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     const result = a("(((x)))", pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.next.offset).toBe(7);
+      expect(result.next).toBe(7);
     }
   });
 });

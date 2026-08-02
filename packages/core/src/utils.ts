@@ -129,33 +129,25 @@ export const getCharAt = (input: string, offset: number): string => {
 };
 
 /**
- * Calculates the next position after consuming a character.
+ * Calculates the next offset after consuming a character.
  *
- * This function updates the position information (offset, column, line)
- * based on the character that was consumed. It properly handles newline
- * characters by resetting the column and incrementing the line number.
+ * The threaded parser position is a plain offset now (see `Parser` in
+ * `./types.ts`), so this is just `offset + char.length` -- no `Pos`
+ * object, no line/column bookkeeping, on every single character
+ * consumed during parsing. Line/column are recovered on demand, only
+ * when something actually asks for them, via `offsetToPos` below.
  *
  * @param char - The character being consumed
- * @param pos - The current position information
- * @returns The new position after consuming the character
+ * @param pos - The current offset
+ * @returns The offset after consuming the character
  *
  * @example
  * ```typescript
- * const pos = { offset: 0, column: 0, line: 1 };
- *
- * nextPos("H", pos);     // { offset: 1, column: 1, line: 1 }
- * nextPos("\n", pos);    // { offset: 1, column: 0, line: 2 }
- * nextPos("🌍", pos);    // { offset: 2, column: 1, line: 1 } (emoji is 2 code units)
+ * nextPos("H", 0);     // 1
+ * nextPos("🌍", 0);    // 2 (emoji is 2 code units)
  * ```
  */
-export const nextPos = (char: string, { offset, column, line }: Pos): Pos => {
-  const isNewline = char === "\n";
-  return {
-    offset: offset + char.length,
-    column: isNewline ? 0 : column + 1,
-    line: isNewline ? line + 1 : line,
-  };
-};
+export const nextPos = (char: string, pos: number): number => pos + char.length;
 
 /**
  * Creates a failure result with detailed error information.
@@ -171,16 +163,15 @@ export const nextPos = (char: string, { offset, column, line }: Pos): Pos => {
  * explicit arguments are the ones that end up on the returned error.
  *
  * @param message - Human-readable error message describing the failure
- * @param pos - Position where the error occurred
+ * @param pos - Offset where the error occurred
  * @param options - Additional error information (expected, found, parserName, context)
  * @returns A ParseFailure object with the specified error details
  *
  * @example
  * ```typescript
- * const pos = { offset: 5, column: 5, line: 1 };
  * const failure = createFailure(
  *   "Expected digit",
- *   pos,
+ *   5,
  *   {
  *     expected: ["0-9"],
  *     found: "a",
@@ -191,7 +182,7 @@ export const nextPos = (char: string, { offset, column, line }: Pos): Pos => {
  */
 export const createFailure = (
   message: string,
-  pos: Pos,
+  pos: number,
   options?: Omit<ParseError, "message" | "pos">,
 ): ParseFailure => {
   return {
@@ -208,9 +199,9 @@ export const createFailure = (
  * Creates a parser function that runs from the beginning of input.
  *
  * This utility function wraps a parser to automatically start parsing
- * from the beginning of the input string (position 0, column 0, line 1).
- * It's useful for creating top-level parsers that don't need to track
- * their own position state.
+ * from the beginning of the input string (offset 0). It's useful for
+ * creating top-level parsers that don't need to track their own
+ * position state.
  *
  * @template T - Type of the parse result value
  * @param parser - The parser function to wrap
@@ -219,13 +210,13 @@ export const createFailure = (
  * @example
  * ```typescript
  * const digitParser: Parser<number> = (input, pos) => {
- *   const char = input[pos.offset];
+ *   const char = input[pos];
  *   if (char >= '0' && char <= '9') {
  *     return {
  *       success: true,
  *       val: parseInt(char),
  *       current: pos,
- *       next: { ...pos, offset: pos.offset + 1, column: pos.column + 1 }
+ *       next: pos + 1
  *     };
  *   }
  *   return createFailure("Expected digit", pos);
@@ -238,7 +229,7 @@ export const createFailure = (
 export const parse =
   <T>(parser: Parser<T>) =>
   (input: string) =>
-    parser(input, { offset: 0, column: 0, line: 1 });
+    parser(input, 0);
 
 /**
  * Type guard to check if a parse result is a failure.
@@ -357,66 +348,123 @@ export const safeExtractValue = <T>(result: ParseResult<T>): T | undefined => {
 };
 
 /**
- * Creates a position object with default values.
- *
- * This utility function creates a standardized position object with
- * sensible defaults. It's useful for initializing position tracking
- * or creating position objects for testing.
+ * Creates an initial offset. Kept as a named function (rather than
+ * inlining `0` at every call site) mainly for test readability and for
+ * the rare caller that wants to start somewhere other than the
+ * beginning of input.
  *
  * @param offset - Character offset from the start of input (default: 0)
- * @param column - Column number within the current line (default: 0)
- * @param line - Line number in the input (default: 1)
- * @returns A position object with the specified coordinates
+ * @returns The offset
  *
  * @example
  * ```typescript
- * createPos();           // { offset: 0, column: 0, line: 1 }
- * createPos(10, 5, 2);  // { offset: 10, column: 5, line: 2 }
- * createPos(5);          // { offset: 5, column: 0, line: 1 }
+ * createPos();    // 0
+ * createPos(10);  // 10
  * ```
  */
-export const createPos = (offset = 0, column = 0, line = 1): Pos => ({
-  offset,
-  column,
-  line,
-});
+export const createPos = (offset = 0): number => offset;
 
 /**
- * Advances position by a string, handling newlines correctly.
+ * Advances an offset by a string's length (in UTF-16 code units, so the
+ * result stays aligned with plain string indexing).
  *
- * This function calculates the new position after consuming a string,
- * properly handling newline characters by resetting the column and
- * incrementing the line number. It's useful for parsers that consume
- * multiple characters at once.
+ * This used to also maintain line/column, incrementing the line and
+ * resetting the column on every `\n` seen -- see `offsetToPos` below for
+ * where that bookkeeping now happens: lazily, on demand, not on every
+ * multi-character match during parsing.
  *
  * @param str - The string to advance by
- * @param pos - The current position
- * @returns The new position after consuming the string
+ * @param pos - The current offset
+ * @returns The offset after consuming the string
  *
  * @example
  * ```typescript
- * const pos = { offset: 0, column: 0, line: 1 };
- *
- * advancePos("Hello", pos);           // { offset: 5, column: 5, line: 1 }
- * advancePos("Hello\nWorld", pos);    // { offset: 11, column: 5, line: 2 }
- * advancePos("🌍", pos);              // { offset: 2, column: 1, line: 1 }
+ * advancePos("Hello", 0);        // 5
+ * advancePos("Hello\nWorld", 0); // 11
+ * advancePos("🌍", 0);           // 2
  * ```
  */
-export const advancePos = (str: string, pos: Pos): Pos => {
-  let { offset, column, line } = pos;
+export const advancePos = (str: string, pos: number): number =>
+  pos + str.length;
 
-  for (const char of str) {
-    if (char === "\n") {
-      line++;
-      column = 0;
+/**
+ * Single-entry cache of the last input's newline offsets, keyed by
+ * reference/value equality on the input string itself (strings can't be
+ * `WeakMap` keys, and a `Map` keyed by arbitrary input strings would
+ * grow unboundedly across many different parses -- a single slot,
+ * overwritten whenever a different input shows up, bounds memory while
+ * still amortizing repeated `offsetToPos` calls against the SAME input,
+ * which is the common case: `withPosition` inside a repetition, or
+ * multiple diagnostics from formatting one parse's error).
+ */
+let cachedNewlineIndexInput: string | null = null;
+let cachedNewlineIndexOffsets: Uint32Array | null = null;
+
+const getNewlineOffsets = (input: string): Uint32Array => {
+  if (cachedNewlineIndexInput === input && cachedNewlineIndexOffsets) {
+    return cachedNewlineIndexOffsets;
+  }
+  const offsets: number[] = [];
+  for (let i = 0; i < input.length; i++) {
+    if (input.charCodeAt(i) === 10 /* "\n" */) offsets.push(i);
+  }
+  const result = Uint32Array.from(offsets);
+  cachedNewlineIndexInput = input;
+  cachedNewlineIndexOffsets = result;
+  return result;
+};
+
+/**
+ * Recovers the line/column a given offset falls on, for callers that
+ * explicitly need them (error formatting in `./error.ts`, `withPosition`
+ * in `tpeg-combinator`) -- NOT maintained incrementally during parsing
+ * anymore (see `Parser` in `./types.ts`'s doc comment).
+ *
+ * Line lookup is O(log n) (binary search over a per-input newline-offset
+ * index, cached across repeated calls against the same input -- see
+ * `getNewlineOffsets`). Column is then counted in *code points* (to
+ * match what per-character `nextPos` used to produce -- a line
+ * containing an astral character must not count it as 2 columns) by
+ * scanning from the start of that line up to `offset`, an O(line
+ * length) walk. Both costs are fine here specifically because this
+ * function runs only on demand (once per formatted error, or once per
+ * `withPosition` call), never once per character consumed.
+ *
+ * @example
+ * ```typescript
+ * offsetToPos("ab\ncd", 0); // { offset: 0, line: 1, column: 0 }
+ * offsetToPos("ab\ncd", 4); // { offset: 4, line: 2, column: 1 }
+ * ```
+ */
+export const offsetToPos = (input: string, offset: number): Pos => {
+  const newlineOffsets = getNewlineOffsets(input);
+
+  let lo = 0;
+  let hi = newlineOffsets.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if ((newlineOffsets[mid] as number) < offset) {
+      lo = mid + 1;
     } else {
-      column++;
+      hi = mid;
     }
-    // Advance by code units to keep offset aligned with string indexing
-    offset += char.length;
+  }
+  const newlinesBefore = lo;
+  const line = newlinesBefore + 1;
+  const lineStart =
+    newlinesBefore === 0
+      ? 0
+      : (newlineOffsets[newlinesBefore - 1] as number) + 1;
+
+  let column = 0;
+  let i = lineStart;
+  while (i < offset) {
+    const codePoint = input.codePointAt(i);
+    i += codePoint !== undefined && codePoint > 0xffff ? 2 : 1;
+    column++;
   }
 
-  return { offset, column, line };
+  return { offset, line, column };
 };
 
 /**

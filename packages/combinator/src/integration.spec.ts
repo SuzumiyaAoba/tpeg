@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { Parser, Pos } from "@suzumiyaaoba/tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   charClass,
   choice,
@@ -14,7 +14,7 @@ import { between, recursive, token } from "./index";
 describe("combinator integration tests", () => {
   it("should detect and prevent infinite loops in repetition parsers", () => {
     // Parser that always succeeds without consuming input
-    const problematicParser: Parser<string> = (_input: string, pos: Pos) => ({
+    const problematicParser: Parser<string> = (_input: string, pos) => ({
       success: true,
       val: "problematic",
       current: pos,
@@ -24,11 +24,7 @@ describe("combinator integration tests", () => {
     const repeatedProblematic = zeroOrMore(problematicParser);
 
     // Should detect the infinite loop and return a failure
-    const result = repeatedProblematic("test", {
-      offset: 0,
-      line: 1,
-      column: 1,
-    });
+    const result = repeatedProblematic("test", 0);
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toContain("Infinite loop detected");
@@ -40,7 +36,7 @@ describe("combinator integration tests", () => {
     const closeParser = literal("}");
     const parser = between(openParser, closeParser);
 
-    const result = parser('{a:"b",c:123}', { offset: 0, line: 1, column: 1 });
+    const result = parser('{a:"b",c:123}', 0);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toBe('a:"b",c:123');
@@ -74,7 +70,7 @@ describe("combinator integration tests", () => {
       ),
     );
 
-    const result = expr("2 + (3 - 1)", { offset: 0, line: 1, column: 1 });
+    const result = expr("2 + (3 - 1)", 0);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val).toBe(4);

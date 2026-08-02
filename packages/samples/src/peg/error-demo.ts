@@ -4,6 +4,7 @@ import {
   charClass,
   choice,
   lit,
+  offsetToPos,
   oneOrMore,
   parse,
   seq,
@@ -12,10 +13,7 @@ import {
 // Define a custom ParseError interface
 interface DemoParseError {
   message: string;
-  pos: {
-    line: number;
-    column: number;
-  };
+  pos: number;
   expected?: string | string[];
   found?: string;
   parserName?: string;
@@ -39,8 +37,10 @@ const formatParseError = (error: DemoParseError, input: string): string => {
     }
   }
 
+  const { line, column } = offsetToPos(input, error.pos);
+
   return `
-Error at line ${error.pos.line}, column ${error.pos.column}:
+Error at line ${line}, column ${column}:
 Message: ${error.message}
 Expected: ${expected}
 Found: ${found}
@@ -48,8 +48,8 @@ Parser: ${parserName}
 Context: ${contextStr}
 
 Source:
-${input.split("\n")[error.pos.line - 1] || ""}
-${" ".repeat(error.pos.column)}^
+${input.split("\n")[line - 1] || ""}
+${" ".repeat(column)}^
 `;
 };
 
@@ -77,8 +77,8 @@ function displayParseResult<T>(result: ParseResult<T>, input: string): void {
   if (result.success) {
     console.log("Parsing successful!");
     console.log("Result:", result.val);
-    console.log("Consumed input:", input.substring(0, result.next.offset));
-    console.log("Remaining input:", input.substring(result.next.offset));
+    console.log("Consumed input:", input.substring(0, result.next));
+    console.log("Remaining input:", input.substring(result.next));
   } else {
     console.log("Parsing failed...");
     console.log(

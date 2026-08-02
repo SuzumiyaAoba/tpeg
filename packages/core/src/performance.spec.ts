@@ -204,7 +204,7 @@ describe("Performance Tests", () => {
       const startTime = performance.now();
 
       for (let i = 0; i < 10000; i++) {
-        createPos(i, i % 100, Math.floor(i / 100) + 1);
+        createPos(i);
       }
 
       const endTime = performance.now();
@@ -260,7 +260,7 @@ describe("Performance Tests", () => {
       const duration = endTime - startTime;
 
       expect(length).toBe(100000);
-      expect(pos.offset).toBe(100000);
+      expect(pos).toBe(100000);
       if (STRICT_PERF) {
         expect(duration).toBeLessThan(100); // Should complete within 100ms
       }
@@ -270,7 +270,7 @@ describe("Performance Tests", () => {
       const startTime = performance.now();
 
       for (let i = 0; i < 10000; i++) {
-        const pos = createPos(i, i % 100, Math.floor(i / 100) + 1);
+        const pos = createPos(i);
         const char = String.fromCharCode(i % 65536);
         nextPos(char, pos);
         unicodeLength(char);

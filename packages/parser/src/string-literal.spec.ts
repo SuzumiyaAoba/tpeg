@@ -5,7 +5,7 @@
 import { describe, expect, it } from "bun:test";
 import { stringLiteral } from "./string-literal";
 
-const pos = { offset: 0, line: 1, column: 1 };
+const pos = 0;
 
 describe("stringLiteral", () => {
   const parser = stringLiteral;

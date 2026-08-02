@@ -177,7 +177,7 @@ describe("tpeg CLI", () => {
     );
     const { number } = moduleFactory(...Object.values(core));
 
-    const pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     expect(number("42", pos)).toMatchObject({ success: true, val: 42 });
   });
 });

@@ -8,7 +8,7 @@ import { basicSyntax, tpegFile } from "./index";
 
 describe("basicSyntax", () => {
   const parser = basicSyntax;
-  const pos = { offset: 0, line: 1, column: 1 };
+  const pos = 0;
 
   describe("string literals", () => {
     it("should parse double-quoted strings", () => {

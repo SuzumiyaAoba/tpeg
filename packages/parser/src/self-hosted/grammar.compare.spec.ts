@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { grammarDefinition as handGrammarDefinition } from "../grammar";
 import { grammarBlockNode as genGrammarDefinition } from "./generated/grammar.generated";
 
-const pos = { offset: 0, line: 1, column: 1 };
+const pos = 0;
 
 const cases = [
   `grammar Simple {
@@ -80,7 +80,7 @@ describe("self-hosted grammar-block layer vs grammar.ts's grammarDefinition", ()
       expect(a.success).toBe(b.success);
       if (a.success && b.success) {
         expect(b.val).toEqual(a.val);
-        expect(b.next.offset).toEqual(a.next.offset);
+        expect(b.next).toEqual(a.next);
       }
     });
   }

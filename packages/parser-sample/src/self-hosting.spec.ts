@@ -55,8 +55,7 @@ interface GeneratedSelfModule {
 const isFullyConsumed = (
   result: ParseResult<unknown>,
   input: string,
-): boolean =>
-  result.success && input.slice(result.next.offset).trim().length === 0;
+): boolean => result.success && input.slice(result.next).trim().length === 0;
 
 describe("self-hosting: tpeg-self.tpeg", () => {
   afterAll(() => {

@@ -34,7 +34,7 @@ describe("`~` cut operator, parsed from grammar text", () => {
     );
     const { stmt } = moduleFactory(...Object.values(core));
 
-    const pos = { offset: 0, line: 1, column: 1 };
+    const pos = 0;
     expect(stmt("if", pos).success).toBe(true);
     // Without the cut, "ix" would fall through to the second alternative
     // and succeed by matching just "i".
@@ -80,7 +80,7 @@ describe("commitAtTopLevel (Phase 3: cut-driven memo table truncation), parsed f
       ...Object.values(combinator),
     );
 
-    const pos = { offset: 0, line: 1, column: 1 };
+    const pos = 0;
     expect(program("HB", pos).success).toBe(true);
     expect(program("XB", pos).success).toBe(false); // fails before the cut
     const afterCommit = program("HX", pos);
@@ -164,7 +164,7 @@ describe("commitAtTopLevel (Phase 3: cut-driven memo table truncation), parsed f
     );
     const { program, shared } = moduleFactory(...Object.values(scope));
 
-    const pos = { offset: 0, line: 1, column: 1 };
+    const pos = 0;
     // "axaxHB": header matches 2 reps of "a x" (offsets 0 and 2, each
     // caching a `shared` success entry) then "H" at offset 4; the cut
     // fires at offset 5, right where `body` ("B") starts.
@@ -218,11 +218,11 @@ describe("`@memoize` annotation, parsed from grammar text", () => {
       ...Object.values(combinator),
     );
 
-    const pos = { offset: 0, line: 1, column: 1 };
+    const pos = 0;
     const parsedDigits = digits("12345x", pos);
     expect(parsedDigits.success).toBe(true);
     if (parsedDigits.success) {
-      expect(parsedDigits.next.offset).toBe(5);
+      expect(parsedDigits.next).toBe(5);
     }
   });
 });

@@ -29,18 +29,12 @@ export const spaces = map(zeroOrMore(whitespace), (chars) => chars.join(""));
  * `token()` only needs the resulting position, never the skipped text.
  */
 const skipWhitespace: Parser<undefined> = (input, pos) => {
-  let { offset, line, column } = pos;
+  let offset = pos;
 
   while (offset < input.length) {
     const ch = input[offset];
     if (ch !== " " && ch !== "\t" && ch !== "\n" && ch !== "\r") {
       break;
-    }
-    if (ch === "\n") {
-      line++;
-      column = 0;
-    } else {
-      column++;
     }
     offset++;
   }
@@ -49,7 +43,7 @@ const skipWhitespace: Parser<undefined> = (input, pos) => {
     success: true,
     val: undefined,
     current: pos,
-    next: { offset, line, column },
+    next: offset,
   };
 };
 
@@ -153,7 +147,7 @@ export const alphaNum = charClass(["a", "z"], ["A", "Z"], ["0", "9"]);
  * Parser that matches the start of input or start of a line.
  */
 export const startOfLine = (): Parser<null> => (input: string, pos) => {
-  if (pos.offset === 0 || input[pos.offset - 1] === "\n") {
+  if (pos === 0 || input[pos - 1] === "\n") {
     return {
       success: true,
       val: null,

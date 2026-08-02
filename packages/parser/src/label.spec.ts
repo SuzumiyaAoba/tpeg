@@ -5,7 +5,6 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { Pos } from "@suzumiyaaoba/tpeg-core";
 import { characterClass } from "./character-class";
 import { identifier } from "./identifier";
 import { labeledExpression, withOptionalLabel } from "./label";
@@ -13,11 +12,7 @@ import { stringLiteral } from "./string-literal";
 import type { Expression, LabeledExpression } from "./types";
 import { createLabeledExpression } from "./types";
 
-const createPosition = (offset = 0, line = 1, column = 1): Pos => ({
-  offset,
-  line,
-  column,
-});
+const createPosition = (offset = 0): number => offset;
 
 describe("createLabeledExpression", () => {
   test("creates labeled expression AST node", () => {
@@ -53,7 +48,7 @@ describe("labeledExpression", () => {
           quote: '"',
         },
       });
-      expect(result.next.offset).toBe(12); // 'name:"hello"' length
+      expect(result.next).toBe(12); // 'name:"hello"' length
     }
   });
 
@@ -77,7 +72,7 @@ describe("labeledExpression", () => {
           negated: false,
         },
       });
-      expect(result.next.offset).toBe(12); // 'digits:[0-9]' length
+      expect(result.next).toBe(12); // 'digits:[0-9]' length
     }
   });
 
@@ -95,7 +90,7 @@ describe("labeledExpression", () => {
           name: "expression",
         },
       });
-      expect(result.next.offset).toBe(15); // 'left:expression' length
+      expect(result.next).toBe(15); // 'left:expression' length
     }
   });
 

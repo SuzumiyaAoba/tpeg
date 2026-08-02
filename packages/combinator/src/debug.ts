@@ -1,4 +1,4 @@
-import type { ParseFailure, Parser, Pos } from "@suzumiyaaoba/tpeg-core";
+import type { ParseFailure, Parser } from "@suzumiyaaoba/tpeg-core";
 import { named } from "./error";
 
 /**
@@ -24,10 +24,10 @@ export const debug = <T>(
     customLogger = console.log,
   } = options;
 
-  const debugParser: Parser<T> = (input: string, pos: Pos) => {
+  const debugParser: Parser<T> = (input: string, pos: number) => {
     if (logInput) {
-      const context = input.slice(pos.offset, pos.offset + 20);
-      customLogger(`[DEBUG ${name}] Input at ${pos.offset}: "${context}..."`);
+      const context = input.slice(pos, pos + 20);
+      customLogger(`[DEBUG ${name}] Input at ${pos}: "${context}..."`);
     }
 
     const result = parser(input, pos);

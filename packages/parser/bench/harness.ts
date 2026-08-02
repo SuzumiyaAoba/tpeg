@@ -32,13 +32,13 @@
 
 import * as tpegCombinator from "@suzumiyaaoba/tpeg-combinator";
 import * as tpegCore from "@suzumiyaaoba/tpeg-core";
-import type { Parser, Pos } from "@suzumiyaaoba/tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { leftFactorChoices } from "../src/ast-optimize";
 import { generateTypeScriptParser } from "../src/codegen";
 import { generateOptimizedTypeScriptParser } from "../src/codegen-optimized";
 import { grammarDefinition } from "../src/grammar";
 
-const ORIGIN_POS: Pos = { offset: 0, column: 0, line: 1 };
+const ORIGIN_POS = 0;
 
 export interface LeafInvocationCounter {
   count: number;
@@ -151,7 +151,7 @@ export function compileRule(
   const parsed = grammarDefinition(grammarSrc, ORIGIN_POS);
   if (!parsed.success) {
     throw new Error(
-      `bench grammar failed to parse: ${parsed.error.message} at offset ${parsed.error.pos.offset}`,
+      `bench grammar failed to parse: ${parsed.error.message} at offset ${parsed.error.pos}`,
     );
   }
   const grammar = options.leftFactor

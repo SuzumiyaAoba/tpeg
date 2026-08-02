@@ -1,5 +1,5 @@
 import type { ParseResult, Parser, Pos } from "@suzumiyaaoba/tpeg-core";
-import { isFailure } from "@suzumiyaaoba/tpeg-core";
+import { isFailure, offsetToPos } from "@suzumiyaaoba/tpeg-core";
 import { named } from "./error";
 
 /**
@@ -53,7 +53,7 @@ let watermarkOffset = 0;
  * constructing a grammar by hand, rather than through this codebase's
  * codegen, takes on the same obligation directly.
  *
- * The watermark advances to `pos.offset` -- the offset `parser` is about
+ * The watermark advances to `pos` -- the offset `parser` is about
  * to be tried at, i.e. right after everything before the cut has already
  * matched -- not to wherever `parser` itself stops. The commitment is
  * already final at that point regardless of whether `parser` goes on to
@@ -61,13 +61,13 @@ let watermarkOffset = 0;
  */
 export const commitAtTopLevel =
   <T>(parser: Parser<T>): Parser<T> =>
-  (input: string, pos: Pos) => {
+  (input: string, pos: number) => {
     if (input !== watermarkInput) {
       watermarkInput = input;
       watermarkOffset = 0;
     }
-    if (pos.offset > watermarkOffset) {
-      watermarkOffset = pos.offset;
+    if (pos > watermarkOffset) {
+      watermarkOffset = pos;
     }
 
     const result = parser(input, pos);
@@ -129,7 +129,7 @@ export const commitAtTopLevel =
  *
  * ## Cache key
  *
- * Keyed on `pos.offset` alone (a plain number, not a template-string
+ * Keyed on `pos` alone (a plain number, not a template-string
  * composite of offset/line/column): for a fixed `input`, a given offset
  * has exactly one corresponding (line, column), so line/column carry no
  * extra information once the cache is scoped to one input -- and a
@@ -152,7 +152,7 @@ export const commitAtTopLevel =
  *
  * ## Storage: a dense, offset-based window, not a hash map
  *
- * The key is always `pos.offset`, a small non-negative integer, so a
+ * The key is always `pos`, a small non-negative integer, so a
  * plain array indexed by `offset - base` (`base` being the oldest offset
  * still live, i.e. what pruning has not yet discarded) is a direct
  * packrat *matrix* row -- no hashing, no boxed key objects -- while still
@@ -176,7 +176,7 @@ export const memoize = <T>(
   // maxCacheSize is set, purely to know which entry to evict.
   let insertionOrder: number[] | null = null;
 
-  const memoizedParser: Parser<T> = (input: string, pos: Pos) => {
+  const memoizedParser: Parser<T> = (input: string, pos: number) => {
     if (input !== cachedInput || !cache) {
       // A different input than the last call (or the very first call):
       // this is a new parse. Start a fresh table rather than retaining
@@ -198,7 +198,7 @@ export const memoize = <T>(
       base = watermarkOffset;
     }
 
-    const index = pos.offset - base;
+    const index = pos - base;
     if (index >= 0) {
       const cached = cache[index];
       if (cached) {
@@ -220,7 +220,7 @@ export const memoize = <T>(
         }
       }
       cache[index] = result;
-      insertionOrder?.push(pos.offset);
+      insertionOrder?.push(pos);
     }
 
     return result;
@@ -237,7 +237,7 @@ export const recursive = <T>(
 ): [Parser<T>, (parser: Parser<T>) => void] => {
   let innerParser: Parser<T> | null = null;
 
-  const parser: Parser<T> = (input: string, pos: Pos) => {
+  const parser: Parser<T> = (input: string, pos: number) => {
     if (!innerParser) {
       return {
         success: false,
@@ -266,14 +266,14 @@ export const withPosition = <T>(
 ): Parser<{ value: T; position: Pos }> => {
   const withPositionParser: Parser<{ value: T; position: Pos }> = (
     input: string,
-    pos: Pos,
+    pos: number,
   ) => {
     const result = parser(input, pos);
 
     if (result.success) {
       return {
         success: true,
-        val: { value: result.val, position: pos },
+        val: { value: result.val, position: offsetToPos(input, pos) },
         current: result.current,
         next: result.next,
       } as const;

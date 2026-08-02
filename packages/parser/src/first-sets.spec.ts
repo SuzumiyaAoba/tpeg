@@ -1,5 +1,4 @@
 import { describe, expect, it } from "bun:test";
-import type { Pos } from "@suzumiyaaoba/tpeg-core";
 import {
   type CharSet,
   complement,
@@ -33,7 +32,7 @@ import {
   createStringLiteral,
 } from "./types";
 
-const ORIGIN: Pos = { offset: 0, column: 0, line: 1 };
+const ORIGIN = 0;
 
 /** `true` iff `c` (a 1-code-point JS string) is a member of `fs`'s set.
  * Asserts `fs` isn't `unknown` first, since `.set` is meaningless there. */

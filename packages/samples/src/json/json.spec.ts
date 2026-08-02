@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import type { ParseResult, Pos } from "@suzumiyaaoba/tpeg-core";
+import type { ParseResult } from "@suzumiyaaoba/tpeg-core";
 import { jsonParser, parseJSON } from "./json";
 import type { JSONObject, Parser } from "./json";
 
@@ -12,7 +12,7 @@ declare global {
 const parse =
   <T>(parser: Parser<T>) =>
   (input: string): ParseResult<T> => {
-    const pos: Pos = { offset: 0, line: 1, column: 1 };
+    const pos = 0;
     return parser(input, pos);
   };
 

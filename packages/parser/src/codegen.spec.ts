@@ -145,7 +145,7 @@ describe("TPEG Code Generation", () => {
         ...Object.values(core),
       );
 
-      const pos = { offset: 0, column: 0, line: 1 };
+      const pos = 0;
       expect(letter("m", pos).success).toBe(true);
       expect(notDigit("m", pos).success).toBe(true);
       expect(notDigit("5", pos).success).toBe(false);
@@ -630,12 +630,12 @@ describe("TPEG Code Generation", () => {
       );
       const { number } = moduleFactory(...Object.values(core));
 
-      const pos = { offset: 0, column: 0, line: 1 };
+      const pos = 0;
       expect(number("123abc", pos)).toEqual({
         success: true,
         val: 123,
-        current: { offset: 0, column: 0, line: 1 },
-        next: { offset: 3, column: 3, line: 1 },
+        current: 0,
+        next: 3,
       });
       expect(number("abc", pos).success).toBe(false);
     });
@@ -832,7 +832,7 @@ describe("TPEG Code Generation", () => {
       // generated `counted` rule references it unresolved, same as
       // `math.expr` elsewhere in this file.
       let calls = 0;
-      const tick = (_input: string, pos: { offset: number }) => {
+      const tick = (_input: string, pos: number) => {
         calls++;
         return { success: true as const, val: "t", current: pos, next: pos };
       };
@@ -872,7 +872,7 @@ describe("TPEG Code Generation", () => {
         tick,
       );
 
-      const pos = { offset: 0, line: 1, column: 1 };
+      const pos = 0;
       const first = counted("x", pos);
       const second = counted("x", pos);
 
@@ -922,7 +922,7 @@ describe("TPEG Code Generation", () => {
       );
       const { stmt } = moduleFactory(...Object.values(core));
 
-      const pos = { offset: 0, line: 1, column: 1 };
+      const pos = 0;
       const matched = stmt("if", pos);
       expect(matched.success).toBe(true);
 

@@ -7,6 +7,7 @@
  */
 
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
+import { offsetToPos } from "@suzumiyaaoba/tpeg-core";
 import {
   documentationComment,
   grammarAnnotation,
@@ -159,10 +160,9 @@ for (const grammar of grammarExamples) {
   } else {
     console.log("❌ Failed to parse grammar");
     console.log(`   Error: ${result.error?.message || "Parse failed"}`);
-    if (result.error?.pos) {
-      console.log(
-        `   Position: line ${result.error.pos.line}, column ${result.error.pos.column}`,
-      );
+    if (result.error?.pos !== undefined) {
+      const { line, column } = offsetToPos(grammar, result.error.pos);
+      console.log(`   Position: line ${line}, column ${column}`);
     }
   }
 

@@ -1,4 +1,4 @@
-import type { NonEmptyArray, NonEmptyString, Parser, Pos } from "./types";
+import type { NonEmptyArray, NonEmptyString, Parser } from "./types";
 import { createFailure, getCharAt, nextPos } from "./utils";
 
 /**
@@ -111,8 +111,8 @@ export const charClass = (
   const compiledSpecs = compileSpecs(charOrRanges);
   const asciiTable = buildAsciiTable(compiledSpecs);
 
-  return (input: string, pos: Pos) => {
-    const char = getCharAt(input, pos.offset);
+  return (input: string, pos: number) => {
+    const char = getCharAt(input, pos);
 
     if (!char) {
       return createFailure(
@@ -165,8 +165,8 @@ export const negatedCharClass = (
   const compiledSpecs = compileSpecs(charOrRanges);
   const asciiTable = buildAsciiTable(compiledSpecs);
 
-  return (input: string, pos: Pos) => {
-    const char = getCharAt(input, pos.offset);
+  return (input: string, pos: number) => {
+    const char = getCharAt(input, pos);
 
     if (!char) {
       return createFailure(

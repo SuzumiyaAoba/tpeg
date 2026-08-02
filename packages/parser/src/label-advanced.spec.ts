@@ -5,7 +5,6 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { Pos } from "@suzumiyaaoba/tpeg-core";
 import { expression } from "./composition";
 import { withOptionalLabel } from "./label";
 import { stringLiteral } from "./string-literal";
@@ -20,11 +19,7 @@ import type {
   Star,
 } from "./types";
 
-const createPosition = (offset = 0, line = 1, column = 1): Pos => ({
-  offset,
-  line,
-  column,
-});
+const createPosition = (offset = 0): number => offset;
 
 describe("Label Advanced Tests", () => {
   describe("complex label patterns", () => {

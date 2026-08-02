@@ -111,10 +111,10 @@ const singleQuotedString: Parser<StringLiteral> = map(
  *
  * @example
  * ```typescript
- * const result1 = stringLiteral()("\"hello\"", { offset: 0, line: 1, column: 1 });
+ * const result1 = stringLiteral()("\"hello\"", 0);
  * // result1.success === true, result1.val.value === "hello", result1.val.quote === '"'
  *
- * const result2 = stringLiteral()("'world'", { offset: 0, line: 1, column: 1 });
+ * const result2 = stringLiteral()("'world'", 0);
  * // result2.success === true, result2.val.value === "world", result2.val.quote === "'"
  * ```
  */

@@ -14,7 +14,6 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import type { Pos } from "@suzumiyaaoba/tpeg-core";
 import {
   applyAstOptimizations,
   degenerateNegativeLookaheads,
@@ -49,7 +48,7 @@ import {
 } from "./types";
 import type { Expression, GrammarDefinition } from "./types";
 
-const ORIGIN: Pos = { offset: 0, column: 0, line: 1 };
+const ORIGIN = 0;
 
 /** Compiles `grammar` to a runnable parser bound to `ruleName`, the same
  * `new Function`-based pattern `leftFactorChoices`'s differential test
@@ -73,12 +72,12 @@ async function compileRuleFor(grammar: GrammarDefinition, ruleName: string) {
     string,
     (
       input: string,
-      pos: Pos,
+      pos: number,
     ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>
   >;
   return built[ruleName] as (
     input: string,
-    pos: Pos,
+    pos: number,
   ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
 }
 
@@ -143,12 +142,12 @@ describe("leftFactorChoices", () => {
         string,
         (
           input: string,
-          pos: Pos,
+          pos: number,
         ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>
       >;
       return built["expr"] as (
         input: string,
-        pos: Pos,
+        pos: number,
       ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
     };
 
@@ -501,12 +500,12 @@ async function compileRuleForTest(
     string,
     (
       input: string,
-      pos: Pos,
+      pos: number,
     ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>
   >;
   return built[ruleName] as (
     input: string,
-    pos: Pos,
+    pos: number,
   ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
 }
 

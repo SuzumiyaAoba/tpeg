@@ -1,19 +1,12 @@
-import type { Pos } from "./types";
-
 /**
- * Test utility function to create a position object.
+ * Test utility function to create a parser position.
+ *
+ * The threaded parser position is a plain offset (see `Parser` in
+ * `./types.ts`) -- this is kept as a named function, rather than using
+ * a bare number at every call site, purely for test readability
+ * (`createTestPos(5)` reads as "position" where `5` alone wouldn't).
  *
  * @param offset The absolute offset from the start of the input (0-based)
- * @param line The line number (1-based), defaults to 1
- * @param column The column number (0-based). If not provided, defaults to offset
- * @returns Position object for testing
+ * @returns The offset, for use as a parser position in tests
  */
-export const createTestPos = (
-  offset: number,
-  line = 1,
-  column?: number,
-): Pos => ({
-  offset,
-  line,
-  column: column ?? offset,
-});
+export const createTestPos = (offset: number): number => offset;

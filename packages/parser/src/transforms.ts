@@ -60,10 +60,7 @@ const languageSeparator: Parser<string> = literal(
 /**
  * Parse supported target language
  */
-const targetLanguage: Parser<string> = (
-  input: string,
-  pos: { offset: number; line: number; column: number },
-) => {
+const targetLanguage: Parser<string> = (input: string, pos: number) => {
   const supportedLanguages = [
     SUPPORTED_LANGUAGES.TYPESCRIPT,
     SUPPORTED_LANGUAGES.PYTHON,
@@ -74,9 +71,9 @@ const targetLanguage: Parser<string> = (
   ];
 
   for (const lang of supportedLanguages) {
-    if (input.startsWith(lang, pos.offset)) {
+    if (input.startsWith(lang, pos)) {
       // Check if the match is complete (not a prefix of another language)
-      const remainingInput = input.slice(pos.offset + lang.length);
+      const remainingInput = input.slice(pos + lang.length);
       const nextChar = remainingInput[0];
 
       // If there's a next character and it's alphanumeric, this might be a prefix
@@ -88,11 +85,7 @@ const targetLanguage: Parser<string> = (
         success: true,
         val: lang,
         current: pos,
-        next: {
-          offset: pos.offset + lang.length,
-          line: pos.line,
-          column: pos.column + lang.length,
-        },
+        next: pos + lang.length,
       };
     }
   }
@@ -103,7 +96,7 @@ const targetLanguage: Parser<string> = (
       message: "Expected supported target language",
       pos,
       expected: supportedLanguages,
-      found: input.slice(pos.offset, pos.offset + 10),
+      found: input.slice(pos, pos + 10),
       parserName: "targetLanguage",
     },
   };
@@ -151,11 +144,8 @@ const transformBlockClose: Parser<string> = literal(
  */
 const TYPE_CHAR = /[a-zA-Z0-9_<>[\]]/;
 
-const complexType: Parser<string> = (
-  input: string,
-  pos: { offset: number; line: number; column: number },
-) => {
-  let currentPos = pos.offset;
+const complexType: Parser<string> = (input: string, pos: number) => {
+  let currentPos = pos;
   let braceCount = 0;
 
   while (currentPos < input.length) {
@@ -186,7 +176,7 @@ const complexType: Parser<string> = (
     }
   }
 
-  const result = input.slice(pos.offset, currentPos);
+  const result = input.slice(pos, currentPos);
 
   if (result.length === 0) {
     return {
@@ -195,7 +185,7 @@ const complexType: Parser<string> = (
         message: "Expected type",
         pos,
         expected: ["type"],
-        found: input[pos.offset] || "",
+        found: input[pos] || "",
         parserName: "complexType",
       },
     };
@@ -205,11 +195,7 @@ const complexType: Parser<string> = (
     success: true,
     val: result,
     current: pos,
-    next: {
-      offset: currentPos,
-      line: pos.line,
-      column: pos.column + (currentPos - pos.offset),
-    },
+    next: currentPos,
   };
 };
 
@@ -337,7 +323,7 @@ const functionBody: Parser<string> = scanBalancedBraces;
  */
 const transformFunction: Parser<TransformFunction> = (
   input: string,
-  pos: { offset: number; line: number; column: number },
+  pos: number,
 ) => {
   // optionalWhitespace
   const whitespaceResult = optionalWhitespace(input, pos);
@@ -403,7 +389,7 @@ const transformFunction: Parser<TransformFunction> = (
  */
 const transformFunctions: Parser<TransformFunction[]> = (
   input: string,
-  pos: { offset: number; line: number; column: number },
+  pos: number,
 ) => {
   const functions: TransformFunction[] = [];
   let currentPos = pos;
@@ -424,7 +410,7 @@ const transformFunctions: Parser<TransformFunction[]> = (
   currentPos = firstFunctionResult.next;
 
   // 残りの関数を解析
-  while (currentPos.offset < input.length) {
+  while (currentPos < input.length) {
     // 関数間の空白・改行をスキップ
     const separatorResult = star(whitespace)(input, currentPos);
     if (separatorResult.success) {
@@ -432,7 +418,7 @@ const transformFunctions: Parser<TransformFunction[]> = (
     }
 
     // 次のトークンが「}」（ブロックの終端）かチェック
-    if (currentPos.offset < input.length && input[currentPos.offset] === "}") {
+    if (currentPos < input.length && input[currentPos] === "}") {
       // ブロックの終端に到達したので終了
       break;
     }

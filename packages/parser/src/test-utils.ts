@@ -11,37 +11,22 @@ import type {
   ParseResult,
   ParseSuccess,
   Parser,
-  Pos as Position,
 } from "@suzumiyaaoba/tpeg-core";
 import { parse } from "@suzumiyaaoba/tpeg-core";
 import type { Expression } from "./types";
 
 /**
  * Create a standard test position at the beginning of input
- * @returns Position object at offset 0, line 1, column 1
+ * @returns Offset 0, for use as a parser position in tests
  */
-export const createTestPosition = (): Position => ({
-  offset: 0,
-  line: 1,
-  column: 1,
-});
+export const createTestPosition = (): number => 0;
 
 /**
  * Create a test position at a specific offset
  * @param offset Character offset in input
- * @param line Line number (defaults to 1)
- * @param column Column number (defaults to offset + 1)
- * @returns Position object
+ * @returns The offset, for use as a parser position in tests
  */
-export const createPositionAt = (
-  offset: number,
-  line = 1,
-  column = offset + 1,
-): Position => ({
-  offset,
-  line,
-  column,
-});
+export const createPositionAt = (offset: number): number => offset;
 
 /**
  * Parse input with the given parser - simplified test interface
@@ -193,22 +178,14 @@ export const expectASTNode = <T extends Expression>(
 /**
  * Helper for testing position information in parse results
  * @param result Parse result to check
- * @param expectedNext Expected next position
+ * @param expectedNext Expected next offset
  */
 export const expectPosition = <T>(
   result: ParseResult<T>,
-  expectedNext: Partial<Position>,
+  expectedNext: number,
 ): void => {
   if (result.success) {
-    if (expectedNext.offset !== undefined) {
-      expect(result.next.offset).toBe(expectedNext.offset);
-    }
-    if (expectedNext.line !== undefined) {
-      expect(result.next.line).toBe(expectedNext.line);
-    }
-    if (expectedNext.column !== undefined) {
-      expect(result.next.column).toBe(expectedNext.column);
-    }
+    expect(result.next).toBe(expectedNext);
   } else {
     throw new Error("Cannot check position on failed parse result");
   }

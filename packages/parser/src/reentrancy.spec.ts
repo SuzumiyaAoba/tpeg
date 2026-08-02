@@ -1,5 +1,4 @@
 import { describe, expect, it } from "bun:test";
-import type { Pos } from "@suzumiyaaoba/tpeg-core";
 import { grammarDefinition } from "./grammar";
 import { analyzeReentrancy } from "./reentrancy";
 import {
@@ -14,7 +13,7 @@ import {
   createStringLiteral,
 } from "./types";
 
-const ORIGIN: Pos = { offset: 0, column: 0, line: 1 };
+const ORIGIN = 0;
 
 // Mirrors of the three grammars in `packages/parser/bench/grammars.ts`
 // (`BENCH_ACYCLIC_CHAIN_GRAMMAR`, `BENCH_UNFACTORED_ARITHMETIC_GRAMMAR`,
@@ -69,7 +68,7 @@ function parse(src: string) {
   const result = grammarDefinition(src, ORIGIN);
   if (!result.success) {
     throw new Error(
-      `test grammar failed to parse: ${result.error.message} at offset ${result.error.pos.offset}`,
+      `test grammar failed to parse: ${result.error.message} at offset ${result.error.pos}`,
     );
   }
   return result.val;

@@ -2,13 +2,9 @@ import { describe, expect, it } from "bun:test";
 
 import { Grammar } from "./index";
 
-const START = {
-  offset: 0,
-  column: 0,
-  line: 1,
-} as const;
+const START = 0;
 
-const pos = (offset: number) => ({ offset, line: 1, column: offset });
+const pos = (offset: number): number => offset;
 
 describe("Grammar", () => {
   it("should parse simple numbers", () => {

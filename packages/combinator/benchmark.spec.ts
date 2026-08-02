@@ -1,5 +1,5 @@
 import { describe, it } from "bun:test";
-import type { Parser, Pos } from "@suzumiyaaoba/tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { any, charClass, lit } from "@suzumiyaaoba/tpeg-core";
 
 const EMOJI = "😊";
@@ -12,7 +12,7 @@ const N = 10000;
 // Utility for running and timing a parser N times
 function benchParser(name: string, parser: Parser<string>, input: string) {
   it(`benchmark: ${name} x${N}`, () => {
-    const pos: Pos = { offset: 0, column: 0, line: 1 };
+    const pos = 0;
     console.time(name);
     for (let i = 0; i < N; ++i) {
       parser(input, pos);
