@@ -203,6 +203,7 @@ export class OptimizedTPEGCodeGenerator {
       const ruleCode = this.generateOptimizedRule(
         rule,
         transformsByRuleName.get(rule.name),
+        index === 0,
       );
       parts.push(ruleCode);
       exports.push(stringInterner.intern(rule.name));
@@ -249,16 +250,21 @@ export class OptimizedTPEGCodeGenerator {
     const usedCombinators = new Set<string>();
 
     grammar.rules.forEach((rule, index) => {
-      this.collectUsedCombinators(rule.pattern, usedCombinators, index);
+      this.collectUsedCombinators(
+        rule.pattern,
+        usedCombinators,
+        index,
+        index === 0,
+      );
     });
 
-    // Add performance imports if needed. memoize lives in tpeg-combinator,
-    // not tpeg-core, so it must not also be folded into the tpeg-core
-    // import below -- that would import a name tpeg-core doesn't export.
-    // An explicit `@memoize` annotation on any rule forces the import
-    // regardless of `enableMemoization`/reentrancy -- see
-    // `generateOptimizedRule`, which applies it independently of the
-    // automatic trigger below.
+    // Add performance imports if needed. memoize and commitAtTopLevel
+    // both live in tpeg-combinator, not tpeg-core, so they must not also
+    // be folded into the tpeg-core import below -- that would import
+    // names tpeg-core doesn't export. An explicit `@memoize` annotation
+    // on any rule forces the memoize import regardless of
+    // `enableMemoization`/reentrancy -- see `generateOptimizedRule`,
+    // which applies it independently of the automatic trigger below.
     //
     // This used to gate on `analysis.estimatedParseComplexity !== "low"`
     // -- the same proxy `generateOptimizedRule` used to use for the
@@ -270,12 +276,30 @@ export class OptimizedTPEGCodeGenerator {
     // in `bench/grammars.ts` is exactly such a case) -- the old gate would
     // have emitted `memoize(...)` calls in the rule bodies below without
     // importing `memoize` at all, a `ReferenceError` at runtime.
+    const combinatorPackageImports: string[] = [];
     if (
       (this.reentrancyAnalysis &&
         this.reentrancyAnalysis.reentrantRules.size > 0) ||
       grammar.rules.some((rule) => findMemoizeAnnotation(rule))
     ) {
-      imports.push('import { memoize } from "@suzumiyaaoba/tpeg-combinator";');
+      combinatorPackageImports.push("memoize");
+    }
+    // commitAtTopLevel is emitted (in place of the ordinary `commit`, see
+    // generateOptimizedSequence) only for a `Cut` that is a direct
+    // element of the grammar's start rule's own top-level Sequence -- see
+    // `packages/combinator/src/logic.ts`'s `commitAtTopLevel` doc comment
+    // for why only that specific shape is safe.
+    const startRule = grammar.rules[0];
+    if (
+      startRule?.pattern.type === "Sequence" &&
+      startRule.pattern.elements.some((el) => el.type === "Cut")
+    ) {
+      combinatorPackageImports.push("commitAtTopLevel");
+    }
+    if (combinatorPackageImports.length > 0) {
+      imports.push(
+        `import { ${combinatorPackageImports.join(", ")} } from "@suzumiyaaoba/tpeg-combinator";`,
+      );
     }
 
     // Generate optimized combinator import
@@ -294,6 +318,7 @@ export class OptimizedTPEGCodeGenerator {
     expr: Expression,
     combinators: Set<string>,
     currentRuleIndex: number,
+    isStartRuleTopLevel = false,
   ): void {
     switch (expr.type) {
       case "StringLiteral":
@@ -321,7 +346,15 @@ export class OptimizedTPEGCodeGenerator {
             ? "captureSequence"
             : "sequence",
         );
-        if (expr.elements.some((el) => el.type === "Cut")) {
+        // Mirrors codegen.ts's identical guard: when this IS the start
+        // rule's own top-level Sequence, a Cut here emits
+        // `commitAtTopLevel` (tpeg-combinator) instead of `commit`
+        // (tpeg-core) -- see generateOptimizedSequence -- so `commit`
+        // must not be added to the tpeg-core import set in that case.
+        if (
+          expr.elements.some((el) => el.type === "Cut") &&
+          !isStartRuleTopLevel
+        ) {
           combinators.add("commit");
         }
         for (const element of expr.elements) {
@@ -437,8 +470,12 @@ export class OptimizedTPEGCodeGenerator {
   private generateOptimizedRule(
     rule: RuleDefinition,
     transformFn?: TransformFunction,
+    isStartRule = false,
   ): string {
-    const innerCode = this.generateOptimizedExpression(rule.pattern);
+    const innerCode = this.generateOptimizedExpression(
+      rule.pattern,
+      isStartRule,
+    );
 
     // An explicit `@memoize` annotation wins over the automatic
     // reentrancy-based trigger below (and applies regardless of
@@ -478,13 +515,25 @@ export class OptimizedTPEGCodeGenerator {
   /**
    * Generate optimized code for any expression type with caching
    */
-  private generateOptimizedExpression(expr: Expression): string {
+  /**
+   * `isStartRuleTopLevelSequence` mirrors codegen.ts's
+   * `generateExpression` flag of the same shape (see its comment): `true`
+   * only for the single top-level call from `generateOptimizedRule` on
+   * the start rule's own pattern, forwarded ONLY to the `Sequence` case.
+   * It's folded into the template-cache key below since it can change
+   * the generated output (`commitAtTopLevel` vs `commit`) for otherwise
+   * structurally-identical input.
+   */
+  private generateOptimizedExpression(
+    expr: Expression,
+    isStartRuleTopLevelSequence = false,
+  ): string {
     // Use object identity for caching when possible. Identifier codegen
     // depends on this.currentRuleIndex (whether the reference needs a
     // `lazy` wrapper), so it must be part of the key - otherwise the same
     // rule name referenced from two different rules could reuse a cached
     // decision that was only correct for the first one.
-    const cacheKey = `expr-${expr.type}-${this.currentRuleIndex}-${JSON.stringify(expr)}`;
+    const cacheKey = `expr-${expr.type}-${this.currentRuleIndex}-${isStartRuleTopLevelSequence}-${JSON.stringify(expr)}`;
 
     return this.templateCache.get(cacheKey, () => {
       switch (expr.type) {
@@ -499,7 +548,10 @@ export class OptimizedTPEGCodeGenerator {
         case "AnyChar":
           return "anyChar()";
         case "Sequence":
-          return this.generateOptimizedSequence(expr as Sequence);
+          return this.generateOptimizedSequence(
+            expr as Sequence,
+            isStartRuleTopLevelSequence,
+          );
         case "Choice":
           return this.generateOptimizedChoice(expr as Choice);
         case "Group":
@@ -573,7 +625,10 @@ export class OptimizedTPEGCodeGenerator {
     return stringInterner.intern(`${expr.module}.${expr.name}`);
   }
 
-  private generateOptimizedSequence(expr: Sequence): string {
+  private generateOptimizedSequence(
+    expr: Sequence,
+    isStartRuleTopLevel = false,
+  ): string {
     const hasCut = expr.elements.some((el) => el.type === "Cut");
 
     if (!hasCut) {
@@ -594,7 +649,12 @@ export class OptimizedTPEGCodeGenerator {
     // argument; every element *after* it is instead individually wrapped
     // in commit(...) (tpeg-core's combinators.ts) - mirrors
     // generateSequence in codegen.ts, see its comments for the full
-    // rationale.
+    // rationale, including `isStartRuleTopLevel` (`true` only for the
+    // single top-level call from `generateOptimizedRule` on the start
+    // rule's own pattern), which switches this to emitting
+    // `commitAtTopLevel` (tpeg-combinator) instead of `commit`
+    // (tpeg-core) -- see `commitAtTopLevel`'s doc comment in
+    // `packages/combinator/src/logic.ts` for the soundness condition.
     const parts: string[] = [];
     let committed = false;
     for (const el of expr.elements) {
@@ -603,7 +663,13 @@ export class OptimizedTPEGCodeGenerator {
         continue;
       }
       const code = this.generateOptimizedExpression(el);
-      parts.push(committed ? `commit(${code})` : code);
+      if (!committed) {
+        parts.push(code);
+      } else {
+        parts.push(
+          isStartRuleTopLevel ? `commitAtTopLevel(${code})` : `commit(${code})`,
+        );
+      }
     }
 
     if (parts.length === 0) {

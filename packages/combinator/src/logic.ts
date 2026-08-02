@@ -1,5 +1,84 @@
 import type { ParseResult, Parser, Pos } from "@suzumiyaaoba/tpeg-core";
+import { isFailure } from "@suzumiyaaoba/tpeg-core";
 import { named } from "./error";
+
+/**
+ * Shared, module-scoped watermark for the parse currently in progress:
+ * `commitAtTopLevel` (below) advances `watermarkOffset` when a top-level
+ * cut fires, and every `memoize` cache prunes its own entries below it
+ * lazily, the next time that cache is touched (see `memoize`'s own
+ * comment on why lazy/per-cache rather than an eager sweep of every live
+ * cache). Scoped to one input at a time via the same `input !== ...`
+ * identity check `memoize` itself already uses for the same reason (see
+ * that function's doc comment) -- reusing the pattern rather than
+ * inventing a second one.
+ */
+let watermarkInput: string | null = null;
+let watermarkOffset = 0;
+
+/**
+ * `commit()`'s (`@suzumiyaaoba/tpeg-core`) top-level counterpart: marks a
+ * failure fatal exactly like `commit`, and ALSO advances the shared
+ * watermark `memoize` (below) uses to discard now-unreachable cache
+ * entries. See the plan's Phase 3 (Mizushima et al., PASTE 2010) for the
+ * theory, and read the soundness restriction below before using this
+ * directly -- it is easy to reach for and unsound to use in the wrong
+ * place.
+ *
+ * ## Soundness restriction -- read before using
+ *
+ * Advancing the watermark to offset `k` asserts "this parse will never
+ * backtrack to before `k` again." That's true only when nothing *below*
+ * the cut can still cause backtracking past it: no pending choice
+ * alternative, no in-progress `*`/`+`/`?`, no enclosing sequence that
+ * could still fail and unwind further out. Per `docs/peg-grammar.md`, a
+ * cut is scoped to its own enclosing choice -- it does NOT protect
+ * anything above that (see the fix in the immediately preceding commit,
+ * `fix(core): scope commit()'s fatal flag to its own enclosing choice`,
+ * for a concrete case of what goes wrong when that scoping isn't
+ * respected). `commitAtTopLevel` needs the same care one level further:
+ * it must only be used where there is provably no live backtrack point
+ * *anywhere* above it, not just "no choice directly above."
+ *
+ * This codebase's own codegen (`packages/parser/src/codegen.ts` and
+ * `codegen-optimized.ts`) only ever emits `commitAtTopLevel` for a `Cut`
+ * that is a *direct* element of a grammar's start rule's own top-level
+ * `Sequence` -- never nested inside a `Choice`, `Group`, repetition, or
+ * reached through a referenced sub-rule. That is a deliberately narrow,
+ * structurally-verifiable sufficient condition for "no live backtrack
+ * point above this," not the general Mizushima result: it misses cases
+ * the general result would also handle safely (e.g. a cut inside a
+ * referenced rule that happens to always be invoked at backtrack depth
+ * 0), but it never advances the watermark somewhere unsound. A caller
+ * constructing a grammar by hand, rather than through this codebase's
+ * codegen, takes on the same obligation directly.
+ *
+ * The watermark advances to `pos.offset` -- the offset `parser` is about
+ * to be tried at, i.e. right after everything before the cut has already
+ * matched -- not to wherever `parser` itself stops. The commitment is
+ * already final at that point regardless of whether `parser` goes on to
+ * succeed or fail.
+ */
+export const commitAtTopLevel =
+  <T>(parser: Parser<T>): Parser<T> =>
+  (input: string, pos: Pos) => {
+    if (input !== watermarkInput) {
+      watermarkInput = input;
+      watermarkOffset = 0;
+    }
+    if (pos.offset > watermarkOffset) {
+      watermarkOffset = pos.offset;
+    }
+
+    const result = parser(input, pos);
+    if (isFailure(result)) {
+      return {
+        ...result,
+        error: { ...result.error, fatal: true },
+      };
+    }
+    return result;
+  };
 
 /**
  * Packrat memoization: caches a rule's parse result per (input, position),
@@ -55,6 +134,22 @@ import { named } from "./error";
  * has exactly one corresponding (line, column), so line/column carry no
  * extra information once the cache is scoped to one input -- and a
  * numeric key avoids building a fresh string on every lookup.
+ *
+ * ## Cut-driven truncation (Phase 3 / Mizushima et al., PASTE 2010)
+ *
+ * On every call, this also discards any cached entry at an offset the
+ * shared watermark (`commitAtTopLevel`, above) has proven the parse can
+ * never backtrack to again. This is a *reachability* fact, not a
+ * capacity cap -- it never discards something still possibly needed, so
+ * it composes freely with `maxCacheSize` below (a genuinely separate,
+ * unrelated bound). Pruning is lazy and per-cache: rather than an eager
+ * sweep of every live `memoize` cache the instant the watermark moves
+ * (which would need a global registry of them), each cache compares the
+ * watermark against `prunedUpTo` -- the offset *it* has already pruned
+ * below -- on its own next call, and only actually walks its `Map` when
+ * there's something new to discard. A cache nobody calls again before
+ * the parse ends simply never gets swept, which is fine: nothing reads
+ * it either.
  */
 export const memoize = <T>(
   parser: Parser<T>,
@@ -63,6 +158,7 @@ export const memoize = <T>(
   const { maxCacheSize, parserName } = options;
   let cachedInput: string | null = null;
   let cache: Map<number, ParseResult<T>> | null = null;
+  let prunedUpTo = 0;
 
   const memoizedParser: Parser<T> = (input: string, pos: Pos) => {
     if (input !== cachedInput || !cache) {
@@ -71,6 +167,16 @@ export const memoize = <T>(
       // the previous input's entries.
       cachedInput = input;
       cache = new Map<number, ParseResult<T>>();
+      prunedUpTo = 0;
+    }
+
+    if (watermarkInput === input && watermarkOffset > prunedUpTo) {
+      for (const key of cache.keys()) {
+        if (key < watermarkOffset) {
+          cache.delete(key);
+        }
+      }
+      prunedUpTo = watermarkOffset;
     }
 
     const cached = cache.get(pos.offset);

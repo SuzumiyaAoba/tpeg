@@ -362,6 +362,66 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
   });
 
   it("compiles a `~` cut marker into commit(...)-wrapped elements after it", () => {
+    // `ifStmt` is deliberately NOT the grammar's start rule (index 0)
+    // here -- see the dedicated `commitAtTopLevel` tests below for that
+    // case, which compiles a top-level cut differently.
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition("stmt", createIdentifier("ifStmt")),
+        createRuleDefinition(
+          "ifStmt",
+          createSequence([
+            createStringLiteral("if", '"'),
+            { type: "Cut" },
+            createStringLiteral("cond", '"'),
+            createStringLiteral("then", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      includeImports: true,
+    });
+
+    expect(result.code).toContain(
+      'sequence(literal("if"), commit(literal("cond")), commit(literal("then")))',
+    );
+    const coreImportLine = result.code
+      .split("\n")
+      .find(
+        (line) =>
+          line.startsWith("import {") &&
+          line.includes("@suzumiyaaoba/tpeg-core"),
+      );
+    expect(coreImportLine).toContain("commit");
+  });
+
+  it("unwraps a cut sequence down to its single committed element, same as an ordinary single-element sequence", () => {
+    // `r` is deliberately NOT the start rule -- see the dedicated
+    // `commitAtTopLevel` tests below for the start-rule case.
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition("stmt", createIdentifier("r")),
+        createRuleDefinition(
+          "r",
+          createSequence([{ type: "Cut" }, createStringLiteral("b", '"')]),
+        ),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar);
+
+    expect(result.code).toContain(
+      'export const r: Parser<any> = commit(literal("b"));',
+    );
+  });
+
+  it("compiles a top-level `~` cut in the start rule's own pattern into commitAtTopLevel(...)-wrapped elements", () => {
     const grammar = createGrammarDefinition(
       "Test",
       [],
@@ -383,12 +443,15 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
     });
 
     expect(result.code).toContain(
-      'sequence(literal("if"), commit(literal("cond")), commit(literal("then")))',
+      'sequence(literal("if"), commitAtTopLevel(literal("cond")), commitAtTopLevel(literal("then")))',
     );
-    expect(result.code).toContain("import { commit, literal, sequence } from");
+    expect(result.code).not.toContain("commit(literal");
+    expect(result.code).toContain(
+      'import { commitAtTopLevel } from "@suzumiyaaoba/tpeg-combinator";',
+    );
   });
 
-  it("unwraps a cut sequence down to its single committed element, same as an ordinary single-element sequence", () => {
+  it("unwraps a top-level cut sequence in the start rule down to its single commitAtTopLevel-wrapped element", () => {
     const grammar = createGrammarDefinition(
       "Test",
       [],
@@ -403,7 +466,7 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
     const result = generateOptimizedTypeScriptParser(grammar);
 
     expect(result.code).toContain(
-      'export const r: Parser<any> = commit(literal("b"));',
+      'export const r: Parser<any> = commitAtTopLevel(literal("b"));',
     );
   });
 

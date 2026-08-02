@@ -177,6 +177,39 @@ describe("TPEG Code Generation", () => {
     });
 
     test("should compile a `~` cut marker into commit(...)-wrapped elements after it", () => {
+      // `ifStmt` is deliberately NOT the grammar's start rule (index 0)
+      // here -- a top-level cut in the start rule's own pattern now
+      // compiles to `commitAtTopLevel` instead (see the dedicated
+      // `commitAtTopLevel` tests below), which is a different code path
+      // this test isn't about. `stmt` stands in as the start rule so this
+      // test stays focused on the ordinary `commit` compilation.
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition("stmt", createIdentifier("ifStmt")),
+          createRuleDefinition(
+            "ifStmt",
+            createSequence([
+              createStringLiteral("if"),
+              { type: "Cut" },
+              createStringLiteral("cond"),
+              createStringLiteral("then"),
+            ]),
+          ),
+        ],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      const result = generator.generateGrammar(grammar);
+
+      expect(result.code).toContain(
+        'sequence(literal("if"), commit(literal("cond")), commit(literal("then")))',
+      );
+      expect(result.imports.join("\n")).toContain("commit");
+    });
+
+    test("compiles a top-level `~` cut in the start rule's own pattern into commitAtTopLevel(...)-wrapped elements", () => {
       const grammar = createGrammarDefinition(
         "TestGrammar",
         [],
@@ -197,9 +230,52 @@ describe("TPEG Code Generation", () => {
       const result = generator.generateGrammar(grammar);
 
       expect(result.code).toContain(
-        'sequence(literal("if"), commit(literal("cond")), commit(literal("then")))',
+        'sequence(literal("if"), commitAtTopLevel(literal("cond")), commitAtTopLevel(literal("then")))',
       );
-      expect(result.imports.join("\n")).toContain("commit");
+      expect(result.code).not.toContain("commit(literal");
+      expect(result.imports.join("\n")).toContain(
+        'import { commitAtTopLevel } from "@suzumiyaaoba/tpeg-combinator";',
+      );
+      // tpeg-core's plain `commit` must NOT also be imported when nothing
+      // needs it.
+      const coreImportLine = result.imports.find(
+        (line) =>
+          line.startsWith("import {") &&
+          line.includes("@suzumiyaaoba/tpeg-core"),
+      );
+      expect(coreImportLine).not.toContain("commit");
+    });
+
+    test("a cut nested inside a Choice within the start rule is NOT treated as top-level (stays commit(...))", () => {
+      // Only a Cut that is a DIRECT element of the start rule's own
+      // top-level Sequence qualifies -- one nested inside a Choice (even
+      // within the same rule) is not at backtrack depth 0, so it must
+      // stay an ordinary `commit`.
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "stmt",
+            createChoice([
+              createSequence([
+                createStringLiteral("if"),
+                { type: "Cut" },
+                createStringLiteral("cond"),
+              ]),
+              createStringLiteral("other"),
+            ]),
+          ),
+        ],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      const result = generator.generateGrammar(grammar);
+
+      expect(result.code).toContain(
+        'sequence(literal("if"), commit(literal("cond")))',
+      );
+      expect(result.code).not.toContain("commitAtTopLevel");
     });
 
     test("should generate choice parser", () => {

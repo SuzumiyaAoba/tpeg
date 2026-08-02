@@ -42,6 +42,147 @@ describe("`~` cut operator, parsed from grammar text", () => {
   });
 });
 
+describe("commitAtTopLevel (Phase 3: cut-driven memo table truncation), parsed from grammar text", () => {
+  test("a cut directly in the start rule's own top-level sequence compiles to commitAtTopLevel and behaves like an ordinary cut", async () => {
+    const core = await import("@suzumiyaaoba/tpeg-core");
+    const combinator = await import("@suzumiyaaoba/tpeg-combinator");
+
+    const source = `grammar Program {
+      program = header ~ body
+      header = "H"
+      body = "B"
+    }`;
+
+    const parsed = testParse(grammarDefinition, source);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const result = generateTypeScriptParser(parsed.val, {
+      includeImports: true,
+      includeTypes: false,
+    });
+    expect(result.code).toContain("commitAtTopLevel(");
+    expect(result.code).not.toContain("commit(");
+    expect(result.imports.join("\n")).toContain(
+      'import { commitAtTopLevel } from "@suzumiyaaoba/tpeg-combinator";',
+    );
+
+    const body = result.code
+      .replace(/^import .+$/gm, "")
+      .replace(/^export const (\w+)/gm, "const $1");
+    const moduleFactory = new Function(
+      ...Object.keys(core),
+      ...Object.keys(combinator),
+      `${body}\nreturn { program };`,
+    );
+    const { program } = moduleFactory(
+      ...Object.values(core),
+      ...Object.values(combinator),
+    );
+
+    const pos = { offset: 0, line: 1, column: 1 };
+    expect(program("HB", pos).success).toBe(true);
+    expect(program("XB", pos).success).toBe(false); // fails before the cut
+    const afterCommit = program("HX", pos);
+    expect(afterCommit.success).toBe(false); // fails after the cut -- fatal
+    if (!afterCommit.success) {
+      expect(afterCommit.error.fatal).toBe(true);
+    }
+  });
+
+  test("a cut nested inside a Choice within the start rule does NOT compile to commitAtTopLevel", () => {
+    // Same source shape as the existing "commits an alternative..." test
+    // above, restated here to pin that it specifically does NOT trigger
+    // the Phase 3 path even though `stmt` is this grammar's only (and
+    // therefore start) rule: the cut is nested inside `stmt`'s top-level
+    // Choice, not a direct element of a top-level Sequence.
+    const source = `grammar Stmt {
+      stmt = "i" ~ "f" / "i"
+    }`;
+
+    const parsed = testParse(grammarDefinition, source);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const result = generateTypeScriptParser(parsed.val, {
+      includeImports: true,
+      includeTypes: false,
+    });
+    expect(result.code).not.toContain("commitAtTopLevel");
+    expect(result.code).toContain("commit(");
+    expect(result.imports.join("\n")).not.toContain("tpeg-combinator");
+  });
+
+  test("space claim: memo entries created before the top-level commit are gone afterward", async () => {
+    const core = await import("@suzumiyaaoba/tpeg-core");
+    const combinator = await import("@suzumiyaaoba/tpeg-combinator");
+
+    // `shared` (explicitly `@memoize`d) is invoked at offsets 0 and 2
+    // while `header`'s `(shared "x")*` backtracks through two
+    // repetitions before `program`'s cut fires right after `header`
+    // ends. Those two cache entries are exactly what the cut should
+    // prove unreachable.
+    const source = `grammar Program {
+      program = header ~ body
+      header = (shared "x")* "H"
+      @memoize
+      shared = "a"
+      body = "B"
+    }`;
+
+    const parsed = testParse(grammarDefinition, source);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const result = generateTypeScriptParser(parsed.val, {
+      includeImports: false,
+      includeTypes: false,
+    });
+    expect(result.code).toContain("commitAtTopLevel(");
+    expect(result.code).toContain("memoize(");
+
+    // Wrap `literal("a")` so every REAL invocation (a cache miss inside
+    // `shared`) is counted -- the same technique
+    // `packages/parser/bench/harness.ts` uses for its leaf-invocation
+    // counter. `shared`'s body is exactly `literal("a")`, so every call
+    // to `shared` that isn't a cache hit shows up here.
+    const counter = { count: 0 };
+    const countingLiteral = (...args: Parameters<typeof core.literal>) => {
+      const inner = core.literal(...args);
+      const wrapped: Parser<unknown> = (input, p) => {
+        if (args[0] === "a") counter.count++;
+        return inner(input, p);
+      };
+      return wrapped;
+    };
+
+    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+    const scope = { ...core, ...combinator, literal: countingLiteral };
+    const moduleFactory = new Function(
+      ...Object.keys(scope),
+      `${body}\nreturn { program, shared };`,
+    );
+    const { program, shared } = moduleFactory(...Object.values(scope));
+
+    const pos = { offset: 0, line: 1, column: 1 };
+    // "axaxHB": header matches 2 reps of "a x" (offsets 0 and 2, each
+    // caching a `shared` success entry) then "H" at offset 4; the cut
+    // fires at offset 5, right where `body` ("B") starts.
+    const parseResult = program("axaxHB", pos);
+    expect(parseResult.success).toBe(true);
+    const callsDuringParse = counter.count;
+    expect(callsDuringParse).toBeGreaterThanOrEqual(2); // offsets 0 and 2
+
+    // Re-invoking `shared` directly at offset 0 -- cached with a SUCCESS
+    // entry during header's parse, and below the watermark (5) the
+    // commit advanced it to -- must be a fresh call (counter increases),
+    // not a cache hit. This is the space claim: the entry is gone, not
+    // just unreachable through `program`'s own control flow.
+    shared("axaxHB", pos);
+    expect(counter.count).toBe(callsDuringParse + 1);
+  });
+});
+
 describe("`@memoize` annotation, parsed from grammar text", () => {
   test("bounds the generated rule's memo table via maxCacheSize", async () => {
     const core = await import("@suzumiyaaoba/tpeg-core");

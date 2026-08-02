@@ -294,7 +294,12 @@ export class TPEGCodeGenerator {
       this.ruleIndex.set(rule.name, index);
     });
     grammar.rules.forEach((rule, index) => {
-      this.collectUsedCombinators(rule.pattern, usedCombinators, index);
+      this.collectUsedCombinators(
+        rule.pattern,
+        usedCombinators,
+        index,
+        index === 0,
+      );
     });
 
     // Add imports based on what's actually used
@@ -306,13 +311,31 @@ export class TPEGCodeGenerator {
           `import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`,
         );
       }
-      // memoize lives in tpeg-combinator, not tpeg-core, and is only ever
-      // emitted for a rule carrying an explicit `@memoize` annotation (see
-      // generateRule) - this generator has no automatic memoization
+      // memoize and commitAtTopLevel both live in tpeg-combinator, not
+      // tpeg-core, so they share one import line there rather than being
+      // folded into `combinators` above. memoize is only ever emitted for
+      // a rule carrying an explicit `@memoize` annotation (see
+      // generateRule) -- this generator has no automatic memoization
       // heuristic of its own (unlike codegen-optimized.ts).
+      // commitAtTopLevel is emitted (in place of the ordinary `commit`,
+      // see generateSequence) only for a `Cut` that is a direct element
+      // of the grammar's start rule's own top-level Sequence -- see
+      // `packages/combinator/src/logic.ts`'s `commitAtTopLevel` doc
+      // comment for why only that specific shape is safe.
+      const combinatorPackageImports: string[] = [];
       if (grammar.rules.some((rule) => findMemoizeAnnotation(rule))) {
+        combinatorPackageImports.push("memoize");
+      }
+      const startRule = grammar.rules[0];
+      if (
+        startRule?.pattern.type === "Sequence" &&
+        startRule.pattern.elements.some((el) => el.type === "Cut")
+      ) {
+        combinatorPackageImports.push("commitAtTopLevel");
+      }
+      if (combinatorPackageImports.length > 0) {
         imports.push(
-          'import { memoize } from "@suzumiyaaoba/tpeg-combinator";',
+          `import { ${combinatorPackageImports.join(", ")} } from "@suzumiyaaoba/tpeg-combinator";`,
         );
       }
     }
@@ -325,6 +348,7 @@ export class TPEGCodeGenerator {
       const ruleCode = this.generateRule(
         rule,
         transformsByRuleName.get(rule.name),
+        index === 0,
       );
       parts.push(ruleCode);
       exports.push(rule.name);
@@ -352,8 +376,9 @@ export class TPEGCodeGenerator {
   private generateRule(
     rule: RuleDefinition,
     transformFn?: TransformFunction,
+    isStartRule = false,
   ): string {
-    let parserCode = this.generateExpression(rule.pattern);
+    let parserCode = this.generateExpression(rule.pattern, isStartRule);
     const memoizeAnnotation = findMemoizeAnnotation(rule);
     if (memoizeAnnotation) {
       parserCode = wrapWithMemoize(parserCode, memoizeAnnotation);
@@ -370,9 +395,18 @@ export class TPEGCodeGenerator {
   }
 
   /**
-   * Generate code for any expression type
+   * Generate code for any expression type. `isStartRuleTopLevelSequence`
+   * is forwarded ONLY to the `Sequence` case, and only ever `true` for
+   * the single top-level call from `generateRule` on the start rule's
+   * own pattern -- every other call site (including `generateSequence`'s
+   * own per-element loop) implicitly passes `false`, since anything
+   * reached recursively is no longer "top-level, unnested" (see
+   * `generateSequence`'s doc comment).
    */
-  private generateExpression(expr: Expression): string {
+  private generateExpression(
+    expr: Expression,
+    isStartRuleTopLevelSequence = false,
+  ): string {
     switch (expr.type) {
       case "StringLiteral":
         return this.generateStringLiteral(expr as StringLiteral);
@@ -385,7 +419,10 @@ export class TPEGCodeGenerator {
       case "AnyChar":
         return this.generateAnyChar(expr as AnyChar);
       case "Sequence":
-        return this.generateSequence(expr as Sequence);
+        return this.generateSequence(
+          expr as Sequence,
+          isStartRuleTopLevelSequence,
+        );
       case "Choice":
         return this.generateChoice(expr as Choice);
       case "Group":
@@ -463,7 +500,10 @@ export class TPEGCodeGenerator {
     return "anyChar()";
   }
 
-  private generateSequence(expr: Sequence): string {
+  private generateSequence(
+    expr: Sequence,
+    isStartRuleTopLevel = false,
+  ): string {
     // A `~` cut marker (see the `Cut` node in grammar-types.ts) is dropped
     // entirely rather than emitted as a sequence()/captureSequence()
     // argument - it consumes no input and contributes no value of its own.
@@ -474,6 +514,16 @@ export class TPEGCodeGenerator {
     // each element individually (rather than nesting the tail in its own
     // sub-sequence) keeps the generated tuple/capture-merge shape
     // identical to the cut-free case - only failure behavior changes.
+    //
+    // `isStartRuleTopLevel` is `true` only when `expr` IS the grammar's
+    // start rule's own top-level pattern (set once, in `generateRule`,
+    // and never forwarded to any recursive call below -- see
+    // `generateExpression`) -- a cut here is provably at backtrack depth
+    // 0 (see `commitAtTopLevel`'s doc comment in
+    // `packages/combinator/src/logic.ts` for why that's the condition
+    // that matters), so `commitAtTopLevel(...)` is emitted instead of the
+    // ordinary `commit(...)`, letting `memoize` discard now-unreachable
+    // cache entries as the parse commits past them.
     const parts: string[] = [];
     let committed = false;
     for (const el of expr.elements) {
@@ -482,7 +532,13 @@ export class TPEGCodeGenerator {
         continue;
       }
       const code = this.generateExpression(el);
-      parts.push(committed ? `commit(${code})` : code);
+      if (!committed) {
+        parts.push(code);
+      } else {
+        parts.push(
+          isStartRuleTopLevel ? `commitAtTopLevel(${code})` : `commit(${code})`,
+        );
+      }
     }
     const elements = parts.join(", ");
     // A sequence with labeled elements needs its per-element captured
@@ -582,12 +638,20 @@ export class TPEGCodeGenerator {
   }
 
   /**
-   * Collect all combinators used in an expression
+   * Collect all combinators used in an expression. `isStartRuleTopLevel`
+   * mirrors `generateExpression`'s flag of the same shape: `true` only
+   * for the single top-level call on the start rule's own pattern, never
+   * forwarded to any recursive call. When a `Sequence` with that flag set
+   * contains a `Cut`, `commitAtTopLevel` will be emitted there instead of
+   * `commit` (see `generateSequence`) -- from tpeg-combinator, not
+   * tpeg-core -- so `commit` must NOT be added to `combinators` (the
+   * tpeg-core import set) in that specific case.
    */
   private collectUsedCombinators(
     expr: Expression,
     combinators: Set<string>,
     currentRuleIndex: number,
+    isStartRuleTopLevel = false,
   ): void {
     switch (expr.type) {
       case "StringLiteral":
@@ -615,7 +679,10 @@ export class TPEGCodeGenerator {
             ? "captureSequence"
             : "sequence",
         );
-        if (expr.elements.some((el) => el.type === "Cut")) {
+        if (
+          expr.elements.some((el) => el.type === "Cut") &&
+          !isStartRuleTopLevel
+        ) {
           combinators.add("commit");
         }
         for (const element of expr.elements) {
