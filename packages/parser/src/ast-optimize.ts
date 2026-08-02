@@ -107,8 +107,43 @@
  * alternative anywhere other than last, or more than one of them, is left
  * untouched (not factored) -- handling arbitrary interleaving isn't
  * needed by any grammar in this repo and isn't implemented.
+ *
+ * ## Automatic cut insertion
+ *
+ * `insertAutomaticCuts` (below, separate from the three rewrites above
+ * and NOT included in `applyAstOptimizations`'s default chain -- see its
+ * own doc comment for why) inserts a `Cut` (`~`) into a `Choice`
+ * alternative wherever a later sibling alternative is *provably*
+ * unreachable once the current one has matched a certain prefix.
+ *
+ * The naive framing -- "search for the longest prefix that still lets
+ * later alternatives be ruled out" -- turns out to collapse to a single
+ * check: a non-nullable-terminated prefix's FIRST set never changes as
+ * more elements are appended after it (`firstSetOfExpression`'s
+ * `Sequence` handling breaks at the first non-nullable element
+ * regardless of how many more elements follow), so there is exactly one
+ * candidate cut position per alternative -- right after its first
+ * non-nullable element -- not a range of positions to search over.
+ *
+ * This provides essentially zero benefit against expensive
+ * re-computation (that's what `leftFactorChoices` and memoization are
+ * for) -- a FIRST-disjoint sibling was already going to be rejected on
+ * its very first character comparison, cut or not. The actual saving is
+ * that a rejection is not free in this runtime: every failing
+ * alternative -- even one that fails on its first character -- builds an
+ * error object and an interpolated message string before `choice`
+ * discards it (see `packages/core/src/combinators.ts`'s failure path).
+ * Skipping N-1 of those constructions per backtrack is a measurable
+ * constant-factor win despite each one being an O(1) check.
  */
 
+import type { GrammarFirstSetAnalysis } from "./first-sets";
+import {
+  analyzeFirstSets,
+  firstSetOfExpression,
+  firstSetsDisjoint,
+  isNullable,
+} from "./first-sets";
 import type {
   CharacterClass,
   Choice,
@@ -120,7 +155,12 @@ import type {
   Sequence,
   StringLiteral,
 } from "./types";
-import { createChoice, createOptional, createSequence } from "./types";
+import {
+  createChoice,
+  createCut,
+  createOptional,
+  createSequence,
+} from "./types";
 
 /** Node types that cannot themselves embed an `ActionExpression` or
  * `LabeledExpression`, so a single-type check on the node itself
@@ -595,6 +635,10 @@ export const degenerateNegativeLookaheads = (
  * classes that left factoring can then group, so it runs before
  * `leftFactorChoices`. `mergeCharacterClasses` has no such ordering
  * dependency and is run first.
+ *
+ * `insertAutomaticCuts` is deliberately NOT included here -- see its own
+ * doc comment for why it's a separate, more cautious opt-in than the
+ * three rewrites above.
  */
 export const applyAstOptimizations = (
   grammar: GrammarDefinition,
@@ -602,3 +646,170 @@ export const applyAstOptimizations = (
   leftFactorChoices(
     degenerateNegativeLookaheads(mergeCharacterClasses(grammar)),
   );
+
+// ============================================================================
+// Automatic cut insertion
+// ============================================================================
+//
+// See the module doc comment's "Automatic cut insertion" section for the
+// theory (why this collapses to checking exactly one candidate position
+// per alternative, and why the benefit is avoided failure-path
+// allocation, not avoided re-computation).
+//
+// Soundness constraint, matching the danger `codegen-optimized.ts`
+// documents around alternative reordering (`"==" / "="` reordered to
+// `"=" / "=="` makes `==` permanently unmatchable): this rewrite must
+// NEVER insert a cut based on a false claim of disjointness. Two guards
+// enforce that:
+// - `firstSetsDisjoint` treats `unknown` on either side as "not proven
+//   disjoint" (see its own doc comment) -- it only returns `true` when
+//   every character in one set is provably absent from the other.
+// - A later alternative that is itself (possibly) nullable is NEVER
+//   treated as excluded, however disjoint its FIRST set looks: a
+//   nullable alternative can succeed by consuming nothing, and "the
+//   input's next character doesn't start it" says nothing about whether
+//   it could still match zero characters right here.
+//
+// Unlike `leftFactorChoices`/`degenerateNegativeLookaheads`, this needs
+// no `isShapeSensitiveRule` gate: a `Cut` node occupies no tuple slot
+// (`docs/peg-grammar.md`) and `codegen.ts`/`codegen-optimized.ts` already
+// drop it from the emitted arguments, wrapping only the elements after it
+// in `commit(...)` -- inserting one changes failure behavior, never
+// `.val` shape.
+
+/**
+ * Finds the number of leading elements of `alternative` after which a
+ * `Cut` is provably safe to insert, or `null` if there is no such
+ * position. Only considers a `Sequence` of >= 2 elements: a
+ * single-element alternative either fully succeeds or fully fails
+ * atomically, so it has no interior position to protect a later partial
+ * failure at, and a cut as the very last element is a documented no-op.
+ */
+const findCutPosition = (
+  alternative: Expression,
+  laterAlternatives: readonly Expression[],
+  analysis: GrammarFirstSetAnalysis,
+): number | null => {
+  if (alternative.type !== "Sequence") return null;
+  const { elements } = alternative;
+  if (elements.length < 2) return null;
+
+  // The one candidate position: right after the first non-nullable
+  // element (1-based count of elements up to and including it). Elements
+  // before it are all nullable, so nothing is guaranteed consumed until
+  // this one; elements after it can't change the prefix's FIRST set (see
+  // module doc comment), so there is nothing to gain by looking further.
+  let k = 0;
+  while (
+    k < elements.length &&
+    isNullable(elements[k] as Expression, analysis.nullableRules)
+  ) {
+    k++;
+  }
+  k++;
+  if (k >= elements.length) return null; // no-op-as-last, or fully nullable
+
+  const prefix = createSequence(elements.slice(0, k));
+  const prefixFirst = firstSetOfExpression(
+    prefix,
+    analysis.firstSets,
+    analysis.nullableRules,
+  );
+  if (prefixFirst.unknown) return null;
+
+  // For the LAST alternative of a Choice, `laterAlternatives` is empty,
+  // and `[].every(...)` is vacuously `true` -- so this also inserts a cut
+  // into the last alternative, where there is nothing left to exclude.
+  // That's intentional, not an oversight: it changes nothing about which
+  // alternatives get tried (there were none left either way), and it's
+  // safe against leaking `fatal` to whatever encloses this `Choice`
+  // because `choice`/`captureChoice` (`packages/core/src/combinators.ts`,
+  // `packages/core/src/capture.ts`) absorb `fatal` at their own boundary
+  // regardless of which alternative it came from. The only effect is a
+  // more specific error message on failure (the committed alternative's
+  // own error, via `choice`'s early-return path) instead of the usual
+  // aggregated "none of the parsers matched."
+  const allLaterExcluded = laterAlternatives.every((later) => {
+    if (isNullable(later, analysis.nullableRules)) return false;
+    const laterFirst = firstSetOfExpression(
+      later,
+      analysis.firstSets,
+      analysis.nullableRules,
+    );
+    return firstSetsDisjoint(prefixFirst, laterFirst);
+  });
+
+  return allLaterExcluded ? k : null;
+};
+
+const insertCutsInExpression = (
+  expr: Expression,
+  analysis: GrammarFirstSetAnalysis,
+): Expression => {
+  switch (expr.type) {
+    case "Sequence":
+      return createSequence(
+        expr.elements.map((el) => insertCutsInExpression(el, analysis)),
+      );
+    case "Choice": {
+      // Children first (bottom-up, matching the other rewrites in this
+      // file) -- a `Cut` contributes nothing to FIRST/nullability (see
+      // `first-sets.ts`), so processing order can't change any of this
+      // level's own disjointness checks either way.
+      const processed = expr.alternatives.map((alt) =>
+        insertCutsInExpression(alt, analysis),
+      );
+      const withCuts = processed.map((alt, i) => {
+        const laterAlternatives = processed.slice(i + 1);
+        const k = findCutPosition(alt, laterAlternatives, analysis);
+        if (k === null || alt.type !== "Sequence") return alt;
+        return createSequence([
+          ...alt.elements.slice(0, k),
+          createCut(),
+          ...alt.elements.slice(k),
+        ]);
+      });
+      return createChoice(withCuts);
+    }
+    case "Group":
+    case "Star":
+    case "Plus":
+    case "Optional":
+    case "Quantified":
+    case "PositiveLookahead":
+    case "NegativeLookahead":
+    case "LabeledExpression":
+    case "ActionExpression":
+      return {
+        ...expr,
+        expression: insertCutsInExpression(expr.expression, analysis),
+      };
+    default:
+      return expr;
+  }
+};
+
+/**
+ * Returns a new `GrammarDefinition` with a `Cut` inserted into every
+ * `Choice` alternative where a later sibling is provably unreachable past
+ * some prefix (see the module doc comment). FIRST sets and nullability
+ * are computed once, from the original (pre-rewrite) grammar -- a `Cut`
+ * never changes either, so there is no need to recompute per rule or per
+ * nesting level.
+ *
+ * Deliberately NOT part of `applyAstOptimizations`'s default chain and
+ * not gated by `isShapeSensitiveRule` (see the "Automatic cut insertion"
+ * section of the module doc comment for both).
+ */
+export const insertAutomaticCuts = (
+  grammar: GrammarDefinition,
+): GrammarDefinition => {
+  const analysis = analyzeFirstSets(grammar);
+  return {
+    ...grammar,
+    rules: grammar.rules.map((rule) => ({
+      ...rule,
+      pattern: insertCutsInExpression(rule.pattern, analysis),
+    })),
+  };
+};

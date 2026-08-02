@@ -331,8 +331,17 @@ export class EtaTPEGCodeGenerator {
       case "Sequence":
         combinators.add("sequence");
         for (const element of (expr as Sequence).elements) {
+          if (element.type === "Cut") {
+            // Dropped from the emitted sequence() call itself (see
+            // `generateSequence`); every element after it is wrapped in
+            // `commit(...)` instead, so that import is needed here too.
+            combinators.add("commit");
+            continue;
+          }
           this.collectUsedCombinators(element, combinators);
         }
+        break;
+      case "Cut":
         break;
       case "Choice":
         combinators.add("choice");
@@ -440,6 +449,13 @@ export class EtaTPEGCodeGenerator {
         return `notPredicate(${this.generateExpressionCode((expr as NegativeLookahead).expression)})`;
       case "LabeledExpression":
         return this.generateLabeledExpression(expr as LabeledExpression);
+      case "Cut":
+        // Only reachable via `generateSequence`'s single-element
+        // shortcut, for the degenerate case of a rule whose entire
+        // pattern is just `~` -- `generateSequence` itself drops a `Cut`
+        // from any multi-element sequence (see its own doc comment), so
+        // this mirrors what that reduces to: an empty sequence.
+        return "sequence()";
       default:
         throw new Error(
           `Unsupported expression type: ${(expr as { type: string }).type}`,
@@ -496,8 +512,24 @@ export class EtaTPEGCodeGenerator {
       }
     }
 
-    const elements = expr.elements.map((el) => this.generateExpressionCode(el));
-    return `sequence(${elements.join(", ")})`;
+    // A `~` cut marker is dropped from the emitted arguments entirely --
+    // it consumes no input and contributes no value of its own -- and
+    // every element *after* it is individually wrapped in `commit(...)`.
+    // Mirrors `codegen.ts`'s `generateSequence` exactly (see that
+    // function's doc comment for the full rationale, including why
+    // wrapping each element individually rather than nesting the tail in
+    // a sub-sequence keeps the emitted tuple shape unchanged).
+    const parts: string[] = [];
+    let committed = false;
+    for (const el of expr.elements) {
+      if (el.type === "Cut") {
+        committed = true;
+        continue;
+      }
+      const code = this.generateExpressionCode(el);
+      parts.push(committed ? `commit(${code})` : code);
+    }
+    return `sequence(${parts.join(", ")})`;
   }
 
   private generateChoice(expr: Choice): string {

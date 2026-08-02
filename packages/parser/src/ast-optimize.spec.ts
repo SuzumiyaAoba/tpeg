@@ -18,6 +18,7 @@ import type { Pos } from "@suzumiyaaoba/tpeg-core";
 import {
   applyAstOptimizations,
   degenerateNegativeLookaheads,
+  insertAutomaticCuts,
   leftFactorChoices,
   mergeCharacterClasses,
 } from "./ast-optimize";
@@ -48,6 +49,37 @@ import {
 import type { Expression, GrammarDefinition } from "./types";
 
 const ORIGIN: Pos = { offset: 0, column: 0, line: 1 };
+
+/** Compiles `grammar` to a runnable parser bound to `ruleName`, the same
+ * `new Function`-based pattern `leftFactorChoices`'s differential test
+ * below uses. Module-level (rather than redefined per test) since
+ * `insertAutomaticCuts`'s tests need it in several places. */
+async function compileRuleFor(grammar: GrammarDefinition, ruleName: string) {
+  const core = await import("@suzumiyaaoba/tpeg-core");
+  const generated = generateTypeScriptParser(grammar, {
+    includeImports: false,
+    includeTypes: false,
+  });
+  const body = generated.code.replace(/^export const (\w+)/gm, "const $1");
+  const ruleNames = [...generated.code.matchAll(/^export const (\w+)/gm)].map(
+    (m) => m[1] as string,
+  );
+  const factory = new Function(
+    ...Object.keys(core),
+    `${body}\nreturn { ${ruleNames.join(", ")} };`,
+  );
+  const built = factory(...Object.values(core)) as Record<
+    string,
+    (
+      input: string,
+      pos: Pos,
+    ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>
+  >;
+  return built[ruleName] as (
+    input: string,
+    pos: Pos,
+  ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
+}
 
 const UNFACTORED_ARITHMETIC_GRAMMAR = `
 grammar Arith {
@@ -916,6 +948,336 @@ describe("applyAstOptimizations", () => {
     expect(quotedStar?.type).toBe("Star");
     if (quotedStar?.type === "Star") {
       expect(quotedStar.expression.type).toBe("CharacterClass"); // degenerated
+    }
+  });
+});
+
+describe("insertAutomaticCuts", () => {
+  it("is NOT included in applyAstOptimizations's default chain", () => {
+    // See ast-optimize.ts's module doc comment for why: unlike the three
+    // rewrites above, this one changes runtime failure behavior (a
+    // committed alternative's error becomes fatal), which is a bigger
+    // behavioral surface than any of leftFactorChoices/
+    // mergeCharacterClasses/degenerateNegativeLookaheads touch, so it
+    // stays a separate, explicit opt-in.
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "stmt",
+          createChoice([
+            createSequence([
+              createStringLiteral("if", '"'),
+              createStringLiteral("x", '"'),
+            ]),
+            createStringLiteral("while", '"'),
+          ]),
+        ),
+      ],
+    );
+    const optimized = applyAstOptimizations(grammar);
+    expect(optimized.rules[0]?.pattern).toEqual(
+      grammar.rules[0]?.pattern as Expression,
+    );
+  });
+
+  it("inserts a cut right after the first non-nullable element when the rest of the alternative is FIRST-disjoint from every later alternative", () => {
+    const grammar = createGrammarDefinition(
+      "Stmt",
+      [],
+      [
+        createRuleDefinition(
+          "stmt",
+          createChoice([
+            createSequence([
+              createStringLiteral("if", '"'),
+              createIdentifier("cond"),
+              createStringLiteral("then", '"'),
+              createIdentifier("body"),
+            ]),
+            createSequence([
+              createStringLiteral("while", '"'),
+              createIdentifier("cond"),
+              createIdentifier("body"),
+            ]),
+            createIdentifier("exprStmt"),
+          ]),
+        ),
+        createRuleDefinition("cond", createStringLiteral("c", '"')),
+        createRuleDefinition("body", createStringLiteral("b", '"')),
+        createRuleDefinition("exprStmt", createStringLiteral("e", '"')),
+      ],
+    );
+
+    const withCuts = insertAutomaticCuts(grammar);
+    const stmtPattern = withCuts.rules[0]?.pattern;
+    expect(stmtPattern?.type).toBe("Choice");
+    if (stmtPattern?.type !== "Choice") return;
+
+    const [ifAlt, whileAlt, exprAlt] = stmtPattern.alternatives;
+    expect(ifAlt?.type).toBe("Sequence");
+    if (ifAlt?.type === "Sequence") {
+      expect(ifAlt.elements.map((e) => e.type)).toEqual([
+        "StringLiteral",
+        "Cut",
+        "Identifier",
+        "StringLiteral",
+        "Identifier",
+      ]);
+    }
+    expect(whileAlt?.type).toBe("Sequence");
+    if (whileAlt?.type === "Sequence") {
+      expect(whileAlt.elements.map((e) => e.type)).toEqual([
+        "StringLiteral",
+        "Cut",
+        "Identifier",
+        "Identifier",
+      ]);
+    }
+    // The last alternative is a bare Identifier (not a Sequence), so
+    // there's no interior position to cut at all -- see
+    // `findCutPosition`'s single-element guard.
+    expect(exprAlt?.type).toBe("Identifier");
+  });
+
+  it('does NOT insert a cut into "==" based on a false claim that "=" is excluded (the reordering-bug danger class)', () => {
+    // `codegen-optimized.ts` documents a real prior bug where sorting
+    // choice alternatives made "==" permanently unmatchable once "="
+    // came first. A false "these are disjoint" cut into the FIRST
+    // alternative here would be the same failure mode: FIRST("=") and
+    // FIRST("==") are NOT disjoint (both start with "="), so
+    // `firstSetsDisjoint` must say so, and the "==" alternative must be
+    // left untouched -- verified both structurally and by differential
+    // parse below.
+    //
+    // The SECOND ("=") alternative, being last, legitimately gets a cut
+    // via the vacuous "no later alternatives to exclude" case (see
+    // `findCutPosition`'s comment on why that's safe) -- that's a
+    // different, harmless mechanism, not the bug this test guards
+    // against, so it's asserted separately below rather than folded into
+    // an "unchanged" check on the whole pattern.
+    const grammar = createGrammarDefinition(
+      "Ops",
+      [],
+      [
+        createRuleDefinition(
+          "op",
+          createChoice([
+            createSequence([
+              createStringLiteral("==", '"'),
+              createStringLiteral(" ", '"'),
+            ]),
+            createSequence([
+              createStringLiteral("=", '"'),
+              createStringLiteral(" ", '"'),
+            ]),
+          ]),
+        ),
+      ],
+    );
+
+    const originalPattern = grammar.rules[0]?.pattern as Extract<
+      Expression,
+      { type: "Choice" }
+    >;
+    const withCuts = insertAutomaticCuts(grammar);
+    const pattern = withCuts.rules[0]?.pattern;
+    expect(pattern?.type).toBe("Choice");
+    if (pattern?.type !== "Choice") return;
+
+    const [eqEqAlt, eqAlt] = pattern.alternatives;
+    expect(eqEqAlt).toEqual(originalPattern.alternatives[0] as Expression);
+    expect(eqAlt?.type).toBe("Sequence");
+    if (eqAlt?.type === "Sequence") {
+      expect(eqAlt.elements.map((e) => e.type)).toEqual([
+        "StringLiteral",
+        "Cut",
+        "StringLiteral",
+      ]);
+    }
+  });
+
+  it("does not see through a Group wrapper (a parenthesized alternative is left untouched)", () => {
+    // Documented limitation, not a soundness gap: `findCutPosition`
+    // requires the alternative node itself to be a `Sequence`. A
+    // parenthesized alternative parses as `Group(Sequence(...))`, so it's
+    // simply never a candidate -- conservative (misses an optimization
+    // opportunity), never incorrect.
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "stmt",
+          createChoice([
+            createGroup(
+              createSequence([
+                createStringLiteral("if", '"'),
+                createStringLiteral("x", '"'),
+              ]),
+            ),
+            createStringLiteral("while", '"'),
+          ]),
+        ),
+      ],
+    );
+    const withCuts = insertAutomaticCuts(grammar);
+    expect(withCuts.rules[0]?.pattern).toEqual(
+      grammar.rules[0]?.pattern as Expression,
+    );
+  });
+
+  it("a cut vacuously inserted into a Choice's last alternative does not suppress an ENCLOSING choice's fallback", () => {
+    // Regression test mirroring `combinators.spec.ts`'s equivalent
+    // hand-written-`~` test, but exercised through the actual
+    // `insertAutomaticCuts` -> codegen -> parse pipeline. `stmt`'s second
+    // (last) alternative gets a cut inserted with `laterAlternatives = []`
+    // (vacuously "all excluded") -- safe only because `choice` absorbs
+    // `fatal` at its own boundary (see `findCutPosition`'s comment on
+    // this). Input "zbq" makes `stmt`'s committed alternative fail deep
+    // (after matching "z" and "b"), so if the fix regressed, `grandouter`
+    // would incorrectly reject this input instead of falling through to
+    // `grandfallback`.
+    const grammar = createGrammarDefinition(
+      "LastAltLeak",
+      [],
+      [
+        createRuleDefinition(
+          "grandouter",
+          createChoice([
+            createIdentifier("stmt"),
+            createIdentifier("grandfallback"),
+          ]),
+        ),
+        createRuleDefinition(
+          "stmt",
+          createChoice([
+            createSequence([
+              createStringLiteral("y", '"'),
+              createStringLiteral("p", '"'),
+            ]),
+            createSequence([
+              createStringLiteral("z", '"'),
+              createStringLiteral("b", '"'),
+              createStringLiteral("c", '"'),
+            ]),
+          ]),
+        ),
+        createRuleDefinition(
+          "grandfallback",
+          createSequence([
+            createStringLiteral("z", '"'),
+            createStringLiteral("b", '"'),
+            createStringLiteral("q", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const withCuts = insertAutomaticCuts(grammar);
+    // Confirm the vacuous cut really was inserted, so this test is
+    // actually exercising the case it claims to.
+    const stmtAlt2 = (
+      withCuts.rules[1]?.pattern as Extract<Expression, { type: "Choice" }>
+    ).alternatives[1];
+    expect(stmtAlt2?.type).toBe("Sequence");
+    if (stmtAlt2?.type === "Sequence") {
+      expect(stmtAlt2.elements.map((e) => e.type)).toContain("Cut");
+    }
+
+    return compileRuleFor(withCuts, "grandouter").then((parser) => {
+      const result = parser("zbq", ORIGIN);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual(["z", "b", "q"]);
+      }
+    });
+  });
+
+  it('produces code that parses identically to the un-cut grammar for a battery of inputs, including the "=="/"=" prefix-code case', async () => {
+    const grammar = createGrammarDefinition(
+      "Stmt",
+      [],
+      [
+        createRuleDefinition(
+          "stmt",
+          createChoice([
+            createSequence([
+              createStringLiteral("if", '"'),
+              createIdentifier("cond"),
+              createStringLiteral("then", '"'),
+              createIdentifier("body"),
+            ]),
+            createSequence([
+              createStringLiteral("while", '"'),
+              createIdentifier("cond"),
+              createIdentifier("body"),
+            ]),
+            createIdentifier("exprStmt"),
+          ]),
+        ),
+        createRuleDefinition("cond", createStringLiteral("c", '"')),
+        createRuleDefinition("body", createStringLiteral("b", '"')),
+        createRuleDefinition("exprStmt", createStringLiteral("e", '"')),
+      ],
+    );
+    const withCuts = insertAutomaticCuts(grammar);
+
+    const original = await compileRuleFor(grammar, "stmt");
+    const cut = await compileRuleFor(withCuts, "stmt");
+
+    const inputs = [
+      "ifcthenb", // valid if
+      "whilecb", // valid while
+      "e", // valid exprStmt
+      "ifcthen", // malformed if (missing body) -- must fail identically, not silently accept a shorter/different match
+      "if", // malformed if, fails immediately after the committed prefix
+      "whilec", // malformed while (missing body)
+      "x", // matches nothing
+      "", // empty input
+    ];
+
+    for (const input of inputs) {
+      const originalResult = original(input, ORIGIN);
+      const cutResult = cut(input, ORIGIN);
+      expect(cutResult.success).toBe(originalResult.success);
+      if (originalResult.success && cutResult.success) {
+        expect(cutResult.next).toEqual(originalResult.next);
+      }
+    }
+
+    // The prefix-code danger case, run through the full pipeline as well
+    // as the structural check above.
+    const opsGrammar = createGrammarDefinition(
+      "Ops",
+      [],
+      [
+        createRuleDefinition(
+          "op",
+          createChoice([
+            createSequence([
+              createStringLiteral("==", '"'),
+              createStringLiteral(" ", '"'),
+            ]),
+            createSequence([
+              createStringLiteral("=", '"'),
+              createStringLiteral(" ", '"'),
+            ]),
+          ]),
+        ),
+      ],
+    );
+    const opsWithCuts = insertAutomaticCuts(opsGrammar);
+    const opsOriginal = await compileRuleFor(opsGrammar, "op");
+    const opsCut = await compileRuleFor(opsWithCuts, "op");
+    for (const input of ["== ", "= ", "==", "=", ""]) {
+      const originalResult = opsOriginal(input, ORIGIN);
+      const cutResult = opsCut(input, ORIGIN);
+      expect(cutResult.success).toBe(originalResult.success);
+      if (originalResult.success && cutResult.success) {
+        expect(cutResult.next).toEqual(originalResult.next);
+      }
     }
   });
 });

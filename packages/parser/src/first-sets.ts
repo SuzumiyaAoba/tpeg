@@ -475,3 +475,39 @@ export const predictiveFilterForExpression = (
   if (fs.unknown) return null;
   return { chars: fs.chars, ranges: fs.ranges };
 };
+
+/**
+ * `true` iff `a` and `b` are provably disjoint: no character could
+ * satisfy both. `unknown` on either side means "could match anything,"
+ * so it is never safe to call the pair disjoint in that case -- matches
+ * `predictiveFilterForExpression`'s treatment of `unknown` as "always
+ * attempt," here inverted to "never assume this one is excluded."
+ *
+ * Used by `ast-optimize.ts`'s `insertAutomaticCuts`: a later `Choice`
+ * alternative can safely be treated as unreachable once an earlier
+ * alternative has matched a non-nullable prefix whose FIRST set is
+ * disjoint from the later alternative's own FIRST set -- the character
+ * that was actually consumed proves the later alternative could never
+ * have matched here.
+ */
+export const firstSetsDisjoint = (a: FirstSet, b: FirstSet): boolean => {
+  if (a.unknown || b.unknown) return false;
+
+  for (const c of a.chars) {
+    if (b.chars.has(c)) return false;
+    if (b.ranges.some((r) => r.start <= c && c <= r.end)) return false;
+  }
+  for (const c of b.chars) {
+    if (a.ranges.some((r) => r.start <= c && c <= r.end)) return false;
+  }
+  for (const ra of a.ranges) {
+    for (const rb of b.ranges) {
+      // Single-BMP-codepoint bounds only (see `isAstralChar`'s callers
+      // above), so lexicographic `<=`/`>=` on the 1-character strings is
+      // equivalent to numeric code-point comparison here.
+      if (ra.start <= rb.end && rb.start <= ra.end) return false;
+    }
+  }
+
+  return true;
+};
