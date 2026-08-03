@@ -768,3 +768,187 @@ describe("enablePredictiveDispatch", () => {
     expect(r("ax", pos).success).toBe(true);
   });
 });
+
+describe("literalPrefixForExpression / predictiveChoice's literal-prefix trie slot (Pillar 8)", () => {
+  // Mirrors packages/parser/bench/grammars.ts's BENCH_KEYWORD_GRAMMAR at
+  // a smaller scale: 'i'/'t' each lead two keywords, plus a no-prefix
+  // `ident` fallback -- exactly the shape FIRST_1 dispatch degenerates on.
+  const KEYWORD_GRAMMAR = createGrammarDefinition(
+    "Test",
+    [],
+    [
+      createRuleDefinition(
+        "stmt",
+        createChoice([
+          createSequence([
+            createStringLiteral("if", '"'),
+            createIdentifier("ws"),
+          ]),
+          createSequence([
+            createStringLiteral("import", '"'),
+            createIdentifier("ws"),
+          ]),
+          createSequence([
+            createStringLiteral("true", '"'),
+            createIdentifier("ws"),
+          ]),
+          createSequence([
+            createStringLiteral("this", '"'),
+            createIdentifier("ws"),
+          ]),
+          createIdentifier("ident"),
+        ]),
+      ),
+      createRuleDefinition(
+        "ws",
+        createCharacterClass([createCharRange(" ")], false),
+      ),
+      createRuleDefinition(
+        "ident",
+        createCharacterClass([createCharRange("a", "z")], false),
+      ),
+    ],
+  );
+
+  it("emits a third tuple element (the literal prefix) for a Choice with a length->=2 literal-prefixed alternative", () => {
+    const result = generateOptimizedTypeScriptParser(KEYWORD_GRAMMAR, {
+      includeImports: false,
+      includeTypes: false,
+      enableMemoization: false,
+      enablePredictiveDispatch: true,
+    });
+    expect(result.code).toContain('"if"');
+    expect(result.code).toContain('"import"');
+    expect(result.code).toContain('"true"');
+    expect(result.code).toContain('"this"');
+    // The no-prefix fallback (`ident`) gets an explicit `null` third slot,
+    // not an omitted one -- every entry in a Choice with ANY prefixed
+    // alternative is a uniform 3-tuple (see tryGeneratePredictiveChoice).
+    expect(result.code).toContain(
+      "[lazy(() => ident), { ranges: [{ lo: 97, hi: 122 }] }, null]",
+    );
+  });
+
+  it("does NOT emit a third tuple element for a Choice where no alternative has a length->=2 literal prefix (byte-identical to before Pillar 8)", () => {
+    // Mirrors BENCH_JSON_GRAMMAR's `value` shape: every alternative is a
+    // bare Identifier reference, never a StringLiteral or a Sequence
+    // starting with one.
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "value",
+          createChoice([
+            createIdentifier("str"),
+            createIdentifier("num"),
+            createIdentifier("bool"),
+            createIdentifier("nullLiteral"),
+          ]),
+        ),
+        createRuleDefinition(
+          "str",
+          createSequence([
+            createStringLiteral('"', '"'),
+            createStringLiteral('"', '"'),
+          ]),
+        ),
+        createRuleDefinition(
+          "num",
+          createCharacterClass([createCharRange("0", "9")], false),
+        ),
+        createRuleDefinition(
+          "bool",
+          createChoice([
+            createStringLiteral("true", '"'),
+            createStringLiteral("false", '"'),
+          ]),
+        ),
+        createRuleDefinition("nullLiteral", createStringLiteral("null", '"')),
+      ],
+    );
+
+    const withoutPredictive = generateOptimizedTypeScriptParser(grammar, {
+      includeImports: false,
+      includeTypes: false,
+      enableMemoization: false,
+      enablePredictiveDispatch: false,
+    });
+    const withPredictive = generateOptimizedTypeScriptParser(grammar, {
+      includeImports: false,
+      includeTypes: false,
+      enableMemoization: false,
+      enablePredictiveDispatch: true,
+    });
+
+    const valueLine = (code: string) =>
+      code.split("\n").find((l) => l.startsWith("export const value"));
+    // `value`'s own Choice (bare Identifier alternatives) gets NO literal
+    // prefix on any alternative, so its predictiveChoice(...) call must
+    // stay a plain 2-tuple-per-entry array -- unaffected by Pillar 8
+    // existing at all, even though a DIFFERENT rule in the same grammar
+    // (`bool`) does gain prefixes.
+    expect(valueLine(withPredictive.code)).toContain("predictiveChoice([");
+    expect(valueLine(withPredictive.code)).not.toMatch(/"[a-zA-Z]+"\]/);
+    expect(valueLine(withoutPredictive.code)).toContain("choice(");
+  });
+
+  it("differential: with vs without predictive dispatch (and its trie) accept identically and stop at the same position, for every keyword, every proper prefix of every keyword, and every keyword plus one extra character", async () => {
+    const core = await import("@suzumiyaaoba/tpeg-core");
+
+    const compileStmt = (enablePredictiveDispatch: boolean) => {
+      const result = generateOptimizedTypeScriptParser(KEYWORD_GRAMMAR, {
+        includeImports: false,
+        includeTypes: false,
+        enableMemoization: false,
+        enablePredictiveDispatch,
+      });
+      const ruleNames = [...result.code.matchAll(/^export const (\w+)/gm)].map(
+        (m) => m[1] as string,
+      );
+      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+      const factory = new Function(
+        ...Object.keys(core),
+        `${body}\nreturn { ${ruleNames.join(", ")} };`,
+      );
+      const built = factory(...Object.values(core)) as Record<
+        string,
+        (
+          input: string,
+          pos: number,
+        ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>
+      >;
+      return built["stmt"] as (
+        input: string,
+        pos: number,
+      ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
+    };
+
+    const plain = compileStmt(false);
+    const predictive = compileStmt(true);
+
+    const keywords = ["if", "import", "true", "this"];
+    const inputs = new Set<string>();
+    for (const kw of keywords) {
+      inputs.add(kw);
+      inputs.add(`${kw} `); // keyword + its own required trailing ws
+      for (let i = 1; i < kw.length; i++) inputs.add(kw.slice(0, i)); // every proper prefix
+      inputs.add(`${kw}x`); // keyword + one extra (non-ws) character
+    }
+    inputs.add("in"); // shares first char ('i') with both "if" and "import" but no deeper child matches either
+    inputs.add("t"); // shares first char between "true"/"this"
+    inputs.add("th"); // shares 2-char prefix between "true"/"this"
+    inputs.add("z"); // no prefix match at all -- falls to `ident`
+    inputs.add(""); // EOF
+
+    const pos = 0;
+    for (const input of inputs) {
+      const plainResult = plain(input, pos);
+      const predictiveResult = predictive(input, pos);
+      expect(predictiveResult.success).toBe(plainResult.success);
+      if (plainResult.success && predictiveResult.success) {
+        expect(predictiveResult.next).toBe(plainResult.next);
+      }
+    }
+  });
+});

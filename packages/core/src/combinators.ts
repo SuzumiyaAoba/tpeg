@@ -333,6 +333,130 @@ const describeFirstCharFilter = (filter: FirstCharFilter): string => {
 const ASCII_TABLE_SIZE = 128;
 
 /**
+ * One node of the literal-prefix dispatch trie {@link predictiveChoice}
+ * builds per ASCII first-character bucket (Pillar 8 of the perf plan):
+ * extends FIRST_1 dispatch past a single character for alternatives that
+ * share a longer literal prefix (e.g. `if`/`import`/`interface`/
+ * `instanceof` all starting with `i`), without requiring a fixed lookahead
+ * depth the way a FIRST_2/FIRST_3 table would.
+ *
+ * `candidates` is the CORRECT surviving-candidate list for this exact
+ * node -- every alternative reachable at this depth, in ascending original
+ * declaration order, deduplicated -- so a caller that cannot (or need not)
+ * descend further (no `children`, or the next character has no matching
+ * child) can use it directly, exactly like today's flat `asciiTable`
+ * entry. `children` is `null` when fewer than two of this node's entries
+ * still have an undiscriminated literal character left (see
+ * {@link buildDispatchTrie}) -- descending further couldn't narrow
+ * anything, so there is nothing to build.
+ */
+interface DispatchTrieNode<T> {
+  readonly candidates: readonly Parser<T>[];
+  readonly children: ReadonlyMap<number, DispatchTrieNode<T>> | null;
+}
+
+/** One alternative's state while building a {@link DispatchTrieNode}:
+ * `remaining` is the still-unconsumed suffix of its known literal prefix
+ * (empty for an alternative with no literal prefix, OR one whose prefix
+ * has been fully consumed by the depth already reached -- both cases mean
+ * "no more static information to discriminate this one further," so it
+ * must propagate into every child unconditionally, like a wildcard). */
+interface DispatchTrieEntry<T> {
+  readonly parser: Parser<T>;
+  readonly index: number;
+  readonly remaining: string;
+}
+
+/** Every distinct alternative reachable in `entries`, in ascending
+ * original declaration order (never re-sorted by anything else -- ordered
+ * choice's "first match wins" semantics depend on this), deduplicated by
+ * index (the same alternative can reach one node via more than one path,
+ * e.g. as both a same-bucket sibling and a propagated wildcard). */
+const dispatchTrieCandidates = <T>(
+  entries: readonly DispatchTrieEntry<T>[],
+): readonly Parser<T>[] => {
+  const seen = new Set<number>();
+  const sorted = [...entries].sort((a, b) => a.index - b.index);
+  const candidates: Parser<T>[] = [];
+  for (const entry of sorted) {
+    if (seen.has(entry.index)) continue;
+    seen.add(entry.index);
+    candidates.push(entry.parser);
+  }
+  return candidates;
+};
+
+/**
+ * Builds one {@link DispatchTrieNode} from `entries` (every alternative
+ * already known to survive up to this depth), recursively. Stops
+ * descending (returns `children: null`) once fewer than two entries still
+ * have an unconsumed literal character to discriminate on -- a single
+ * remaining candidate needs no further narrowing, and this deliberately
+ * does NOT build a depth-1 node just to hold one entry, matching the
+ * plan's "candidates >= 2 AND prefixed >= 2" condition at every level, not
+ * just the root.
+ *
+ * An entry with `remaining === ""` (no literal information left, whether
+ * it started that way or was exhausted at a shallower depth) is spliced
+ * into EVERY child group unconditionally -- it can never be excluded by
+ * depth alone, exactly like a `null`-filter alternative in the existing
+ * ASCII table is never excluded by first character alone.
+ */
+const buildDispatchTrie = <T>(
+  entries: readonly DispatchTrieEntry<T>[],
+): DispatchTrieNode<T> => {
+  const withRemaining = entries.filter((e) => e.remaining.length > 0);
+  if (withRemaining.length < 2) {
+    return { candidates: dispatchTrieCandidates(entries), children: null };
+  }
+
+  const exhausted = entries.filter((e) => e.remaining.length === 0);
+  const groups = new Map<number, DispatchTrieEntry<T>[]>();
+  for (const entry of withRemaining) {
+    const code = entry.remaining.charCodeAt(0);
+    const advanced: DispatchTrieEntry<T> = {
+      ...entry,
+      remaining: entry.remaining.slice(1),
+    };
+    const group = groups.get(code);
+    if (group) {
+      group.push(advanced);
+    } else {
+      groups.set(code, [advanced]);
+    }
+  }
+
+  const children = new Map<number, DispatchTrieNode<T>>();
+  for (const [code, group] of groups) {
+    children.set(code, buildDispatchTrie([...group, ...exhausted]));
+  }
+  return { candidates: dispatchTrieCandidates(entries), children };
+};
+
+/** Descends `node` as far as `input` (starting at `pos`) matches a known
+ * child, returning whichever node's `candidates` it stops at -- the
+ * current node's own list the instant the next character has no matching
+ * child (including at end of input, where `charCodeAt` returns `NaN`,
+ * which -- never having been inserted as a key -- simply fails every
+ * `Map.get`). Iterative, not recursive: this runs on every predictive
+ * dispatch into a trie-bearing bucket, not just at construction time. */
+const walkDispatchTrie = <T>(
+  node: DispatchTrieNode<T>,
+  input: string,
+  pos: number,
+): readonly Parser<T>[] => {
+  let current = node;
+  let offset = pos;
+  while (current.children) {
+    const child = current.children.get(input.charCodeAt(offset));
+    if (!child) break;
+    current = child;
+    offset++;
+  }
+  return current.candidates;
+};
+
+/**
  * Predictive (FIRST-set-gated) variant of {@link choice}: before running
  * any alternative, checks the next input character against each
  * alternative's precomputed `FirstCharFilter` and skips any alternative
@@ -383,6 +507,28 @@ const ASCII_TABLE_SIZE = 128;
  * doc comment and `firstCharFilterMatches` for why a UTF-16-code-unit
  * comparison would silently mismatch a surrogate pair.
  *
+ * ## Past FIRST_1: an optional literal-prefix trie (Pillar 8)
+ *
+ * FIRST_1 dispatch degenerates on keyword-dense grammars where several
+ * alternatives share a first character (`true`/`this`/`throw`,
+ * `if`/`import`/`interface`/`instanceof`): every one of them still
+ * survives the ASCII-table filter, so `tryOrderedCandidates` ends up
+ * trying most of them anyway. An alternative's tuple may carry an OPTIONAL
+ * third element -- its known literal prefix, a string of length >= 2 (see
+ * `packages/parser/src/codegen-optimized.ts`'s `literalPrefixForExpression`
+ * for how codegen derives one) -- and each ASCII bucket that ends up with
+ * two or more such prefixed alternatives gets a small trie
+ * ({@link DispatchTrieNode}, built by {@link buildDispatchTrie}) checking
+ * further characters one at a time, at the same per-level cost as the
+ * first character (`input.charCodeAt`, no fixed lookahead depth the way a
+ * FIRST_2/FIRST_3 table would need, and no per-call `RegExp`). A bucket
+ * with fewer than two prefixed alternatives keeps today's flat array
+ * unchanged -- see {@link DispatchTrieNode}'s own doc comment for exactly
+ * when a trie gets built and how an alternative with NO literal prefix
+ * (or one already exhausted at a shallower depth) is never excluded by
+ * depth alone, mirroring how a `null`-filter alternative is never excluded
+ * by first character alone.
+ *
  * ## Failure diagnostics differ from `choice`
  *
  * If a character is provided (not EOF) and it matches zero alternatives'
@@ -412,6 +558,7 @@ export const predictiveChoice = <T extends unknown[]>(
   alternatives: readonly (readonly [
     Parser<T[number]>,
     FirstCharFilter | null,
+    (string | null)?,
   ])[],
 ): Parser<T[number]> => {
   if (alternatives.length === 0) {
@@ -431,17 +578,32 @@ export const predictiveChoice = <T extends unknown[]>(
   // `.filter()` on every such call.
   const allCandidates: readonly Parser<T[number]>[] = parsers;
 
-  const asciiTable: (readonly Parser<T[number]>[])[] = new Array(
-    ASCII_TABLE_SIZE,
-  );
-  const dedupedByKey = new Map<string, readonly Parser<T[number]>[]>();
+  // Each entry is the root {@link DispatchTrieNode} for that ASCII first
+  // character (Pillar 8): `children: null` (the common case -- no
+  // alternative surviving this bucket has a length->=2 literal prefix, or
+  // fewer than two do) makes `.candidates` behave exactly like the flat
+  // per-code array this table held before tries existed; `children`
+  // non-null narrows further via `walkDispatchTrie` for a bucket with
+  // multiple alternatives sharing a longer literal prefix (e.g.
+  // `if`/`import`/`interface`/`instanceof` all starting with `i`).
+  const asciiTable: DispatchTrieNode<T[number]>[] = new Array(ASCII_TABLE_SIZE);
+  const dedupedByKey = new Map<string, DispatchTrieNode<T[number]>>();
   for (let code = 0; code < ASCII_TABLE_SIZE; code++) {
     let key = "";
-    const candidates: Parser<T[number]>[] = [];
+    const entries: DispatchTrieEntry<T[number]>[] = [];
     for (let i = 0; i < alternatives.length; i++) {
-      const filter = (alternatives[i] as (typeof alternatives)[number])[1];
+      const [, filter, literalPrefix] = alternatives[
+        i
+      ] as (typeof alternatives)[number];
       if (!filter || firstCharFilterMatches(filter, code)) {
-        candidates.push(parsers[i] as Parser<T[number]>);
+        entries.push({
+          parser: parsers[i] as Parser<T[number]>,
+          index: i,
+          // The first character is already spent choosing this ASCII
+          // bucket, so the trie built from this bucket's entries
+          // discriminates starting from the prefix's SECOND character.
+          remaining: literalPrefix ? literalPrefix.slice(1) : "",
+        });
         key += `${i},`;
       }
     }
@@ -449,8 +611,9 @@ export const predictiveChoice = <T extends unknown[]>(
     if (shared) {
       asciiTable[code] = shared;
     } else {
-      dedupedByKey.set(key, candidates);
-      asciiTable[code] = candidates;
+      const node = buildDispatchTrie(entries);
+      dedupedByKey.set(key, node);
+      asciiTable[code] = node;
     }
   }
 
@@ -515,7 +678,10 @@ export const predictiveChoice = <T extends unknown[]>(
 
     const code = input.charCodeAt(pos);
     if (code < ASCII_TABLE_SIZE) {
-      const candidates = asciiTable[code] as readonly Parser<T[number]>[];
+      const node = asciiTable[code] as DispatchTrieNode<T[number]>;
+      const candidates = node.children
+        ? walkDispatchTrie(node, input, pos + 1)
+        : node.candidates;
       if (candidates.length === 0) {
         return noCandidatesFailure(input, pos);
       }

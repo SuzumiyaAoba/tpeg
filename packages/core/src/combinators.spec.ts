@@ -613,6 +613,99 @@ describe("predictiveChoice", () => {
       expect(parser("A", pos).success).toBe(false);
     });
   });
+
+  describe("literal-prefix trie (third tuple slot, Pillar 8)", () => {
+    const iFilter = charFilter("i");
+
+    it('does not lose the shorter alternative to a deepest-node-wins bug: "==" / "=" on "=x" still matches "="', () => {
+      // The trace from the plan: input "=x" descends the trie one level
+      // (matching "="'s shared first character), finds no child for "x",
+      // and must fall back to trying BOTH "==" and "=" at this node, in
+      // declaration order -- not just whichever alternative's literal is
+      // longest.
+      const parser = predictiveChoice([
+        [lit("=="), charFilter("="), "=="],
+        [lit("="), charFilter("=")],
+      ]);
+      const pos = 0;
+      const result = parser("=x", pos);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("=");
+        expect(result.next).toBe(1);
+      }
+      const eqeq = parser("==", pos);
+      expect(eqeq.success).toBe(true);
+      if (eqeq.success) expect(eqeq.val).toBe("==");
+    });
+
+    it("narrows a keyword-dense bucket by a shared literal prefix without running every candidate", () => {
+      const ran: string[] = [];
+      const tracked = (label: string, literalStr: string): Parser<string> => {
+        const inner = lit(literalStr);
+        return (input, p) => {
+          ran.push(label);
+          return inner(input, p);
+        };
+      };
+      const parser = predictiveChoice([
+        [tracked("if", "if"), iFilter, "if"],
+        [tracked("import", "import"), iFilter, "import"],
+        [tracked("interface", "interface"), iFilter, "interface"],
+        [tracked("instanceof", "instanceof"), iFilter, "instanceof"],
+        [tracked("ident", "i"), iFilter], // no-prefix fallback (matches bare "i")
+      ]);
+      const pos = 0;
+
+      ran.length = 0;
+      const result = parser("instanceof", pos);
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.val).toBe("instanceof");
+      // The trie should have narrowed to {instanceof, ident} by depth 2
+      // ("in" is shared only by interface/instanceof/ident) and then to
+      // {instanceof, ident} again at depth 3+ -- "if"/"import" must never
+      // even be attempted once "instanceof"'s later characters diverge
+      // from them.
+      expect(ran).not.toContain("if");
+      expect(ran).not.toContain("import");
+    });
+
+    it("never excludes a no-literal-prefix alternative at any depth, even deep inside a shared-prefix bucket", () => {
+      const parser = predictiveChoice([
+        [lit("interface"), iFilter, "interface"],
+        [lit("instanceof"), iFilter, "instanceof"],
+        [lit("in"), iFilter], // no prefix -- must survive every depth
+      ]);
+      const pos = 0;
+      // "instant" shares "insta" with neither "interface" (diverges at
+      // depth 2: 'n'-'t') -- wait, both start "in": diverge at depth 2
+      // ('t' vs 'e'/'s'). Regardless of how deep the shared-prefix
+      // alternatives get excluded, "in" (no prefix) must still be
+      // attempted and succeed here since it matches the first two chars.
+      const result = parser("instant", pos);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("in");
+        expect(result.next).toBe(2);
+      }
+    });
+
+    it("stops descending at end of input and falls back to the current node's candidates", () => {
+      const parser = predictiveChoice([
+        [lit("if"), iFilter, "if"],
+        [lit("import"), iFilter, "import"],
+      ]);
+      const pos = 0;
+      // "i" alone: depth-1 lookup reads past the end of input
+      // (`charCodeAt` -> NaN), which must not match any child and must
+      // not throw -- falls back to the root bucket's candidates (both).
+      const result = parser("i", pos);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.expected).toEqual(['"if"', '"import"']);
+      }
+    });
+  });
 });
 
 describe("sequence", () => {

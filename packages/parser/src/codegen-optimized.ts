@@ -143,6 +143,56 @@ export interface OptimizedGeneratedCode {
 }
 
 /**
+ * Unwraps `Group`/`ActionExpression`/`LabeledExpression` -- transparent at
+ * codegen time for the purpose of finding a Choice alternative's actual
+ * leading terminal (mirrors `ast-optimize.ts`'s own transparent-wrapper
+ * handling for the same node types elsewhere).
+ */
+const unwrapTransparentPrefix = (expr: Expression): Expression => {
+  switch (expr.type) {
+    case "Group":
+    case "ActionExpression":
+    case "LabeledExpression":
+      return unwrapTransparentPrefix(expr.expression);
+    default:
+      return expr;
+  }
+};
+
+/**
+ * Derives a Choice alternative's known literal prefix for `predictiveChoice`'s
+ * optional third tuple slot (Pillar 8 of the perf plan, `packages/core/src/
+ * combinators.ts`'s `DispatchTrieNode`), or `null` if it doesn't have one.
+ *
+ * Returns non-`null` only for a bare `StringLiteral` of length >= 2, or a
+ * `Sequence` whose FIRST element (after unwrapping `Group`/
+ * `ActionExpression`/`LabeledExpression`) is one -- exactly element 0, not
+ * "the first non-nullable element" the way `ast-optimize.ts`'s cut-
+ * insertion logic scans: a nullable element ahead of the literal would
+ * mean "every match of this alternative starts with this string" is
+ * false (the alternative could also match starting from whatever comes
+ * after a skipped nullable prefix), and this needs that stronger claim to
+ * be true unconditionally, not just when a cut has already proven a
+ * narrower disjointness argument. A `Sequence` with no elements, or one
+ * whose element 0 isn't (or doesn't unwrap to) a `StringLiteral`, or a
+ * `StringLiteral` of length < 2 (no useful second character to trie on),
+ * all return `null`.
+ */
+const literalPrefixForExpression = (alt: Expression): string | null => {
+  if (alt.type === "StringLiteral") {
+    return alt.value.length >= 2 ? alt.value : null;
+  }
+  if (alt.type !== "Sequence") return null;
+  const first = alt.elements[0];
+  if (!first) return null;
+  const unwrapped = unwrapTransparentPrefix(first);
+  if (unwrapped.type === "StringLiteral" && unwrapped.value.length >= 2) {
+    return unwrapped.value;
+  }
+  return null;
+};
+
+/**
  * Code template cache for common patterns
  */
 class CodeTemplateCache {
@@ -842,10 +892,26 @@ export class OptimizedTPEGCodeGenerator {
       return null;
     }
 
+    // Pillar 8: a literal-prefix trie slot is only emitted for a Choice
+    // where at least one alternative actually has one -- see
+    // `literalPrefixForExpression`'s doc comment. This keeps every Choice
+    // WITHOUT a qualifying alternative byte-identical to before this
+    // feature existed (2-element tuples), which is what the JSON
+    // regression guard in `codegen-optimized.spec.ts` checks.
+    const literalPrefixes = expr.alternatives.map(literalPrefixForExpression);
+    const anyLiteralPrefix = literalPrefixes.some((p) => p !== null);
+
     const entries = expr.alternatives.map((alt, i) => {
       const code = this.generateOptimizedExpression(alt);
       const filter = filters[i];
-      return `[${code}, ${filter ? this.renderFirstCharFilter(filter) : "null"}]`;
+      const filterCode = filter ? this.renderFirstCharFilter(filter) : "null";
+      if (!anyLiteralPrefix) {
+        return `[${code}, ${filterCode}]`;
+      }
+      const prefix = literalPrefixes[i];
+      return `[${code}, ${filterCode}, ${
+        prefix !== null ? JSON.stringify(prefix) : "null"
+      }]`;
     });
     return `predictiveChoice([${entries.join(", ")}])`;
   }
