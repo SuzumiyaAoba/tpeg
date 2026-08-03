@@ -308,6 +308,18 @@ export interface NegativeLookahead {
 export interface Cut {
   /** The node type identifier */
   type: "Cut";
+  /**
+   * Set by `promoteGlobalCuts` (`packages/parser/src/ast-optimize.ts`,
+   * Pillar 7 of the PEG-theory perf plan) when this specific cut has been
+   * proven safe to compile to `commitAtTopLevel` (packrat memo-table
+   * truncation) rather than the ordinary, purely-local `commit`. Absent
+   * (not merely `false`) on every `Cut` produced anywhere else in this
+   * codebase -- `createCut()` below never sets it, so `undefined` means
+   * "never analyzed for promotion," not "analyzed and rejected." Codegen
+   * (`codegen.ts`/`codegen-optimized.ts`) treats both `undefined` and
+   * `false` identically (ordinary `commit`); only `=== true` counts.
+   */
+  global?: boolean;
 }
 
 /**

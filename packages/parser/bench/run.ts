@@ -32,6 +32,8 @@ import {
   BENCH_ACYCLIC_CHAIN_GRAMMAR,
   BENCH_ACYCLIC_CHAIN_ROOT_RULE,
   BENCH_CUTTABLE_CONFIG_GRAMMAR,
+  BENCH_CUTTABLE_CONFIG_MEMOIZED_GRAMMAR,
+  BENCH_CUTTABLE_CONFIG_MEMOIZED_ROOT_RULE,
   BENCH_CUTTABLE_CONFIG_ROOT_RULE,
   BENCH_JSON_GRAMMAR,
   BENCH_JSON_ROOT_RULE,
@@ -153,22 +155,43 @@ const ARITHMETIC_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
 ];
 
 /**
- * Phase 0 gate for Pillar 7 (FOLLOW-set-proven cut promotion to
- * `commitAtTopLevel`): `insertAutomaticCuts` inserts 3 `Cut` AST nodes
- * into `BENCH_CUTTABLE_CONFIG_GRAMMAR`'s `entry` rule (see `grammars.ts`),
- * but today those all compile to plain `commit(...)` -- F1 in the perf
- * plan found `commitAtTopLevel` is gated on `isStartRuleTopLevel`, which
- * `insertAutomaticCuts` (a `Choice`-alternative rewrite) never sets. This
- * arm exists so a later pillar's promotion pass has something to show a
- * delta against: today, cut-with-memoization should behave like plain
- * memoization (no `commitAtTopLevel` is emitted yet), which is itself the
- * baseline this arm is here to record.
+ * Phase 0/Pillar 7 gate for cut promotion to `commitAtTopLevel`:
+ * `insertAutomaticCuts` inserts 3 `Cut` AST nodes into
+ * `BENCH_CUTTABLE_CONFIG_GRAMMAR`'s `entry` rule (see `grammars.ts`), but
+ * without `promoteCuts` those all compile to plain `commit(...)` -- F1 in
+ * the perf plan found `commitAtTopLevel` is gated on `isStartRuleTopLevel`,
+ * which `insertAutomaticCuts` (a `Choice`-alternative rewrite) never sets.
+ * The first "auto-cut on" arm below is that baseline (recorded once, at
+ * Phase 0): cut-with-memoization behaving like plain memoization, since no
+ * `commitAtTopLevel` is emitted. The "+ promote" arm turns `promoteCuts`
+ * on and additionally enables the memo-table probe (`probeMemo`) --
+ * `promoteGlobalCuts` (`ast-optimize.ts`, Pillar 7) proves all 3 of this
+ * grammar's cuts safe to promote (see that function's module doc comment),
+ * so `peakMemoWindow` on that arm is the number to compare against the
+ * "auto-cut on" arm's: Pillar 7's whole claim is that it collapses from
+ * growing with input size to a small constant, not that it changes
+ * `leafInvocationsPerParse` or accepted/rejected input at all.
  */
 const CUTTABLE_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
   ...CONFIGS,
   {
     label: "optimized codegen, memoization on, auto-cut on",
-    options: { optimize: true, enableMemoization: true, autoCut: true },
+    options: {
+      optimize: true,
+      enableMemoization: true,
+      autoCut: true,
+      probeMemo: true,
+    },
+  },
+  {
+    label: "optimized codegen, memoization on, auto-cut on, + promote",
+    options: {
+      optimize: true,
+      enableMemoization: true,
+      autoCut: true,
+      promoteCuts: true,
+      probeMemo: true,
+    },
   },
   {
     label:
@@ -346,13 +369,56 @@ function run(): void {
     );
     runSection(
       "Cuttable config grammar (Pillar 7 target -- see grammars.ts: " +
-        "3 Cut AST nodes inserted by --auto-cut, none yet promoted to " +
-        "commitAtTopLevel)",
+        "3 Cut AST nodes inserted by --auto-cut, promoted to " +
+        "commitAtTopLevel by --promote-cuts)",
       BENCH_CUTTABLE_CONFIG_GRAMMAR,
       BENCH_CUTTABLE_CONFIG_ROOT_RULE,
       timedInputs,
       warmupInputs,
       CUTTABLE_CONFIGS,
+    );
+
+    // BENCH_CUTTABLE_CONFIG_GRAMMAR itself is never memoized (see that
+    // constant's doc comment -- `entry` is never re-invoked at a shared
+    // offset, so `reentrancy.ts` correctly declines to memoize it), which
+    // makes `peakMemoWindow` trivially 0 on every arm above regardless of
+    // promotion -- there is no memo table to truncate in the first place.
+    // BENCH_CUTTABLE_CONFIG_MEMOIZED_GRAMMAR forces one via an explicit
+    // `@memoize` on `entry`, so this section is where Pillar 7's actual
+    // claim ("promotion bounds the table independent of input length") is
+    // measurable: compare "auto-cut on" (no promotion, no
+    // `commitAtTopLevel`) against "+ promote" on `peakMemoWindow` alone --
+    // `opsPerSec`/`leafInvocationsPerParse` are not expected to move (this
+    // is a space result, not a speed one; see the perf plan's Pillar 7
+    // verification section).
+    runSection(
+      "Cuttable config grammar, entry forced @memoize (Pillar 7 memo-" +
+        "table-truncation measurement -- see grammars.ts)",
+      BENCH_CUTTABLE_CONFIG_MEMOIZED_GRAMMAR,
+      BENCH_CUTTABLE_CONFIG_MEMOIZED_ROOT_RULE,
+      timedInputs,
+      warmupInputs,
+      [
+        {
+          label: "optimized codegen, auto-cut on (baseline, no promotion)",
+          options: {
+            optimize: true,
+            enableMemoization: true,
+            autoCut: true,
+            probeMemo: true,
+          },
+        },
+        {
+          label: "optimized codegen, auto-cut on, + promote",
+          options: {
+            optimize: true,
+            enableMemoization: true,
+            autoCut: true,
+            promoteCuts: true,
+            probeMemo: true,
+          },
+        },
+      ],
     );
   }
 

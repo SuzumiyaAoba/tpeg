@@ -127,6 +127,42 @@ ${transformFn.body}
 };
 
 /**
+ * Does `expr` contain a `Cut` marked `global: true` (by `promoteGlobalCuts`,
+ * `packages/parser/src/ast-optimize.ts`, Pillar 7 of the perf plan)
+ * anywhere in its subtree? Used to decide whether `commitAtTopLevel`
+ * (`@suzumiyaaoba/tpeg-combinator`) needs importing beyond the existing
+ * start-rule-top-level-Sequence case this module already handles.
+ */
+const containsGlobalCut = (expr: Expression): boolean => {
+  switch (expr.type) {
+    case "Cut":
+      return expr.global === true;
+    case "Sequence":
+      return expr.elements.some(containsGlobalCut);
+    case "Choice":
+      return expr.alternatives.some(containsGlobalCut);
+    case "Group":
+    case "Star":
+    case "Plus":
+    case "Optional":
+    case "Quantified":
+    case "PositiveLookahead":
+    case "NegativeLookahead":
+    case "LabeledExpression":
+    case "ActionExpression":
+      return containsGlobalCut(expr.expression);
+    default:
+      return false;
+  }
+};
+
+/** Does any rule in `grammar` contain a `Cut` marked `global: true`?
+ * Exported for reuse by `codegen-optimized.ts`, which needs the identical
+ * check. */
+export const grammarHasGlobalCut = (grammar: GrammarDefinition): boolean =>
+  grammar.rules.some((rule) => containsGlobalCut(rule.pattern));
+
+/**
  * Returns the label a single expression is bound to, unwrapping a `Group`
  * (which is transparent at codegen time) - or undefined if the expression
  * isn't a (possibly grouped) `LabeledExpression`.
@@ -328,8 +364,9 @@ export class TPEGCodeGenerator {
       }
       const startRule = grammar.rules[0];
       if (
-        startRule?.pattern.type === "Sequence" &&
-        startRule.pattern.elements.some((el) => el.type === "Cut")
+        (startRule?.pattern.type === "Sequence" &&
+          startRule.pattern.elements.some((el) => el.type === "Cut")) ||
+        grammarHasGlobalCut(grammar)
       ) {
         combinatorPackageImports.push("commitAtTopLevel");
       }
@@ -523,12 +560,18 @@ export class TPEGCodeGenerator {
     // `packages/combinator/src/logic.ts` for why that's the condition
     // that matters), so `commitAtTopLevel(...)` is emitted instead of the
     // ordinary `commit(...)`, letting `memoize` discard now-unreachable
-    // cache entries as the parse commits past them.
+    // cache entries as the parse commits past them. A `Cut` marked
+    // `global: true` by `promoteGlobalCuts` (`ast-optimize.ts`, Pillar 7)
+    // gets the same treatment regardless of `isStartRuleTopLevel` -- that
+    // function only sets the flag where the broader promotion argument
+    // holds (see its module doc comment).
     const parts: string[] = [];
     let committed = false;
+    let committingCutIsGlobal = false;
     for (const el of expr.elements) {
       if (el.type === "Cut") {
         committed = true;
+        committingCutIsGlobal = el.global === true;
         continue;
       }
       const code = this.generateExpression(el);
@@ -536,7 +579,9 @@ export class TPEGCodeGenerator {
         parts.push(code);
       } else {
         parts.push(
-          isStartRuleTopLevel ? `commitAtTopLevel(${code})` : `commit(${code})`,
+          isStartRuleTopLevel || committingCutIsGlobal
+            ? `commitAtTopLevel(${code})`
+            : `commit(${code})`,
         );
       }
     }
@@ -679,9 +724,15 @@ export class TPEGCodeGenerator {
             ? "captureSequence"
             : "sequence",
         );
+        // A Sequence can contain at most one Cut in practice (see
+        // ast-optimize.ts), but this checks every one found, mirroring
+        // generateSequence's per-cut `.global` decision rather than
+        // assuming there's exactly one.
         if (
-          expr.elements.some((el) => el.type === "Cut") &&
-          !isStartRuleTopLevel
+          expr.elements.some(
+            (el) =>
+              el.type === "Cut" && !isStartRuleTopLevel && el.global !== true,
+          )
         ) {
           combinators.add("commit");
         }

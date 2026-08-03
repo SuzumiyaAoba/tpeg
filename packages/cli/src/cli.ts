@@ -7,10 +7,12 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { offsetToPos, parse } from "@suzumiyaaoba/tpeg-core";
 import {
+  analyzeFirstSets,
   applyAstOptimizations,
   generateOptimizedTypeScriptParser,
   generateTypeScriptParser,
   insertAutomaticCuts,
+  promoteGlobalCuts,
   tpegFile,
 } from "@suzumiyaaoba/tpeg-parser";
 
@@ -49,6 +51,16 @@ Options:
                              --ast-optimize's rewrites, if both are given.
                              Off by default: this is a more cautious
                              opt-in than --ast-optimize's rewrites.
+      --promote-cuts         Mark every provably-safe cut (see
+                             packages/parser/src/ast-optimize.ts's
+                             promoteGlobalCuts) so it compiles to
+                             commitAtTopLevel instead of the ordinary,
+                             purely-local commit, letting @memoize'd rules
+                             discard now-unreachable cache entries.
+                             Applied after --auto-cut, if both are given
+                             (a cut has to exist before it can be
+                             promoted) -- a no-op without --auto-cut and no
+                             hand-written "~" in the source grammar.
       --no-types            Omit "Parser<T>" type annotations from output
   -h, --help                Show this help message
   -v, --version             Show the CLI version
@@ -67,6 +79,7 @@ interface CliOptions {
   astOptimize: boolean;
   regexFusion: boolean;
   autoCut: boolean;
+  promoteCuts: boolean;
   types: boolean;
   help: boolean;
   version: boolean;
@@ -85,6 +98,7 @@ function parseCliArgs(argv: string[]): {
       "ast-optimize": { type: "boolean", default: false },
       "regex-fusion": { type: "boolean", default: false },
       "auto-cut": { type: "boolean", default: false },
+      "promote-cuts": { type: "boolean", default: false },
       "no-types": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
@@ -102,6 +116,7 @@ function parseCliArgs(argv: string[]): {
       astOptimize: values["ast-optimize"] ?? false,
       regexFusion: values["regex-fusion"] ?? false,
       autoCut: values["auto-cut"] ?? false,
+      promoteCuts: values["promote-cuts"] ?? false,
       types: !(values["no-types"] ?? false),
       help: values.help ?? false,
       version: values.version ?? false,
@@ -184,9 +199,17 @@ export function run(argv: string[]): number {
   const astOptimized = options.astOptimize
     ? applyAstOptimizations(parseResult.val)
     : parseResult.val;
-  const grammar = options.autoCut
+  const cutInserted = options.autoCut
     ? insertAutomaticCuts(astOptimized)
     : astOptimized;
+  // `promoteGlobalCuts` (packages/parser/src/ast-optimize.ts, Pillar 7 of
+  // the perf plan) needs a FIRST-set analysis of the SAME grammar it's
+  // marking cuts in -- computed fresh here rather than reusing whatever
+  // `insertAutomaticCuts` used internally, since `--ast-optimize`/
+  // `--auto-cut` may have already changed the rule set.
+  const grammar = options.promoteCuts
+    ? promoteGlobalCuts(cutInserted, analyzeFirstSets(cutInserted)).grammar
+    : cutInserted;
 
   // Split into two explicit branches rather than picking a shared
   // `generate` function: `enableRegexFusion` only exists on

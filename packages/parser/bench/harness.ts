@@ -33,12 +33,109 @@
 import * as tpegCombinator from "@suzumiyaaoba/tpeg-combinator";
 import * as tpegCore from "@suzumiyaaoba/tpeg-core";
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
-import { insertAutomaticCuts, leftFactorChoices } from "../src/ast-optimize";
+import {
+  insertAutomaticCuts,
+  leftFactorChoices,
+  promoteGlobalCuts,
+} from "../src/ast-optimize";
 import { generateTypeScriptParser } from "../src/codegen";
 import { generateOptimizedTypeScriptParser } from "../src/codegen-optimized";
+import { analyzeFirstSets } from "../src/first-sets";
 import { grammarDefinition } from "../src/grammar";
 
 const ORIGIN_POS = 0;
+
+/**
+ * Live peak stats for every `memoize` cache created through
+ * `createMemoProbe`'s `memoize` shim, sharing one watermark with its
+ * `commitAtTopLevel` shim -- see `createMemoProbe`'s doc comment.
+ */
+export interface MemoProbeStats {
+  /** Highest total number of live (not-yet-pruned) cache entries observed
+   * across every `memoize`-wrapped rule combined, at any point during the
+   * parse(s) run through this probe. */
+  peakMemoEntries: number;
+  /** Highest `(highest cached offset) - (current prune base) + 1` observed
+   * for any single `memoize`-wrapped rule -- the size of the "window" of
+   * offsets that rule's cache has ever had to span at once. Pillar 7's
+   * promotion is supposed to keep this bounded independent of input
+   * length; Phase 0/Pillar 6-only configurations are expected to let it
+   * grow with input size. */
+  peakMemoWindow: number;
+}
+
+/**
+ * Builds a matched pair of `commitAtTopLevel`/`memoize` replacements that
+ * track cache-size statistics `logic.ts`'s real implementations don't
+ * expose (their cache array and prune-watermark are private closure
+ * state, by design -- this is a benchmark-only concern, not a reason to
+ * add introspection to production code).
+ *
+ * The shim reimplements the *same* watermark/prune bookkeeping
+ * `packages/combinator/src/logic.ts` uses internally (input-identity
+ * reset, "advance on a higher commit position", "prune entries below the
+ * watermark lazily on next touch"), driven by the SAME calls the real
+ * `commitAtTopLevel`/`memoize` receive -- both shims delegate to the real
+ * implementation for actual parsing behavior, so this can only ever watch
+ * and report, never change what a benchmarked parser accepts or returns.
+ * The tracked entry set intentionally mirrors "one Set<number> per
+ * memoized rule" rather than reusing `logic.ts`'s array-splice approach --
+ * different data structure, same prune/insert timing, same peak values.
+ */
+function createMemoProbe(): {
+  stats: MemoProbeStats;
+  memoize: typeof tpegCombinator.memoize;
+  commitAtTopLevel: typeof tpegCombinator.commitAtTopLevel;
+} {
+  let watermarkInput: string | null = null;
+  let watermarkOffset = 0;
+  const stats: MemoProbeStats = { peakMemoEntries: 0, peakMemoWindow: 0 };
+
+  const commitAtTopLevel: typeof tpegCombinator.commitAtTopLevel = (parser) => {
+    const real = tpegCombinator.commitAtTopLevel(parser);
+    return (input, pos) => {
+      if (input !== watermarkInput) {
+        watermarkInput = input;
+        watermarkOffset = 0;
+      }
+      if (pos > watermarkOffset) watermarkOffset = pos;
+      return real(input, pos);
+    };
+  };
+
+  const memoize: typeof tpegCombinator.memoize = (parser, options) => {
+    const real = tpegCombinator.memoize(parser, options);
+    let cachedInput: string | null = null;
+    let entries = new Set<number>();
+    let base = 0;
+    return (input, pos) => {
+      if (input !== cachedInput) {
+        cachedInput = input;
+        entries = new Set();
+        base = 0;
+      }
+      if (watermarkInput === input && watermarkOffset > base) {
+        for (const p of entries) {
+          if (p < watermarkOffset) entries.delete(p);
+        }
+        base = watermarkOffset;
+      }
+      entries.add(pos);
+      if (entries.size > stats.peakMemoEntries) {
+        stats.peakMemoEntries = entries.size;
+      }
+      let highest = base - 1;
+      for (const p of entries) {
+        if (p > highest) highest = p;
+      }
+      const window = highest - base + 1;
+      if (window > stats.peakMemoWindow) stats.peakMemoWindow = window;
+      return real(input, pos);
+    };
+  };
+
+  return { stats, memoize, commitAtTopLevel };
+}
 
 export interface LeafInvocationCounter {
   count: number;
@@ -57,6 +154,11 @@ export interface CompiledBenchParser {
    * rather than a running total.
    */
   leafInvocations: LeafInvocationCounter;
+  /** Non-null iff `CompileRuleOptions.probeMemo` was set -- live stats
+   * updated by every call made through `parser` so far, from the same
+   * `createMemoProbe` shim wired into this parser's `memoize`/
+   * `commitAtTopLevel`. */
+  memoStats: MemoProbeStats | null;
 }
 
 /**
@@ -110,12 +212,32 @@ export interface CompileRuleOptions {
    * (mirrors the CLI's `--auto-cut` ordering: left-factoring can turn a
    * choice's alternatives into disjoint-prefixed sequences that only then
    * become cut candidates). Independent of `optimize`/`enableMemoization`:
-   * this changes how much of a `memoize` table a cut can prune once a
-   * later pillar (FOLLOW-set-proven cut promotion) lets some of these
-   * cuts reach `commitAtTopLevel` -- see the memo-table probe fields on
-   * `ParseThroughputResult`.
+   * this changes how much of a `memoize` table a cut *could* prune once
+   * `promoteCuts` (below) actually lets some of them reach
+   * `commitAtTopLevel` -- see `probeMemo` and the memo-table probe fields
+   * on `ParseThroughputResult`.
    */
   autoCut?: boolean;
+  /**
+   * Applies `promoteGlobalCuts` (packages/parser/src/ast-optimize.ts,
+   * Pillar 7 of the perf plan) to the parsed grammar before codegen,
+   * AFTER `autoCut` (a cut has to exist before it can be promoted).
+   * Marks every provably-safe `Cut` `global: true`, which both codegens
+   * then compile to `commitAtTopLevel` instead of the ordinary `commit` --
+   * see that function's module doc comment for the soundness argument.
+   * Setting this without `autoCut` (and no hand-written `~` in
+   * `grammarSrc`) is a no-op: there are no cuts to promote.
+   */
+  promoteCuts?: boolean;
+  /**
+   * Wraps the injected `memoize`/`commitAtTopLevel` with
+   * `createMemoProbe`'s stats-tracking shim (see its doc comment) and
+   * exposes the result as `CompiledBenchParser.memoStats`. Off by default:
+   * the shim does real bookkeeping work on every memoized call, so
+   * leaving it off keeps ordinary throughput numbers uncontaminated by
+   * probe overhead.
+   */
+  probeMemo?: boolean;
   /**
    * Only meaningful when `optimize: true`. Forwarded to
    * `generateOptimizedTypeScriptParser`'s `enablePredictiveDispatch` --
@@ -169,9 +291,12 @@ export function compileRule(
   const leftFactored = options.leftFactor
     ? leftFactorChoices(parsed.val)
     : parsed.val;
-  const grammar = options.autoCut
+  const cutInserted = options.autoCut
     ? insertAutomaticCuts(leftFactored)
     : leftFactored;
+  const grammar = options.promoteCuts
+    ? promoteGlobalCuts(cutInserted, analyzeFirstSets(cutInserted)).grammar
+    : cutInserted;
 
   // `exactOptionalPropertyTypes` treats `namePrefix: undefined` as a
   // different (disallowed) thing from omitting `namePrefix` entirely, so
@@ -198,6 +323,7 @@ export function compileRule(
       });
 
   const leafInvocations: LeafInvocationCounter = { count: 0 };
+  const memoProbe = options.probeMemo ? createMemoProbe() : null;
 
   // Only pull `memoize` out of tpeg-combinator (the one combinator-package
   // export the codegen ever references, per `codegen-optimized.ts`'s
@@ -209,8 +335,10 @@ export function compileRule(
   // generated `const <ruleName> = ...` in the same scope.
   const scope: Record<string, unknown> = {
     ...tpegCore,
-    memoize: tpegCombinator.memoize,
-    commitAtTopLevel: tpegCombinator.commitAtTopLevel,
+    memoize: memoProbe ? memoProbe.memoize : tpegCombinator.memoize,
+    commitAtTopLevel: memoProbe
+      ? memoProbe.commitAtTopLevel
+      : tpegCombinator.commitAtTopLevel,
     literal: countingFactory(tpegCore.literal, leafInvocations),
     charClass: countingFactory(tpegCore.charClass, leafInvocations),
     negatedCharClass: countingFactory(
@@ -242,7 +370,12 @@ export function compileRule(
     );
   }
 
-  return { parser, code: generated.code, leafInvocations };
+  return {
+    parser,
+    code: generated.code,
+    leafInvocations,
+    memoStats: memoProbe?.stats ?? null,
+  };
 }
 
 export interface ParseThroughputResult {
@@ -270,6 +403,16 @@ export interface ParseThroughputResult {
    * and `opsPerSec`, which are exact.
    */
   heapDeltaBytes: number | null;
+  /**
+   * Peak `memoize` cache stats across the timed loop (reset just before
+   * it, like `leafInvocations`), or `null` if `compiled.memoStats` is
+   * `null` (i.e. `CompileRuleOptions.probeMemo` wasn't set). See
+   * `MemoProbeStats`'s own doc comment for what each field means -- in
+   * short, `peakMemoWindow` is the number to watch for Pillar 7's
+   * "truncation actually bounds the table" claim.
+   */
+  peakMemoEntries: number | null;
+  peakMemoWindow: number | null;
 }
 
 /**
@@ -306,7 +449,7 @@ export function runParseThroughput(
   if (inputs.length === 0) {
     throw new Error("runParseThroughput requires at least one input");
   }
-  const { parser, leafInvocations } = compiled;
+  const { parser, leafInvocations, memoStats } = compiled;
   const iterations = inputs.length;
 
   for (const warmupInput of warmupInputs) {
@@ -320,6 +463,10 @@ export function runParseThroughput(
   const heapBefore = canForceGc ? process.memoryUsage().heapUsed : null;
 
   leafInvocations.count = 0;
+  if (memoStats) {
+    memoStats.peakMemoEntries = 0;
+    memoStats.peakMemoWindow = 0;
+  }
   const start = performance.now();
   for (const input of inputs) {
     parser(input, ORIGIN_POS);
@@ -342,6 +489,8 @@ export function runParseThroughput(
     opsPerSec: iterations / (totalTimeMs / 1000),
     leafInvocationsPerParse,
     heapDeltaBytes,
+    peakMemoEntries: memoStats?.peakMemoEntries ?? null,
+    peakMemoWindow: memoStats?.peakMemoWindow ?? null,
   };
 }
 
@@ -350,7 +499,7 @@ export function formatResult(r: ParseThroughputResult): string {
     r.heapDeltaBytes === null
       ? "n/a (run with --expose-gc for heap delta)"
       : `${(r.heapDeltaBytes / 1024).toFixed(1)} KB retained / ${r.iterations} parses${r.heapDeltaBytes < 0 ? " (negative = GC ran mid-loop; treat as noise, not freed memory)" : ""}`;
-  return [
+  const lines = [
     `${r.name}`,
     `  input length:        ${r.inputLength}`,
     `  iterations:          ${r.iterations}`,
@@ -358,5 +507,12 @@ export function formatResult(r: ParseThroughputResult): string {
     `  avg time:            ${r.avgTimeMs.toFixed(4)} ms`,
     `  leaf invocations/parse: ${r.leafInvocationsPerParse.toFixed(1)} (vs input length ${r.inputLength} -- ratio ${(r.leafInvocationsPerParse / r.inputLength).toFixed(2)}x)`,
     `  heap (see caveat):   ${heap}`,
-  ].join("\n");
+  ];
+  if (r.peakMemoEntries !== null && r.peakMemoWindow !== null) {
+    lines.push(
+      `  peak memo entries:   ${r.peakMemoEntries}`,
+      `  peak memo window:    ${r.peakMemoWindow}`,
+    );
+  }
+  return lines.join("\n");
 }

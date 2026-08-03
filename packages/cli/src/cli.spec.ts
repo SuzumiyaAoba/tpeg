@@ -198,6 +198,44 @@ grammar Cuttable {
     expect(stdout).toContain("commit(");
   });
 
+  it("promotes a provably-safe cut to commitAtTopLevel with --auto-cut --promote-cuts", () => {
+    const inputPath = join(dir, "grammar.tpeg");
+    writeFileSync(
+      inputPath,
+      `
+grammar Cuttable {
+  entry = "[" name "]" / name
+  name  = [a-zA-Z]+
+}
+`,
+      "utf8",
+    );
+
+    // Without --promote-cuts: the cut sits inside entry's own Choice, not
+    // a direct element of a top-level Sequence, so it stays plain commit
+    // (this is the exact case the "applies automatic cut insertion" test
+    // above already pins). With --promote-cuts, entry IS the start rule
+    // (no reference site to check) and its two alternatives have disjoint
+    // FIRST sets ({[} vs [a-zA-Z]), so the cut should promote.
+    const { exitCode, stdout } = captureOutput(() =>
+      run([inputPath, "--auto-cut", "--promote-cuts"]),
+    );
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("commitAtTopLevel(");
+    expect(stdout).not.toContain(" commit(");
+  });
+
+  it("--promote-cuts without --auto-cut or a hand-written `~` is a no-op", () => {
+    const inputPath = join(dir, "grammar.tpeg");
+    writeFileSync(inputPath, SIMPLE_GRAMMAR, "utf8");
+
+    const { exitCode, stdout } = captureOutput(() =>
+      run([inputPath, "--promote-cuts"]),
+    );
+    expect(exitCode).toBe(0);
+    expect(stdout).not.toContain("commit");
+  });
+
   it("generates a parser that applies a transform function, and it runs correctly", async () => {
     const core = await import("@suzumiyaaoba/tpeg-core");
     const inputPath = join(dir, "grammar.tpeg");

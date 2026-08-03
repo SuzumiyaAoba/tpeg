@@ -87,6 +87,7 @@ export {
   degenerateNegativeLookaheads,
   applyAstOptimizations,
   insertAutomaticCuts,
+  promoteGlobalCuts,
 } from "./ast-optimize";
 
 // Export performance utilities

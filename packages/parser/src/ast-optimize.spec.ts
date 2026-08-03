@@ -20,8 +20,10 @@ import {
   insertAutomaticCuts,
   leftFactorChoices,
   mergeCharacterClasses,
+  promoteGlobalCuts,
 } from "./ast-optimize";
 import { generateTypeScriptParser } from "./codegen";
+import { analyzeFirstSets } from "./first-sets";
 import { grammarDefinition } from "./grammar";
 import {
   createActionExpression,
@@ -35,6 +37,9 @@ import {
   createIdentifier,
   createLabeledExpression,
   createNegativeLookahead,
+  createOptional,
+  createPlus,
+  createPositiveLookahead,
   createQualifiedIdentifier,
   createRuleDefinition,
   createSequence,
@@ -1709,5 +1714,404 @@ describe("insertAutomaticCuts", () => {
         ]);
       }
     });
+  });
+});
+
+describe("promoteGlobalCuts", () => {
+  /** Every `Cut` reachable from `expr`, in encounter order. */
+  const collectCuts = (expr: Expression): Expression[] => {
+    switch (expr.type) {
+      case "Cut":
+        return [expr];
+      case "Sequence":
+        return expr.elements.flatMap(collectCuts);
+      case "Choice":
+        return expr.alternatives.flatMap(collectCuts);
+      case "Group":
+      case "Star":
+      case "Plus":
+      case "Optional":
+      case "Quantified":
+      case "PositiveLookahead":
+      case "NegativeLookahead":
+      case "LabeledExpression":
+      case "ActionExpression":
+        return collectCuts(expr.expression);
+      default:
+        return [];
+    }
+  };
+
+  const promote = (grammar: GrammarDefinition) =>
+    promoteGlobalCuts(grammar, analyzeFirstSets(grammar));
+
+  it("promotes every cut in a rule referenced only through a Plus from the start rule, with no ancestor Choice anywhere", () => {
+    // Mirrors packages/parser/bench/grammars.ts's BENCH_CUTTABLE_CONFIG_GRAMMAR:
+    // doc = entry+; entry = "[" name "]" / name "=" value / "#" text
+    const grammar = createGrammarDefinition(
+      "Config",
+      [],
+      [
+        createRuleDefinition("doc", createPlus(createIdentifier("entry"))),
+        createRuleDefinition(
+          "entry",
+          createChoice([
+            createSequence([
+              createStringLiteral("[", '"'),
+              createIdentifier("name"),
+              createStringLiteral("]", '"'),
+            ]),
+            createSequence([
+              createIdentifier("name"),
+              createStringLiteral("=", '"'),
+              createIdentifier("value"),
+            ]),
+            createSequence([
+              createStringLiteral("#", '"'),
+              createIdentifier("text"),
+            ]),
+          ]),
+        ),
+        createRuleDefinition(
+          "name",
+          createCharacterClass([createCharRange("a", "z")]),
+        ),
+        createRuleDefinition(
+          "value",
+          createCharacterClass([createCharRange("a", "z")]),
+        ),
+        createRuleDefinition(
+          "text",
+          createCharacterClass([createCharRange("a", "z")]),
+        ),
+      ],
+    );
+
+    const withCuts = insertAutomaticCuts(grammar);
+    expect(collectCuts(withCuts.rules[1]?.pattern as Expression).length).toBe(
+      3,
+    );
+
+    const { grammar: promoted, promotedCount } = promote(withCuts);
+    expect(promotedCount).toBe(3);
+    const cuts = collectCuts(promoted.rules[1]?.pattern as Expression);
+    expect(cuts.length).toBe(3);
+    expect(cuts.every((c) => c.type === "Cut" && c.global === true)).toBe(true);
+  });
+
+  it("refuses a cut whose rule is referenced from a Choice where a later alternative is NOT FIRST-disjoint from it", () => {
+    // Exactly BENCH_UNFACTORED_ARITHMETIC_GRAMMAR's shape: atom's own
+    // Choice ("(" product ")" / number) gets a cut after "(" (disjoint
+    // from `number`'s FIRST set) -- but atom itself is referenced from
+    // product's 3 alternatives, which all start with atom (NOT disjoint
+    // from each other). If atom's cut fires then fails, atom's own Choice
+    // absorbs the fatal to an ordinary FAIL; product's Choice would then
+    // try ITS next alternative, which calls atom again from the SAME
+    // position -- a real re-parse, not a trivial first-character
+    // mismatch, so clause 2/3 must refuse promotion at this reference
+    // site regardless of atom's own cut being locally sound.
+    const grammar = createGrammarDefinition(
+      "Arith",
+      [],
+      [
+        createRuleDefinition(
+          "product",
+          createChoice([
+            createSequence([
+              createIdentifier("atom"),
+              createStringLiteral("*", '"'),
+              createIdentifier("product"),
+            ]),
+            createSequence([
+              createIdentifier("atom"),
+              createStringLiteral("/", '"'),
+              createIdentifier("product"),
+            ]),
+            createIdentifier("atom"),
+          ]),
+        ),
+        createRuleDefinition(
+          "atom",
+          createChoice([
+            createSequence([
+              createStringLiteral("(", '"'),
+              createIdentifier("product"),
+              createStringLiteral(")", '"'),
+            ]),
+            createIdentifier("number"),
+          ]),
+        ),
+        createRuleDefinition(
+          "number",
+          createCharacterClass([createCharRange("0", "9")]),
+        ),
+      ],
+    );
+
+    const withCuts = insertAutomaticCuts(grammar);
+    const atomCuts = collectCuts(withCuts.rules[1]?.pattern as Expression);
+    expect(atomCuts.length).toBe(1); // after "(", excluding `number`
+
+    const { grammar: promoted, promotedCount } = promote(withCuts);
+    expect(promotedCount).toBe(0);
+    const cuts = collectCuts(promoted.rules[1]?.pattern as Expression);
+    expect(cuts.every((c) => c.type === "Cut" && c.global !== true)).toBe(true);
+  });
+
+  it("promotes transitively through two levels of plain (Choice-free) reference before reaching the start rule", () => {
+    // start = top; top = mid; mid = entry+; entry = "[" name "]" / "#" text
+    // No Choice/lookahead anywhere in the chain from entry's cuts up to
+    // the start rule -- clause 3's walk has to actually recurse twice
+    // (mid -> top -> start) rather than terminate at depth 0/1, unlike
+    // BENCH_CUTTABLE_CONFIG_GRAMMAR's doc, which IS the start rule.
+    const grammar = createGrammarDefinition(
+      "Nested",
+      [],
+      [
+        createRuleDefinition("start", createIdentifier("top")),
+        createRuleDefinition("top", createIdentifier("mid")),
+        createRuleDefinition("mid", createPlus(createIdentifier("entry"))),
+        createRuleDefinition(
+          "entry",
+          createChoice([
+            createSequence([
+              createStringLiteral("[", '"'),
+              createIdentifier("name"),
+              createStringLiteral("]", '"'),
+            ]),
+            createSequence([
+              createStringLiteral("#", '"'),
+              createIdentifier("text"),
+            ]),
+          ]),
+        ),
+        createRuleDefinition(
+          "name",
+          createCharacterClass([createCharRange("a", "z")]),
+        ),
+        createRuleDefinition(
+          "text",
+          createCharacterClass([createCharRange("a", "z")]),
+        ),
+      ],
+    );
+
+    const withCuts = insertAutomaticCuts(grammar);
+    const { grammar: promoted, promotedCount } = promote(withCuts);
+    expect(promotedCount).toBe(2);
+    const cuts = collectCuts(promoted.rules[3]?.pattern as Expression);
+    expect(cuts.every((c) => c.type === "Cut" && c.global === true)).toBe(true);
+  });
+
+  it("refuses a cut reachable through a mutually-recursive reference cycle that never reaches the start rule", () => {
+    // start = other (never references `entry`'s rule chain at all); a and
+    // b reference each other, with a also referencing entry. entry's cut
+    // reference chain is a -> b -> a -> ... forever -- the cycle guard
+    // must refuse rather than loop.
+    const grammar = createGrammarDefinition(
+      "Cyclic",
+      [],
+      [
+        createRuleDefinition("start", createStringLiteral("s", '"')),
+        createRuleDefinition("a", createIdentifier("b")),
+        createRuleDefinition("b", createIdentifier("a")),
+        createRuleDefinition("mid", createPlus(createIdentifier("entry"))),
+        createRuleDefinition(
+          "entry",
+          createChoice([
+            createSequence([
+              createStringLiteral("[", '"'),
+              createIdentifier("name"),
+              createStringLiteral("]", '"'),
+            ]),
+            createStringLiteral("#", '"'),
+          ]),
+        ),
+        createRuleDefinition(
+          "name",
+          createCharacterClass([createCharRange("a", "z")]),
+        ),
+      ],
+    );
+    // Rewire `a` to also reference `mid`, creating entry -> mid -> a -> b
+    // -> a -> ... (a cycle, and never reaching `start`).
+    const withCycle: GrammarDefinition = {
+      ...grammar,
+      rules: grammar.rules.map((r) =>
+        r.name === "a"
+          ? {
+              ...r,
+              pattern: createSequence([
+                createIdentifier("b"),
+                createIdentifier("mid"),
+              ]),
+            }
+          : r,
+      ),
+    };
+
+    const withCuts = insertAutomaticCuts(withCycle);
+    const { promotedCount } = promote(withCuts);
+    expect(promotedCount).toBe(0);
+  });
+
+  it("refuses a cut under a lookahead ancestor, even with no enclosing Choice", () => {
+    // top = &guarded; guarded = entry+; entry = "[" name "]" / "#" text
+    // The lookahead always reverts position regardless of what happens
+    // inside it, so any watermark advance during its attempt is provably
+    // wrong -- refused independent of Choice-disjointness.
+    const grammar = createGrammarDefinition(
+      "Lookahead",
+      [],
+      [
+        createRuleDefinition(
+          "top",
+          createPositiveLookahead(createIdentifier("guarded")),
+        ),
+        createRuleDefinition("guarded", createPlus(createIdentifier("entry"))),
+        createRuleDefinition(
+          "entry",
+          createChoice([
+            createSequence([
+              createStringLiteral("[", '"'),
+              createIdentifier("name"),
+              createStringLiteral("]", '"'),
+            ]),
+            createStringLiteral("#", '"'),
+          ]),
+        ),
+        createRuleDefinition(
+          "name",
+          createCharacterClass([createCharRange("a", "z")]),
+        ),
+      ],
+    );
+
+    const withCuts = insertAutomaticCuts(grammar);
+    const { promotedCount } = promote(withCuts);
+    expect(promotedCount).toBe(0);
+  });
+
+  it("refuses a cut directly under an Optional/Star in its own rule, as a stated conservatism", () => {
+    // top = (entry)*; entry = "[" name "]" / "#" text -- entry itself has
+    // no ancestor Choice/lookahead anywhere, but the guard in
+    // ast-optimize.ts's module doc comment refuses promotion under a
+    // zero-iteration-capable repetition regardless (documented as
+    // conservatism, not a demonstrated unsoundness).
+    const grammar = createGrammarDefinition(
+      "Zeroable",
+      [],
+      [
+        createRuleDefinition("top", createStar(createIdentifier("entry"))),
+        createRuleDefinition(
+          "entry",
+          createChoice([
+            createSequence([
+              createStringLiteral("[", '"'),
+              createIdentifier("name"),
+              createStringLiteral("]", '"'),
+            ]),
+            createStringLiteral("#", '"'),
+          ]),
+        ),
+        createRuleDefinition(
+          "name",
+          createCharacterClass([createCharRange("a", "z")]),
+        ),
+      ],
+    );
+
+    const withCuts = insertAutomaticCuts(grammar);
+    const { promotedCount } = promote(withCuts);
+    expect(promotedCount).toBe(0);
+  });
+
+  it("does NOT refuse a cut under a Plus/Quantified{min>=1} ancestor (required repetitions propagate fatal failure safely)", () => {
+    const grammar = createGrammarDefinition(
+      "Required",
+      [],
+      [
+        createRuleDefinition("top", createPlus(createIdentifier("entry"))),
+        createRuleDefinition(
+          "entry",
+          createChoice([
+            createSequence([
+              createStringLiteral("[", '"'),
+              createIdentifier("name"),
+              createStringLiteral("]", '"'),
+            ]),
+            createStringLiteral("#", '"'),
+          ]),
+        ),
+        createRuleDefinition(
+          "name",
+          createCharacterClass([createCharRange("a", "z")]),
+        ),
+      ],
+    );
+
+    const withCuts = insertAutomaticCuts(grammar);
+    const { promotedCount } = promote(withCuts);
+    expect(promotedCount).toBe(1);
+  });
+
+  it("is a pure marking pass: never inserts, removes, or moves a Cut", () => {
+    const grammar = createGrammarDefinition(
+      "NoCuts",
+      [],
+      [
+        createRuleDefinition(
+          "top",
+          createSequence([
+            createStringLiteral("a", '"'),
+            createIdentifier("rest"),
+          ]),
+        ),
+        createRuleDefinition("rest", createStringLiteral("b", '"')),
+      ],
+    );
+    const { grammar: promoted, promotedCount } = promote(grammar);
+    expect(promotedCount).toBe(0);
+    expect(promoted).toEqual(grammar);
+  });
+
+  it("does not promote a cut whose own alternative is not FIRST-disjoint from a nullable later sibling", () => {
+    // entry references trailing, which has 2 alternatives: one starting
+    // with the same character as entry's committed branch, and it's
+    // nullable -- never treated as excluded regardless of disjointness.
+    const grammar = createGrammarDefinition(
+      "NullableSibling",
+      [],
+      [
+        createRuleDefinition("doc", createPlus(createIdentifier("entry"))),
+        createRuleDefinition(
+          "entry",
+          createChoice([
+            createSequence([
+              createStringLiteral("[", '"'),
+              createIdentifier("name"),
+              createStringLiteral("]", '"'),
+            ]),
+            createOptional(createStringLiteral("#", '"')),
+          ]),
+        ),
+        createRuleDefinition(
+          "name",
+          createCharacterClass([createCharRange("a", "z")]),
+        ),
+      ],
+    );
+
+    const withCuts = insertAutomaticCuts(grammar);
+    // insertAutomaticCuts itself already refuses this cut (nullable later
+    // alternative), so there is nothing for promoteGlobalCuts to promote
+    // -- this pins that promoteGlobalCuts doesn't somehow promote a cut
+    // that was never inserted, and that the nullable-sibling reasoning is
+    // consistent between insertion and promotion.
+    expect(collectCuts(withCuts.rules[1]?.pattern as Expression).length).toBe(
+      0,
+    );
+    const { promotedCount } = promote(withCuts);
+    expect(promotedCount).toBe(0);
   });
 });

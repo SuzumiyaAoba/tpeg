@@ -40,6 +40,7 @@ import {
   wrapWithMemoize,
   wrapWithTransform,
 } from "./codegen";
+import { grammarHasGlobalCut } from "./codegen";
 import { escapeStringLiteral } from "./constants";
 import type { GrammarFirstSetAnalysis } from "./first-sets";
 import { analyzeFirstSets, predictiveFilterForExpression } from "./first-sets";
@@ -362,8 +363,9 @@ export class OptimizedTPEGCodeGenerator {
     // for why only that specific shape is safe.
     const startRule = grammar.rules[0];
     if (
-      startRule?.pattern.type === "Sequence" &&
-      startRule.pattern.elements.some((el) => el.type === "Cut")
+      (startRule?.pattern.type === "Sequence" &&
+        startRule.pattern.elements.some((el) => el.type === "Cut")) ||
+      grammarHasGlobalCut(grammar)
     ) {
       combinatorPackageImports.push("commitAtTopLevel");
     }
@@ -418,13 +420,16 @@ export class OptimizedTPEGCodeGenerator {
             : "sequence",
         );
         // Mirrors codegen.ts's identical guard: when this IS the start
-        // rule's own top-level Sequence, a Cut here emits
+        // rule's own top-level Sequence, OR a Cut here was marked
+        // `global: true` by `promoteGlobalCuts` (Pillar 7), it emits
         // `commitAtTopLevel` (tpeg-combinator) instead of `commit`
         // (tpeg-core) -- see generateOptimizedSequence -- so `commit`
         // must not be added to the tpeg-core import set in that case.
         if (
-          expr.elements.some((el) => el.type === "Cut") &&
-          !isStartRuleTopLevel
+          expr.elements.some(
+            (el) =>
+              el.type === "Cut" && !isStartRuleTopLevel && el.global !== true,
+          )
         ) {
           combinators.add("commit");
         }
@@ -745,9 +750,11 @@ export class OptimizedTPEGCodeGenerator {
     // `packages/combinator/src/logic.ts` for the soundness condition.
     const parts: string[] = [];
     let committed = false;
+    let committingCutIsGlobal = false;
     for (const el of expr.elements) {
       if (el.type === "Cut") {
         committed = true;
+        committingCutIsGlobal = el.global === true;
         continue;
       }
       const code = this.generateOptimizedExpression(el);
@@ -755,7 +762,9 @@ export class OptimizedTPEGCodeGenerator {
         parts.push(code);
       } else {
         parts.push(
-          isStartRuleTopLevel ? `commitAtTopLevel(${code})` : `commit(${code})`,
+          isStartRuleTopLevel || committingCutIsGlobal
+            ? `commitAtTopLevel(${code})`
+            : `commit(${code})`,
         );
       }
     }

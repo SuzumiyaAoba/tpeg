@@ -6,7 +6,9 @@
 
 import { describe, expect, test } from "bun:test";
 import { type Parser, parse } from "@suzumiyaaoba/tpeg-core";
+import { promoteGlobalCuts } from "./ast-optimize";
 import { generateTypeScriptParser } from "./codegen";
+import { analyzeFirstSets } from "./first-sets";
 import { grammarDefinition } from "./grammar";
 
 const testParse = <T>(parser: Parser<T>, input: string) => parse(parser)(input);
@@ -180,6 +182,117 @@ describe("commitAtTopLevel (Phase 3: cut-driven memo table truncation), parsed f
     // just unreachable through `program`'s own control flow.
     shared("axaxHB", pos);
     expect(counter.count).toBe(callsDuringParse + 1);
+  });
+});
+
+describe("promoteGlobalCuts (Pillar 7: cut promotion beyond the start rule's own top-level sequence)", () => {
+  test("a cut in a rule referenced only through a Plus from the start rule promotes to commitAtTopLevel and reproduces the same space claim as the Phase 3 case", async () => {
+    const core = await import("@suzumiyaaoba/tpeg-core");
+    const combinator = await import("@suzumiyaaoba/tpeg-combinator");
+
+    // `one`'s cut is a direct element of `one`'s OWN top-level Sequence --
+    // but `one` is not the start rule (`start = one+` is), so today's
+    // `isStartRuleTopLevel` structural check does NOT catch it; without
+    // `promoteGlobalCuts` this compiles to plain `commit(...)`. `one` has
+    // no ancestor Choice or lookahead anywhere between its cut and
+    // `start`, so the promotion predicate should mark it `global: true`.
+    const source = `grammar Program {
+      start = one+
+      one = header ~ body
+      header = (shared "x")* "H"
+      @memoize
+      shared = "a"
+      body = "B"
+    }`;
+
+    const parsed = testParse(grammarDefinition, source);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const analysis = analyzeFirstSets(parsed.val);
+    const { grammar: promoted, promotedCount } = promoteGlobalCuts(
+      parsed.val,
+      analysis,
+    );
+    expect(promotedCount).toBe(1);
+
+    const result = generateTypeScriptParser(promoted, {
+      includeImports: false,
+      includeTypes: false,
+    });
+    expect(result.code).toContain("commitAtTopLevel(");
+    expect(result.code).not.toContain("commit(");
+    expect(result.code).toContain("memoize(");
+
+    const counter = { count: 0 };
+    const countingLiteral = (...args: Parameters<typeof core.literal>) => {
+      const inner = core.literal(...args);
+      const wrapped: Parser<unknown> = (input, p) => {
+        if (args[0] === "a") counter.count++;
+        return inner(input, p);
+      };
+      return wrapped;
+    };
+
+    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+    const scope = { ...core, ...combinator, literal: countingLiteral };
+    const moduleFactory = new Function(
+      ...Object.keys(scope),
+      `${body}\nreturn { start, shared };`,
+    );
+    const { start, shared } = moduleFactory(...Object.values(scope));
+
+    const pos = 0;
+    // "axaxHB": header matches 2 reps of "a x" (offsets 0 and 2, each
+    // caching a `shared` success entry) then "H" at offset 4; `one`'s cut
+    // fires at offset 5, right where `body` ("B") starts.
+    const parseResult = start("axaxHB", pos);
+    expect(parseResult.success).toBe(true);
+    const callsDuringParse = counter.count;
+    expect(callsDuringParse).toBeGreaterThanOrEqual(2); // offsets 0 and 2
+
+    // Same space claim as the Phase 3 test above, now through a cut that
+    // ONLY reaches commitAtTopLevel because of promoteGlobalCuts: the
+    // cached entry at offset 0 is gone, not just unreachable through
+    // `start`'s own control flow.
+    shared("axaxHB", pos);
+    expect(counter.count).toBe(callsDuringParse + 1);
+  });
+
+  test("does NOT promote (and does not change generated code at all) when a later Choice sibling is not FIRST-disjoint", async () => {
+    // Same shape as BENCH_UNFACTORED_ARITHMETIC_GRAMMAR's atom cut,
+    // restated as a grammar-text differential: promoteGlobalCuts must
+    // leave the AST (and therefore generated code) byte-identical when it
+    // finds nothing safe to promote.
+    const source = `grammar Arith {
+      product = atom "*" product / atom "/" product / atom
+      atom = "(" ~ product ")" / number
+      number = [0-9]+
+    }`;
+
+    const parsed = testParse(grammarDefinition, source);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const before = generateTypeScriptParser(parsed.val, {
+      includeImports: false,
+      includeTypes: false,
+    });
+
+    const analysis = analyzeFirstSets(parsed.val);
+    const { grammar: promoted, promotedCount } = promoteGlobalCuts(
+      parsed.val,
+      analysis,
+    );
+    expect(promotedCount).toBe(0);
+
+    const after = generateTypeScriptParser(promoted, {
+      includeImports: false,
+      includeTypes: false,
+    });
+    expect(after.code).toBe(before.code);
+    expect(after.code).toContain("commit(");
+    expect(after.code).not.toContain("commitAtTopLevel");
   });
 });
 

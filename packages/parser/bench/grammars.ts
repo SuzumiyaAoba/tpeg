@@ -136,14 +136,27 @@ export const BENCH_ACYCLIC_CHAIN_ROOT_RULE = "a0";
  *   - alt 3 (`"#" text nl`): last alternative -- vacuously safe (nothing
  *     left to exclude).
  *
- * Exists to give Pillar 7 (FOLLOW-set-proven cut promotion to
- * `commitAtTopLevel`) a workload: `entry` is referenced only from
- * `doc = entry+`, with no enclosing `Choice` and no lookahead around that
- * reference, so `FOLLOW(entry) = FIRST(entry) union {EOF}` is concrete
- * (never `unknown`) -- the promotion predicate's reference-site clause is
- * satisfiable here, unlike `BENCH_UNFACTORED_ARITHMETIC_GRAMMAR`'s single
- * cut site (`atom`, referenced from a `Choice` all of whose alternatives
- * start with `atom` -- promotion correctly refuses that one).
+ * Exists to give Pillar 7 (`promoteGlobalCuts`, `packages/parser/src/
+ * ast-optimize.ts`, cut promotion to `commitAtTopLevel`) a workload:
+ * `entry` is referenced only from `doc = entry+`, with no enclosing
+ * `Choice` and no lookahead around that reference -- the promotion
+ * predicate's reference-site clause (FIRST-disjointness at every ancestor
+ * `Choice`, transitively to the start rule) is vacuously satisfied here
+ * (there is no ancestor `Choice` at all), unlike
+ * `BENCH_UNFACTORED_ARITHMETIC_GRAMMAR`'s single cut site (`atom`,
+ * referenced from a `Choice` all of whose alternatives start with `atom`
+ * -- promotion correctly refuses that one).
+ *
+ * NOTE: none of `entry`/`name`/`value`/`text`/`nl` are ever memoized under
+ * `enableMemoization: true` -- `reentrancy.ts`'s analysis correctly finds
+ * no rule here is ever re-invoked at an offset it was already parsed at
+ * (`doc = entry+` only calls `entry` at strictly increasing offsets, no
+ * ambiguity to backtrack through). That's expected for a config-file
+ * grammar and is exactly why `BENCH_CUTTABLE_CONFIG_MEMOIZED_GRAMMAR`
+ * (below) exists as a separate constant for the memo-table-truncation
+ * measurement specifically -- this one is for the cut-promotion-count and
+ * general-throughput measurements Phase 0's baseline table already
+ * recorded against it, which an added `@memoize` annotation would change.
  */
 export const BENCH_CUTTABLE_CONFIG_GRAMMAR = `
 grammar BenchCuttable {
@@ -157,6 +170,37 @@ grammar BenchCuttable {
 `;
 
 export const BENCH_CUTTABLE_CONFIG_ROOT_RULE = "doc";
+
+/**
+ * Identical to `BENCH_CUTTABLE_CONFIG_GRAMMAR` except `entry` carries an
+ * explicit `@memoize` annotation, forcing a memo table to exist regardless
+ * of what `reentrancy.ts`'s analysis would otherwise decide (see the note
+ * on that constant) -- an `@memoize`-annotated rule is memoized
+ * unconditionally, per `codegen-optimized.ts`'s `generateOptimizedRule`.
+ * This is what a real user reaching for `@memoize` on a rule they expect
+ * to backtrack into heavily (independent of whether this specific corpus
+ * happens to trigger it) would write. Exists SPECIFICALLY so Pillar 7's
+ * `peakMemoWindow` claim ("truncation bounds the table independent of
+ * input length") has a memo table to bound in the first place -- forcing
+ * memoization is the only way to construct that on an otherwise-linear,
+ * non-backtracking grammar shape without abandoning the property that
+ * makes it Pillar-7-promotable to begin with (a genuinely reentrant
+ * `entry` would need its own `Choice`/lookahead structure, which would
+ * then need its own disjointness argument at the reference site).
+ */
+export const BENCH_CUTTABLE_CONFIG_MEMOIZED_GRAMMAR = `
+grammar BenchCuttableMemoized {
+  doc   = entry+
+  @memoize
+  entry = "[" name "]" nl / name "=" value nl / "#" text nl
+  name  = [a-zA-Z_] [a-zA-Z0-9_]*
+  value = [^\\n]*
+  text  = [^\\n]*
+  nl    = "\\n"
+}
+`;
+
+export const BENCH_CUTTABLE_CONFIG_MEMOIZED_ROOT_RULE = "doc";
 
 /**
  * A statement grammar with 12 keyword-led alternatives clustered on 3
