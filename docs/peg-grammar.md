@@ -189,11 +189,11 @@ TPEG parsers can capture parsed data in structured format using labeled expressi
 
 ```typescript
 // Basic capture usage examples
-import { capture, captureSequence } from "tpeg-core";
+import { capture, captureSequence } from "@suzumiyaaoba/tpeg-core";
 
-// Single value capture
+// Single value capture (pos is a plain 0-based offset, not a {line, column} object)
 const nameParser = capture("name", literal("hello"));
-const result = nameParser("hello", pos);
+const result = nameParser("hello", 0);
 // result.val = { name: "hello" }
 
 // Multiple value capture
@@ -202,7 +202,7 @@ const userParser = captureSequence(
   literal(" "),
   capture("lastName", literal("Doe"))
 );
-const result = userParser("John Doe", pos);
+const result = userParser("John Doe", 0);
 // result.val = { firstName: "John", lastName: "Doe" }
 ```
 

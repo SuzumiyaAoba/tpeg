@@ -1,115 +1,82 @@
 # TPEG AST
 
-Abstract Syntax Tree utilities for TPEG (TypeScript Parsing Expression Grammar).
+Typed AST node definitions and builder functions for PEG grammars, built on the [unist](https://github.com/syntax-tree/unist) `Node`/`Literal`/`Parent` interfaces.
 
 ## Overview
 
-This package provides utilities for building and manipulating Abstract Syntax Trees (ASTs) that follow the Unist specification. It's designed to work seamlessly with TPEG parsers to create structured representations of parsed content.
+This package models the syntax of a PEG grammar itself — literals, identifiers, sequences, choices, character classes, repetition, predicates, rule definitions, and whole grammars — as a typed, unist-compatible AST. It's the node model `tpeg-parser`/`tpeg-generator` build and consume; it does not provide generic tree-walking utilities (no `createNode`/`walkTree`/`findNodes`) — each node type has its own constructor and type guard instead.
 
 ## Installation
 
 ```bash
-npm install tpeg-ast
+npm install @suzumiyaaoba/tpeg-ast
 ```
-
-## Features
-
-- **Unist-compliant AST nodes**: Compatible with the unified ecosystem
-- **Type-safe node creation**: TypeScript support for all AST operations
-- **Tree manipulation utilities**: Functions for traversing and modifying AST structures
-- **Position tracking**: Automatic source position information
-- **Extensible node types**: Easy to add custom node types for domain-specific grammars
 
 ## Basic Usage
 
 ```typescript
-import { createNode, walkTree, findNodes } from 'tpeg-ast';
+import { definition, grammar, charClass, range, identifier, sequence, literal } from '@suzumiyaaoba/tpeg-ast';
 
-// Create AST nodes
-const literalNode = createNode('Literal', {
-  value: 'hello',
-  raw: '"hello"'
-});
+// digit = [0-9]
+const digitRule = definition("digit", charClass(range("0", "9")));
 
-const expressionNode = createNode('Expression', {
-  left: literalNode,
-  operator: '+',
-  right: createNode('Literal', { value: 'world', raw: '"world"' })
-});
+// letter = [a-zA-Z]
+const letterRule = definition("letter", charClass(range("a", "z"), range("A", "Z")));
 
-// Walk the tree
-walkTree(expressionNode, (node) => {
-  console.log(`Node type: ${node.type}`);
-});
+// greeting = "hello" identifier
+const greetingRule = definition("greeting", sequence(literal("hello"), identifier("name")));
 
-// Find specific nodes
-const literals = findNodes(expressionNode, 'Literal');
+const g = grammar(digitRule, letterRule, greetingRule);
+// {
+//   type: "grammar",
+//   children: [
+//     { type: "definition", children: [{ type: "identifier", value: "digit" }, ...] },
+//     ...
+//   ]
+// }
 ```
 
-## API Reference
+Every constructor returns a plain, JSON-serializable object — there's no hidden tree-manipulation API to learn beyond the node shapes themselves.
 
-### Core Functions
+## Node Types
 
-#### `createNode<T>(type: string, properties: T): ASTNode<T>`
-Creates a new AST node with the specified type and properties.
+| Node | Shape | Constructor |
+| --- | --- | --- |
+| `Literal<T>` | `{ type: "literal", value: T }` | `literal(value)` |
+| `Identifier<T>` | `{ type: "identifier", value: T }` | `identifier(value)` |
+| `Sequence` | `{ type: "sequence", children: ExprNode[] }` | `sequence(...exprs)` |
+| `Choice` | `{ type: "choice", children: ExprNode[] }` | `choice(...exprs)` |
+| `Optional` | `{ type: "optional", children: [ExprNode] }` | `optional(expr)` |
+| `MapNode` | `{ type: "map", children: [ExprNode], data: { mapper } }` | `map(expr, mapper)` |
+| `Char<T>` | `{ type: "char", value: T }` | `char(value)` |
+| `Range<F, T>` | `{ type: "range", value: [F, T] }` | `range(from, to)` |
+| `CharClass` | `{ type: "charClass", children: CharClassElement[] }` | `charClass(...elements)` |
+| `AnyChar` | `{ type: "anyChar" }` | `anyChar()` |
+| `AndPredicate` | `{ type: "andPredicate", children: [ExprNode] }` | `andPredicate(expr)` |
+| `NotPredicate` | `{ type: "notPredicate", children: [ExprNode] }` | `notPredicate(expr)` |
+| `ZeroOrMore` | `{ type: "zeroOrMore", children: [ExprNode] }` | `zeroOrMore(expr)` |
+| `OneOrMore` | `{ type: "oneOrMore", children: [ExprNode] }` | `oneOrMore(expr)` |
+| `Group` | `{ type: "group", children: [ExprNode] }` | `group(expr)` |
+| `Definition` | `{ type: "definition", children: [Identifier, ExprNode] }` | `definition(id, expr)` |
+| `Grammar` | `{ type: "grammar", children: Definition[] }` | `grammar(...definitions)` |
 
-#### `walkTree(node: ASTNode, visitor: (node: ASTNode) => void): void`
-Traverses the AST tree and calls the visitor function for each node.
+`ExprNode` is the union of all expression node types above (everything except `Definition`/`Grammar`); `PegAstNode` additionally includes `Definition` and `Grammar`.
 
-#### `findNodes(node: ASTNode, type: string): ASTNode[]`
-Finds all nodes of a specific type within the tree.
+## Type Guards
 
-### Types
-
-#### `ASTNode<T = any>`
-Base interface for all AST nodes following the Unist specification:
-
-```typescript
-interface ASTNode<T = any> {
-  type: string;
-  position?: Position;
-  data?: any;
-  // Additional properties from T
-}
-```
-
-#### `Position`
-Source position information:
-
-```typescript
-interface Position {
-  start: Point;
-  end: Point;
-}
-
-interface Point {
-  line: number;
-  column: number;
-  offset?: number;
-}
-```
-
-## Integration with TPEG Parsers
+Every node type has a matching type guard, e.g. `isLiteral(node)`, `isIdentifier(node)`, `isSequence(node)`, `isChoice(node)`, `isOptional(node)`, `isMap(node)`, `isCharClass(node)`, `isAnyChar(node)`, `isAndPredicate(node)`, `isNotPredicate(node)`, `isZeroOrMore(node)`, `isOneOrMore(node)`, `isGroup(node)`, `isChar(node)`, `isRange(node)`, `isDefinition(node)`, `isGrammar(node)` — each narrows a `PegAstNode` to its specific interface.
 
 ```typescript
-import { map } from 'tpeg-core';
-import { createNode } from 'tpeg-ast';
+import { isDefinition, isCharClass } from '@suzumiyaaoba/tpeg-ast';
 
-// Transform parse results into AST nodes
-const numberParser = map(
-  digits,
-  (value, position) => createNode('Number', {
-    value: parseInt(value, 10),
-    raw: value,
-    position
-  })
-);
+if (isDefinition(node) && isCharClass(node.children[1])) {
+  // node.children[1] is narrowed to CharClass
+}
 ```
 
 ## Dependencies
 
-- Based on the [Unist](https://github.com/syntax-tree/unist) specification
-- Compatible with the [unified](https://unifiedjs.com/) ecosystem
+- `@types/unist` — the `Node`/`Literal`/`Parent` interfaces every PEG node extends
 
 ## License
 

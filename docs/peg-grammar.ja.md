@@ -155,11 +155,11 @@ TPEGパーサーは、ラベル付き式を使用してパースされたデー�
 
 ```typescript
 // 基本的なキャプチャ使用例
-import { capture, captureSequence } from "tpeg-core";
+import { capture, captureSequence } from "@suzumiyaaoba/tpeg-core";
 
-// 単一値のキャプチャ
+// 単一値のキャプチャ（posは{line, column}オブジェクトではなく0始まりのプレーンな数値オフセット）
 const nameParser = capture("name", literal("hello"));
-const result = nameParser("hello", pos);
+const result = nameParser("hello", 0);
 // result.val = { name: "hello" }
 
 // 複数値のキャプチャ
@@ -168,7 +168,7 @@ const userParser = captureSequence(
   literal(" "),
   capture("lastName", literal("Doe"))
 );
-const result = userParser("John Doe", pos);
+const result = userParser("John Doe", 0);
 // result.val = { firstName: "John", lastName: "Doe" }
 ```
 

@@ -27,28 +27,27 @@ bun test
 
 ### 基本構文パーサー
 
-```typescript
-import { basicSyntax } from 'tpeg-parser';
+`basicSyntax`、`stringLiteral`、`characterClass`、`identifier`はファクトリー関数ではなく`Parser<T>`の値そのものです。`(input, pos)`の形でそのまま呼び出してください。`pos`は`{ offset, line, column }`のようなオブジェクトではなく、0始まりのプレーンな数値オフセットです。
 
-const parser = basicSyntax();
-const pos = { offset: 0, line: 1, column: 1 };
+```typescript
+import { basicSyntax } from '@suzumiyaaoba/tpeg-parser';
 
 // 文字列リテラルをパース
-const stringResult = parser('"hello world"', pos);
+const stringResult = basicSyntax('"hello world"', 0);
 if (stringResult.success) {
   console.log(stringResult.val); 
   // { type: 'StringLiteral', value: 'hello world', quote: '"' }
 }
 
 // 文字クラスをパース
-const charClassResult = parser('[a-z]', pos);
+const charClassResult = basicSyntax('[a-z]', 0);
 if (charClassResult.success) {
   console.log(charClassResult.val);
   // { type: 'CharacterClass', ranges: [{ start: 'a', end: 'z' }], negated: false }
 }
 
 // 識別子をパース
-const identifierResult = parser('expression', pos);
+const identifierResult = basicSyntax('expression', 0);
 if (identifierResult.success) {
   console.log(identifierResult.val);
   // { type: 'Identifier', name: 'expression' }
@@ -58,19 +57,16 @@ if (identifierResult.success) {
 ### 個別パーサー
 
 ```typescript
-import { stringLiteral, characterClass, identifier } from 'tpeg-parser';
+import { stringLiteral, characterClass, identifier } from '@suzumiyaaoba/tpeg-parser';
 
 // 文字列リテラルパーサー
-const strParser = stringLiteral();
-const result1 = strParser("'hello'", pos);
+const result1 = stringLiteral("'hello'", 0);
 
 // 文字クラスパーサー
-const charParser = characterClass();
-const result2 = charParser('[^0-9]', pos);
+const result2 = characterClass('[^0-9]', 0);
 
 // 識別子パーサー
-const idParser = identifier();
-const result3 = idParser('my_rule_123', pos);
+const result3 = identifier('my_rule_123', 0);
 ```
 
 ## APIリファレンス
@@ -123,10 +119,10 @@ interface AnyChar {
 
 ### パーサー
 
-#### `basicSyntax(): Parser<BasicSyntaxNode>`
+#### `basicSyntax: Parser<BasicSyntaxNode>`
 すべての基本TPEG構文要素の組み合わせパーサー。
 
-#### `stringLiteral(): Parser<StringLiteral>`
+#### `stringLiteral: Parser<StringLiteral>`
 以下のサポートを持つ文字列リテラルパーサー：
 - 二重引用符: `"hello"`
 - 単一引用符: `'world'`
@@ -134,7 +130,7 @@ interface AnyChar {
 
 注意: テンプレートリテラル（`` `template` ``）は将来の拡張で計画されています。
 
-#### `characterClass(): Parser<CharacterClass | AnyChar>`
+#### `characterClass: Parser<CharacterClass | AnyChar>`
 文字クラスと任意文字ドットのパーサー：
 - 文字範囲: `[a-z]`、`[A-Z]`、`[0-9]`
 - 複数範囲: `[a-zA-Z0-9_]`
@@ -143,7 +139,7 @@ interface AnyChar {
 - 任意文字: `.`
 - エスケープ文字: `[\]\\^]`
 
-#### `identifier(): Parser<Identifier>`
+#### `identifier: Parser<Identifier>`
 識別子（規則参照）パーサー：
 - 文字またはアンダースコアで開始: `a-z`、`A-Z`、`_`
 - 文字、数字、アンダースコアを含む: `a-z`、`A-Z`、`0-9`、`_`
@@ -158,8 +154,8 @@ interface AnyChar {
 {
   success: true;
   val: T;
-  current: Pos;
-  next: Pos;
+  current: number; // パース開始前のオフセット
+  next: number;     // パース完了後のオフセット
 }
 
 // 失敗
@@ -191,8 +187,8 @@ bun test
 
 ## 依存関係
 
-- `tpeg-core`: コア解析機能と型
-- `tpeg-combinator`: パーサーコンビネーターとユーティリティ
+- `@suzumiyaaoba/tpeg-core`: コア解析機能と型
+- `@suzumiyaaoba/tpeg-combinator`: パーサーコンビネーターとユーティリティ
 
 ## 貢献
 
@@ -200,7 +196,4 @@ bun test
 
 ## ライセンス
 
-MIT
-
----
-*このパッケージはClaude 4 Sonnetの支援を受けて作成されました* 
+MIT 

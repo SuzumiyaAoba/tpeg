@@ -13,7 +13,7 @@ Template-based code generation system for TPEG parsers. Separated from the parse
 ## Installation
 
 ```bash
-bun add tpeg-generator
+bun add @suzumiyaaoba/tpeg-generator
 ```
 
 ## Usage
@@ -21,8 +21,8 @@ bun add tpeg-generator
 ### Basic Code Generation
 
 ```typescript
-import { generateEtaTypeScriptParser } from 'tpeg-generator';
-import type { GrammarDefinition } from 'tpeg-generator';
+import { generateEtaTypeScriptParser } from '@suzumiyaaoba/tpeg-generator';
+import type { GrammarDefinition } from '@suzumiyaaoba/tpeg-generator';
 
 const grammar: GrammarDefinition = {
   type: 'GrammarDefinition',
@@ -52,7 +52,7 @@ console.log(result.code); // Generated TypeScript parser code
 ### Advanced Configuration
 
 ```typescript
-import { EtaTPEGCodeGenerator } from 'tpeg-generator';
+import { EtaTPEGCodeGenerator } from '@suzumiyaaoba/tpeg-generator';
 
 const generator = new EtaTPEGCodeGenerator({
   language: 'typescript',
@@ -150,7 +150,7 @@ interface GeneratedCode {
 The generator includes comprehensive performance analysis:
 
 ```typescript
-import { analyzeGrammarPerformance } from 'tpeg-generator';
+import { analyzeGrammarPerformance } from '@suzumiyaaoba/tpeg-generator';
 
 const analysis = analyzeGrammarPerformance(grammar);
 console.log(analysis.estimatedParseComplexity); // 'low' | 'medium' | 'high'

@@ -27,28 +27,27 @@ bun test
 
 ### Basic Syntax Parser
 
-```typescript
-import { basicSyntax } from 'tpeg-parser';
+`basicSyntax`, `stringLiteral`, `characterClass`, and `identifier` are `Parser<T>` values, not factory functions — call them directly with `(input, pos)`, where `pos` is a plain 0-based offset (not a `{ offset, line, column }` object).
 
-const parser = basicSyntax();
-const pos = { offset: 0, line: 1, column: 1 };
+```typescript
+import { basicSyntax } from '@suzumiyaaoba/tpeg-parser';
 
 // Parse string literals
-const stringResult = parser('"hello world"', pos);
+const stringResult = basicSyntax('"hello world"', 0);
 if (stringResult.success) {
   console.log(stringResult.val); 
   // { type: 'StringLiteral', value: 'hello world', quote: '"' }
 }
 
 // Parse character classes
-const charClassResult = parser('[a-z]', pos);
+const charClassResult = basicSyntax('[a-z]', 0);
 if (charClassResult.success) {
   console.log(charClassResult.val);
   // { type: 'CharacterClass', ranges: [{ start: 'a', end: 'z' }], negated: false }
 }
 
 // Parse identifiers
-const identifierResult = parser('expression', pos);
+const identifierResult = basicSyntax('expression', 0);
 if (identifierResult.success) {
   console.log(identifierResult.val);
   // { type: 'Identifier', name: 'expression' }
@@ -58,19 +57,16 @@ if (identifierResult.success) {
 ### Individual Parsers
 
 ```typescript
-import { stringLiteral, characterClass, identifier } from 'tpeg-parser';
+import { stringLiteral, characterClass, identifier } from '@suzumiyaaoba/tpeg-parser';
 
 // String literal parser
-const strParser = stringLiteral();
-const result1 = strParser("'hello'", pos);
+const result1 = stringLiteral("'hello'", 0);
 
 // Character class parser
-const charParser = characterClass();
-const result2 = charParser('[^0-9]', pos);
+const result2 = characterClass('[^0-9]', 0);
 
 // Identifier parser
-const idParser = identifier();
-const result3 = idParser('my_rule_123', pos);
+const result3 = identifier('my_rule_123', 0);
 ```
 
 ## API Reference
@@ -123,10 +119,10 @@ interface AnyChar {
 
 ### Parsers
 
-#### `basicSyntax(): Parser<BasicSyntaxNode>`
+#### `basicSyntax: Parser<BasicSyntaxNode>`
 Combined parser for all basic TPEG syntax elements.
 
-#### `stringLiteral(): Parser<StringLiteral>`
+#### `stringLiteral: Parser<StringLiteral>`
 Parser for string literals with support for:
 - Double quotes: `"hello"`
 - Single quotes: `'world'`
@@ -134,7 +130,7 @@ Parser for string literals with support for:
 
 Note: Template literals (`` `template` ``) are planned for future extension.
 
-#### `characterClass(): Parser<CharacterClass | AnyChar>`
+#### `characterClass: Parser<CharacterClass | AnyChar>`
 Parser for character classes and any character dot:
 - Character ranges: `[a-z]`, `[A-Z]`, `[0-9]`
 - Multiple ranges: `[a-zA-Z0-9_]`
@@ -143,7 +139,7 @@ Parser for character classes and any character dot:
 - Any character: `.`
 - Escaped characters: `[\]\\^]`
 
-#### `identifier(): Parser<Identifier>`
+#### `identifier: Parser<Identifier>`
 Parser for identifiers (rule references):
 - Must start with letter or underscore: `a-z`, `A-Z`, `_`
 - Can contain letters, digits, underscores: `a-z`, `A-Z`, `0-9`, `_`
@@ -158,8 +154,8 @@ All parsers return a `ParseResult<T>` which is either:
 {
   success: true;
   val: T;
-  current: Pos;
-  next: Pos;
+  current: number; // offset before parsing began
+  next: number;     // offset after parsing completed
 }
 
 // Failure
@@ -191,8 +187,8 @@ bun test
 
 ## Dependencies
 
-- `tpeg-core`: Core parsing functionality and types
-- `tpeg-combinator`: Parser combinators and utilities
+- `@suzumiyaaoba/tpeg-core`: Core parsing functionality and types
+- `@suzumiyaaoba/tpeg-combinator`: Parser combinators and utilities
 
 ## Contributing
 
@@ -200,7 +196,4 @@ This package is part of the TPEG project. See the main project README for contri
 
 ## License
 
-MIT
-
----
-*This package was created with assistance from Claude 4 Sonnet* 
+MIT 

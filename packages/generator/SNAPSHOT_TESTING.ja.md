@@ -257,37 +257,4 @@ bun test src/eta-generator.spec.ts --verbose
 
 ## 継続的インテグレーション
 
-### CI/CDパイプラインでの使用
-
-```yaml
-# GitHub Actionsの例
-- name: Run snapshot tests
-  run: bun test src/eta-generator.spec.ts
-
-- name: Update snapshots (if needed)
-  run: bun test --update-snapshots src/eta-generator.spec.ts
-  if: github.event_name == 'pull_request'
-```
-
-### 自動化の考慮事項
-
-1. **スナップショットの自動更新**: プルリクエストでの自動更新
-2. **変更通知**: スナップショット変更の通知
-3. **レビュープロセス**: スナップショット変更のレビュー
-
-## 今後の改善
-
-### 計画されている機能
-
-1. **差分ビューア**: より詳細な差分表示
-2. **自動最適化**: スナップショットの自動最適化
-3. **パフォーマンスメトリクス**: より詳細なパフォーマンス分析
-4. **テンプレート検証**: テンプレート変更の影響分析
-
-### フィードバック
-
-スナップショットテストシステムの改善提案や問題報告は、GitHubのイシュートラッカーで受け付けています。
-
----
-
-このガイドが、TPEGジェネレーターのスナップショットテストを効果的に使用するのに役立つことを願っています。 
+このリポジトリのCI（`.github/workflows/ci.yml`、`check` → `build` → `typecheck` → `test`の順）は`bun test`を実行するだけで、スナップショットテストも通常のテストスイートの一部として実行されます。スナップショットの自動更新のような特別な自動化はCI上には存在しません——スナップショットの意図的な更新はローカルで行い、変更を通常のコミット・レビューフローに乗せてください。 

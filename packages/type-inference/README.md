@@ -1,4 +1,4 @@
-# @tpeg/type-inference
+# @suzumiyaaoba/tpeg-type-inference
 
 Type inference system for TPEG grammar definitions.
 
@@ -20,7 +20,7 @@ This package provides comprehensive type inference capabilities for TPEG grammar
 ## Installation
 
 ```bash
-npm install @tpeg/type-inference
+npm install @suzumiyaaoba/tpeg-type-inference
 ```
 
 ## Usage
@@ -28,23 +28,24 @@ npm install @tpeg/type-inference
 ### Basic Type Inference
 
 ```typescript
-import { TypeInferenceEngine } from '@tpeg/type-inference';
+import { TypeInferenceEngine } from '@suzumiyaaoba/tpeg-type-inference';
 import { 
   createGrammarDefinition, 
   createRuleDefinition, 
   createStringLiteral,
   createCharacterClass,
   createCharRange,
+  createIdentifier,
   createPlus,
   createSequence,
   createChoice
-} from '@tpeg/core';
+} from '@suzumiyaaoba/tpeg-core';
 
 // Create a simple grammar
 const grammar = createGrammarDefinition('MyGrammar', [], [
   createRuleDefinition('greeting', createStringLiteral('hello', '"')),
   createRuleDefinition('digit', createCharacterClass([createCharRange('0', '9')])),
-  createRuleDefinition('number', createPlus(createCharacterClass([createCharRange('0', '9')]))),
+  createRuleDefinition('number', createPlus(createIdentifier('digit'))),
   createRuleDefinition('expression', createChoice([
     createStringLiteral('hello', '"'),
     createStringLiteral('world', '"')
@@ -84,7 +85,7 @@ const engine = new TypeInferenceEngine({
 ### Type Integration with Code Generation
 
 ```typescript
-import { TypeIntegrationEngine } from '@tpeg/type-inference';
+import { TypeIntegrationEngine } from '@suzumiyaaoba/tpeg-type-inference';
 
 const integrationEngine = new TypeIntegrationEngine({
   strictTypes: true,
@@ -136,7 +137,7 @@ import {
   createChoice,
   createOptional,
   createStar
-} from '@tpeg/core';
+} from '@suzumiyaaoba/tpeg-core';
 
 // JSON-like grammar
 const jsonGrammar = createGrammarDefinition('JSONGrammar', [], [

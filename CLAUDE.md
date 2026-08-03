@@ -102,7 +102,7 @@ The parsing system follows a functional approach with these key concepts:
 ### Package Dependencies
 ```
 tpeg-core (no workspace dependencies)
-    ├── tpeg-ast (also depends on unist ecosystem: @types/unist, unist-builder)
+    ├── tpeg-ast (also depends on unist ecosystem: @types/unist)
     ├── tpeg-combinator (depends on tpeg-core)
     │   └── tpeg-samples (depends on tpeg-core, tpeg-combinator) [legacy]
     ├── tpeg-generator (depends on tpeg-core, eta templates)
@@ -118,6 +118,7 @@ tpeg-core (no workspace dependencies)
 - Type inference for grammar definitions (`TypeInferenceEngine`, `TypeIntegrationEngine`) lives in its own package, `packages/type-inference/src/`, not in `tpeg-core` — see the migration note below for the correct import.
 - `packages/parser-sample/src/` holds runnable demos of the grammar parser and generator; `packages/samples/` is a separate, older set of hand-written example parsers (JSON, CSV, arithmetic, PEG) that predates the grammar parser and doesn't depend on it.
 - A previous `self-transpile` package (using TPEG to parse its own grammar) was removed; the parser combinator implementation was subsequently split from one large file into the current `primitive`/`string`/`list`/`logic`/`error`/`debug` modules under `packages/combinator/src/`.
+- `packages/parser/src/self-hosted/` is a validation artifact (not a replacement): it describes TPEG's own grammar syntax *in TPEG itself*, compiles it with `tpeg-cli`, and checks the result against the hand-written parser for byte-for-byte AST equivalence. Nothing outside that directory changed because of it — see its own `README.md` for the four-layer grammar breakdown.
 
 ### Migration note: type inference moved out of tpeg-core
 `TypeInferenceEngine` and `TypeIntegrationEngine` live in `packages/type-inference/`, not `tpeg-core`. Import from `@suzumiyaaoba/tpeg-type-inference`:

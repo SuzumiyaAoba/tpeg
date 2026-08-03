@@ -13,7 +13,7 @@ TPEGパーサーのためのテンプレートベースのコード生成シス�
 ## インストール
 
 ```bash
-bun add tpeg-generator
+bun add @suzumiyaaoba/tpeg-generator
 ```
 
 ## 使用法
@@ -21,8 +21,8 @@ bun add tpeg-generator
 ### 基本コード生成
 
 ```typescript
-import { generateEtaTypeScriptParser } from 'tpeg-generator';
-import type { GrammarDefinition } from 'tpeg-generator';
+import { generateEtaTypeScriptParser } from '@suzumiyaaoba/tpeg-generator';
+import type { GrammarDefinition } from '@suzumiyaaoba/tpeg-generator';
 
 const grammar: GrammarDefinition = {
   type: 'GrammarDefinition',
@@ -52,7 +52,7 @@ console.log(result.code); // 生成されたTypeScriptパーサーコード
 ### 高度な設定
 
 ```typescript
-import { EtaTPEGCodeGenerator } from 'tpeg-generator';
+import { EtaTPEGCodeGenerator } from '@suzumiyaaoba/tpeg-generator';
 
 const generator = new EtaTPEGCodeGenerator({
   language: 'typescript',
@@ -150,7 +150,7 @@ interface GeneratedCode {
 ジェネレーターには包括的なパフォーマンス解析が含まれています：
 
 ```typescript
-import { analyzeGrammarPerformance } from 'tpeg-generator';
+import { analyzeGrammarPerformance } from '@suzumiyaaoba/tpeg-generator';
 
 const analysis = analyzeGrammarPerformance(grammar);
 console.log(analysis.estimatedParseComplexity); // 'low' | 'medium' | 'high'

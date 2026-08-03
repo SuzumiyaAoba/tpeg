@@ -62,27 +62,27 @@ Demonstrates file-based parsing workflows:
 ### Basic Parsing
 
 ```typescript
-import { parse } from "tpeg-core";
-import { stringLiteral, identifier, tpegExpression } from "tpeg-parser";
+import { parse } from "@suzumiyaaoba/tpeg-core";
+import { stringLiteral, identifier, tpegExpression } from "@suzumiyaaoba/tpeg-parser";
 
 // Parse a string literal
-const result1 = parse(stringLiteral, '"hello world"');
-// → { success: true, val: { type: "StringLiteral", value: "hello world" } }
+const result1 = parse(stringLiteral)('"hello world"');
+// → { success: true, val: { type: "StringLiteral", value: "hello world", quote: '"' } }
 
 // Parse an identifier
-const result2 = parse(identifier, "myVariable");
+const result2 = parse(identifier)("myVariable");
 // → { success: true, val: { type: "Identifier", name: "myVariable" } }
 
 // Parse a complex expression
-const result3 = parse(tpegExpression, '"start" " " [a-z]+ "end"');
+const result3 = parse(tpegExpression)('"start" " " [a-z]+ "end"');
 // → { success: true, val: { type: "Sequence", elements: [...] } }
 ```
 
 ### Grammar Definition
 
 ```typescript
-import { parse } from "tpeg-core";
-import { grammarDefinition } from "tpeg-parser";
+import { parse } from "@suzumiyaaoba/tpeg-core";
+import { grammarDefinition } from "@suzumiyaaoba/tpeg-parser";
 
 const grammarSource = `
 grammar Calculator {
@@ -95,7 +95,7 @@ grammar Calculator {
   number = [0-9]+ ("." [0-9]+)?
 }`;
 
-const result = parse(grammarDefinition, grammarSource);
+const result = parse(grammarDefinition)(grammarSource);
 // → { success: true, val: { name: "Calculator", annotations: [...], rules: [...] } }
 ```
 
@@ -116,7 +116,7 @@ const result = parse(grammarDefinition, grammarSource);
 ### 🏗️ Architecture Benefits
 - **Monorepo Structure**: Multiple focused packages
 - **TypeScript Strict Mode**: Full compliance with `@tsconfig/strictest`
-- **Comprehensive Testing**: 683 tests with high coverage
+- **Comprehensive Testing**: high test coverage across the monorepo (run `bun run test` for the current count — it drifts with every commit)
 - **Functional Design**: Parser combinators with performance optimizations
 - **AST Generation**: Unist-compatible abstract syntax trees
 - **Performance**: Const-based parser declarations for optimal speed
@@ -126,10 +126,15 @@ const result = parse(grammarDefinition, grammarSource);
 ```text
 packages/parser-sample/
 ├── src/
-│   ├── demo.ts           # Complete feature demonstration
-│   ├── basic-demo.ts     # Basic parsing features
-│   ├── grammar-demo.ts   # Grammar definition features
-│   └── index.ts          # Main exports
+│   ├── demo.ts             # Complete feature demonstration
+│   ├── basic-demo.ts       # Basic parsing features
+│   ├── grammar-demo.ts     # Grammar definition features
+│   ├── file-demo.ts        # File-based parsing workflows
+│   ├── generator-demo.ts   # Code generation demo
+│   ├── performance-demo.ts # Performance demo
+│   ├── grammar-validation.ts
+│   ├── pos.ts
+│   └── index.ts            # Main exports
 ├── package.json
 ├── tsconfig.json
 └── README.md

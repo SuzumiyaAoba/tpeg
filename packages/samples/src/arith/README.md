@@ -86,7 +86,7 @@ export const Integer = map(oneOrMore(Digit), (digits: string[]) =>
 );
 
 // Direct calculation in Term parser
-export function DirectTerm(input: string, pos: Pos): ParseResult<number> {
+export function DirectTerm(input: string, pos: number): ParseResult<number> {
   return map(
     seq(DirectFactor, star(/* multiplication/division/modulo */)),
     ([first, rest]) => {
@@ -107,7 +107,7 @@ export function DirectTerm(input: string, pos: Pos): ParseResult<number> {
 
 ```typescript
 // AST construction in Term parser
-export function Term(input: string, pos: Pos): ParseResult<ExpressionNode> {
+export function Term(input: string, pos: number): ParseResult<ExpressionNode> {
   return map(
     seq(Factor, star(/* multiplication/division/modulo */)),
     ([first, rest]) => {

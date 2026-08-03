@@ -62,27 +62,27 @@ bun run demo:grammar
 ### 基本解析
 
 ```typescript
-import { parse } from "tpeg-core";
-import { stringLiteral, identifier, tpegExpression } from "tpeg-parser";
+import { parse } from "@suzumiyaaoba/tpeg-core";
+import { stringLiteral, identifier, tpegExpression } from "@suzumiyaaoba/tpeg-parser";
 
 // 文字列リテラルをパース
-const result1 = parse(stringLiteral, '"hello world"');
-// → { success: true, val: { type: "StringLiteral", value: "hello world" } }
+const result1 = parse(stringLiteral)('"hello world"');
+// → { success: true, val: { type: "StringLiteral", value: "hello world", quote: '"' } }
 
 // 識別子をパース
-const result2 = parse(identifier, "myVariable");
+const result2 = parse(identifier)("myVariable");
 // → { success: true, val: { type: "Identifier", name: "myVariable" } }
 
 // 複雑な表現をパース
-const result3 = parse(tpegExpression, '"start" " " [a-z]+ "end"');
+const result3 = parse(tpegExpression)('"start" " " [a-z]+ "end"');
 // → { success: true, val: { type: "Sequence", elements: [...] } }
 ```
 
 ### 文法定義
 
 ```typescript
-import { parse } from "tpeg-core";
-import { grammarDefinition } from "tpeg-parser";
+import { parse } from "@suzumiyaaoba/tpeg-core";
+import { grammarDefinition } from "@suzumiyaaoba/tpeg-parser";
 
 const grammarSource = `
 grammar Calculator {
@@ -95,7 +95,7 @@ grammar Calculator {
   number = [0-9]+ ("." [0-9]+)?
 }`;
 
-const result = parse(grammarDefinition, grammarSource);
+const result = parse(grammarDefinition)(grammarSource);
 // → { success: true, val: { name: "Calculator", annotations: [...], rules: [...] } }
 ```
 
@@ -116,7 +116,7 @@ const result = parse(grammarDefinition, grammarSource);
 ### 🏗️ アーキテクチャの利点
 - **モノレポ構造**: 複数の焦点を絞ったパッケージ
 - **TypeScript Strict Mode**: `@tsconfig/strictest`との完全な準拠
-- **包括的なテスト**: 683のテストと高いカバレッジ
+- **包括的なテスト**: モノレポ全体で高いテストカバレッジを維持（具体的な件数はコミットごとに変わるため`bun run test`で確認してください）
 - **関数型設計**: パフォーマンス最適化を備えたパーサーコンビネーター
 - **AST生成**: Unist準拠の抽象構文木
 - **パフォーマンス**: 最適な速度のためのconstベースのパーサー宣言
@@ -126,10 +126,15 @@ const result = parse(grammarDefinition, grammarSource);
 ```text
 packages/parser-sample/
 ├── src/
-│   ├── demo.ts           # 完全な機能実証
-│   ├── basic-demo.ts     # 基本解析機能
-│   ├── grammar-demo.ts   # 文法定義機能
-│   └── index.ts          # メインエクスポート
+│   ├── demo.ts             # 完全な機能実証
+│   ├── basic-demo.ts       # 基本解析機能
+│   ├── grammar-demo.ts     # 文法定義機能
+│   ├── file-demo.ts        # ファイルベースの解析ワークフロー
+│   ├── generator-demo.ts   # コード生成デモ
+│   ├── performance-demo.ts # パフォーマンスデモ
+│   ├── grammar-validation.ts
+│   ├── pos.ts
+│   └── index.ts            # メインエクスポート
 ├── package.json
 ├── tsconfig.json
 └── README.md

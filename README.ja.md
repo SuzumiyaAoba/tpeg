@@ -74,11 +74,7 @@ npm install @suzumiyaaoba/tpeg-generator
 
 ### tpeg-samples
 
-様々なユースケースを実証するサンプルパーサー。
-
-```bash
-npm install @suzumiyaaoba/tpeg-samples
-```
+様々なユースケースを実証するサンプルパーサー。`private: true`なパッケージのためnpm/bunに公開されておらず、リポジトリをクローンして`packages/samples`内で直接使用します（[使用例](#使用例)を参照）。
 
 ### tpeg-parser-sample
 
@@ -87,6 +83,17 @@ npm install @suzumiyaaoba/tpeg-samples
 ```bash
 npm install @suzumiyaaoba/tpeg-parser-sample
 ```
+
+### tpeg-cli
+
+`.tpeg` 文法ファイルからスタンドアロンのTypeScriptパーサーを生成する `tpeg` コマンドラインツール。
+
+```bash
+npm install -g @suzumiyaaoba/tpeg-cli
+tpeg grammar.tpeg -o parser.ts
+```
+
+詳細は [`packages/cli/README.md`](./packages/cli/README.md) を参照してください。
 
 ## 使用例
 
@@ -119,7 +126,7 @@ bun run arith "1 + 2 * 3"
 # AST構造を表示
 bun run arith --ast "(1 + 2) * 3"
 
-#### すべての例を実行
+# すべての例を実行
 bun run arith:examples
 
 # インタラクティブREPL
@@ -129,7 +136,7 @@ bun run arith:repl
 ### 基本的な例
 
 ```typescript
-import { literal, choice, seq, zeroOrMore, parse } from "tpeg-core";
+import { literal, choice, seq, zeroOrMore, parse } from "@suzumiyaaoba/tpeg-core";
 
 // "hello"または"world"の簡単なパーサーを定義
 const helloOrWorld = choice(literal("hello"), literal("world"));
@@ -145,8 +152,8 @@ console.log(result);
 ### コード生成の例
 
 ```typescript
-import { generateEtaTypeScriptParser } from 'tpeg-generator';
-import type { GrammarDefinition } from 'tpeg-generator';
+import { generateEtaTypeScriptParser } from '@suzumiyaaoba/tpeg-generator';
+import type { GrammarDefinition } from '@suzumiyaaoba/tpeg-generator';
 
 const grammar: GrammarDefinition = {
   type: 'GrammarDefinition',
@@ -235,7 +242,7 @@ TPEGには以下の包括的なテストスイートがあります：
 - パフォーマンスベンチマーク
 - コード生成の一貫性のためのスナップショットテスト
 
-安定性と信頼性を確保するため、高いテストカバレッジ（>80%）を維持することを目指しています。
+安定性と信頼性を確保するため、高いテストカバレッジを維持することを目指しています。具体的な数値はコミットのたびに変わるため、ここには記載しません。`bun run test:coverage`を実行して現在の値を確認してください。
 
 ### スナップショットテスト
 
@@ -303,6 +310,7 @@ bun run test:watch
 
 - [PEG基礎](./docs/peg.md) - 構文解析表現文法の紹介
 - [TPEG文法仕様](./docs/peg-grammar.md) - 詳細な文法定義言語仕様
+- [CLIの使い方](./packages/cli/README.md) - `.tpeg` ファイルから `tpeg` コマンドでスタンドアロンパーサーを生成する方法
 - [Generatorドキュメント](./packages/generator/README.md) - コード生成システムドキュメント
 - [スナップショットテストガイド](./packages/generator/SNAPSHOT_TESTING.md) - スナップショットテストドキュメント
 

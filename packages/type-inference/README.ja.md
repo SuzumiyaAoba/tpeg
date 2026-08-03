@@ -1,4 +1,4 @@
-# @tpeg/type-inference
+# @suzumiyaaoba/tpeg-type-inference
 
 TPEG文法定義のための型推論システム。
 
@@ -20,7 +20,7 @@ TPEG文法定義のための型推論システム。
 ## インストール
 
 ```bash
-npm install @tpeg/type-inference
+npm install @suzumiyaaoba/tpeg-type-inference
 ```
 
 ## 使用方法
@@ -28,23 +28,24 @@ npm install @tpeg/type-inference
 ### 基本的な型推論
 
 ```typescript
-import { TypeInferenceEngine } from '@tpeg/type-inference';
+import { TypeInferenceEngine } from '@suzumiyaaoba/tpeg-type-inference';
 import { 
   createGrammarDefinition, 
   createRuleDefinition, 
   createStringLiteral,
   createCharacterClass,
   createCharRange,
+  createIdentifier,
   createPlus,
   createSequence,
   createChoice
-} from '@tpeg/core';
+} from '@suzumiyaaoba/tpeg-core';
 
 // シンプルな文法を作成
 const grammar = createGrammarDefinition('MyGrammar', [], [
   createRuleDefinition('greeting', createStringLiteral('hello', '"')),
   createRuleDefinition('digit', createCharacterClass([createCharRange('0', '9')])),
-  createRuleDefinition('number', createPlus(createCharacterClass([createCharRange('0', '9')]))),
+  createRuleDefinition('number', createPlus(createIdentifier('digit'))),
   createRuleDefinition('expression', createChoice([
     createStringLiteral('hello', '"'),
     createStringLiteral('world', '"')
@@ -84,7 +85,7 @@ const engine = new TypeInferenceEngine({
 ### コード生成との型統合
 
 ```typescript
-import { TypeIntegrationEngine } from '@tpeg/type-inference';
+import { TypeIntegrationEngine } from '@suzumiyaaoba/tpeg-type-inference';
 
 const integrationEngine = new TypeIntegrationEngine({
   strictTypes: true,
@@ -136,7 +137,7 @@ import {
   createChoice,
   createOptional,
   createStar
-} from '@tpeg/core';
+} from '@suzumiyaaoba/tpeg-core';
 
 // JSONライクな文法
 const jsonGrammar = createGrammarDefinition('JSONGrammar', [], [

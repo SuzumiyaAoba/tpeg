@@ -1,116 +1,83 @@
 # TPEG AST
 
-TPEG（TypeScript Parsing Expression Grammar）の抽象構文木ユーティリティ。
+PEG文法のための型付きASTノード定義とビルダー関数。[unist](https://github.com/syntax-tree/unist)の`Node`/`Literal`/`Parent`インターフェースの上に構築されています。
 
 ## 概要
 
-このパッケージは、Unist仕様に従う抽象構文木（AST）を構築および操作するためのユーティリティを提供します。TPEGパーサーとシームレスに連携して、パースされたコンテンツの構造化された表現を作成するように設計されています。
+このパッケージは、PEG文法そのものの構文——リテラル、識別子、シーケンス、選択、文字クラス、繰り返し、先読み述語、規則定義、文法全体——を、型付きでunist互換なASTとしてモデル化します。`tpeg-parser`/`tpeg-generator`が構築・消費するノードモデルであり、汎用的なツリー走査ユーティリティ（`createNode`/`walkTree`/`findNodes`など）は提供しません。各ノード型にはそれぞれ専用のコンストラクター関数と型ガードが用意されています。
 
 ## インストール
 
 ```bash
-npm install tpeg-ast
+npm install @suzumiyaaoba/tpeg-ast
 ```
 
-## 機能
-
-- **Unist準拠のASTノード**: unifiedエコシステムと互換性
-- **型安全なノード作成**: すべてのAST操作に対するTypeScriptサポート
-- **ツリー操作ユーティリティ**: AST構造の走査と修正のための関数
-- **位置追跡**: 自動ソース位置情報
-- **拡張可能なノード型**: ドメイン固有文法のためのカスタムノード型を簡単に追加
-
-## 基本的な使用法
+## 基本的な使い方
 
 ```typescript
-import { createNode, walkTree, findNodes } from 'tpeg-ast';
+import { definition, grammar, charClass, range, identifier, sequence, literal } from '@suzumiyaaoba/tpeg-ast';
 
-// ASTノードを作成
-const literalNode = createNode('Literal', {
-  value: 'hello',
-  raw: '"hello"'
-});
+// digit = [0-9]
+const digitRule = definition("digit", charClass(range("0", "9")));
 
-const expressionNode = createNode('Expression', {
-  left: literalNode,
-  operator: '+',
-  right: createNode('Literal', { value: 'world', raw: '"world"' })
-});
+// letter = [a-zA-Z]
+const letterRule = definition("letter", charClass(range("a", "z"), range("A", "Z")));
 
-// ツリーを走査
-walkTree(expressionNode, (node) => {
-  console.log(`ノード型: ${node.type}`);
-});
+// greeting = "hello" identifier
+const greetingRule = definition("greeting", sequence(literal("hello"), identifier("name")));
 
-// 特定のノードを検索
-const literals = findNodes(expressionNode, 'Literal');
+const g = grammar(digitRule, letterRule, greetingRule);
+// {
+//   type: "grammar",
+//   children: [
+//     { type: "definition", children: [{ type: "identifier", value: "digit" }, ...] },
+//     ...
+//   ]
+// }
 ```
 
-## APIリファレンス
+すべてのコンストラクターはプレーンでJSONシリアライズ可能なオブジェクトを返します。ノードの形自体を覚える以外に、隠されたツリー操作APIを学ぶ必要はありません。
 
-### コア関数
+## ノード型
 
-#### `createNode<T>(type: string, properties: T): ASTNode<T>`
-指定された型とプロパティを持つ新しいASTノードを作成します。
+| ノード | 形状 | コンストラクター |
+| --- | --- | --- |
+| `Literal<T>` | `{ type: "literal", value: T }` | `literal(value)` |
+| `Identifier<T>` | `{ type: "identifier", value: T }` | `identifier(value)` |
+| `Sequence` | `{ type: "sequence", children: ExprNode[] }` | `sequence(...exprs)` |
+| `Choice` | `{ type: "choice", children: ExprNode[] }` | `choice(...exprs)` |
+| `Optional` | `{ type: "optional", children: [ExprNode] }` | `optional(expr)` |
+| `MapNode` | `{ type: "map", children: [ExprNode], data: { mapper } }` | `map(expr, mapper)` |
+| `Char<T>` | `{ type: "char", value: T }` | `char(value)` |
+| `Range<F, T>` | `{ type: "range", value: [F, T] }` | `range(from, to)` |
+| `CharClass` | `{ type: "charClass", children: CharClassElement[] }` | `charClass(...elements)` |
+| `AnyChar` | `{ type: "anyChar" }` | `anyChar()` |
+| `AndPredicate` | `{ type: "andPredicate", children: [ExprNode] }` | `andPredicate(expr)` |
+| `NotPredicate` | `{ type: "notPredicate", children: [ExprNode] }` | `notPredicate(expr)` |
+| `ZeroOrMore` | `{ type: "zeroOrMore", children: [ExprNode] }` | `zeroOrMore(expr)` |
+| `OneOrMore` | `{ type: "oneOrMore", children: [ExprNode] }` | `oneOrMore(expr)` |
+| `Group` | `{ type: "group", children: [ExprNode] }` | `group(expr)` |
+| `Definition` | `{ type: "definition", children: [Identifier, ExprNode] }` | `definition(id, expr)` |
+| `Grammar` | `{ type: "grammar", children: Definition[] }` | `grammar(...definitions)` |
 
-#### `walkTree(node: ASTNode, visitor: (node: ASTNode) => void): void`
-ASTツリーを走査し、各ノードに対してビジター関数を呼び出します。
+`ExprNode`は上記のすべての式ノード型（`Definition`/`Grammar`を除く）の共用体、`PegAstNode`はさらに`Definition`と`Grammar`を含みます。
 
-#### `findNodes(node: ASTNode, type: string): ASTNode[]`
-ツリー内の特定の型のすべてのノードを検索します。
+## 型ガード
 
-### 型
-
-#### `ASTNode<T = any>`
-Unist仕様に従うすべてのASTノードの基本インターフェース：
+すべてのノード型に対応する型ガードが用意されています。例：`isLiteral(node)`、`isIdentifier(node)`、`isSequence(node)`、`isChoice(node)`、`isOptional(node)`、`isMap(node)`、`isCharClass(node)`、`isAnyChar(node)`、`isAndPredicate(node)`、`isNotPredicate(node)`、`isZeroOrMore(node)`、`isOneOrMore(node)`、`isGroup(node)`、`isChar(node)`、`isRange(node)`、`isDefinition(node)`、`isGrammar(node)`——それぞれ`PegAstNode`を対応する型に絞り込みます。
 
 ```typescript
-interface ASTNode<T = any> {
-  type: string;
-  position?: Position;
-  data?: any;
-  // Tからの追加プロパティ
+import { isDefinition, isCharClass } from '@suzumiyaaoba/tpeg-ast';
+
+if (isDefinition(node) && isCharClass(node.children[1])) {
+  // node.children[1] は CharClass 型に絞り込まれる
 }
-```
-
-#### `Position`
-ソース位置情報：
-
-```typescript
-interface Position {
-  start: Point;
-  end: Point;
-}
-
-interface Point {
-  line: number;
-  column: number;
-  offset?: number;
-}
-```
-
-## TPEGパーサーとの統合
-
-```typescript
-import { map } from 'tpeg-core';
-import { createNode } from 'tpeg-ast';
-
-// パース結果をASTノードに変換
-const numberParser = map(
-  digits,
-  (value, position) => createNode('Number', {
-    value: parseInt(value, 10),
-    raw: value,
-    position
-  })
-);
 ```
 
 ## 依存関係
 
-- [Unist](https://github.com/syntax-tree/unist)仕様に基づく
-- [unified](https://unifiedjs.com/)エコシステムと互換性
+- `@types/unist` — すべてのPEGノードが拡張する`Node`/`Literal`/`Parent`インターフェース
 
 ## ライセンス
 
-MIT 
+MIT

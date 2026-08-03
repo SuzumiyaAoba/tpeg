@@ -18,6 +18,7 @@ TPEG is a TypeScript library for building parsers using Parsing Expression Gramm
 | [`@suzumiyaaoba/tpeg-type-inference`](./packages/type-inference) | Type inference and type-safe-grammar integration for TPEG grammar definitions. |
 | [`@suzumiyaaoba/tpeg-parser`](./packages/parser) | A parser for TPEG's own grammar definition syntax, built on `tpeg-core` and `tpeg-combinator`. See [`docs/peg-grammar.md`](./docs/peg-grammar.md). |
 | [`@suzumiyaaoba/tpeg-generator`](./packages/generator) | Template-based (Eta) code generation: turns a parsed TPEG grammar into a standalone TypeScript parser. |
+| [`@suzumiyaaoba/tpeg-cli`](./packages/cli) | `tpeg` command-line tool: generates a standalone TypeScript parser from a `.tpeg` grammar file. |
 | [`@suzumiyaaoba/tpeg-parser-sample`](./packages/parser-sample) | Runnable demos of the grammar parser and generator (`bun run demo`, `bun run demo:grammar`, ...). |
 | [`@suzumiyaaoba/tpeg-samples`](./packages/samples) | Legacy example parsers (JSON, CSV, arithmetic, PEG) written directly against `tpeg-core`/`tpeg-combinator`. |
 
@@ -33,7 +34,8 @@ tpeg-core (no workspace dependencies)
 ├── tpeg-generator         (+ eta templates)
 ├── tpeg-type-inference
 └── tpeg-parser            (depends on tpeg-core, tpeg-combinator)
-    └── tpeg-parser-sample (depends on tpeg-core, tpeg-parser)
+    ├── tpeg-parser-sample (depends on tpeg-core, tpeg-parser)
+    └── tpeg-cli           (depends on tpeg-core, tpeg-parser)
 ```
 
 ## Quick example
@@ -94,6 +96,7 @@ There is no fixed test/package/file count documented here on purpose — those n
 
 - [PEG fundamentals](./docs/peg.md) — an introduction to parsing expression grammars
 - [TPEG grammar specification](./docs/peg-grammar.md) — the grammar definition language TPEG's own parser implements
+- [CLI usage](./packages/cli/README.md) — generating a standalone parser from a `.tpeg` file with the `tpeg` command
 - [Generator documentation](./packages/generator/README.md) — code generation system details
 - [Snapshot testing guide](./packages/generator/SNAPSHOT_TESTING.md) — how the generator's snapshot tests work
 - [`CLAUDE.md`](./CLAUDE.md) — guidance for AI coding assistants working in this repo (also useful as a technical overview for humans)

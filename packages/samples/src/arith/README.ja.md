@@ -1,303 +1,168 @@
-# 算術計算機サンプル
+# TPEG 算術計算機の例
 
-TPEG（TypeScript Parsing Expression Grammar）を使用した算術式の解析と評価の実用的な例。
+TPEGの`map`関数を使って算術計算機を構築する方法を示す例です。
 
-## 🎯 機能
+## 概要
 
-### サポートされる演算
-- **基本演算**: 加算（`+`）、減算（`-`）、乗算（`*`）、除算（`/`）
-- **優先度**: 乗算・除算が加算・減算より優先
-- **括弧**: 任意の深さの括弧によるグループ化
-- **数値**: 整数と浮動小数点数
-- **空白**: 任意の空白文字の無視
+`map`関数を活用した2種類の異なるパース手法を実装しています。
 
-### 評価モード
-- **直接計算**: パースしながら即座に計算
-- **AST構築**: 抽象構文木を構築して後で評価
-- **インタラクティブREPL**: 対話的な式入力と評価
+1. **直接計算**: `map`関数を使ってパースと同時に結果を計算
+2. **AST構築**: `map`関数で抽象構文木（AST）を構築し、後で評価
 
-## 🚀 使用法
+## サポートする機能
 
-### 基本的な使用
+- **基本演算**: `+`、`-`、`*`、`/`、`%`
+- **浮動小数点数**: `3.14`、`2.5`
+- **演算子優先度**: 乗算・除算は加算・減算より優先
+- **括弧によるグループ化**: `(1 + 2) * 3`
+- **符号付き数値**: `+5`、`-3`
+- **空白の扱い**: 空白はどこにあっても許可される
 
-```typescript
-import { parseArithmetic } from './calculator';
+## サンプルの実行
 
-// 直接計算
-const result1 = parseArithmetic('2 + 3 * 4');
-console.log(result1); // 14
-
-// AST構築
-const ast = parseArithmetic('(1 + 2) * 3', { buildAST: true });
-console.log(ast); // { type: 'BinaryExpression', operator: '*', ... }
-```
-
-### コマンドライン使用
+### 1. 基本デモ
 
 ```bash
-# 基本デモ
 bun run arith
+```
 
-# 特定の式を計算
-bun run arith "1 + 2 * 3"
+両方の手法による基本的な計算例を表示します。
 
-# AST構造を表示
-bun run arith --ast "(1 + 2) * 3"
+### 2. 特定の式を計算
 
-# すべての例を実行
-bun run arith:examples
+```bash
+bun demo.ts "1 + 2 * 3"
+# Expression: 1 + 2 * 3
+# Direct calc: 7
+# AST calc:    7
+# ✓ Both calculation methods produced the same result
+```
 
-# インタラクティブREPL
+### 3. AST構造を表示
+
+```bash
+bun demo.ts --ast "(1 + 2) * 3"
+# Expression: (1 + 2) * 3
+# AST Structure:
+# BinaryOp(*)
+#   left:
+#     Group
+#       expression:
+#         BinaryOp(+)
+#           left:
+#             Number(1)
+#           right:
+#             Number(2)
+#   right:
+#     Number(3)
+#
+# Result: 9
+```
+
+### 4. インタラクティブREPL
+
+```bash
 bun run arith:repl
 ```
 
-## 📚 例
+式を入力すると結果が表示される対話型の計算機が起動します。
+
+### 5. すべての例を実行
+
+```bash
+bun run arith:examples
+```
+
+各カテゴリの包括的な例を実行します。
+
+## `map`関数の使用例
+
+### `map`による直接計算
+
+```typescript
+// mapを使った数値パース
+export const Integer = map(oneOrMore(Digit), (digits: string[]) =>
+  Number.parseInt(digits.join(""), 10)
+);
+
+// Termパーサーでの直接計算
+export function DirectTerm(input: string, pos: number): ParseResult<number> {
+  return map(
+    seq(DirectFactor, star(/* 乗算・除算・剰余 */)),
+    ([first, rest]) => {
+      // mapを使った直接計算
+      return rest.reduce((left, [, operator, , right]) => {
+        switch (operator) {
+          case "*": return left * right;
+          case "/": return left / right;
+          case "%": return left % right;
+        }
+      }, first);
+    }
+  )(input, pos);
+}
+```
+
+### `map`によるAST構築
+
+```typescript
+// TermパーサーでのAST構築
+export function Term(input: string, pos: number): ParseResult<ExpressionNode> {
+  return map(
+    seq(Factor, star(/* 乗算・除算・剰余 */)),
+    ([first, rest]) => {
+      // mapを使ってASTを構築
+      return rest.reduce((left, [, operator, , right]) =>
+        createBinaryOp(operator, left, right),
+        first
+      );
+    }
+  )(input, pos);
+}
+```
+
+## 式の例
 
 ### 基本演算
-```bash
-$ bun run arith "1 + 2"
-3
-
-$ bun run arith "10 - 3"
-7
-
-$ bun run arith "4 * 5"
-20
-
-$ bun run arith "15 / 3"
-5
-```
-
-### 演算子優先度
-```bash
-$ bun run arith "2 + 3 * 4"
-14  # 3 * 4 = 12, 2 + 12 = 14
-
-$ bun run arith "10 - 2 * 3"
-4   # 2 * 3 = 6, 10 - 6 = 4
-```
-
-### 括弧によるグループ化
-```bash
-$ bun run arith "(2 + 3) * 4"
-20  # (2 + 3) = 5, 5 * 4 = 20
-
-$ bun run arith "((1 + 2) * 3) + 4"
-13  # 複雑なネストした括弧
-```
+- `1 + 2` → 3
+- `3 - 1` → 2
+- `2 * 3` → 6
+- `6 / 2` → 3
+- `7 % 3` → 1
 
 ### 浮動小数点数
-```bash
-$ bun run arith "3.14 * 2"
-6.28
+- `1.5 + 2.5` → 4
+- `3.14 * 2` → 6.28
+- `10.0 / 3.0` → 3.3333333333333335
 
-$ bun run arith "10 / 3"
-3.3333333333333335
-```
+### 演算子優先度
+- `1 + 2 * 3` → 7
+- `2 * 3 + 1` → 7
+- `(1 + 2) * 3` → 9
+- `2 * (3 + 1)` → 8
 
-### 空白の無視
-```bash
-$ bun run arith "1 + 2"
-3
+### 複雑な式
+- `((1 + 2) * 3 - 4) / 2` → 2.5
+- `2 * 3 + 4 * 5 - 6 / 2` → 23
+- `1 + 2 * 3 + 4 * 5 + 6` → 33
 
-$ bun run arith "1   +   2"
-3
+### 符号付き数値
+- `-5 + 3` → -2
+- `+5 - 3` → 2
 
-$ bun run arith "1 + 2 * 3"
-7
-```
+## エラーハンドリング
 
-## 🔧 実装詳細
+このパーサーは以下のようなエラー条件を処理します。
 
-### 文法定義
+- **ゼロ除算**: `1 / 0`
+- **ゼロ剰余**: `1 % 0`
+- **不正な構文**: `1 +`（不完全な式）
+- **サポートされない文字**: `1 & 2`
 
-```typescript
-// 式: 項 + 項 - 項
-expression = term (("+" / "-") term)*
+## 学習ポイント
 
-// 項: 因子 * 因子 / 因子
-term = factor (("*" / "/") factor)*
-
-// 因子: 数値 / (式)
-factor = number / "(" expression ")"
-
-// 数値: 整数部分 . 小数部分?
-number = [0-9]+ ("." [0-9]+)?
-```
-
-### パーサーコンビネーター
-
-```typescript
-import { 
-  literal, 
-  choice, 
-  seq, 
-  zeroOrMore, 
-  map,
-  number,
-  token 
-} from 'tpeg-combinator';
-
-// 数値パーサー
-const numberParser = map(number, (val) => parseFloat(val));
-
-// 演算子パーサー
-const operator = choice(
-  literal('+'),
-  literal('-'),
-  literal('*'),
-  literal('/')
-);
-
-// 式パーサー
-const expression = seq(
-  term,
-  zeroOrMore(seq(operator, term))
-);
-```
-
-### AST構造
-
-```typescript
-interface BinaryExpression {
-  type: 'BinaryExpression';
-  operator: '+' | '-' | '*' | '/';
-  left: Expression;
-  right: Expression;
-}
-
-interface NumberLiteral {
-  type: 'NumberLiteral';
-  value: number;
-}
-
-type Expression = BinaryExpression | NumberLiteral;
-```
-
-## 🎮 インタラクティブREPL
-
-REPLモードでは対話的に式を入力できます：
-
-```bash
-$ bun run arith:repl
-
-> 2 + 3
-5
-
-> 10 * (2 + 3)
-50
-
-> 3.14 * 2
-6.28
-
-> exit
-```
-
-### REPLコマンド
-
-- `exit` または `quit`: REPLを終了
-- `help`: 利用可能なコマンドを表示
-- `clear`: 画面をクリア
-- `ast <expression>`: 式のAST構造を表示
-
-## 🧪 テスト
-
-```bash
-# すべてのテストを実行
-bun test
-
-# 特定のテストファイルを実行
-bun test calculator.spec.ts
-
-# カバレッジ付きでテストを実行
-bun test --coverage
-```
-
-### テストケース
-
-- 基本演算の正確性
-- 演算子優先度の確認
-- 括弧の正しい処理
-- エラーケースの処理
-- 浮動小数点数の精度
-- 空白文字の無視
-
-## 🔍 デバッグ
-
-### 詳細なパース情報
-
-```typescript
-import { parseArithmetic } from './calculator';
-
-const result = parseArithmetic('1 + 2 * 3', { 
-  debug: true,
-  buildAST: true 
-});
-
-console.log(result);
-// {
-//   value: 7,
-//   ast: { type: 'BinaryExpression', ... },
-//   parseSteps: [...],
-//   performance: { parseTime: 1.23, memoryUsage: 1024 }
-// }
-```
-
-### パースステップの可視化
-
-```bash
-$ bun run arith --debug "1 + 2 * 3"
-Parsing: 1 + 2 * 3
-Step 1: Parse number '1'
-Step 2: Parse operator '+'
-Step 3: Parse number '2'
-Step 4: Parse operator '*'
-Step 5: Parse number '3'
-Result: 7
-```
-
-## 🚀 パフォーマンス
-
-### 最適化機能
-
-- **メモ化**: 再帰パーサーのメモ化
-- **早期終了**: 無効な式の早期検出
-- **効率的なAST**: 最小限のメモリ使用量
-- **遅延評価**: 必要時のみASTを構築
-
-### ベンチマーク
-
-```bash
-$ bun run arith:benchmark
-
-Simple expressions: 10,000 ops/sec
-Complex expressions: 5,000 ops/sec
-Large expressions: 1,000 ops/sec
-```
-
-## 🔗 関連ファイル
-
-- `calculator.ts`: メインの計算機実装
-- `demo.ts`: デモスクリプト
-- `repl.ts`: インタラクティブREPL
-- `*.spec.ts`: テストファイル
-
-## 📖 学習ポイント
-
-1. **演算子優先度**: パーサーコンビネーターでの優先度の実装
-2. **再帰文法**: 左再帰の回避と適切な文法設計
-3. **AST構築**: 抽象構文木の構築と評価
-4. **エラーハンドリング**: 意味のあるエラーメッセージの提供
-5. **パフォーマンス**: 効率的なパーサーの設計
-
-## 🎉 次のステップ
-
-このサンプルを基に、以下を試してみてください：
-
-1. **新しい演算子の追加**: べき乗（`^`）、剰余（`%`）
-2. **関数のサポート**: `sin(x)`、`cos(x)`、`sqrt(x)`
-3. **変数のサポート**: `x = 5`、`x + 3`
-4. **比較演算子**: `x > 5`、`y <= 10`
-5. **論理演算子**: `and`、`or`、`not`
-
-TPEGで楽しい計算を！🚀 
+1. **map関数の汎用性**: 直接計算とAST構築の両方に使える
+2. **左結合**: `map`関数内の`reduce`で実装
+3. **演算子優先度**: パーサー構造（TermとExpressionの分離）で処理
+4. **エラーの伝播**: `map`関数内のエラーはパース処理チェーンを通じて伝播する
+5. **型安全性**: TypeScriptによりパース処理全体で型の正しさが保証される
