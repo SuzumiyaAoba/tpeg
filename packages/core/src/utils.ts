@@ -1,3 +1,4 @@
+import { resetFailureWatermark } from "./failure";
 import type {
   NonEmptyArray,
   ParseError,
@@ -228,8 +229,17 @@ export const createFailure = (
  */
 export const parse =
   <T>(parser: Parser<T>) =>
-  (input: string) =>
-    parser(input, 0);
+  (input: string) => {
+    // Start this top-level parse with a clean farthest-failure watermark
+    // (see `./failure.ts`) rather than relying on `fail`'s own
+    // `input !== watermarkInput` identity check -- a direct `Parser<T>`
+    // call that bypasses `parse()` still gets that check as a fallback,
+    // but a caller going through `parse()` gets a guaranteed-fresh start
+    // even if this exact `input` string (by value) was already used by an
+    // unrelated previous parse.
+    resetFailureWatermark();
+    return parser(input, 0);
+  };
 
 /**
  * Type guard to check if a parse result is a failure.

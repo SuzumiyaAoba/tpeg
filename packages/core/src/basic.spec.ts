@@ -136,7 +136,14 @@ describe("anyChar parser", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.message).toBe("Unexpected EOI");
+        // Message is now built from the shared farthest-failure watermark
+        // (`./failure.ts`) rather than a per-call literal string -- see
+        // Pillar 6 of the perf plan. `expected`/`found`/`parserName` are
+        // unaffected: this is the single-failure case where they still
+        // resolve unambiguously.
+        expect(result.error.message).toBe(
+          'Expected any character, found "end of input"',
+        );
         expect(result.error.expected).toBe("any character");
         expect(result.error.found).toBe("end of input");
         expect(result.error.parserName).toBe("anyChar");
@@ -150,7 +157,9 @@ describe("anyChar parser", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.message).toBe("Unexpected EOI");
+        expect(result.error.message).toBe(
+          'Expected any character, found "end of input"',
+        );
       }
     });
 
@@ -344,15 +353,19 @@ describe("literal parser", () => {
 
   describe("Error cases and detailed error reporting", () => {
     it("should report error at first mismatched character", () => {
-      // Purpose: Verify detailed error position reporting
+      // Purpose: Verify detailed error position reporting. `expected`/
+      // `found` now describe the whole literal, not the one mismatched
+      // character -- see Pillar 6 of the perf plan: a single `Expectation`
+      // is allocated once per `literal(...)` call rather than once per
+      // mismatched character. `pos` still pinpoints the exact mismatch.
       const parser = literal("expected");
       const result = parser("expeXted", createPos());
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.message).toContain("Unexpected character");
+        expect(result.error.message).toBe('Expected "expected", found "X"');
         expect(result.error.pos).toBe(4);
-        expect(result.error.expected).toBe("c");
+        expect(result.error.expected).toBe('"expected"');
         expect(result.error.found).toBe("X");
       }
     });
@@ -364,10 +377,10 @@ describe("literal parser", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.message).toContain(
-          'Expected "complete" but got end of input',
+        expect(result.error.message).toBe(
+          'Expected "complete", found "end of input"',
         );
-        expect(result.error.expected).toBe("complete");
+        expect(result.error.expected).toBe('"complete"');
         expect(result.error.found).toBe("end of input");
       }
     });
@@ -379,10 +392,10 @@ describe("literal parser", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.message).toContain(
-          'Expected "こんにちは" but reached end of input',
+        expect(result.error.message).toBe(
+          'Expected "こんにちは", found "end of input"',
         );
-        expect(result.error.expected).toBe("こんにちは");
+        expect(result.error.expected).toBe('"こんにちは"');
         expect(result.error.found).toBe("end of input");
       }
     });
@@ -395,7 +408,7 @@ describe("literal parser", () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message).toContain("Expected");
-        expect(result.error.message).toContain("but found");
+        expect(result.error.message).toContain("found");
         expect(result.error.pos).toBe(2);
       }
     });
@@ -408,7 +421,7 @@ describe("literal parser", () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message).toContain("Expected");
-        expect(result.error.message).toContain("but found");
+        expect(result.error.message).toContain("found");
         expect(result.error.pos).toBe(2);
       }
     });
@@ -605,7 +618,9 @@ describe("parse utility function", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.message).toBe("Unexpected EOI");
+        expect(result.error.message).toBe(
+          'Expected any character, found "end of input"',
+        );
       }
     });
 

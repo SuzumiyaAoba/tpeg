@@ -1,5 +1,10 @@
 import type { ParseResult, Parser, Pos } from "@suzumiyaaoba/tpeg-core";
-import { isFailure, offsetToPos } from "@suzumiyaaoba/tpeg-core";
+import {
+  FAIL,
+  FAIL_FATAL,
+  isFailure,
+  offsetToPos,
+} from "@suzumiyaaoba/tpeg-core";
 import { named } from "./error";
 
 /**
@@ -72,6 +77,10 @@ export const commitAtTopLevel =
 
     const result = parser(input, pos);
     if (isFailure(result)) {
+      // See `commit` (`@suzumiyaaoba/tpeg-core`) for why the singleton
+      // swap is checked first: the common case is zero-allocation.
+      if (result === FAIL) return FAIL_FATAL;
+      if (result === FAIL_FATAL) return result;
       return {
         ...result,
         error: { ...result.error, fatal: true },

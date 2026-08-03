@@ -1,6 +1,12 @@
+import type { Expectation } from "./failure";
+import {
+  fail,
+  restoreFailureWatermark,
+  snapshotFailureWatermark,
+} from "./failure";
 import type { Parser } from "./types";
 import type { ParseSuccess } from "./types";
-import { createFailure, isFailure, prependContext } from "./utils";
+import { isFailure } from "./utils";
 
 /**
  * Pre-allocated success result base object for memory optimization.
@@ -102,25 +108,19 @@ const createSuccessResult = (pos: number): ParseSuccess<undefined> => ({
  * @since 1.0.0
  */
 export const andPredicate =
-  <T>(parser: Parser<T>, parserName = "andPredicate"): Parser<undefined> =>
+  <T>(parser: Parser<T>, _parserName = "andPredicate"): Parser<undefined> =>
   (input: string, pos) => {
     const result = parser(input, pos);
 
+    // Relay the child's failure UNCHANGED rather than re-wrapping it with
+    // an enriched message (see `sequence`'s identical reasoning in
+    // combinators.ts). No watermark snapshot/restore needed here, unlike
+    // `notPredicate` below: `andPredicate` failing IS a genuine failure of
+    // this parser at this exact position -- the child's own `fail()` call
+    // already recorded the right thing, there is nothing speculative to
+    // discard.
     if (isFailure(result)) {
-      const context = prependContext(
-        "in positive lookahead",
-        result.error.context,
-      );
-
-      return createFailure(
-        `Positive lookahead failed: ${result.error.message}`,
-        result.error.pos,
-        {
-          ...result.error,
-          parserName,
-          context,
-        },
-      );
+      return result;
     }
 
     return createSuccessResult(pos);
@@ -270,26 +270,40 @@ export const assert = andPredicate;
  *
  * @since 1.0.0
  */
-export const notPredicate =
-  <T>(parser: Parser<T>, parserName = "notPredicate"): Parser<undefined> =>
-  (input: string, pos) => {
+export const notPredicate = <T>(
+  parser: Parser<T>,
+  parserName = "notPredicate",
+): Parser<undefined> => {
+  // One `Expectation` per `notPredicate(...)` call (construction time),
+  // not per attempted match -- see `./failure.ts`'s `Expectation` doc
+  // comment.
+  const expectation: Expectation = {
+    label: "pattern not to match",
+    parserName,
+  };
+
+  return (input: string, pos: number) => {
+    // Snapshot before probing: a failure inside `parser` is not evidence
+    // about the input -- it's the EXPECTED, desired outcome that makes
+    // this negative lookahead succeed, unlike an ordinary backtracking
+    // failure elsewhere in the tree. If `parser` got partway through a
+    // long sub-match before failing deep inside (e.g. `!complexPattern
+    // rest`), that excursion would otherwise leave the watermark pointing
+    // at a position/expectation that has nothing to do with the actual
+    // parse -- restoring discards it. (`andPredicate` above needs no
+    // analogous restore: every one of its outcomes is a genuine,
+    // non-discarded cause of the surrounding parser's own result.)
+    const snapshot = snapshotFailureWatermark();
     const result = parser(input, pos);
 
     if (isFailure(result)) {
+      restoreFailureWatermark(snapshot);
       return createSuccessResult(pos);
     }
 
-    return createFailure(
-      "Negative lookahead failed: expected pattern not to match",
-      pos,
-      {
-        parserName,
-        context: ["in negative lookahead"],
-        expected: "pattern not to match",
-        found: "matching pattern",
-      },
-    );
+    return fail(input, pos, expectation);
   };
+};
 
 /**
  * Concise alias for {@link notPredicate}.

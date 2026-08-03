@@ -277,7 +277,9 @@ describe("Edge Cases and Stress Tests", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.message).toContain("Unexpected EOI");
+        expect(result.error.message).toBe(
+          'Expected any character, found "end of input"',
+        );
       }
     });
   });

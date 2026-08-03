@@ -25,17 +25,19 @@ describe("andPredicate", () => {
   });
 
   it("should fail if the parser fails", () => {
+    // `andPredicate` now relays the child's failure UNCHANGED instead of
+    // wrapping it with its own message/context/parserName -- see Pillar 6
+    // of the perf plan: the child's own `fail()` call already recorded
+    // the right position/expectation, so the failure is `lit("a")`'s own,
+    // not "andPredicate"'s.
     const input = "bcd";
     const pos = createTestPos(0);
     const result = andPredicate(lit("a"))(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      // The error message should indicate it's a positive lookahead failure
-      expect(result.error.message).toMatch(
-        /Positive lookahead failed|Unexpected character/,
-      );
-      expect(result.error.parserName).toBe("andPredicate");
-      expect(result.error.context).toContain("in positive lookahead");
+      expect(result.error.message).toBe('Expected "a", found "b"');
+      expect(result.error.parserName).toBe("literal");
+      expect(result.error.context).toBeUndefined();
     }
   });
 
@@ -63,15 +65,18 @@ describe("andPredicate", () => {
     expect(result.success).toBe(false);
   });
 
-  it("should preserve error context from nested parsers", () => {
+  it("relays the child parser's own failure unchanged rather than adding lookahead-specific context", () => {
+    // Superseded by Pillar 6 of the perf plan: `andPredicate` no longer
+    // wraps a child failure with its own "in positive lookahead" context
+    // (see the "should fail if the parser fails" test above for the
+    // rationale). Kept as a regression pin on the current behavior rather
+    // than deleted outright.
     const input = "bcd";
     const pos = createTestPos(0);
     const result = andPredicate(lit("a"))(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.context).toEqual(
-        expect.arrayContaining(["in positive lookahead"]),
-      );
+      expect(result.error.context).toBeUndefined();
     }
   });
 });
@@ -90,18 +95,22 @@ describe("notPredicate", () => {
   });
 
   it("should fail if the parser succeeds", () => {
+    // Message now comes from the shared farthest-failure watermark
+    // (`./failure.ts`, Pillar 6 of the perf plan): `found` is the actual
+    // character at `pos` (derived), not the fixed phrase "matching
+    // pattern"; there's no "in negative lookahead" context frame either.
     const input = "abc";
     const pos = createTestPos(0);
     const result = notPredicate(lit("a"))(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toBe(
-        "Negative lookahead failed: expected pattern not to match",
+        'Expected pattern not to match, found "a"',
       );
       expect(result.error.parserName).toBe("notPredicate");
-      expect(result.error.context).toContain("in negative lookahead");
+      expect(result.error.context).toBeUndefined();
       expect(result.error.expected).toBe("pattern not to match");
-      expect(result.error.found).toBe("matching pattern");
+      expect(result.error.found).toBe("a");
       expect(result.error.pos).toEqual(pos);
     }
   });

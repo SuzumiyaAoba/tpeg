@@ -1,5 +1,6 @@
-import type { NonEmptyArray, ParseFailure, Parser } from "./types";
-import { createFailure, offsetToPos, prependContext } from "./utils";
+import { isFatalFailure } from "./failure";
+import type { NonEmptyArray, Parser } from "./types";
+import { createFailure, offsetToPos } from "./utils";
 
 /**
  * Creates a standardized infinite loop error for repetition parsers.
@@ -55,7 +56,7 @@ export const optional =
     // its failure `fatal`, meaning "do not treat this as backtrackable" --
     // re-raise it instead of the usual "swallow and report zero matches",
     // otherwise `("if" ~ cond)?` would silently discard the cut's intent.
-    if (result.error.fatal) {
+    if (isFatalFailure(result)) {
       return result;
     }
 
@@ -99,7 +100,7 @@ export const zeroOrMore =
       if (!result.success) {
         // See `optional` above: a fatal (cut/commit) failure must propagate
         // rather than be treated as "the repetition simply ends here".
-        if (result.error.fatal) {
+        if (isFatalFailure(result)) {
           return result;
         }
         break;
@@ -156,21 +157,19 @@ export const oneOrMore =
 
       if (!result.success) {
         if (isFirstIteration) {
-          // First iteration failed - return error
-          const failure = result as ParseFailure;
-          return createFailure(
-            `Expected at least one occurrence: ${failure.error.message}`,
-            failure.error.pos,
-            {
-              ...failure.error,
-              parserName,
-              context: prependContext("in oneOrMore", failure.error.context),
-            },
-          );
+          // First iteration failed - relay the child failure UNCHANGED
+          // rather than re-wrapping it with an enriched message (see
+          // `sequence`'s identical reasoning in combinators.ts): the
+          // failed element's own `fail()` call (`./failure.ts`) already
+          // recorded its position/expectation in the shared watermark,
+          // and reading `.error` here to build a wrapper would trigger a
+          // singleton's lazy getter on every `+`-repeated rule's first
+          // failed attempt.
+          return result;
         }
         // See `optional` above: a fatal (cut/commit) failure must propagate
         // rather than be treated as "the repetition simply ends here".
-        if (result.error.fatal) {
+        if (isFatalFailure(result)) {
           return result;
         }
         // Later iterations failed - break and return what we have
@@ -253,22 +252,11 @@ export const quantified = <T>(
     for (let i = 0; i < min; i++) {
       const result = parser(input, currentPos);
       if (!result.success) {
-        const failure = result as ParseFailure;
-        return createFailure(
-          `quantified parser failed at required repetition ${i + 1}/${min}: ${failure.error.message}`,
-          failure.error.pos,
-          {
-            ...failure.error,
-            parserName,
-            context: prependContext(
-              [
-                `in quantified{${min},${max ?? ""}}`,
-                `failed at required repetition ${i + 1}/${min}`,
-              ],
-              failure.error.context,
-            ),
-          },
-        );
+        // Relay the child failure UNCHANGED -- see `sequence`'s identical
+        // reasoning in combinators.ts. The failed element's own `fail()`
+        // call already recorded its position/expectation in the shared
+        // watermark.
+        return result;
       }
 
       // Check for infinite loop (position doesn't advance)
@@ -293,7 +281,7 @@ export const quantified = <T>(
       if (!result.success) {
         // See `optional` above: a fatal (cut/commit) failure must propagate
         // rather than be treated as "the repetition simply ends here".
-        if (result.error.fatal) {
+        if (isFatalFailure(result)) {
           return result;
         }
         // Optional repetitions can fail - just break

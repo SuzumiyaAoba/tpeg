@@ -1,5 +1,7 @@
+import type { Expectation } from "./failure";
+import { fail } from "./failure";
 import type { NonEmptyArray, NonEmptyString, Parser } from "./types";
-import { createFailure, getCharAt, nextPos } from "./utils";
+import { getCharAt, nextPos } from "./utils";
 
 /**
  * Represents a character class specification - either a single character or a range
@@ -110,20 +112,15 @@ export const charClass = (
   const expected = charOrRanges.map(classToString).join(", ");
   const compiledSpecs = compileSpecs(charOrRanges);
   const asciiTable = buildAsciiTable(compiledSpecs);
+  // One `Expectation` per `charClass(...)` call (construction time), not
+  // per attempted match -- see `./failure.ts`'s `Expectation` doc comment.
+  const expectation: Expectation = { label: expected, parserName: "charClass" };
 
   return (input: string, pos: number) => {
     const char = getCharAt(input, pos);
 
     if (!char) {
-      return createFailure(
-        `Unexpected end of input, expected one of: ${expected}`,
-        pos,
-        {
-          expected,
-          found: "end of input",
-          parserName: "charClass",
-        },
-      );
+      return fail(input, pos, expectation);
     }
 
     const charCode = char.codePointAt(0) ?? 0;
@@ -137,15 +134,7 @@ export const charClass = (
       } as const;
     }
 
-    return createFailure(
-      `Unexpected character "${char}", expected one of: ${expected}`,
-      pos,
-      {
-        expected,
-        found: char,
-        parserName: "charClass",
-      },
-    );
+    return fail(input, pos, expectation);
   };
 };
 
@@ -164,34 +153,22 @@ export const negatedCharClass = (
   const expected = `not one of: ${charOrRanges.map(classToString).join(", ")}`;
   const compiledSpecs = compileSpecs(charOrRanges);
   const asciiTable = buildAsciiTable(compiledSpecs);
+  const expectation: Expectation = {
+    label: expected,
+    parserName: "negatedCharClass",
+  };
 
   return (input: string, pos: number) => {
     const char = getCharAt(input, pos);
 
     if (!char) {
-      return createFailure(
-        `Unexpected end of input, expected ${expected}`,
-        pos,
-        {
-          expected,
-          found: "end of input",
-          parserName: "negatedCharClass",
-        },
-      );
+      return fail(input, pos, expectation);
     }
 
     const charCode = char.codePointAt(0) ?? 0;
 
     if (matchesSpecs(charCode, compiledSpecs, asciiTable)) {
-      return createFailure(
-        `Unexpected character "${char}", expected ${expected}`,
-        pos,
-        {
-          expected,
-          found: char,
-          parserName: "negatedCharClass",
-        },
-      );
+      return fail(input, pos, expectation);
     }
 
     return {

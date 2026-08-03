@@ -19,8 +19,10 @@
  * completely and does no validation of `source` itself.
  */
 
+import type { Expectation } from "./failure";
+import { fail } from "./failure";
 import type { Parser } from "./types";
-import { advancePos, createFailure, getCharAt } from "./utils";
+import { advancePos } from "./utils";
 
 /** The raw result of a successful `regexFused` match: `text` is the
  * whole match (`RegExpExecArray[0]`), `groups` is every capturing group
@@ -48,16 +50,17 @@ export const regexFused = (
   description: string,
 ): Parser<FusedMatch> => {
   const re = new RegExp(source, "yu");
+  // One `Expectation` per `regexFused(...)` call (construction time), not
+  // per attempted match -- see `./failure.ts`'s `Expectation` doc comment.
+  const expectation: Expectation = {
+    label: description,
+    parserName: "regexFused",
+  };
   return (input: string, pos: number) => {
     re.lastIndex = pos;
     const m = re.exec(input);
     if (m === null) {
-      const found = getCharAt(input, pos) || "end of input";
-      return createFailure(`Expected ${description}`, pos, {
-        expected: description,
-        found,
-        parserName: "regexFused",
-      });
+      return fail(input, pos, expectation);
     }
     const text = m[0];
     return {

@@ -271,6 +271,9 @@ describe("repetition edge cases", () => {
   });
 
   // 新しいテストケース：エラーメッセージの品質確認
+  // Pillar 6（性能計画）以降、`oneOrMore` は最初の失敗を「in oneOrMore」で
+  // 包み直さず、子パーサー自身の失敗をそのまま返す（`fail()` が既に
+  // 大域ウォーターマークへ記録済みのため）。
   it("should provide meaningful error messages for oneOrMore failures", () => {
     const input = "xyz";
     const pos = 0;
@@ -278,7 +281,7 @@ describe("repetition edge cases", () => {
 
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.message).toContain("Unexpected character");
+      expect(result.error.message).toBe('Expected "a", found "x"');
       expect(result.error.pos).toBe(0);
     }
   });
@@ -539,13 +542,16 @@ describe("quantified", () => {
   it("should fail if minimum not met", () => {
     const parser = quantified(lit("a"), 3, 5);
 
-    // Test insufficient matches
+    // Test insufficient matches. `quantified`'s required-repetition loop
+    // now relays the child's failure UNCHANGED (see Pillar 6 of the perf
+    // plan) instead of wrapping it with its own message/parserName -- the
+    // failure is `lit("a")`'s own.
     const result1 = parser("aa", 0);
     expect(isFailure(result1)).toBe(true);
     if (isFailure(result1)) {
       // Should fail when trying to parse 3rd "a" but only 2 available
       expect(result1.error.message).toContain("end of input");
-      expect(result1.error.parserName).toBe("quantified");
+      expect(result1.error.parserName).toBe("literal");
     }
 
     // Test no matches
@@ -553,8 +559,8 @@ describe("quantified", () => {
     expect(isFailure(result2)).toBe(true);
     if (isFailure(result2)) {
       // Should fail when trying to parse 1st "a" but got "b"
-      expect(result2.error.message).toContain('Unexpected character "b"');
-      expect(result2.error.parserName).toBe("quantified");
+      expect(result2.error.message).toBe('Expected "a", found "b"');
+      expect(result2.error.parserName).toBe("literal");
     }
   });
 

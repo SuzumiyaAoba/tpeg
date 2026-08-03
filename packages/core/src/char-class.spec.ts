@@ -30,8 +30,12 @@ describe("charClass", () => {
     const result = charClass(["a", "c"])(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.message).toContain("Unexpected character");
-      expect(result.error.message).toContain("expected one of: a-c");
+      // Message now comes from the shared farthest-failure watermark
+      // (`./failure.ts`, Pillar 6 of the perf plan) rather than a
+      // per-call template string.
+      expect(result.error.message).toBe('Expected a-c, found "d"');
+      expect(result.error.expected).toBe("a-c");
+      expect(result.error.found).toBe("d");
       expect(result.error.pos).toEqual(pos);
     }
   });
@@ -53,8 +57,9 @@ describe("charClass", () => {
     const result = charClass("a")(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.message).toContain("Unexpected end of input");
-      expect(result.error.message).toContain("expected one of: a");
+      expect(result.error.message).toBe('Expected a, found "end of input"');
+      expect(result.error.expected).toBe("a");
+      expect(result.error.found).toBe("end of input");
     }
   });
 
@@ -149,8 +154,8 @@ describe("charClass", () => {
     const result = charClass("a", ["0", "9"], "z")(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.message).toContain('Unexpected character "x"');
-      expect(result.error.message).toContain("expected one of: a, 0-9, z");
+      expect(result.error.message).toBe('Expected a, 0-9, z, found "x"');
+      expect(result.error.expected).toBe("a, 0-9, z");
       expect(result.error.pos).toEqual(pos);
     }
   });
@@ -218,7 +223,7 @@ describe("negatedCharClass", () => {
     const result = negatedCharClass(["a", "z"])(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.message).toContain("expected not one of: a-z");
+      expect(result.error.message).toBe('Expected not one of: a-z, found "m"');
     }
   });
 
@@ -235,7 +240,9 @@ describe("negatedCharClass", () => {
     const result = negatedCharClass(["a", "z"])(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.message).toContain("Unexpected end of input");
+      expect(result.error.message).toBe(
+        'Expected not one of: a-z, found "end of input"',
+      );
     }
   });
 });

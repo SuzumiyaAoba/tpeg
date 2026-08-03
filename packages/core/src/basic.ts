@@ -1,5 +1,7 @@
+import type { Expectation } from "./failure";
+import { fail } from "./failure";
 import type { NonEmptyString, ParseResult, Parser } from "./types";
-import { advancePos, createFailure, getCharAt, nextPos } from "./utils";
+import { advancePos, getCharAt, nextPos } from "./utils";
 
 /**
  * Parser that parses any single character from the input.
@@ -72,17 +74,15 @@ import { advancePos, createFailure, getCharAt, nextPos } from "./utils";
  * // result.val will be ["Hello", "!", " "]
  * ```
  */
-export const anyChar =
-  (parserName = "anyChar"): Parser<string> =>
-  (input: string, pos: number) => {
+export const anyChar = (parserName = "anyChar"): Parser<string> => {
+  // Allocated once per `anyChar(...)` call (construction time), not once
+  // per attempted match -- see `./failure.ts`'s `Expectation` doc comment.
+  const expectation: Expectation = { label: "any character", parserName };
+  return (input: string, pos: number) => {
     const char = getCharAt(input, pos);
 
     if (!char) {
-      return createFailure("Unexpected EOI", pos, {
-        expected: "any character",
-        found: "end of input",
-        parserName,
-      });
+      return fail(input, pos, expectation);
     }
 
     return {
@@ -92,6 +92,7 @@ export const anyChar =
       next: nextPos(char, pos),
     };
   };
+};
 
 /**
  * Alias for {@link anyChar} with a shorter name.
@@ -159,51 +160,36 @@ const parseSimpleString = <T extends string>(
   str: NonEmptyString<T>,
   input: string,
   pos: number,
-  parserName = "literal",
+  expectation: Expectation,
 ): ParseResult<T> => {
   // Fast path for ASCII-only strings with no newlines
   const offset = pos;
 
-  // Check if the input has enough characters left
+  // Check if the input has enough characters left. The failure position is
+  // `input.length` (not `pos`, the literal's start) so `found` derives to
+  // "end of input" -- a real character may well sit AT `pos` (there's just
+  // not enough of them left to complete the literal), so recording `pos`
+  // itself would make the watermark (`./failure.ts`) report that
+  // character as "found" instead of the true reason: input ran out.
   if (offset + str.length > input.length) {
-    return createFailure(`Expected "${str}" but got end of input`, pos, {
-      expected: str,
-      found: "end of input",
-      parserName,
-    });
+    return fail(input, input.length, expectation);
   }
 
   // Avoid allocating a substring on the (common) success path
   if (!input.startsWith(str, offset)) {
-    // Find the first mismatched character for better error reporting
+    // Find the first mismatched character, for a more precise farthest-
+    // failure position than `pos` (the literal's start) -- the watermark
+    // (`./failure.ts`) only ever gets MORE useful from a more precise
+    // position, and this loop only runs on the (discarded) failure path.
     const inputSlice = input.slice(offset, offset + str.length);
     for (let i = 0; i < str.length; i++) {
       if (inputSlice[i] !== str[i]) {
-        const errorPos = offset + i;
-        const foundChar = inputSlice[i] ?? "EOF";
-        const expectedChar = str[i] ?? "EOF";
-        return createFailure(
-          `Unexpected character "${foundChar}" at position ${
-            offset + i
-          }, expected "${expectedChar}"`,
-          errorPos,
-          {
-            ...(str[i] !== undefined && { expected: str[i] }),
-            ...(inputSlice[i] !== undefined && {
-              found: inputSlice[i],
-            }),
-            ...(parserName && { parserName }),
-          },
-        );
+        return fail(input, offset + i, expectation);
       }
     }
-
-    // Fallback in case loop doesn't return
-    return createFailure(`Expected "${str}" but got "${inputSlice}"`, pos, {
-      expected: str,
-      found: inputSlice,
-      parserName,
-    });
+    // Unreachable: the loop above always finds a mismatch when
+    // `startsWith` returned false, but keep a well-typed fallback.
+    return fail(input, pos, expectation);
   }
 
   // Success - all characters matched
@@ -242,17 +228,15 @@ const parseComplexString = <T extends string>(
   str: NonEmptyString<T>,
   input: string,
   pos: number,
-  parserName = "literal",
+  expectation: Expectation,
 ): ParseResult<T> => {
   const offset = pos;
 
-  // Check if the input has enough characters left
+  // Check if the input has enough characters left. See
+  // `parseSimpleString`'s equivalent branch for why the failure position
+  // is `input.length`, not `pos`.
   if (offset + str.length > input.length) {
-    return createFailure(`Expected "${str}" but reached end of input`, pos, {
-      expected: str,
-      found: "end of input",
-      parserName,
-    });
+    return fail(input, input.length, expectation);
   }
 
   // Fast path: avoid allocating a substring on the (common) success path
@@ -265,7 +249,8 @@ const parseComplexString = <T extends string>(
     };
   }
 
-  // Fallback: character-by-character search to find the precise mismatch point
+  // Fallback: character-by-character search to find the precise mismatch
+  // point (see `parseSimpleString`'s equivalent comment).
   let currentPos = pos;
   let i = 0;
 
@@ -280,40 +265,15 @@ const parseComplexString = <T extends string>(
 
     const inputChar = getCharAt(input, currentPos);
 
-    if (inputChar === "") {
-      return createFailure(
-        `Expected "${str}" but reached end of input`,
-        currentPos,
-        {
-          expected: str,
-          found: "end of input",
-          parserName,
-        },
-      );
-    }
-
-    if (inputChar !== strChar) {
-      return createFailure(
-        `Expected "${strChar}" but found "${inputChar}" at position ${currentPos}`,
-        currentPos,
-        {
-          expected: strChar,
-          found: inputChar,
-          parserName,
-        },
-      );
+    if (inputChar === "" || inputChar !== strChar) {
+      return fail(input, currentPos, expectation);
     }
 
     currentPos = nextPos(inputChar, currentPos);
     i += strCharLen;
   }
 
-  const inputSlice = input.slice(offset, currentPos);
-  return createFailure(`Expected "${str}" but got "${inputSlice}"`, pos, {
-    expected: str,
-    found: inputSlice,
-    parserName,
-  });
+  return fail(input, pos, expectation);
 };
 
 /**
@@ -424,14 +384,20 @@ export const literal = <T extends string>(
 ): Parser<T> => {
   // Check once during parser creation to avoid repeated checks
   const useOptimizedPath = canUseOptimizedPath(str);
+  // One `Expectation` per `literal(...)` call, not per attempted match --
+  // replaces the old per-character `expected: str[i]` (a different
+  // expectation object built on every mismatched character) with a single
+  // top-level "expected this whole literal" description. See
+  // `./failure.ts`'s `Expectation` doc comment.
+  const expectation: Expectation = { label: `"${str}"`, parserName };
 
   return (input: string, pos: number) => {
     if (useOptimizedPath) {
-      return parseSimpleString(str, input, pos, parserName);
+      return parseSimpleString(str, input, pos, expectation);
     }
 
     // Use complex path for Unicode strings
-    return parseComplexString(str, input, pos, parserName);
+    return parseComplexString(str, input, pos, expectation);
   };
 };
 

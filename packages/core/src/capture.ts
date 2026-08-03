@@ -6,7 +6,8 @@
  * instead of just arrays or raw values.
  */
 
-import type { ParseError, Parser } from "./types";
+import { tryOrderedCandidates } from "./combinators";
+import type { Parser } from "./types";
 import { createFailure, isFailure } from "./utils";
 
 /**
@@ -192,47 +193,21 @@ export const captureSequence = <P extends Parser<unknown>[]>(
 export const captureChoice = <T extends unknown[]>(
   ...parsers: { [K in keyof T]: Parser<T[K]> }
 ): Parser<T[number]> => {
-  return (input: string, pos: number) => {
-    let longestError: ParseError | null = null;
-
-    for (let i = 0; i < parsers.length; i++) {
-      const parser = parsers[i];
-      if (!parser) {
-        continue;
-      }
-
-      const result = parser(input, pos);
-      if (!isFailure(result)) {
-        return result;
-      }
-
-      // A cut/commit failure must stop the choice here instead of trying
-      // later alternatives, but must NOT propagate `fatal` any further --
-      // see `choice`'s identical handling in combinators.ts for the full
-      // rationale (a cut is scoped to its own choice; forwarding `fatal`
-      // unchanged would also stop any choice enclosing this one).
-      if (result.error.fatal) {
-        return {
-          success: false,
-          error: { ...result.error, fatal: false },
-        } as const;
-      }
-
-      // Track the longest error for better error reporting
-      if (!longestError || result.error.pos > longestError.pos) {
-        longestError = result.error;
-      }
-    }
-
-    return createFailure(
-      longestError?.message ?? "All alternatives failed",
-      longestError?.pos ?? pos,
-      {
-        parserName: "captureChoice",
-        ...(longestError?.context && { context: longestError.context }),
-      },
-    );
-  };
+  // Delegates entirely to `tryOrderedCandidates` (`./combinators.ts`,
+  // shared with `choice`/`predictiveChoice`) rather than keeping its own
+  // copy of the cut-absorption and farthest-failure logic: an independent
+  // copy here duplicated the exact same fatal-swap subtlety `choice` has
+  // (see that function's doc comment) AND its own farthest-error
+  // tracking (`longestError`, which read `result.error.pos` on every
+  // failing candidate -- exactly the per-failure materialization Pillar 6
+  // eliminates for `choice` by routing through the shared, singleton-aware
+  // helper instead). Left as an independent copy, capture-heavy grammars
+  // (which is most TPEG-generated code, since `captureSequence`/
+  // `captureChoice` are what codegen emits for labeled rules) would have
+  // silently defeated this pillar's whole point.
+  const candidates = parsers as unknown as readonly Parser<T[number]>[];
+  return (input: string, pos: number) =>
+    tryOrderedCandidates(candidates, input, pos, "captureChoice");
 };
 
 /**

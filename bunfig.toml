@@ -1,4 +1,5 @@
 [test]
+preload = ["./test/reset-failure-watermark.ts"]
 coverageReporter = ["text", "lcov"]
 coverage = true
 # coverageThreshold = 0.8

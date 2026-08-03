@@ -175,16 +175,23 @@ describe("choice", () => {
   });
 
   it("should aggregate expected values from failures", () => {
+    // `expected` labels are now `literal`'s own quoted form (`"a"`, not
+    // bare `a`) -- see `./failure.ts`'s `Expectation` doc comment and
+    // `basic.ts`'s `literal`.
     const input = "d";
     const pos = 0;
     const result = choice(lit("a"), lit("b"))(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.expected).toEqual(["a", "b"]);
+      expect(result.error.expected).toEqual(['"a"', '"b"']);
     }
   });
 
   it("should handle nested expected arrays in failures", () => {
+    // A hand-written parser using the public `createFailure` (not `fail`)
+    // still participates in the shared farthest-failure watermark: `choice`
+    // forwards a concrete (non-singleton) failure's `expected` into it --
+    // see `tryOrderedCandidates`'s doc comment in `./combinators.ts`.
     const input = "d";
     const pos = 0;
     const parserWithNestedExpected = (_: string, pos: number) =>
@@ -192,7 +199,7 @@ describe("choice", () => {
     const result = choice(lit("a"), parserWithNestedExpected)(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.expected).toEqual(["a", "x", "y"]);
+      expect(result.error.expected).toEqual(['"a"', "x", "y"]);
     }
   });
 
@@ -206,7 +213,7 @@ describe("choice", () => {
     const result = choice(lit("a"), sequence(lit("x"), lit("y")))(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.expected).toEqual(["y"]);
+      expect(result.error.expected).toBe('"y"');
       expect(result.error.pos).toBe(1);
     }
   });
@@ -223,7 +230,7 @@ describe("choice", () => {
     )(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.expected).toEqual(["y", "w"]);
+      expect(result.error.expected).toEqual(['"y"', '"w"']);
       expect(result.error.pos).toBe(1);
     }
   });
@@ -394,7 +401,7 @@ describe("predictiveChoice", () => {
     ])(input, pos);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.expected).toEqual(["y"]);
+      expect(result.error.expected).toBe('"y"');
       expect(result.error.pos).toBe(1);
     }
   });
@@ -573,7 +580,7 @@ describe("predictiveChoice", () => {
           // table entry does contain the candidate, not an empty array.
           expect(result.success).toBe(false);
           if (!result.success) {
-            expect(result.error.expected).toEqual(["5"]);
+            expect(result.error.expected).toBe('"5"');
           }
         }
       }

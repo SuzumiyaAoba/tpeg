@@ -1,27 +1,7 @@
-import type { ParseError, ParseResult, Parser } from "./types";
-import { createFailure, isFailure, prependContext } from "./utils";
-
-/** How many distinct expectations `error` carries -- used by `choice` to
- * break ties between two failures at the same (farthest) offset. */
-const expectedRichness = (error: ParseError): number =>
-  Array.isArray(error.expected)
-    ? error.expected.length
-    : error.expected
-      ? 1
-      : 0;
-
-/** Adds `error`'s expectation(s) to `target`. Module-level (not a closure
- * over `choice`'s per-call state) so it isn't reallocated on every parse. */
-const mergeExpectedInto = (target: Set<string>, error: ParseError): void => {
-  if (!error.expected) return;
-  if (Array.isArray(error.expected)) {
-    for (const exp of error.expected) {
-      target.add(exp);
-    }
-  } else {
-    target.add(error.expected);
-  }
-};
+import type { Expectation } from "./failure";
+import { FAIL, FAIL_FATAL, fail, isFatalFailure } from "./failure";
+import type { ParseResult, Parser } from "./types";
+import { createFailure, isFailure } from "./utils";
 
 /**
  * Shared ordered-choice trial loop: tries `parsers[i](input, pos)` in
@@ -29,29 +9,34 @@ const mergeExpectedInto = (target: Set<string>, error: ParseError): void => {
  * stopping early and absorbing a `fatal` failure's flag at this call's own
  * boundary (see `commit`'s doc comment -- a cut is scoped to its own
  * enclosing choice, not forwarded to whatever encloses THIS one), or --
- * if every candidate fails without any being fatal -- aggregating a single
- * "none of the parsers matched" failure from the farthest-offset failure
- * (with an `expectedRichness` tiebreak at equal offsets).
+ * if every candidate fails without any being fatal -- returning the `FAIL`
+ * singleton (see `./failure.ts`): each candidate's own leaf-level `fail()`
+ * call already recorded its position/expectation into the shared farthest-
+ * failure watermark, so there is nothing left to aggregate here.
  *
- * Used by both {@link choice} and {@link predictiveChoice}: the two differ
- * only in how they narrow `parsers` down from a full alternative list
- * before calling this (`predictiveChoice` via a precomputed FIRST-set
- * dispatch table, `choice` not at all) -- cut/commit semantics and
- * farthest-error aggregation must behave identically either way, so they
- * live in exactly one place rather than two copies that could drift.
+ * Used by {@link choice}, {@link predictiveChoice}, AND `captureChoice`
+ * (`./capture.ts`, exported here specifically so that module can reuse
+ * this instead of keeping its own, now-redundant farthest-error tracking
+ * -- see that function's doc comment): all three differ only in how they
+ * narrow/shape `parsers` before calling this (`predictiveChoice` via a
+ * precomputed FIRST-set dispatch table, the other two not at all) -- cut/
+ * commit semantics and failure propagation must behave identically across
+ * all of them, so that logic lives in exactly one place rather than
+ * several copies that could drift.
  */
-const tryOrderedCandidates = <T>(
+export const tryOrderedCandidates = <T>(
   parsers: readonly Parser<T>[],
   input: string,
   pos: number,
   parserName: string,
 ): ParseResult<T> => {
-  let expectedSet: Set<string> | null = null;
-  let farthestError: ParseError | null = null;
-
   for (let i = 0; i < parsers.length; i++) {
     const parser = parsers[i];
     if (!parser) {
+      // A programming error (a hole in the alternative array), not a parse
+      // failure -- stays a concrete, eagerly-built `ParseError` rather than
+      // going through the singleton/watermark path. See `./failure.ts`'s
+      // doc comment on the control-flow-failure/invariant-violation line.
       return createFailure(`Parser at index ${i} is undefined`, pos, {
         parserName,
       });
@@ -62,52 +47,53 @@ const tryOrderedCandidates = <T>(
       return result;
     }
 
-    if (isFailure(result)) {
-      if (result.error.fatal) {
-        return {
-          success: false,
-          error: { ...result.error, fatal: false },
-        } as const;
-      }
-
-      const error = result.error;
-      if (!farthestError || error.pos > farthestError.pos) {
-        farthestError = error;
-        expectedSet = null;
-        if (error.expected) {
-          expectedSet = new Set();
-          mergeExpectedInto(expectedSet, error);
-        }
-      } else if (error.pos === farthestError.pos) {
-        if (error.expected) {
-          if (!expectedSet) expectedSet = new Set();
-          mergeExpectedInto(expectedSet, error);
-        }
-        if (expectedRichness(error) > expectedRichness(farthestError)) {
-          farthestError = error;
-        }
+    if (isFatalFailure(result)) {
+      // Absorb the cut here (this choice's own boundary), not forwarded
+      // to whatever encloses it -- see `commit`'s doc comment.
+      if (result === FAIL_FATAL) return FAIL;
+      return {
+        success: false,
+        error: { ...result.error, fatal: false },
+      } as const;
+    }
+    if (result !== FAIL) {
+      // A CONCRETE (non-singleton) failure -- a hand-written parser that
+      // still builds its own `ParseError` via the public `createFailure`
+      // (`./utils.ts`) instead of `fail` (`./failure.ts`), or this
+      // function's own "Parser at index N is undefined" a few lines up
+      // from a nested call. Its `.error` is already a plain object (no
+      // getter to trigger), so reading it here is free -- forward its
+      // expectation(s) into the shared watermark so it still participates
+      // in farthest-failure diagnostics instead of being silently
+      // dropped now that this function no longer builds its own
+      // aggregate. Singleton failures (`FAIL`) skip this entirely: they
+      // already recorded themselves at their point of origin.
+      const {
+        expected,
+        pos: errorPos,
+        parserName: errorParserName,
+      } = result.error;
+      const labels = Array.isArray(expected)
+        ? expected
+        : expected !== undefined
+          ? [expected]
+          : [];
+      for (const label of labels) {
+        fail(input, errorPos, {
+          label,
+          ...(errorParserName !== undefined
+            ? { parserName: errorParserName }
+            : {}),
+        });
       }
     }
+    // Every candidate's own failure -- whether recorded here (concrete) or
+    // already recorded at its point of origin (singleton `FAIL`) -- has
+    // now contributed to the shared farthest-failure watermark, so there
+    // is nothing left to aggregate locally. Just keep trying.
   }
 
-  // Rebind through a fresh `const` after the loop: some TS versions'
-  // control-flow analysis over a `let` reassigned across branches inside a
-  // loop narrows it to `never` by this point otherwise.
-  const finalFarthestError: ParseError | null = farthestError;
-  const expected = expectedSet ? Array.from(expectedSet) : [];
-  const found = finalFarthestError?.found;
-
-  const customMessage = `None of the parsers matched. ${
-    expected.length > 0
-      ? `Expected one of: ${expected.join(", ")}`
-      : "No expectations provided"
-  }`;
-
-  return createFailure(customMessage, finalFarthestError?.pos ?? pos, {
-    parserName,
-    ...(expected.length > 0 && { expected }),
-    ...(found !== undefined && { found }),
-  });
+  return FAIL;
 };
 
 /**
@@ -163,15 +149,17 @@ export const sequence = <P extends Parser<unknown>[]>(
       const parserResult = parser(input, currentPos);
 
       if (isFailure(parserResult)) {
-        return createFailure(
-          `Failed to parse sequence at element ${i}: ${parserResult.error.message}`,
-          parserResult.error.pos,
-          {
-            ...parserResult.error,
-            context: prependContext("in sequence", parserResult.error.context),
-            parserName: "sequence",
-          },
-        );
+        // Relay the child's failure UNCHANGED rather than re-wrapping it
+        // with an enriched message/context: virtually every rule body is
+        // a `sequence`, so re-wrapping here would read (and thus
+        // materialize) the `error` getter on almost every leaf failure in
+        // the grammar -- the single biggest hazard to Pillar 6's whole
+        // point (see `./failure.ts`'s doc comment). The failed element's
+        // own `fail()` call already recorded its position/expectation in
+        // the shared watermark; there is nothing this wrapper adds besides
+        // an "in sequence" context label, which the watermark doesn't
+        // carry per-frame anyway.
+        return parserResult;
       }
 
       result.push(parserResult.val);
@@ -239,6 +227,14 @@ export const commit =
   (input: string, pos: number) => {
     const result = parser(input, pos);
     if (isFailure(result)) {
+      // The common case: `parser`'s failure is the `FAIL` singleton (see
+      // `./failure.ts`) -- swap it for the other singleton, `FAIL_FATAL`,
+      // with zero allocation. `result === FAIL_FATAL` is already fatal
+      // (idempotent, e.g. `commit` applied twice); anything else is a
+      // hand-built, non-singleton failure that still needs the spread
+      // fallback to set `fatal` on its own `error` object.
+      if (result === FAIL) return FAIL_FATAL;
+      if (result === FAIL_FATAL) return result;
       return {
         ...result,
         error: { ...result.error, fatal: true },
@@ -476,27 +472,30 @@ export const predictiveChoice = <T extends unknown[]>(
   const nonAsciiFallbackNeeded =
     nonAsciiAlternatives.length < alternatives.length;
 
-  // Precomputed once: every alternative's filter, described for the
-  // "none of the parsers matched" error -- doesn't depend on which
-  // character actually failed, so it's wasted work to rebuild this list
-  // on every failing call.
-  const describedFilters = alternatives
+  // Precomputed once: every alternative's filter, described AND wrapped
+  // as an `Expectation` (`./failure.ts`) for the "none of the parsers
+  // matched" error -- doesn't depend on which character actually failed,
+  // so it's wasted work to rebuild this on every failing call. Kept as
+  // one `Expectation` per filter (not merged into a single joined-string
+  // label) so the watermark's `expected` still comes out as an array of
+  // the individual filter descriptions on a fast failure, matching what
+  // `tryOrderedCandidates`'s farthest-error aggregation used to produce
+  // here.
+  const filterExpectations: Expectation[] = alternatives
     .map(([, filter]) => (filter ? describeFirstCharFilter(filter) : null))
-    .filter((d): d is string => d !== null);
+    .filter((d): d is string => d !== null)
+    .map((label) => ({ label, parserName: "predictiveChoice" }));
 
   const noCandidatesFailure = (
+    input: string,
     pos: number,
-    codePoint: number,
-  ): ParseResult<T[number]> =>
-    createFailure(
-      `None of the parsers matched. Expected one of: ${describedFilters.join(", ")}`,
-      pos,
-      {
-        parserName: "predictiveChoice",
-        ...(describedFilters.length > 0 && { expected: describedFilters }),
-        found: String.fromCodePoint(codePoint),
-      },
-    );
+  ): ParseResult<T[number]> => {
+    // Every alternative reaching this branch had a non-`null` filter that
+    // excluded the current code point (a `null` filter always survives
+    // into `candidates`), so `filterExpectations` is never empty here.
+    for (const exp of filterExpectations) fail(input, pos, exp);
+    return FAIL;
+  };
 
   const predictiveChoiceParser = (
     input: string,
@@ -518,7 +517,7 @@ export const predictiveChoice = <T extends unknown[]>(
     if (code < ASCII_TABLE_SIZE) {
       const candidates = asciiTable[code] as readonly Parser<T[number]>[];
       if (candidates.length === 0) {
-        return noCandidatesFailure(pos, code);
+        return noCandidatesFailure(input, pos);
       }
       return tryOrderedCandidates(candidates, input, pos, "predictiveChoice");
     }
@@ -541,7 +540,7 @@ export const predictiveChoice = <T extends unknown[]>(
       )
       .map(([p]) => p);
     if (candidates.length === 0) {
-      return noCandidatesFailure(pos, codePoint);
+      return noCandidatesFailure(input, pos);
     }
     return tryOrderedCandidates(candidates, input, pos, "predictiveChoice");
   };
