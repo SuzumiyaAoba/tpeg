@@ -113,3 +113,95 @@ grammar BenchAcyclicChain {
 `;
 
 export const BENCH_ACYCLIC_CHAIN_ROOT_RULE = "a0";
+
+/**
+ * A config-file-shaped grammar whose `entry` alternatives are each a
+ * `Sequence` of >= 2 elements with pairwise-disjoint FIRST sets -- the
+ * exact shape `packages/parser/src/ast-optimize.ts`'s `computeCutCandidate`
+ * requires to insert a cut. This is deliberately NOT written as
+ * `entry = section / assign / comment` (a choice of bare `Identifier`
+ * references), which is `BENCH_JSON_GRAMMAR`'s `value` shape and produces
+ * ZERO automatic cuts -- `findCutPosition` only considers a `Sequence`
+ * alternative of >= 2 elements.
+ *
+ * Hand-evaluated cut sites (verified empirically: `insertAutomaticCuts`
+ * inserts exactly 3 `Cut` AST nodes, one per alternative -- see the perf
+ * plan's Phase 0 section for why this differs from the generated code's
+ * raw `commit(` occurrence count):
+ *   - alt 1 (`"[" name "]" nl`): cut after `"["` (k=1); FIRST(`"["`) =
+ *     {`[`} is disjoint from FIRST(`name`) = `[a-zA-Z_]` and FIRST(`"#"`)
+ *     = {`#`}.
+ *   - alt 2 (`name "=" value nl`): cut after `name` (k=1); FIRST(`name`)
+ *     = `[a-zA-Z_]` is disjoint from FIRST(`"#"`) = {`#`}.
+ *   - alt 3 (`"#" text nl`): last alternative -- vacuously safe (nothing
+ *     left to exclude).
+ *
+ * Exists to give Pillar 7 (FOLLOW-set-proven cut promotion to
+ * `commitAtTopLevel`) a workload: `entry` is referenced only from
+ * `doc = entry+`, with no enclosing `Choice` and no lookahead around that
+ * reference, so `FOLLOW(entry) = FIRST(entry) union {EOF}` is concrete
+ * (never `unknown`) -- the promotion predicate's reference-site clause is
+ * satisfiable here, unlike `BENCH_UNFACTORED_ARITHMETIC_GRAMMAR`'s single
+ * cut site (`atom`, referenced from a `Choice` all of whose alternatives
+ * start with `atom` -- promotion correctly refuses that one).
+ */
+export const BENCH_CUTTABLE_CONFIG_GRAMMAR = `
+grammar BenchCuttable {
+  doc   = entry+
+  entry = "[" name "]" nl / name "=" value nl / "#" text nl
+  name  = [a-zA-Z_] [a-zA-Z0-9_]*
+  value = [^\\n]*
+  text  = [^\\n]*
+  nl    = "\\n"
+}
+`;
+
+export const BENCH_CUTTABLE_CONFIG_ROOT_RULE = "doc";
+
+/**
+ * A statement grammar with 12 keyword-led alternatives clustered on 3
+ * first characters ('i', 't', 'c'), colliding at depths 1-3:
+ *   - 'i': if / import / interface / instanceof (if|import split at
+ *     depth 2; interface|instanceof split at depth 3)
+ *   - 't': true / this / throw / try ("th" collides two ways, resolved
+ *     at depth 2/3)
+ *   - 'c': const / continue / class / case
+ * plus a fallback `ident ";"` alternative with no literal prefix, which
+ * therefore belongs to every dispatch bucket regardless of lookahead
+ * depth.
+ *
+ * `predictiveChoice` (`packages/core/src/combinators.ts`) dispatches on
+ * exactly ONE character, so on this grammar it degenerates: at a
+ * statement starting with 'i', all four 'i'-led alternatives (plus the
+ * fallback) remain candidates after the first character, the same
+ * problem FIRST_1 has with any keyword-dense grammar. Exists to give
+ * Pillar 8 (literal-trie dispatch, extending `predictiveChoice` past one
+ * character) a workload -- none of the other bench grammars have
+ * alternatives sharing a first character at all, so a FIRST_1 baseline
+ * measured against them can't show this degeneration or the fix.
+ *
+ * Each alternative ends in `nl` (matching `corpus.ts`'s
+ * `generateKeywordCorpus`, one `"...;\n"` line per statement) so that
+ * `program = stmt+` actually consumes the whole document instead of
+ * stopping after the first statement -- an earlier version of this
+ * grammar omitted `nl`, silently truncating `stmt+` to a single
+ * iteration on every corpus (caught via a near-zero
+ * `leafInvocationsPerParse` on a 35KB input -- worth remembering as a
+ * general trap when pairing a `+`-repeated rule with a line-oriented
+ * corpus generator: always match the repeated rule's own consumption
+ * against the corpus's line terminator).
+ */
+export const BENCH_KEYWORD_GRAMMAR = `
+grammar BenchKeyword {
+  program = stmt+
+  stmt    = "if" ws ident ";" nl / "import" ws ident ";" nl / "interface" ws ident ";" nl / "instanceof" ws ident ";" nl
+          / "true" ws ident ";" nl / "this" ws ident ";" nl / "throw" ws ident ";" nl / "try" ws ident ";" nl
+          / "const" ws ident ";" nl / "continue" ws ident ";" nl / "class" ws ident ";" nl / "case" ws ident ";" nl
+          / ident ";" nl
+  ident   = [a-z] [a-z0-9]*
+  ws      = " "
+  nl      = "\\n"
+}
+`;
+
+export const BENCH_KEYWORD_ROOT_RULE = "program";

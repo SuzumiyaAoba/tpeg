@@ -156,6 +156,48 @@ describe("tpeg CLI", () => {
     expect(stdout).toContain("export const number");
   });
 
+  it("rejects --regex-fusion without --optimize", () => {
+    const inputPath = join(dir, "grammar.tpeg");
+    writeFileSync(inputPath, SIMPLE_GRAMMAR, "utf8");
+
+    const { exitCode, stderr } = captureOutput(() =>
+      run([inputPath, "--regex-fusion"]),
+    );
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("--regex-fusion requires --optimize");
+  });
+
+  it("accepts --regex-fusion together with --optimize", () => {
+    const inputPath = join(dir, "grammar.tpeg");
+    writeFileSync(inputPath, SIMPLE_GRAMMAR, "utf8");
+
+    const { exitCode, stdout } = captureOutput(() =>
+      run([inputPath, "--optimize", "--regex-fusion"]),
+    );
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("export const number");
+  });
+
+  it("applies automatic cut insertion with --auto-cut", () => {
+    const inputPath = join(dir, "grammar.tpeg");
+    writeFileSync(
+      inputPath,
+      `
+grammar Cuttable {
+  entry = "[" name "]" / name
+  name  = [a-zA-Z]+
+}
+`,
+      "utf8",
+    );
+
+    const { exitCode, stdout } = captureOutput(() =>
+      run([inputPath, "--auto-cut"]),
+    );
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("commit(");
+  });
+
   it("generates a parser that applies a transform function, and it runs correctly", async () => {
     const core = await import("@suzumiyaaoba/tpeg-core");
     const inputPath = join(dir, "grammar.tpeg");

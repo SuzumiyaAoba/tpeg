@@ -21,7 +21,9 @@
 import {
   DEFAULT_PATHOLOGICAL_DEPTH,
   generateChainInput,
+  generateConfigCorpus,
   generateJsonCorpus,
+  generateKeywordCorpus,
   generateMultiplicationChain,
   generateNestedParens,
   generateVariedInputs,
@@ -29,8 +31,12 @@ import {
 import {
   BENCH_ACYCLIC_CHAIN_GRAMMAR,
   BENCH_ACYCLIC_CHAIN_ROOT_RULE,
+  BENCH_CUTTABLE_CONFIG_GRAMMAR,
+  BENCH_CUTTABLE_CONFIG_ROOT_RULE,
   BENCH_JSON_GRAMMAR,
   BENCH_JSON_ROOT_RULE,
+  BENCH_KEYWORD_GRAMMAR,
+  BENCH_KEYWORD_ROOT_RULE,
   BENCH_UNFACTORED_ARITHMETIC_GRAMMAR,
   BENCH_UNFACTORED_ARITHMETIC_ROOT_RULE,
 } from "./grammars";
@@ -142,6 +148,61 @@ const ARITHMETIC_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
       enableMemoization: true,
       leftFactor: true,
       enableRegexFusion: true,
+    },
+  },
+];
+
+/**
+ * Phase 0 gate for Pillar 7 (FOLLOW-set-proven cut promotion to
+ * `commitAtTopLevel`): `insertAutomaticCuts` inserts 3 `Cut` AST nodes
+ * into `BENCH_CUTTABLE_CONFIG_GRAMMAR`'s `entry` rule (see `grammars.ts`),
+ * but today those all compile to plain `commit(...)` -- F1 in the perf
+ * plan found `commitAtTopLevel` is gated on `isStartRuleTopLevel`, which
+ * `insertAutomaticCuts` (a `Choice`-alternative rewrite) never sets. This
+ * arm exists so a later pillar's promotion pass has something to show a
+ * delta against: today, cut-with-memoization should behave like plain
+ * memoization (no `commitAtTopLevel` is emitted yet), which is itself the
+ * baseline this arm is here to record.
+ */
+const CUTTABLE_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
+  ...CONFIGS,
+  {
+    label: "optimized codegen, memoization on, auto-cut on",
+    options: { optimize: true, enableMemoization: true, autoCut: true },
+  },
+  {
+    label:
+      "optimized codegen, memoization on, auto-cut on, predictive dispatch on",
+    options: {
+      optimize: true,
+      enableMemoization: true,
+      autoCut: true,
+      enablePredictiveDispatch: true,
+    },
+  },
+];
+
+/**
+ * Phase 0 baseline for Pillar 8 (literal-trie dispatch, extending
+ * `predictiveChoice` past a single character): unlike every other bench
+ * grammar, `BENCH_KEYWORD_GRAMMAR`'s `stmt` choice has multiple
+ * alternatives sharing a first character (`if`/`import`/`interface`/
+ * `instanceof` all start with `i`), the shape `predictiveChoice`'s
+ * FIRST_1 dispatch degenerates on. The "predictive dispatch on" arm here
+ * is the number a future trie-dispatch pillar must beat -- `leaf
+ * invocations/parse` should stay high on this arm despite predictive
+ * dispatch being enabled, in contrast to `BENCH_JSON_GRAMMAR`'s 7-way
+ * disjoint-first-character choice where the same flag collapses it
+ * sharply.
+ */
+const KEYWORD_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
+  ...CONFIGS,
+  {
+    label: "optimized codegen, predictive dispatch on, memoization off",
+    options: {
+      optimize: true,
+      enableMemoization: false,
+      enablePredictiveDispatch: true,
     },
   },
 ];
@@ -274,6 +335,42 @@ function run(): void {
         "recursive or individually complex. See " +
         "`packages/parser/src/reentrancy.ts` and its spec for the " +
         "algorithm and its acceptance-test predictions.",
+    );
+  }
+
+  {
+    const { timedInputs, warmupInputs } = buildInputSets(
+      200,
+      WARMUP_COUNT,
+      (seed) => generateConfigCorpus(50_000, seed * 1_000),
+    );
+    runSection(
+      "Cuttable config grammar (Pillar 7 target -- see grammars.ts: " +
+        "3 Cut AST nodes inserted by --auto-cut, none yet promoted to " +
+        "commitAtTopLevel)",
+      BENCH_CUTTABLE_CONFIG_GRAMMAR,
+      BENCH_CUTTABLE_CONFIG_ROOT_RULE,
+      timedInputs,
+      warmupInputs,
+      CUTTABLE_CONFIGS,
+    );
+  }
+
+  {
+    const { timedInputs, warmupInputs } = buildInputSets(
+      200,
+      WARMUP_COUNT,
+      (seed) => generateKeywordCorpus(2_000, seed * 100),
+    );
+    runSection(
+      "Keyword grammar (Pillar 8 target -- see grammars.ts: FIRST_1 " +
+        "predictive dispatch degenerates on shared-first-character " +
+        "keyword alternatives)",
+      BENCH_KEYWORD_GRAMMAR,
+      BENCH_KEYWORD_ROOT_RULE,
+      timedInputs,
+      warmupInputs,
+      KEYWORD_CONFIGS,
     );
   }
 

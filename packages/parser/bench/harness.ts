@@ -33,7 +33,7 @@
 import * as tpegCombinator from "@suzumiyaaoba/tpeg-combinator";
 import * as tpegCore from "@suzumiyaaoba/tpeg-core";
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
-import { leftFactorChoices } from "../src/ast-optimize";
+import { insertAutomaticCuts, leftFactorChoices } from "../src/ast-optimize";
 import { generateTypeScriptParser } from "../src/codegen";
 import { generateOptimizedTypeScriptParser } from "../src/codegen-optimized";
 import { grammarDefinition } from "../src/grammar";
@@ -105,6 +105,18 @@ export interface CompileRuleOptions {
    */
   leftFactor?: boolean;
   /**
+   * Applies `insertAutomaticCuts` (packages/parser/src/ast-optimize.ts) to
+   * the parsed grammar before codegen, AFTER `leftFactor` if both are set
+   * (mirrors the CLI's `--auto-cut` ordering: left-factoring can turn a
+   * choice's alternatives into disjoint-prefixed sequences that only then
+   * become cut candidates). Independent of `optimize`/`enableMemoization`:
+   * this changes how much of a `memoize` table a cut can prune once a
+   * later pillar (FOLLOW-set-proven cut promotion) lets some of these
+   * cuts reach `commitAtTopLevel` -- see the memo-table probe fields on
+   * `ParseThroughputResult`.
+   */
+  autoCut?: boolean;
+  /**
    * Only meaningful when `optimize: true`. Forwarded to
    * `generateOptimizedTypeScriptParser`'s `enablePredictiveDispatch` --
    * emits `predictiveChoice(...)` (FIRST-set-gated) instead of
@@ -154,9 +166,12 @@ export function compileRule(
       `bench grammar failed to parse: ${parsed.error.message} at offset ${parsed.error.pos}`,
     );
   }
-  const grammar = options.leftFactor
+  const leftFactored = options.leftFactor
     ? leftFactorChoices(parsed.val)
     : parsed.val;
+  const grammar = options.autoCut
+    ? insertAutomaticCuts(leftFactored)
+    : leftFactored;
 
   // `exactOptionalPropertyTypes` treats `namePrefix: undefined` as a
   // different (disallowed) thing from omitting `namePrefix` entirely, so
@@ -195,6 +210,7 @@ export function compileRule(
   const scope: Record<string, unknown> = {
     ...tpegCore,
     memoize: tpegCombinator.memoize,
+    commitAtTopLevel: tpegCombinator.commitAtTopLevel,
     literal: countingFactory(tpegCore.literal, leafInvocations),
     charClass: countingFactory(tpegCore.charClass, leafInvocations),
     negatedCharClass: countingFactory(

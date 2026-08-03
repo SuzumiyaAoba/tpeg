@@ -94,6 +94,78 @@ export function generateChainInput(seed: number): string {
 }
 
 /**
+ * An INI-style config document of roughly `targetLength` characters,
+ * mixing `[section]` headers, `key=value` assignments, and `#comment`
+ * lines -- matches `BENCH_CUTTABLE_CONFIG_GRAMMAR` in `grammars.ts`. Every
+ * line ends in `\n` (the grammar's `nl` rule requires it, including the
+ * last line, since `doc = entry+` has no special handling for a final
+ * unterminated entry).
+ *
+ * `seed` shifts the numbers embedded in section/key names without
+ * changing the document's size or entry-type sequence -- see
+ * `generateVariedInputs` below for why this matters for benchmarking a
+ * memoizing parser.
+ */
+export function generateConfigCorpus(targetLength: number, seed = 0): string {
+  const lines: string[] = [];
+  let length = 0;
+  let i = seed;
+  while (length < targetLength) {
+    const kind = i % 5;
+    const line =
+      kind === 0
+        ? `[section${i}]\n`
+        : kind === 1
+          ? `# comment about entry ${i}\n`
+          : `key${i}=value${i}\n`;
+    lines.push(line);
+    length += line.length;
+    i++;
+  }
+  return lines.join("");
+}
+
+/**
+ * A document of `count` statements of roughly `keywordsPerKind` keyword
+ * alternatives cycled round-robin (if/import/interface/instanceof/true/
+ * this/throw/try/const/continue/class/case/<plain ident>), each followed
+ * by a distinct identifier and a semicolon -- matches
+ * `BENCH_KEYWORD_GRAMMAR` in `grammars.ts`.
+ *
+ * `seed` shifts which keyword the cycle starts on and the identifier
+ * suffix, without changing the document's length or statement count --
+ * see `generateVariedInputs` below.
+ */
+const KEYWORD_CORPUS_KEYWORDS = [
+  "if",
+  "import",
+  "interface",
+  "instanceof",
+  "true",
+  "this",
+  "throw",
+  "try",
+  "const",
+  "continue",
+  "class",
+  "case",
+  null, // the grammar's plain `ident ";"` fallback alternative
+] as const;
+
+export function generateKeywordCorpus(count: number, seed = 0): string {
+  const stmts: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const kw =
+      KEYWORD_CORPUS_KEYWORDS[(i + seed) % KEYWORD_CORPUS_KEYWORDS.length];
+    // Matches `BENCH_KEYWORD_GRAMMAR`'s `ident = [a-z] [a-z0-9]*` --
+    // no underscores or other separators, just letters/digits.
+    const ident = `x${seed}${i}`;
+    stmts.push(kw === null ? `${ident};\n` : `${kw} ${ident};\n`);
+  }
+  return stmts.join("");
+}
+
+/**
  * Builds `count` inputs of (approximately) the same size/shape by calling
  * `generate(seed)` with `seed = 0, 1, 2, ...`.
  *

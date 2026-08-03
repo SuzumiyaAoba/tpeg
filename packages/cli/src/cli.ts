@@ -10,6 +10,7 @@ import {
   applyAstOptimizations,
   generateOptimizedTypeScriptParser,
   generateTypeScriptParser,
+  insertAutomaticCuts,
   tpegFile,
 } from "@suzumiyaaoba/tpeg-parser";
 
@@ -36,6 +37,18 @@ Options:
                              factored rule's value shape -- review generated
                              output for grammars with actions before relying
                              on this in production.
+      --regex-fusion         Compile non-terminal-free rules to a single
+                             regexFused(...) call instead of a combinator
+                             tree (see packages/core/src/regex-fused.ts).
+                             Requires --optimize. Off by default pending
+                             more real-world grammar coverage.
+      --auto-cut             Insert cut/commit at provably safe positions
+                             in ordered choices (see
+                             packages/parser/src/ast-optimize.ts's
+                             insertAutomaticCuts). Applied after
+                             --ast-optimize's rewrites, if both are given.
+                             Off by default: this is a more cautious
+                             opt-in than --ast-optimize's rewrites.
       --no-types            Omit "Parser<T>" type annotations from output
   -h, --help                Show this help message
   -v, --version             Show the CLI version
@@ -44,6 +57,7 @@ Examples:
   tpeg grammar.tpeg -o parser.ts
   tpeg grammar.tpeg --optimize --name-prefix my_ > parser.ts
   tpeg grammar.tpeg --optimize --ast-optimize > parser.ts
+  tpeg grammar.tpeg --optimize --regex-fusion --auto-cut > parser.ts
 `;
 
 interface CliOptions {
@@ -51,6 +65,8 @@ interface CliOptions {
   namePrefix?: string;
   optimize: boolean;
   astOptimize: boolean;
+  regexFusion: boolean;
+  autoCut: boolean;
   types: boolean;
   help: boolean;
   version: boolean;
@@ -67,6 +83,8 @@ function parseCliArgs(argv: string[]): {
       "name-prefix": { type: "string" },
       optimize: { type: "boolean", default: false },
       "ast-optimize": { type: "boolean", default: false },
+      "regex-fusion": { type: "boolean", default: false },
+      "auto-cut": { type: "boolean", default: false },
       "no-types": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
@@ -82,6 +100,8 @@ function parseCliArgs(argv: string[]): {
         : {}),
       optimize: values.optimize ?? false,
       astOptimize: values["ast-optimize"] ?? false,
+      regexFusion: values["regex-fusion"] ?? false,
+      autoCut: values["auto-cut"] ?? false,
       types: !(values["no-types"] ?? false),
       help: values.help ?? false,
       version: values.version ?? false,
@@ -145,23 +165,46 @@ export function run(argv: string[]): number {
     return 1;
   }
 
+  if (options.regexFusion && !options.optimize) {
+    process.stderr.write(
+      "error: --regex-fusion requires --optimize (the standard generator has no such option)\n",
+    );
+    return 1;
+  }
+
   // `applyAstOptimizations` (left-factoring, character-class merging,
   // negative-lookahead degeneration -- see packages/parser/src/ast-optimize.ts)
-  // runs ahead of code generation, independently of which generator is
-  // chosen below: it rewrites the grammar's AST, not the emitted code.
-  const grammar = options.astOptimize
+  // and `insertAutomaticCuts` both run ahead of code generation,
+  // independently of which generator is chosen below: they rewrite the
+  // grammar's AST, not the emitted code. `insertAutomaticCuts` runs AFTER
+  // `applyAstOptimizations` deliberately -- left-factoring can turn a
+  // choice's alternatives into disjoint-prefixed sequences that only then
+  // become cut candidates, so running cuts second finds a superset of the
+  // cut sites running them first would.
+  const astOptimized = options.astOptimize
     ? applyAstOptimizations(parseResult.val)
     : parseResult.val;
+  const grammar = options.autoCut
+    ? insertAutomaticCuts(astOptimized)
+    : astOptimized;
 
-  const generate = options.optimize
-    ? generateOptimizedTypeScriptParser
-    : generateTypeScriptParser;
-  const generated = generate(grammar, {
+  // Split into two explicit branches rather than picking a shared
+  // `generate` function: `enableRegexFusion` only exists on
+  // `OptimizedCodeGenOptions`, and with `exactOptionalPropertyTypes` on,
+  // a single call site typed against the union of both option shapes
+  // can't forward it.
+  const sharedOptions = {
     includeTypes: options.types,
     ...(options.namePrefix !== undefined
       ? { namePrefix: options.namePrefix }
       : {}),
-  });
+  };
+  const generated = options.optimize
+    ? generateOptimizedTypeScriptParser(grammar, {
+        ...sharedOptions,
+        ...(options.regexFusion ? { enableRegexFusion: true } : {}),
+      })
+    : generateTypeScriptParser(grammar, sharedOptions);
 
   if (options.output) {
     writeFileSync(options.output, generated.code, "utf8");
