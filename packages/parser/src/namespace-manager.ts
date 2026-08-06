@@ -6,7 +6,7 @@ import type {
 import type { RuleDefinition } from "./types.js";
 
 /**
- * 名前空間の衝突エラー
+ * Namespace conflict error.
  */
 export class NamespaceConflictError extends Error {
   constructor(
@@ -22,7 +22,7 @@ export class NamespaceConflictError extends Error {
 }
 
 /**
- * 修飾名解決エラー
+ * Qualified-name resolution error.
  */
 export class QualifiedNameResolutionError extends Error {
   constructor(
@@ -35,7 +35,7 @@ export class QualifiedNameResolutionError extends Error {
 }
 
 /**
- * ルールの解決情報
+ * Information about a resolved rule.
  */
 export interface ResolvedRule {
   rule: RuleDefinition;
@@ -45,30 +45,30 @@ export interface ResolvedRule {
 }
 
 /**
- * 名前空間のスコープ情報
+ * Namespace scope information.
  */
 export interface NamespaceScope {
-  /** 現在のモジュール名 */
+  /** Current module name */
   currentModule: string;
-  /** インポートされたモジュールのエイリアス */
+  /** Aliases of imported modules */
   imports: Map<string, string>; // alias -> module name
-  /** エクスポートされたルール名 */
+  /** Exported rule names */
   exports: Set<string>;
-  /** ローカルルール名 */
+  /** Local rule names */
   localRules: Set<string>;
-  /** 利用可能なルール (module -> rule names) */
+  /** Available rules (module -> rule names) */
   availableRules: Map<string, Set<string>>;
 }
 
 /**
- * 名前空間管理システム
+ * Namespace management system.
  */
 export class NamespaceManager {
   private scopes = new Map<string, NamespaceScope>();
   private moduleRules = new Map<string, Map<string, RuleDefinition>>();
 
   /**
-   * モジュールを登録
+   * Registers a module.
    */
   registerModule(moduleFile: ModuleFile): void {
     const moduleName =
@@ -83,23 +83,23 @@ export class NamespaceManager {
       availableRules: new Map(),
     };
 
-    // インポートを処理
+    // Process imports
     for (const importStmt of moduleFile.imports) {
       const alias =
         importStmt.alias || this.extractModuleName(importStmt.modulePath);
       scope.imports.set(alias, importStmt.modulePath);
     }
 
-    // 全てのグラマーからルールとエクスポートを収集
+    // Collect rules and exports from every grammar
     const rules = new Map<string, RuleDefinition>();
     for (const grammar of moduleFile.grammars) {
-      // ルールを処理
+      // Process rules
       for (const rule of grammar.rules) {
         scope.localRules.add(rule.name);
         rules.set(rule.name, rule);
       }
 
-      // モジュラーグラマーの場合はエクスポートを処理
+      // For a modular grammar, process its exports
       if (grammar.type === "ModularGrammarDefinition") {
         const modularGrammar = grammar as ModularGrammarDefinition;
         if (modularGrammar.exports) {
@@ -115,7 +115,7 @@ export class NamespaceManager {
   }
 
   /**
-   * 修飾名を解決
+   * Resolves a qualified name.
    */
   resolveQualifiedName(
     qualifiedId: QualifiedIdentifier,
@@ -129,7 +129,7 @@ export class NamespaceManager {
       );
     }
 
-    // モジュールエイリアスを実際のモジュール名に解決
+    // Resolve the module alias to its actual module name
     const targetModulePath = scope.imports.get(qualifiedId.module);
     if (!targetModulePath) {
       throw new QualifiedNameResolutionError(
@@ -138,10 +138,10 @@ export class NamespaceManager {
       );
     }
 
-    // パスからモジュール名を取得
+    // Extract the module name from the path
     const targetModule = this.extractModuleName(targetModulePath);
 
-    // ターゲットモジュールからルールを取得
+    // Get the rule from the target module
     const targetRules = this.moduleRules.get(targetModule);
     if (!targetRules) {
       throw new QualifiedNameResolutionError(
@@ -158,7 +158,7 @@ export class NamespaceManager {
       );
     }
 
-    // エクスポートされているかチェック
+    // Check whether it's exported
     const targetScope = this.scopes.get(targetModule);
     const isExported = targetScope?.exports.has(qualifiedId.name) ?? false;
 
@@ -178,7 +178,7 @@ export class NamespaceManager {
   }
 
   /**
-   * ローカルルールを解決
+   * Resolves a local rule.
    */
   resolveLocalRule(ruleName: string, currentModule: string): ResolvedRule {
     const scope = this.scopes.get(currentModule);
@@ -214,7 +214,7 @@ export class NamespaceManager {
   }
 
   /**
-   * 名前空間の衝突をチェック
+   * Checks for namespace conflicts.
    */
   checkNamespaceConflicts(currentModule: string): void {
     const scope = this.scopes.get(currentModule);
@@ -222,7 +222,7 @@ export class NamespaceManager {
       return;
     }
 
-    // インポートされたモジュール間でのルール名衝突をチェック
+    // Check for rule-name collisions across imported modules
     const ruleToModules = new Map<string, string[]>();
 
     for (const [alias, modulePath] of scope.imports) {
@@ -238,7 +238,7 @@ export class NamespaceManager {
       }
     }
 
-    // 衝突をチェック
+    // Check for collisions
     for (const [ruleName, modules] of ruleToModules) {
       if (modules.length > 1) {
         throw new NamespaceConflictError(ruleName, modules, currentModule);
@@ -247,7 +247,7 @@ export class NamespaceManager {
   }
 
   /**
-   * モジュールの利用可能なルールを取得
+   * Gets the rules available to a module.
    */
   getAvailableRules(currentModule: string): Map<string, Set<string>> {
     const scope = this.scopes.get(currentModule);
@@ -257,10 +257,10 @@ export class NamespaceManager {
 
     const available = new Map<string, Set<string>>();
 
-    // ローカルルール
+    // Local rules
     available.set(currentModule, new Set(scope.localRules));
 
-    // インポートされたモジュールのエクスポートルール
+    // Exported rules of imported modules
     for (const [alias, modulePath] of scope.imports) {
       const targetModuleName = this.extractModuleName(modulePath);
       const targetScope = this.scopes.get(targetModuleName);
@@ -273,7 +273,7 @@ export class NamespaceManager {
   }
 
   /**
-   * モジュール名をパスから抽出
+   * Extracts the module name from a path.
    */
   private extractModuleName(modulePath: string): string {
     const parts = modulePath.split("/");
@@ -282,21 +282,21 @@ export class NamespaceManager {
   }
 
   /**
-   * 名前空間スコープを取得
+   * Gets a namespace scope.
    */
   getScope(moduleName: string): NamespaceScope | undefined {
     return this.scopes.get(moduleName);
   }
 
   /**
-   * 登録されているモジュール一覧を取得
+   * Gets the list of registered modules.
    */
   getRegisteredModules(): string[] {
     return Array.from(this.scopes.keys());
   }
 
   /**
-   * 名前空間をクリア
+   * Clears the namespace.
    */
   clear(): void {
     this.scopes.clear();

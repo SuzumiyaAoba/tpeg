@@ -7,7 +7,6 @@ export * from "./capture";
 export * from "./char-class";
 export * from "./combinators";
 export * from "./error";
-export * from "./error-handling";
 export * from "./failure";
 export * from "./lookahead";
 export * from "./regex-fused";

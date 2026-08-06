@@ -6,7 +6,7 @@ const SEMVER_RE =
 const CONSTRAINT_OPERATOR_RE = /^(>=|<=|>|<|\^|~|=)?(.+)$/;
 
 /**
- * バージョン互換性エラー
+ * Version compatibility error.
  */
 export class VersionCompatibilityError extends Error {
   constructor(
@@ -23,7 +23,7 @@ export class VersionCompatibilityError extends Error {
 }
 
 /**
- * バージョン解析エラー
+ * Version parse error.
  */
 export class VersionParseError extends Error {
   constructor(
@@ -36,7 +36,7 @@ export class VersionParseError extends Error {
 }
 
 /**
- * セマンティックバージョン
+ * Semantic version.
  */
 export interface SemanticVersion {
   major: number;
@@ -47,7 +47,7 @@ export interface SemanticVersion {
 }
 
 /**
- * バージョン制約
+ * Version constraint.
  */
 export interface VersionConstraint {
   operator: "=" | ">=" | "<=" | ">" | "<" | "^" | "~" | "*";
@@ -55,7 +55,7 @@ export interface VersionConstraint {
 }
 
 /**
- * モジュールバージョン情報
+ * Module version information.
  */
 export interface ModuleVersion {
   moduleName: string;
@@ -65,14 +65,14 @@ export interface ModuleVersion {
 }
 
 /**
- * バージョン管理システム
+ * Version management system.
  */
 export class VersionManager {
   private moduleVersions = new Map<string, ModuleVersion>();
   private versionCache = new Map<string, SemanticVersion>();
 
   /**
-   * セマンティックバージョンを解析
+   * Parses a semantic version.
    */
   parseVersion(versionString: string): SemanticVersion {
     const cached = this.versionCache.get(versionString);
@@ -99,12 +99,12 @@ export class VersionManager {
   }
 
   /**
-   * バージョン制約を解析
+   * Parses a version constraint.
    */
   parseVersionConstraint(constraintString: string): VersionConstraint {
     const trimmed = constraintString.trim();
 
-    // 特殊ケース: * (any version)
+    // Special case: * (any version)
     if (trimmed === "*") {
       return {
         operator: "*",
@@ -112,7 +112,7 @@ export class VersionManager {
       };
     }
 
-    // 演算子を抽出
+    // Extract the operator
     const operatorMatch = trimmed.match(CONSTRAINT_OPERATOR_RE);
     if (!operatorMatch) {
       throw new VersionParseError(
@@ -135,42 +135,42 @@ export class VersionManager {
   }
 
   /**
-   * バージョンを比較
+   * Compares two versions.
    */
   compareVersions(a: SemanticVersion, b: SemanticVersion): number {
-    // メジャーバージョンを比較
+    // Compare major versions
     if (a.major !== b.major) {
       return a.major - b.major;
     }
 
-    // マイナーバージョンを比較
+    // Compare minor versions
     if (a.minor !== b.minor) {
       return a.minor - b.minor;
     }
 
-    // パッチバージョンを比較
+    // Compare patch versions
     if (a.patch !== b.patch) {
       return a.patch - b.patch;
     }
 
-    // プレリリースバージョンを比較
+    // Compare prerelease versions
     if (a.prerelease && b.prerelease) {
       return a.prerelease.localeCompare(b.prerelease);
     }
 
     if (a.prerelease && !b.prerelease) {
-      return -1; // プレリリースは正式版より小さい
+      return -1; // A prerelease sorts before its release
     }
 
     if (!a.prerelease && b.prerelease) {
-      return 1; // 正式版はプレリリースより大きい
+      return 1; // A release sorts after any of its prereleases
     }
 
-    return 0; // 同じ
+    return 0; // Equal
   }
 
   /**
-   * バージョン制約を満たすかチェック
+   * Checks whether a version satisfies a constraint.
    */
   satisfiesConstraint(
     version: SemanticVersion,
@@ -207,7 +207,7 @@ export class VersionManager {
   }
 
   /**
-   * モジュールバージョンを登録
+   * Registers a module's version.
    */
   registerModule(moduleFile: ModuleFile): void {
     const moduleName =
@@ -219,7 +219,7 @@ export class VersionManager {
     const dependencies = new Map<string, VersionConstraint>();
     const conflicts = new Set<string>();
 
-    // インポートから依存関係を抽出
+    // Extract dependencies from imports
     for (const importStmt of moduleFile.imports) {
       if (importStmt.version) {
         const constraint = this.parseVersionConstraint(importStmt.version);
@@ -227,18 +227,18 @@ export class VersionManager {
       }
     }
 
-    // モジュール情報から競合を抽出
+    // Extract conflicts from module info
     if (moduleFile.moduleInfo?.conflicts) {
       for (const conflict of moduleFile.moduleInfo.conflicts) {
         conflicts.add(conflict);
       }
     }
 
-    // モジュール情報から依存関係を抽出
+    // Extract dependencies from module info
     if (moduleFile.moduleInfo?.dependencies) {
       for (const dependency of moduleFile.moduleInfo.dependencies) {
         if (!dependencies.has(dependency)) {
-          // デフォルトの制約を追加
+          // Add a default constraint
           dependencies.set(dependency, {
             operator: ">=",
             version: { major: 1, minor: 0, patch: 0 },
@@ -258,7 +258,7 @@ export class VersionManager {
   }
 
   /**
-   * バージョン互換性をチェック
+   * Checks version compatibility.
    */
   checkCompatibility(
     _requiredModule: string,
@@ -275,7 +275,7 @@ export class VersionManager {
   }
 
   /**
-   * モジュール間の依存関係を検証
+   * Validates dependencies between modules.
    */
   validateDependencies(currentModule: string): void {
     const moduleVersion = this.moduleVersions.get(currentModule);
@@ -310,7 +310,7 @@ export class VersionManager {
       }
     }
 
-    // 競合をチェック
+    // Check for conflicts
     for (const conflictModule of moduleVersion.conflicts) {
       if (this.moduleVersions.has(conflictModule)) {
         const conflictingModule = this.moduleVersions.get(conflictModule);
@@ -327,7 +327,7 @@ export class VersionManager {
   }
 
   /**
-   * 全てのモジュールの依存関係を検証
+   * Validates dependencies for every module.
    */
   validateAllDependencies(): void {
     for (const moduleName of this.moduleVersions.keys()) {
@@ -336,7 +336,7 @@ export class VersionManager {
   }
 
   /**
-   * バージョン制約を文字列にフォーマット
+   * Formats a version constraint as a string.
    */
   formatConstraint(constraint: VersionConstraint): string {
     if (constraint.operator === "*") {
@@ -346,7 +346,7 @@ export class VersionManager {
   }
 
   /**
-   * バージョンを文字列にフォーマット
+   * Formats a version as a string.
    */
   formatVersion(version: SemanticVersion): string {
     let formatted = `${version.major}.${version.minor}.${version.patch}`;
@@ -360,7 +360,7 @@ export class VersionManager {
   }
 
   /**
-   * モジュール名をパスから抽出
+   * Extracts the module name from a path.
    */
   private extractModuleName(modulePath: string): string {
     const parts = modulePath.split("/");
@@ -369,21 +369,21 @@ export class VersionManager {
   }
 
   /**
-   * モジュールバージョン情報を取得
+   * Gets a module's version information.
    */
   getModuleVersion(moduleName: string): ModuleVersion | undefined {
     return this.moduleVersions.get(moduleName);
   }
 
   /**
-   * 登録されているモジュール一覧を取得
+   * Gets the list of registered modules.
    */
   getRegisteredModules(): string[] {
     return Array.from(this.moduleVersions.keys());
   }
 
   /**
-   * 依存関係グラフを取得
+   * Gets the dependency graph.
    */
   getDependencyGraph(): Map<string, string[]> {
     const graph = new Map<string, string[]>();
@@ -397,7 +397,7 @@ export class VersionManager {
   }
 
   /**
-   * 互換性マトリックスを取得
+   * Gets the compatibility matrix.
    */
   getCompatibilityMatrix(): Map<string, Map<string, boolean>> {
     const matrix = new Map<string, Map<string, boolean>>();
@@ -411,13 +411,13 @@ export class VersionManager {
           continue;
         }
 
-        // 競合チェック
+        // Conflict check
         if (moduleVersion.conflicts.has(otherModuleName)) {
           compatibilityRow.set(otherModuleName, false);
           continue;
         }
 
-        // 依存関係チェック
+        // Dependency check
         const constraint = moduleVersion.dependencies.get(otherModuleName);
         if (constraint) {
           const isCompatible = this.satisfiesConstraint(
@@ -426,7 +426,7 @@ export class VersionManager {
           );
           compatibilityRow.set(otherModuleName, isCompatible);
         } else {
-          compatibilityRow.set(otherModuleName, true); // 依存関係なし
+          compatibilityRow.set(otherModuleName, true); // No dependency
         }
       }
 
@@ -437,7 +437,7 @@ export class VersionManager {
   }
 
   /**
-   * バージョン管理データをクリア
+   * Clears version management data.
    */
   clear(): void {
     this.moduleVersions.clear();

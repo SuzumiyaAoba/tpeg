@@ -30,6 +30,11 @@ import type {
   TransformFunction,
 } from "./types";
 
+/** Identity string transform, the default `intern` for the leaf-generation
+ * helpers below when a caller (codegen.ts itself) has no string-interning
+ * table to route through. */
+const identity = (s: string): string => s;
+
 /**
  * Target language transform functions are matched against when a grammar
  * carries multiple `transforms ... @language { ... }` blocks.
@@ -265,6 +270,118 @@ ${captureBinding}${destructure}${actionCode}
 };
 
 /**
+ * Generates a `literal(...)` call for a `StringLiteral` node. Shared between
+ * `codegen.ts` and `codegen-optimized.ts` (which passes `stringInterner.intern`
+ * as `intern` to dedupe the escaped literal text across a grammar).
+ */
+export const generateStringLiteralCode = (
+  value: string,
+  intern: (s: string) => string = identity,
+): string => `literal("${intern(escapeStringLiteral(value))}")`;
+
+/**
+ * Generates a `charClass(...)`/`negatedCharClass(...)` call for a
+ * `CharacterClass` node. Identical between the base and optimized
+ * generators, so shared here rather than duplicated.
+ */
+export const generateCharacterClassCode = (expr: CharacterClass): string => {
+  const ranges = expr.ranges
+    .map((range) =>
+      range.end
+        ? `["${escapeStringLiteral(range.start)}", "${escapeStringLiteral(range.end)}"]`
+        : `"${escapeStringLiteral(range.start)}"`,
+    )
+    .join(", ");
+  return expr.negated ? `negatedCharClass(${ranges})` : `charClass(${ranges})`;
+};
+
+/**
+ * Generates the reference expression for an `Identifier` node: either the
+ * rule's own (possibly prefixed) name, a `lazy(() => ...)`-deferred lookup
+ * if the referenced rule hasn't been declared yet (forward/self/mutual
+ * reference - see the callers' doc comments), or the bare name for an
+ * external reference. Shared between `codegen.ts` and
+ * `codegen-optimized.ts` (which passes `stringInterner.intern` as `intern`).
+ */
+export const generateIdentifierCode = (
+  expr: Identifier,
+  ctx: {
+    ruleNames: Set<string>;
+    ruleIndex: Map<string, number>;
+    currentRuleIndex: number;
+    namePrefix: string;
+  },
+  intern: (s: string) => string = identity,
+): string => {
+  const name = intern(expr.name);
+  if (!ctx.ruleNames.has(name)) {
+    return name;
+  }
+  const prefixedName = intern(ctx.namePrefix + name);
+  const targetIndex = ctx.ruleIndex.get(name);
+  if (targetIndex !== undefined && targetIndex >= ctx.currentRuleIndex) {
+    return `lazy(() => ${prefixedName})`;
+  }
+  return prefixedName;
+};
+
+/**
+ * Generates the reference expression for a `QualifiedIdentifier` node
+ * (e.g. `math.expr`, a reference to a rule exported from another module -
+ * see `namespace-manager.ts`'s import resolution). Shared between
+ * `codegen.ts` and `codegen-optimized.ts`.
+ */
+export const generateQualifiedIdentifierCode = (
+  expr: QualifiedIdentifier,
+  intern: (s: string) => string = identity,
+): string => intern(`${expr.module}.${expr.name}`);
+
+/**
+ * Generates the combinator call for a `Quantified` node, given its
+ * already-generated inner expression. Identical between the base and
+ * optimized generators (only how `inner` itself was produced differs), so
+ * shared here rather than duplicated.
+ */
+export const generateQuantifiedCode = (
+  expr: Quantified,
+  inner: string,
+): string => {
+  if (expr.max === undefined) {
+    // {n,} - at least n
+    if (expr.min === 0) return `zeroOrMore(${inner})`;
+    if (expr.min === 1) return `oneOrMore(${inner})`;
+    return `quantified(${inner}, ${expr.min})`;
+  }
+
+  if (expr.min === expr.max) {
+    // {n} - exactly n
+    if (expr.min === 0) {
+      // {0} always matches zero repetitions, producing an empty array --
+      // not "choice()", which always fails.
+      return `quantified(${inner}, 0, 0)`;
+    }
+    if (expr.min === 1) return inner;
+    return `quantified(${inner}, ${expr.min}, ${expr.max})`;
+  }
+
+  // {n,m} - between n and m
+  if (expr.min === 0 && expr.max === 1) {
+    return `optional(${inner})`;
+  }
+  return `quantified(${inner}, ${expr.min}, ${expr.max})`;
+};
+
+/**
+ * Generates a `capture(...)` call for a `LabeledExpression` node, given its
+ * already-generated inner expression. Identical between the base and
+ * optimized generators, so shared here rather than duplicated.
+ */
+export const generateLabeledExpressionCode = (
+  label: string,
+  inner: string,
+): string => `capture("${label}", ${inner})`;
+
+/**
  * Code generation options
  */
 export interface CodeGenOptions {
@@ -488,49 +605,24 @@ export class TPEGCodeGenerator {
   }
 
   private generateStringLiteral(expr: StringLiteral): string {
-    return `literal("${escapeStringLiteral(expr.value)}")`;
+    return generateStringLiteralCode(expr.value);
   }
 
   private generateCharacterClass(expr: CharacterClass): string {
-    const ranges = expr.ranges
-      .map((range) => {
-        if (range.end) {
-          // Range like a-z
-          return `["${escapeStringLiteral(range.start)}", "${escapeStringLiteral(range.end)}"]`;
-        }
-        // Single character
-        return `"${escapeStringLiteral(range.start)}"`;
-      })
-      .join(", ");
-
-    return expr.negated
-      ? `negatedCharClass(${ranges})`
-      : `charClass(${ranges})`;
+    return generateCharacterClassCode(expr);
   }
 
   private generateIdentifier(expr: Identifier): string {
-    // For rule references, we need to handle potential recursion
-    if (this.ruleNames.has(expr.name)) {
-      const name = `${this.options.namePrefix}${expr.name}`;
-      // A reference to a rule declared at or after the current one would
-      // read that `const` before its initializer has run (forward
-      // reference, self-recursion, or mutual recursion) - defer the lookup
-      // with `lazy` so it only resolves once every rule has been declared.
-      const targetIndex = this.ruleIndex.get(expr.name);
-      if (targetIndex !== undefined && targetIndex >= this.currentRuleIndex) {
-        return `lazy(() => ${name})`;
-      }
-      return name;
-    }
-    // External reference - might need special handling
-    return `${expr.name}`;
+    return generateIdentifierCode(expr, {
+      ruleNames: this.ruleNames,
+      ruleIndex: this.ruleIndex,
+      currentRuleIndex: this.currentRuleIndex,
+      namePrefix: this.options.namePrefix,
+    });
   }
 
   private generateQualifiedIdentifier(expr: QualifiedIdentifier): string {
-    // References a rule exported from another module, e.g. `math.expr`.
-    // The generated code assumes the module is imported as a namespace
-    // object under its alias (see namespace-manager.ts's import resolution).
-    return `${expr.module}.${expr.name}`;
+    return generateQualifiedIdentifierCode(expr);
   }
 
   private generateAnyChar(_expr: AnyChar): string {
@@ -622,40 +714,7 @@ export class TPEGCodeGenerator {
 
   private generateQuantified(expr: Quantified): string {
     const inner = this.generateExpression(expr.expression);
-
-    if (expr.max === undefined) {
-      // {n,} - at least n
-      if (expr.min === 0) {
-        return `zeroOrMore(${inner})`;
-      }
-      if (expr.min === 1) {
-        return `oneOrMore(${inner})`;
-      }
-      // Use quantified combinator for {n,} where n > 1
-      return `quantified(${inner}, ${expr.min})`;
-    }
-
-    if (expr.min === expr.max) {
-      // {n} - exactly n
-      if (expr.min === 0) {
-        // {0} always matches zero repetitions, producing an empty array --
-        // not "choice()", which always fails.
-        return `quantified(${inner}, 0, 0)`;
-      }
-      if (expr.min === 1) {
-        return inner;
-      }
-      // Use quantified combinator for exact repetition {n}
-      return `quantified(${inner}, ${expr.min}, ${expr.max})`;
-    }
-
-    // {n,m} - between n and m
-    if (expr.min === 0 && expr.max === 1) {
-      return `optional(${inner})`;
-    }
-
-    // Use quantified combinator for general {n,m} case
-    return `quantified(${inner}, ${expr.min}, ${expr.max})`;
+    return generateQuantifiedCode(expr, inner);
   }
 
   private generatePositiveLookahead(expr: PositiveLookahead): string {
@@ -670,7 +729,7 @@ export class TPEGCodeGenerator {
 
   private generateLabeledExpression(expr: LabeledExpression): string {
     const inner = this.generateExpression(expr.expression);
-    return `capture("${expr.label}", ${inner})`;
+    return generateLabeledExpressionCode(expr.label, inner);
   }
 
   private generateActionExpression(expr: ActionExpression): string {

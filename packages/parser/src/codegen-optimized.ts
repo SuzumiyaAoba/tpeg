@@ -36,12 +36,17 @@ import {
   collectTransformFunctions,
   filterReferencedLabels,
   findMemoizeAnnotation,
+  generateCharacterClassCode,
+  generateIdentifierCode,
+  generateLabeledExpressionCode,
+  generateQualifiedIdentifierCode,
+  generateQuantifiedCode,
+  generateStringLiteralCode,
   wrapWithAction,
   wrapWithMemoize,
   wrapWithTransform,
 } from "./codegen";
 import { grammarHasGlobalCut } from "./codegen";
-import { escapeStringLiteral } from "./constants";
 import type { GrammarFirstSetAnalysis } from "./first-sets";
 import { analyzeFirstSets, predictiveFilterForExpression } from "./first-sets";
 import {
@@ -724,48 +729,32 @@ export class OptimizedTPEGCodeGenerator {
   }
 
   private generateStringLiteral(expr: StringLiteral): string {
-    const escaped = escapeStringLiteral(expr.value);
-    return `literal("${stringInterner.intern(escaped)}")`;
+    return generateStringLiteralCode(expr.value, (s) =>
+      stringInterner.intern(s),
+    );
   }
 
   private generateOptimizedCharacterClass(expr: CharacterClass): string {
-    const ranges = expr.ranges
-      .map((range) => {
-        if (range.end) {
-          return `["${escapeStringLiteral(range.start)}", "${escapeStringLiteral(range.end)}"]`;
-        }
-        return `"${escapeStringLiteral(range.start)}"`;
-      })
-      .join(", ");
-
-    const combinator = expr.negated ? "negatedCharClass" : "charClass";
-    return `${combinator}(${ranges})`;
+    return generateCharacterClassCode(expr);
   }
 
   private generateIdentifier(expr: Identifier): string {
-    const name = stringInterner.intern(expr.name);
-    if (this.ruleNames.has(name)) {
-      const prefixedName = stringInterner.intern(
-        this.options.namePrefix + name,
-      );
-      // A reference to a rule declared at or after the current one would
-      // read that `const` before its initializer has run (forward
-      // reference, self-recursion, or mutual recursion) - defer the lookup
-      // with `lazy` so it only resolves once every rule has been declared.
-      const targetIndex = this.ruleIndex.get(name);
-      if (targetIndex !== undefined && targetIndex >= this.currentRuleIndex) {
-        return `lazy(() => ${prefixedName})`;
-      }
-      return prefixedName;
-    }
-    return name;
+    return generateIdentifierCode(
+      expr,
+      {
+        ruleNames: this.ruleNames,
+        ruleIndex: this.ruleIndex,
+        currentRuleIndex: this.currentRuleIndex,
+        namePrefix: this.options.namePrefix,
+      },
+      (s) => stringInterner.intern(s),
+    );
   }
 
   private generateQualifiedIdentifier(expr: QualifiedIdentifier): string {
-    // References a rule exported from another module, e.g. `math.expr`.
-    // The generated code assumes the module is imported as a namespace
-    // object under its alias (see namespace-manager.ts's import resolution).
-    return stringInterner.intern(`${expr.module}.${expr.name}`);
+    return generateQualifiedIdentifierCode(expr, (s) =>
+      stringInterner.intern(s),
+    );
   }
 
   private generateOptimizedSequence(
@@ -932,39 +921,12 @@ export class OptimizedTPEGCodeGenerator {
 
   private generateQuantified(expr: Quantified): string {
     const inner = this.generateOptimizedExpression(expr.expression);
-
-    if (expr.max === undefined) {
-      // {n,} - at least n
-      if (expr.min === 0) return `zeroOrMore(${inner})`;
-      if (expr.min === 1) return `oneOrMore(${inner})`;
-      // Use quantified combinator for {n,} where n > 1
-      return `quantified(${inner}, ${expr.min})`;
-    }
-
-    if (expr.min === expr.max) {
-      // {n} - exactly n
-      if (expr.min === 0) {
-        // {0} always matches zero repetitions, producing an empty array --
-        // not "choice()", which always fails.
-        return `quantified(${inner}, 0, 0)`;
-      }
-      if (expr.min === 1) return inner;
-      // Use quantified combinator for exact repetition {n}
-      return `quantified(${inner}, ${expr.min}, ${expr.max})`;
-    }
-
-    // {n,m} - between n and m
-    if (expr.min === 0 && expr.max === 1) {
-      return `optional(${inner})`;
-    }
-
-    // Use quantified combinator for general {n,m} case
-    return `quantified(${inner}, ${expr.min}, ${expr.max})`;
+    return generateQuantifiedCode(expr, inner);
   }
 
   private generateLabeledExpression(expr: LabeledExpression): string {
     const inner = this.generateOptimizedExpression(expr.expression);
-    return `capture("${expr.label}", ${inner})`;
+    return generateLabeledExpressionCode(expr.label, inner);
   }
 
   private generateActionExpression(expr: ActionExpression): string {
