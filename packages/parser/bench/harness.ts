@@ -42,6 +42,7 @@ import { generateTypeScriptParser } from "../src/codegen";
 import { generateOptimizedTypeScriptParser } from "../src/codegen-optimized";
 import { analyzeFirstSets } from "../src/first-sets";
 import { grammarDefinition } from "../src/grammar";
+import { MIN_FUSION_WEIGHT } from "../src/regex-fusion";
 
 const ORIGIN_POS = 0;
 
@@ -154,6 +155,19 @@ export interface CompiledBenchParser {
    * rather than a running total.
    */
   leafInvocations: LeafInvocationCounter;
+  /**
+   * Total number of times a "collapsed" leaf -- currently just
+   * `charClassRun` (see `CompileRuleOptions.enableCharClassRun`) -- was
+   * invoked. Counted SEPARATELY from `leafInvocations` rather than
+   * folded into it: a `charClassRun` call replaces what would otherwise
+   * have been N `charClass`/`negatedCharClass` invocations (one per
+   * character consumed), so a drop in `leafInvocations` alone can't
+   * distinguish "real elimination of redundant work" from "the counter
+   * simply stopped seeing the replacement." Reading both together (e.g.
+   * `leafInvocationsPerParse` falling while `collapsedInvocationsPerParse`
+   * rises) is what actually demonstrates the collapse.
+   */
+  collapsedInvocations: LeafInvocationCounter;
   /** Non-null iff `CompileRuleOptions.probeMemo` was set -- live stats
    * updated by every call made through `parser` so far, from the same
    * `createMemoProbe` shim wired into this parser's `memoize`/
@@ -265,6 +279,45 @@ export interface CompileRuleOptions {
    * `run.ts` rely on this axis being off unless explicitly requested.
    */
   enableRegexFusion?: boolean;
+  /**
+   * Only meaningful when `enableRegexFusion` is on. Forwarded to
+   * `generateOptimizedTypeScriptParser`'s `regexFusionScope` -- `"rule"`
+   * (the default here, matching the codegen default) considers only a
+   * rule's own top-level pattern, byte-identical to this module's
+   * original whole-rule-only fusion; `"subtree"` additionally fuses any
+   * maximal fusable node reached by walking a rule's pattern top-down
+   * (Pillar 9 Phase 2 -- see `packages/parser/src/regex-fusion.ts`'s
+   * `planFusion`). Kept as its own axis, defaulting to match the
+   * existing `enableRegexFusion` arms exactly, so a `"subtree"` arm can
+   * be isolated against a `"rule"` baseline on the same grammar.
+   */
+  regexFusionScope?: "rule" | "subtree";
+  /**
+   * Only meaningful when `enableRegexFusion` is on and
+   * `regexFusionScope: "subtree"`. Forwarded to
+   * `generateOptimizedTypeScriptParser`'s `regexFusionMinWeight` --
+   * lets a bench arm sweep the profitability threshold directly (see
+   * `regex-fusion.ts`'s `MIN_FUSION_WEIGHT` doc comment for the cost
+   * model it's threshold-ing). Defaults to the codegen's own default
+   * when omitted.
+   */
+  regexFusionMinWeight?: number;
+  /**
+   * Forwarded to codegen for BOTH the standard and optimized path (unlike
+   * `enablePredictiveDispatch`/`enableRegexFusion` above, which only mean
+   * anything under `optimize: true`) -- `CodeGenOptions.enableCharClassRun`
+   * (`packages/parser/src/codegen.ts`) applies identically to either
+   * generator. Collapses a `Star`/`Plus`/`Quantified{0,}`/`Quantified{1,}`
+   * over a bare `CharacterClass` into a single `charClassRun(...)` scan.
+   *
+   * Defaults to `false` here, deliberately diverging from both
+   * generators' own default (`true`, Phase 1 of Pillar 9's perf plan) --
+   * same isolation reason `enablePredictiveDispatch` documents: leaving
+   * this on by default in every arm would make it impossible to tell how
+   * much of a delta belongs to this optimization specifically. Do not
+   * change this default to track the codegen option's.
+   */
+  enableCharClassRun?: boolean;
   // NOTE: `includeImports`/`includeTypes` are deliberately NOT
   // caller-overridable. `compileRule` strips `export` and evals the body
   // directly via `new Function`; `includeImports: true` would leave a
@@ -314,15 +367,20 @@ export function compileRule(
         enableMemoization: options.enableMemoization ?? true,
         enablePredictiveDispatch: options.enablePredictiveDispatch ?? false,
         enableRegexFusion: options.enableRegexFusion ?? false,
+        regexFusionScope: options.regexFusionScope ?? "rule",
+        regexFusionMinWeight: options.regexFusionMinWeight ?? MIN_FUSION_WEIGHT,
+        enableCharClassRun: options.enableCharClassRun ?? false,
         ...namePrefixOverride,
       })
     : generateTypeScriptParser(grammar, {
         includeImports: false,
         includeTypes: false,
+        enableCharClassRun: options.enableCharClassRun ?? false,
         ...namePrefixOverride,
       });
 
   const leafInvocations: LeafInvocationCounter = { count: 0 };
+  const collapsedInvocations: LeafInvocationCounter = { count: 0 };
   const memoProbe = options.probeMemo ? createMemoProbe() : null;
 
   // Only pull `memoize` out of tpeg-combinator (the one combinator-package
@@ -346,6 +404,7 @@ export function compileRule(
       leafInvocations,
     ),
     anyChar: countingFactory(tpegCore.anyChar, leafInvocations),
+    charClassRun: countingFactory(tpegCore.charClassRun, collapsedInvocations),
   };
 
   // `export const rule = ...` -> `const rule = ...`; the surrounding
@@ -374,6 +433,7 @@ export function compileRule(
     parser,
     code: generated.code,
     leafInvocations,
+    collapsedInvocations,
     memoStats: memoProbe?.stats ?? null,
   };
 }
@@ -387,6 +447,13 @@ export interface ParseThroughputResult {
   opsPerSec: number;
   /** Leaf-parser invocations per single parse (see class docstring). */
   leafInvocationsPerParse: number;
+  /**
+   * Collapsed-leaf (currently: `charClassRun`) invocations per single
+   * parse -- see `CompiledBenchParser.collapsedInvocations`'s doc
+   * comment for why this is tracked separately from
+   * `leafInvocationsPerParse` rather than folded into it.
+   */
+  collapsedInvocationsPerParse: number;
   /**
    * `heapUsed` immediately after the timed loop, minus `heapUsed`
    * immediately before it (one `globalThis.gc()` call precedes the
@@ -449,7 +516,7 @@ export function runParseThroughput(
   if (inputs.length === 0) {
     throw new Error("runParseThroughput requires at least one input");
   }
-  const { parser, leafInvocations, memoStats } = compiled;
+  const { parser, leafInvocations, collapsedInvocations, memoStats } = compiled;
   const iterations = inputs.length;
 
   for (const warmupInput of warmupInputs) {
@@ -463,6 +530,7 @@ export function runParseThroughput(
   const heapBefore = canForceGc ? process.memoryUsage().heapUsed : null;
 
   leafInvocations.count = 0;
+  collapsedInvocations.count = 0;
   if (memoStats) {
     memoStats.peakMemoEntries = 0;
     memoStats.peakMemoWindow = 0;
@@ -473,6 +541,7 @@ export function runParseThroughput(
   }
   const totalTimeMs = performance.now() - start;
   const leafInvocationsPerParse = leafInvocations.count / iterations;
+  const collapsedInvocationsPerParse = collapsedInvocations.count / iterations;
 
   const heapAfter = canForceGc ? process.memoryUsage().heapUsed : null;
   const heapDeltaBytes =
@@ -488,6 +557,7 @@ export function runParseThroughput(
     avgTimeMs: totalTimeMs / iterations,
     opsPerSec: iterations / (totalTimeMs / 1000),
     leafInvocationsPerParse,
+    collapsedInvocationsPerParse,
     heapDeltaBytes,
     peakMemoEntries: memoStats?.peakMemoEntries ?? null,
     peakMemoWindow: memoStats?.peakMemoWindow ?? null,
@@ -508,6 +578,11 @@ export function formatResult(r: ParseThroughputResult): string {
     `  leaf invocations/parse: ${r.leafInvocationsPerParse.toFixed(1)} (vs input length ${r.inputLength} -- ratio ${(r.leafInvocationsPerParse / r.inputLength).toFixed(2)}x)`,
     `  heap (see caveat):   ${heap}`,
   ];
+  if (r.collapsedInvocationsPerParse > 0) {
+    lines.push(
+      `  collapsed invocations/parse: ${r.collapsedInvocationsPerParse.toFixed(1)} (charClassRun -- see doc comment)`,
+    );
+  }
   if (r.peakMemoEntries !== null && r.peakMemoWindow !== null) {
     lines.push(
       `  peak memo entries:   ${r.peakMemoEntries}`,

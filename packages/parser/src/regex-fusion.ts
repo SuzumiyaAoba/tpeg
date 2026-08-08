@@ -71,6 +71,15 @@
  *      `tail` from the original position, something PEG's ordered choice
  *      would never do once an earlier alternative already matched a
  *      non-empty prefix and then failed downstream).
+ *    - `Optional` is a QUANTIFIER (a greedy `{0,1}`, exactly like `?` in
+ *      `checkFusionSafe`'s `Star`/`Plus`/`Quantified` case below), not a
+ *      transparent wrapper like `Group` -- it needs the identical
+ *      `firstSetsDisjoint(innerFirst, tail)` check, for the identical
+ *      reason: `emit` compiles it to `(?:(X))?`, which backtracks to the
+ *      empty branch on downstream failure, while PEG's `optional` is
+ *      possessive. (Fixed after this module shipped -- see
+ *      `checkFusionSafe`'s `Optional` case for the worked counterexample
+ *      this closes: `"a"? "ab"` wrongly accepting `"ab"`.)
  *
  *    "Nothing outside the fused region can be part of the same regex" is
  *    the other half of why this is checkable at all: since `regexFused`
@@ -137,7 +146,12 @@ import {
   isNullable,
   unionFirstSets,
 } from "./first-sets";
-import type { CharacterClass, Expression, RuleDefinition } from "./types";
+import type {
+  CharacterClass,
+  Expression,
+  GrammarDefinition,
+  RuleDefinition,
+} from "./types";
 
 const STRUCTURALLY_DISQUALIFYING = new Set<Expression["type"]>([
   "Identifier",
@@ -211,8 +225,31 @@ const checkFusionSafe = (
     case "AnyChar":
       return true;
     case "Group":
-    case "Optional":
       return checkFusionSafe(expr.expression, tail, analysis);
+    case "Optional": {
+      // `Optional` is a QUANTIFIER, not a transparent wrapper like
+      // `Group`: `emit` compiles it to `(?:(X))?`, a greedy {0,1} regex
+      // quantifier that backtracks to the empty branch on downstream
+      // failure -- exactly like `*`/`+`/`{n,m}` below. PEG's `optional`
+      // is possessive (it never gives X back once matched). Without
+      // this check, `"a"? "ab"` fuses to `(?:(a))?ab`, which accepts
+      // "ab" (backtracking the `?` to empty, then matching "ab") even
+      // though the unfused parser requires `optional(literal("a"))` to
+      // consume before `literal("ab")` runs at the SAME offset it
+      // started at -- "ab" only has "a" available there, so the second
+      // literal fails and the whole rule fails. Same disjointness
+      // condition as Star/Plus/Quantified, same reason: if `FIRST(X)`
+      // and `tail` are disjoint, `tail` can never be what a backtracked
+      // empty branch was "supposed to" match, so the engine's greedy
+      // choice and PEG's possessive one always agree.
+      const innerFirst = firstSetOfExpression(
+        expr.expression,
+        analysis.firstSets,
+        analysis.nullableRules,
+      );
+      if (!firstSetsDisjoint(innerFirst, tail)) return false;
+      return checkFusionSafe(expr.expression, tail, analysis);
+    }
     case "Sequence": {
       let follow = tail;
       for (let i = expr.elements.length - 1; i >= 0; i--) {
@@ -305,6 +342,243 @@ export const isRuleFusable = (
   checkFusionSafe(rule.pattern, EMPTY_FIRST_SET, analysis);
 
 // ============================================================================
+// Sub-expression fusion: soundness, profitability, and planning
+//
+// Everything above this point proves ONE thing: a fusable `Expression` e,
+// substituted for itself, preserves the whole grammar's semantics
+// (accepted language, stop position, and value) at ANY nesting depth --
+// not just at rule top level. The "nothing outside a `regexFused`/
+// `regexFusedMap` node can make the regex engine backtrack into it"
+// argument (module doc comment, "Nothing outside the fused region...")
+// is a property of `RegExp.exec` itself, not of where the node sits; the
+// lift from "this one node's match/value is correct" to "the whole
+// grammar's semantics are preserved" is ordinary PEG compositionality --
+// every combinator in `packages/core` computes its result purely from
+// its children's results at the offset it invoked them at, and can only
+// ever ask a child to run again at a NEW offset (`zeroOrMore` re-
+// invoking, an enclosing `choice` retrying a different alternative from
+// the same start) -- never "give me a different answer for the same
+// invocation." A child that is extensionally equal (same success/
+// failure, same stop offset, same value) is therefore substitutable
+// anywhere in the tree.
+//
+// `isRuleFusable`/`emitFusedRule` above apply that theorem at exactly
+// one root per rule (`rule.pattern` itself). `planFusion` below applies
+// it at every MAXIMAL fusable node reachable by walking a rule's pattern
+// top-down -- "maximal" meaning: once a node qualifies, its children are
+// never independently considered, both because a bigger fused region
+// removes strictly more leaf-parser invocations than gluing several
+// smaller ones together with combinators in between would, and because
+// (S2 below) the structural gate that keeps `Star`/`Plus`/`Quantified`
+// bodies to a single simple leaf must not be second-guessed by trying to
+// fuse "each half separately" inside one.
+//
+// Required side conditions (beyond the two structural/determinism gates
+// already enforced by `isStructurallyFusable`/`checkFusionSafe`):
+//
+// (S1) Every `checkFusionSafe` case -- Star/Plus/Quantified/Optional/
+//      Choice -- must be sound (see that function's cases). Sub-
+//      expression fusion multiplies the number of fused regions per
+//      grammar roughly 10x over whole-rule fusion, so it multiplies
+//      exposure to a soundness bug in any one of those cases
+//      proportionally -- this is why the `Optional` gap (see the module
+//      doc comment's condition-2 section) had to be closed first.
+// (S2) `isSimpleRepeatable` (the extra restriction on what `Star`/
+//      `Plus`/`Quantified` may wrap) must not be loosened to admit a
+//      compound repeated element. `checkFusionSafe`'s own `Star`/`Plus`/
+//      `Quantified` case deliberately does not recurse into `inner`,
+//      relying on that restriction -- if it's ever loosened, that case
+//      must start recursing too.
+// (S3) Fusing narrows the farthest-failure watermark's precision (the
+//      same way whole-rule fusion already does): a fused node that fails
+//      partway through records the watermark at its OWN start offset,
+//      not at the offset the sub-match actually diverged at. Never
+//      affects success/value/stop-position -- only diagnostic precision
+//      -- but sub-expression fusion means this can now happen in the
+//      MIDDLE of a rule, not only at a rule boundary.
+// (S4) Each fusion root gets its own fresh `GroupCounter` (`{next: 0}`)
+//      -- `emitFusedExpression` already does this per call.
+// ============================================================================
+
+/** Sentinel weight for a node whose leaf-invocation count depends on the
+ * INPUT, not just the grammar (any node containing an unbounded
+ * repetition) -- always large enough to be worth fusing once it matches
+ * more than a couple of characters. Kept as `Infinity` rather than an
+ * arbitrary large finite number so `weight(e) === UNBOUNDED` reads as
+ * exactly what it means, with no magic-constant comparison. */
+const UNBOUNDED = Number.POSITIVE_INFINITY;
+
+/**
+ * Static estimate of how many leaf-parser (`literal`/`charClass`/
+ * `negatedCharClass`/`anyChar`) INVOCATIONS fusing `expr` would remove --
+ * `isProfitable`'s cost/benefit input. Not a prediction of the exact
+ * count (that depends on the input at parse time); just enough to
+ * distinguish "a bare leaf" (never worth fusing on its own -- see
+ * `isProfitable`'s doc comment) from "several leaves in sequence" or
+ * "anything with an unbounded repetition" (clearly worth it).
+ */
+const weight = (expr: Expression): number => {
+  switch (expr.type) {
+    case "StringLiteral":
+    case "CharacterClass":
+    case "AnyChar":
+      return 1;
+    case "Sequence":
+      return expr.elements.reduce((sum, el) => sum + weight(el), 0);
+    case "Choice":
+      // Only one alternative ever runs per match -- fusing removes
+      // whichever one the input actually takes, so the relevant figure
+      // is the most expensive alternative, not their sum.
+      return Math.max(...expr.alternatives.map(weight));
+    case "Group":
+    case "Optional":
+      return weight(expr.expression);
+    case "Star":
+    case "Plus":
+      return UNBOUNDED;
+    case "Quantified":
+      return expr.max === undefined
+        ? UNBOUNDED
+        : expr.max * weight(expr.expression);
+    default:
+      return 0;
+  }
+};
+
+/**
+ * Default minimum `weight` for a node to be worth fusing at all. A fused
+ * node costs roughly 5 fixed allocations per successful match (regex
+ * engine entry + `RegExpExecArray`, one substring per participating
+ * capture group, one `ParseSuccess`) against roughly 2 for an unfused
+ * leaf (one closure call, one `ParseSuccess` -- zero on the failure
+ * path). Weight 1 (a bare `CharacterClass`/`StringLiteral`/`AnyChar`) is
+ * a clear pessimization; weight 2 is roughly break-even; weight >= 3
+ * wins. Anything containing an unbounded repetition (`weight` =
+ * `UNBOUNDED`) clears this as soon as it matches more than a couple of
+ * characters, which dominates in practice -- see `planFusion`'s doc
+ * comment for how this interacts with `scope: "rule"`.
+ */
+export const MIN_FUSION_WEIGHT = 3;
+
+const isProfitable = (expr: Expression, minWeight: number): boolean =>
+  weight(expr) === UNBOUNDED || weight(expr) >= minWeight;
+
+export interface FusionPlan {
+  /** Fusion roots, by node IDENTITY (`===`), not structural equality --
+   * two syntactically identical subtrees at different grammar positions
+   * are different `Expression` objects with independent entries. A node
+   * in this set compiles to one `regexFusedMap` call via
+   * `emitFusedExpression`; its children are never generated/imported
+   * separately. */
+  readonly roots: ReadonlySet<Expression>;
+  /** One entry per root, in discovery order -- for diagnostics/tests
+   * that want to inspect what was planned without re-deriving it. */
+  readonly sites: readonly {
+    readonly expr: Expression;
+    readonly weight: number;
+  }[];
+}
+
+const EMPTY_FUSION_PLAN: FusionPlan = { roots: new Set(), sites: [] };
+
+/**
+ * Walks every rule in `grammar` top-down, marking the highest (maximal)
+ * fusable node on each path as a fusion root and not descending into it
+ * -- see the section comment above this function for the soundness
+ * argument and required side conditions.
+ *
+ * `scope: "rule"` (byte-identical to this module's original whole-rule-
+ * only behavior): considers only each rule's own top-level pattern,
+ * using `isRuleFusable`'s exact predicate -- NOT gated by `isProfitable`,
+ * so a rule like `boolean = "true" / "false"` (weight 1, a plain
+ * `Choice` of literals) still fuses whole, matching every existing
+ * `enableRegexFusion` behavior/test exactly.
+ *
+ * `scope: "subtree"` (the default, and the only mode that reaches
+ * anything `scope: "rule"` couldn't): performs the full top-down walk,
+ * descending into `LabeledExpression`/`ActionExpression` (the only way
+ * to reach real, action-bearing grammars) and gating EVERY candidate --
+ * including a whole rule's own top-level pattern -- on `isProfitable`.
+ * That means `scope: "subtree"` can legitimately fuse LESS than
+ * `scope: "rule"` for a rule whose entire pattern is a single bare leaf
+ * (e.g. `nullLiteral = "null"`, weight 1): whole-rule mode fused it
+ * unconditionally, subtree mode correctly declines, because a
+ * `regexFusedMap` call there would be a pessimization relative to
+ * `literal("null")`'s own zero-allocation success path. This is a
+ * deliberate correction bundled into `scope: "subtree"`, not a
+ * regression -- switching scopes is not guaranteed to be a superset in
+ * either direction, it is two independently-computed, independently-
+ * correct decisions.
+ */
+export const planFusion = (
+  grammar: GrammarDefinition,
+  analysis: GrammarFirstSetAnalysis,
+  options: {
+    readonly minWeight?: number;
+    readonly scope?: "rule" | "subtree";
+  } = {},
+): FusionPlan => {
+  const minWeight = options.minWeight ?? MIN_FUSION_WEIGHT;
+  const scope = options.scope ?? "subtree";
+  const roots = new Set<Expression>();
+  const sites: { expr: Expression; weight: number }[] = [];
+
+  const tryRoot = (expr: Expression, gateOnProfitability: boolean): boolean => {
+    if (
+      !isStructurallyFusable(expr) ||
+      !checkFusionSafe(expr, EMPTY_FIRST_SET, analysis)
+    ) {
+      return false;
+    }
+    if (gateOnProfitability && !isProfitable(expr, minWeight)) return false;
+    roots.add(expr);
+    sites.push({ expr, weight: weight(expr) });
+    return true;
+  };
+
+  const visit = (expr: Expression): void => {
+    if (tryRoot(expr, true)) return; // maximal: do not descend into a root
+    switch (expr.type) {
+      case "Sequence":
+        for (const el of expr.elements) visit(el);
+        return;
+      case "Choice":
+        for (const alt of expr.alternatives) visit(alt);
+        return;
+      case "Group":
+      case "Optional":
+      case "Star":
+      case "Plus":
+      case "Quantified":
+      case "PositiveLookahead":
+      case "NegativeLookahead":
+      case "LabeledExpression":
+      case "ActionExpression":
+        visit(expr.expression);
+        return;
+      default:
+        // True leaves -- StringLiteral/CharacterClass/AnyChar/
+        // Identifier/QualifiedIdentifier/Cut -- have no children to
+        // recurse into, whether or not they themselves passed `tryRoot`
+        // (an Identifier/QualifiedIdentifier/Cut always fails it; that's
+        // the whole point of the structural gate). `Sequence`/`Choice`
+        // are handled above and always recurse per-child even when the
+        // node itself wasn't fusable as a whole, since one non-fusable
+        // sibling (e.g. an `Identifier`) doesn't disqualify the others.
+        return;
+    }
+  };
+
+  if (scope === "rule") {
+    for (const rule of grammar.rules) tryRoot(rule.pattern, false);
+  } else {
+    for (const rule of grammar.rules) visit(rule.pattern);
+  }
+
+  return roots.size === 0 ? EMPTY_FUSION_PLAN : { roots, sites };
+};
+
+// ============================================================================
 // Regex source + reconstruction-expression emission
 // ============================================================================
 
@@ -368,10 +642,18 @@ interface Emitted {
   /** Regex source for this node (no enclosing delimiters/flags). */
   readonly pattern: string;
   /** A JS expression (source text) that evaluates to this node's
-   * reconstructed value, given a variable named `g` in scope holding
-   * `FusedMatch.groups`. */
+   * reconstructed value, given a variable named `m` in scope holding the
+   * raw `RegExpExecArray` from the match (`m[0]` is the whole match,
+   * `m[i + 1]` is capture group `i` -- `regexFusedMap`'s own indexing,
+   * `packages/core/src/regex-fused.ts`). */
   readonly valueExpr: string;
 }
+
+/** `groupIndex` (0-based, in emission order) -> the expression reading
+ * that capture group off the raw match array `regexFusedMap` hands its
+ * callback. Centralized so the one index->expression mapping this module
+ * depends on has exactly one place to get right. */
+const groupRef = (groupIndex: number): string => `m[${groupIndex + 1}]`;
 
 const emit = (expr: Expression, counter: GroupCounter): Emitted => {
   switch (expr.type) {
@@ -384,12 +666,12 @@ const emit = (expr: Expression, counter: GroupCounter): Emitted => {
       const groupIndex = counter.next++;
       return {
         pattern: `(${charClassBracketExpr(expr)})`,
-        valueExpr: `g[${groupIndex}]`,
+        valueExpr: groupRef(groupIndex),
       };
     }
     case "AnyChar": {
       const groupIndex = counter.next++;
-      return { pattern: "([\\s\\S])", valueExpr: `g[${groupIndex}]` };
+      return { pattern: "([\\s\\S])", valueExpr: groupRef(groupIndex) };
     }
     case "Group":
       return emit(expr.expression, counter);
@@ -419,7 +701,7 @@ const emit = (expr: Expression, counter: GroupCounter): Emitted => {
       // defined at runtime.
       const valueExpr = altValueExprs.reduceRight(
         (elseBranch, altExpr, i) =>
-          `g[${markerIndices[i]}] !== undefined ? ${altExpr} : ${elseBranch}`,
+          `${groupRef(markerIndices[i] as number)} !== undefined ? ${altExpr} : ${elseBranch}`,
       );
       return { pattern: `(?:${altPatterns.join("|")})`, valueExpr };
     }
@@ -428,7 +710,7 @@ const emit = (expr: Expression, counter: GroupCounter): Emitted => {
       const inner = emit(expr.expression, counter);
       return {
         pattern: `(?:(${inner.pattern}))?`,
-        valueExpr: `g[${markerIndex}] !== undefined ? [${inner.valueExpr}] : []`,
+        valueExpr: `${groupRef(markerIndex)} !== undefined ? [${inner.valueExpr}] : []`,
       };
     }
     case "Star":
@@ -444,9 +726,10 @@ const emit = (expr: Expression, counter: GroupCounter): Emitted => {
             : expr.max === undefined
               ? `{${expr.min},}`
               : `{${expr.min},${expr.max}}`;
+      const ref = groupRef(groupIndex);
       return {
         pattern: `((?:${leafSource})${quantifier})`,
-        valueExpr: `g[${groupIndex}] === undefined ? [] : Array.from(g[${groupIndex}])`,
+        valueExpr: `${ref} === undefined ? [] : Array.from(${ref})`,
       };
     }
     default:
@@ -457,18 +740,30 @@ const emit = (expr: Expression, counter: GroupCounter): Emitted => {
 };
 
 export interface FusedRule {
-  /** Regex source for the whole rule (no enclosing delimiters/flags),
-   * suitable for `regexFused(source, description)`. */
+  /** Regex source for the fused node (no enclosing delimiters/flags),
+   * suitable for `regexFusedMap(source, description, (m) => valueExpr)`. */
   readonly source: string;
-  /** A JS expression (source text) reconstructing the rule's original
-   * value shape from a `FusedMatch.groups` array named `g`. */
+  /** A JS expression (source text) reconstructing the fused node's
+   * original value shape from `m`, the raw `RegExpExecArray` a
+   * `regexFusedMap` callback receives (`m[0]` = whole match, `m[i + 1]` =
+   * capture group `i`). */
   readonly valueExpr: string;
 }
 
-/** Compiles `rule.pattern` (already confirmed fusable via `isRuleFusable`)
- * to a regex source string and a value-reconstruction expression. */
-export const emitFusedRule = (rule: RuleDefinition): FusedRule => {
+/** Compiles `expr` (already confirmed fusable via `isStructurallyFusable`
+ * + `checkFusionSafe`) to a regex source string and a value-reconstruction
+ * expression -- the general form `emitFusedRule` (a whole rule's pattern
+ * is just one particular `expr`) and sub-expression fusion (`planFusion`)
+ * both build on. */
+export const emitFusedExpression = (expr: Expression): FusedRule => {
   const counter: GroupCounter = { next: 0 };
-  const { pattern, valueExpr } = emit(rule.pattern, counter);
+  const { pattern, valueExpr } = emit(expr, counter);
   return { source: pattern, valueExpr };
 };
+
+/** Compiles `rule.pattern` (already confirmed fusable via `isRuleFusable`)
+ * to a regex source string and a value-reconstruction expression. Thin
+ * alias over `emitFusedExpression` kept for callers (and existing tests)
+ * that think in terms of "fuse this whole rule." */
+export const emitFusedRule = (rule: RuleDefinition): FusedRule =>
+  emitFusedExpression(rule.pattern);

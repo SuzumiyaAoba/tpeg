@@ -95,6 +95,40 @@ describe("anyChar parser", () => {
     });
   });
 
+  describe("Unpaired surrogate handling (hot-path decode correctness)", () => {
+    // Regression battery for the `charCodeAt`-first hot path: the only
+    // place its decode can diverge from the old `getCharAt`
+    // (`codePointAt` + `String.fromCodePoint`, then a re-decode) is an
+    // UNPAIRED surrogate. Each case is one code unit wide and must be
+    // treated as exactly that.
+    it("treats a lone lead surrogate at end-of-input as one code unit", () => {
+      const result = anyChar()("\uD800", createPos());
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("\uD800");
+        expect(result.next).toBe(1);
+      }
+    });
+
+    it("treats a lead surrogate followed by a non-trail character as one code unit (does not merge with the next character)", () => {
+      const result = anyChar()("\uD800X", createPos());
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("\uD800");
+        expect(result.next).toBe(1);
+      }
+    });
+
+    it("treats a lone trail surrogate as one code unit", () => {
+      const result = anyChar()("\uDC00", createPos());
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("\uDC00");
+        expect(result.next).toBe(1);
+      }
+    });
+  });
+
   describe("Newline character handling", () => {
     it("should parse newline characters and update line numbers correctly", () => {
       // Purpose: Verify position tracking with newline characters

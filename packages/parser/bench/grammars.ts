@@ -249,3 +249,54 @@ grammar BenchKeyword {
 `;
 
 export const BENCH_KEYWORD_ROOT_RULE = "program";
+
+/**
+ * Pillar 9 Phase 2's own gate-measurement grammar (see the perf plan):
+ * every OTHER bench grammar above factors each regular fragment (a run
+ * of digits, a whitespace run, a quoted-string body) into its OWN named
+ * rule -- exactly the shape whole-rule fusion (`enableRegexFusion` with
+ * `regexFusionScope: "rule"`, the pre-Phase-2 behavior) already reaches.
+ * Measuring sub-expression fusion (`regexFusionScope: "subtree"`)
+ * against those grammars would show ~zero delta and prove nothing about
+ * whether the feature works -- it would only prove the existing bench
+ * corpus happens to avoid the shape sub-expression fusion targets.
+ *
+ * This grammar is written the way a real config-file parser actually
+ * gets written: whitespace INLINE inside `entry` (four separate
+ * `[ \t\n\r]*` occurrences, none factored into their own rule), and a
+ * label + `ActionExpression` in `key` (`h:[a-zA-Z_] t:[a-zA-Z0-9_]* {
+ * return h + t.join(""); }`) -- which makes `key`'s ENTIRE pattern
+ * structurally unfusable as a whole (an `ActionExpression` anywhere
+ * disqualifies whichever `Sequence`/`Choice`/etc. contains it), while
+ * its `t:[a-zA-Z0-9_]*` sub-expression, reached only by descending
+ * THROUGH the label and the action, remains fusable on its own. This is
+ * the headline capability whole-rule fusion structurally cannot reach at
+ * any grammar shape, and it doubles as a value-shape-preservation check:
+ * the fused `t` must still be exactly what `t.join("")` expects (a
+ * `string[]`), verified end-to-end in `regex-fusion.spec.ts`.
+ *
+ * `val` (`"\"" [^"]* "\""` / `"-"? [0-9]+ ("." [0-9]+)?`) is, unlike
+ * `doc`/`entry`/`key`, whole-rule fusable on its own: it has no
+ * `Identifier` references, no labels, no actions, so `regexFusionScope:
+ * "rule"` already fuses `val`'s entire pattern -- one Choice of two
+ * FIRST-disjoint alternatives (`"` vs `-`/digit), same shape as
+ * `BENCH_JSON_GRAMMAR`'s `string`/`number`. This is deliberate, not an
+ * oversight: it gives `regexFusionScope: "rule"` something real to do on
+ * THIS grammar too (not a strict zero baseline), so the arm 2 -> arm 3
+ * delta measures exactly what subtree fusion adds beyond whole-rule
+ * fusion's own reach -- `entry`'s four inline `[ \t\n\r]*` runs and
+ * `key`'s label/action-guarded `t:[a-zA-Z0-9_]*`, none of which `"rule"`
+ * scope can touch no matter how simple they are, because the RULES that
+ * contain them (`entry`, `key`) are themselves disqualified by an
+ * `Identifier` reference or an `ActionExpression`.
+ */
+export const BENCH_INLINE_REGULAR_GRAMMAR = `
+grammar BenchInlineRegular {
+  doc   = entry*
+  entry = [ \\t\\n\\r]* key [ \\t\\n\\r]* "=" [ \\t\\n\\r]* val [ \\t\\n\\r]*
+  key   = h:[a-zA-Z_] t:[a-zA-Z0-9_]* { return h + t.join(""); }
+  val   = "\\"" [^"]* "\\"" / "-"? [0-9]+ ("." [0-9]+)?
+}
+`;
+
+export const BENCH_INLINE_REGULAR_ROOT_RULE = "doc";

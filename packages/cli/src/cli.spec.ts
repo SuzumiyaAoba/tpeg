@@ -108,7 +108,11 @@ describe("tpeg CLI", () => {
     const { exitCode, stdout } = captureOutput(() => run([inputPath]));
     expect(exitCode).toBe(0);
     expect(stdout).toContain("export const number");
-    expect(stdout).toContain("oneOrMore");
+    // `[0-9]+` (a Plus over a bare CharacterClass) now collapses to a
+    // single `charClassRun(...)` scan instead of `oneOrMore(charClass(...))`
+    // -- see `packages/core/src/char-class.ts`'s `charClassRun` doc
+    // comment (Pillar 9 Phase 1).
+    expect(stdout).toContain("charClassRun");
   });
 
   it("writes generated code to a file with -o", () => {
@@ -164,7 +168,7 @@ describe("tpeg CLI", () => {
       run([inputPath, "--regex-fusion"]),
     );
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("--regex-fusion requires --optimize");
+    expect(stderr).toContain("requires --optimize");
   });
 
   it("accepts --regex-fusion together with --optimize", () => {
@@ -176,6 +180,61 @@ describe("tpeg CLI", () => {
     );
     expect(exitCode).toBe(0);
     expect(stdout).toContain("export const number");
+  });
+
+  it("rejects --regex-fusion-subtree without --optimize", () => {
+    const inputPath = join(dir, "grammar.tpeg");
+    writeFileSync(inputPath, SIMPLE_GRAMMAR, "utf8");
+
+    const { exitCode, stderr } = captureOutput(() =>
+      run([inputPath, "--regex-fusion-subtree"]),
+    );
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("requires --optimize");
+  });
+
+  it("accepts --regex-fusion-subtree alone, without also passing --regex-fusion (it implies it)", () => {
+    const inputPath = join(dir, "grammar.tpeg");
+    writeFileSync(inputPath, SIMPLE_GRAMMAR, "utf8");
+
+    const { exitCode, stdout } = captureOutput(() =>
+      run([inputPath, "--optimize", "--regex-fusion-subtree"]),
+    );
+    expect(exitCode).toBe(0);
+    // `number = [0-9]+` is a bare Plus over a CharacterClass -- fusable
+    // as a whole rule under EITHER scope, but this specifically confirms
+    // `--regex-fusion-subtree` alone (no `--regex-fusion`) still reaches
+    // codegen's fusion path at all.
+    expect(stdout).toContain("regexFusedMap(");
+  });
+
+  it("fuses a label/action-guarded sub-expression with --regex-fusion-subtree that --regex-fusion alone cannot reach", () => {
+    const inputPath = join(dir, "grammar.tpeg");
+    writeFileSync(
+      inputPath,
+      `
+grammar Ident {
+  ident = h:[a-zA-Z_] t:[a-zA-Z0-9_]* { return h + t.join(""); }
+}
+`,
+      "utf8",
+    );
+
+    const ruleScope = captureOutput(() =>
+      run([inputPath, "--optimize", "--regex-fusion"]),
+    );
+    expect(ruleScope.exitCode).toBe(0);
+    // The whole `ident` rule has an ActionExpression, disqualifying it
+    // from whole-rule fusion entirely.
+    expect(ruleScope.stdout).not.toContain("regexFusedMap(");
+
+    const subtreeScope = captureOutput(() =>
+      run([inputPath, "--optimize", "--regex-fusion-subtree"]),
+    );
+    expect(subtreeScope.exitCode).toBe(0);
+    // Sub-expression fusion reaches `t:[a-zA-Z0-9_]*`'s Star, behind the
+    // label AND the action.
+    expect(subtreeScope.stdout).toContain("regexFusedMap(");
   });
 
   it("applies automatic cut insertion with --auto-cut", () => {

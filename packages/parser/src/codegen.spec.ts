@@ -328,8 +328,14 @@ describe("TPEG Code Generation", () => {
       const generator = new TPEGCodeGenerator();
       const result = generator.generateGrammar(grammar);
 
-      expect(result.code).toContain('zeroOrMore(charClass(["a", "z"]))');
-      expect(result.code).toContain('oneOrMore(charClass(["0", "9"]))');
+      // `Star`/`Plus` over a BARE `CharacterClass` collapse to a single
+      // `charClassRun(...)` scan instead of `zeroOrMore`/`oneOrMore`
+      // driving `charClass` one character at a time -- see
+      // `packages/core/src/char-class.ts`'s `charClassRun` doc comment
+      // (Pillar 9 Phase 1). `optional(literal(" "))` is unaffected: that
+      // optimization only applies to Star/Plus/Quantified{0,1,}.
+      expect(result.code).toContain('charClassRun([["a", "z"]], 0)');
+      expect(result.code).toContain('charClassRun([["0", "9"]], 1)');
       expect(result.code).toContain('optional(literal(" "))');
     });
 
@@ -467,7 +473,13 @@ describe("TPEG Code Generation", () => {
       // Should contain complex nested structure
       expect(result.code).toContain("choice(");
       expect(result.code).toContain("sequence(");
-      expect(result.code).toContain("oneOrMore(");
+      // `factor`'s `[0-9]+` (Plus over a bare CharacterClass) collapses
+      // to `charClassRun(...)` rather than `oneOrMore(charClass(...))`
+      // -- see the "should generate repetition parsers" test above.
+      // `expression`'s `("+" / "-" factor)*` still generates
+      // `zeroOrMore(...)`: its repeated element is a `Sequence`, not a
+      // bare `CharacterClass`, so it's outside `charClassRun`'s scope.
+      expect(result.code).toContain("charClassRun(");
       expect(result.code).toContain("zeroOrMore(");
       expect(result.exports).toEqual(["factor", "expression"]);
     });

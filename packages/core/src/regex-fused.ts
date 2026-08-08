@@ -71,3 +71,47 @@ export const regexFused = (
     };
   };
 };
+
+/**
+ * `map(regexFused(source, description), f)` collapsed into one parser:
+ * one `ParseSuccess`, no intermediate `FusedMatch` object, and no
+ * `m.slice(1)` copy of the capture groups -- `f` reads groups directly
+ * off the raw `RegExpExecArray` (group `i` is `m[i + 1]`, `m[0]` is the
+ * whole match, exactly `RegExp.exec`'s own indexing).
+ *
+ * Exists purely to shave allocations off `regexFused`'s already-hot path
+ * once sub-expression fusion (`packages/parser/src/regex-fusion.ts`)
+ * makes it common for many small fused nodes to exist per parse rather
+ * than a handful of whole-rule ones: each `regexFused` + `map` pairing
+ * costs a `FusedMatch` + `m.slice(1)` + two separate `ParseSuccess`
+ * objects (one from `regexFused`, one from `map`); this costs one
+ * `ParseSuccess` and nothing else. Semantically identical to
+ * `map(regexFused(source, description), (m) => f(rawMatchArray))` for a
+ * `f` written against `m.groups`/`m.text` translated to `m[i+1]`/`m[0]` --
+ * codegen is responsible for emitting `f` in the right indexing (see
+ * `regex-fusion.ts`'s `emit`, whose `valueExpr` this backs).
+ */
+export const regexFusedMap = <T>(
+  source: string,
+  description: string,
+  f: (m: RegExpExecArray) => T,
+): Parser<T> => {
+  const re = new RegExp(source, "yu");
+  const expectation: Expectation = {
+    label: description,
+    parserName: "regexFused",
+  };
+  return (input: string, pos: number) => {
+    re.lastIndex = pos;
+    const m = re.exec(input);
+    if (m === null) {
+      return fail(input, pos, expectation);
+    }
+    return {
+      success: true,
+      val: f(m),
+      current: pos,
+      next: advancePos(m[0], pos),
+    };
+  };
+};

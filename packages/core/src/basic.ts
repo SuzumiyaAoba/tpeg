@@ -1,3 +1,4 @@
+import { ASCII_CHARS } from "./char-tables";
 import type { Expectation } from "./failure";
 import { fail } from "./failure";
 import type { NonEmptyString, ParseResult, Parser } from "./types";
@@ -79,17 +80,28 @@ export const anyChar = (parserName = "anyChar"): Parser<string> => {
   // per attempted match -- see `./failure.ts`'s `Expectation` doc comment.
   const expectation: Expectation = { label: "any character", parserName };
   return (input: string, pos: number) => {
-    const char = getCharAt(input, pos);
+    // Same hot-path shape as `charClass`/`negatedCharClass`
+    // (`./char-class.ts`'s `makeCharClassParser`), with both membership
+    // tests removed -- `anyChar` matches everything but end-of-input.
+    if (pos >>> 0 >= input.length) return fail(input, pos, expectation);
 
-    if (!char) {
-      return fail(input, pos, expectation);
+    const code = input.charCodeAt(pos);
+    if (code < 128) {
+      return {
+        success: true,
+        val: ASCII_CHARS[code] as string,
+        current: pos,
+        next: pos + 1,
+      };
     }
 
+    const cp = input.codePointAt(pos) as number;
+    const len = cp > 0xffff ? 2 : 1;
     return {
       success: true,
-      val: char,
+      val: input.slice(pos, pos + len),
       current: pos,
-      next: nextPos(char, pos),
+      next: pos + len,
     };
   };
 };

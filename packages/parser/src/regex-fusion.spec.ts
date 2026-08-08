@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { generateOptimizedTypeScriptParser } from "./codegen-optimized";
 import { analyzeFirstSets } from "./first-sets";
 import { grammarDefinition } from "./grammar";
-import { isRuleFusable } from "./regex-fusion";
+import { isRuleFusable, planFusion } from "./regex-fusion";
 import {
   createActionExpression,
   createAnyChar,
@@ -279,6 +279,94 @@ describe("isRuleFusable: structural + determinism gates", () => {
     }
   });
 
+  it("rejects Optional when its inner FIRST set overlaps what follows it in the fused region (regression: Optional was wrongly treated as a transparent Group, letting the emitted `(?:(X))?` backtrack to empty where PEG's possessive optional never would)", () => {
+    for (const src of [
+      `grammar G { r = "a"? "ab" }`,
+      `grammar G { r = ("a" "b")? "ab" }`,
+      `grammar G { r = [a-z]? [a-z] "x" }`,
+      `grammar G { r = "a"? "a"? "ab" }`,
+      `grammar G { r = "a"? [a-b] "b" }`,
+    ]) {
+      const fusable = fusabilityByRule(src);
+      expect(fusable["r"]).toBe(false);
+    }
+  });
+
+  it('produces output identical to the unfused combinator tree for "a"? "ab" across inputs that distinguish possessive (PEG) from backtracking (naive regex) optional semantics -- before the fix, "ab" and "aba" wrongly succeeded when fused', async () => {
+    const core = await import("@suzumiyaaoba/tpeg-core");
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createSequence([
+            createOptional(createStringLiteral("a", '"')),
+            createStringLiteral("ab", '"'),
+          ]),
+        ),
+      ],
+    );
+    const analysis = analyzeFirstSets(grammar);
+    const rule = grammar.rules[0];
+    if (!rule) throw new Error("expected rule");
+    // The fix must make this rule ineligible for fusion in the first
+    // place -- if it were still marked fusable, `emitFusedRule` would
+    // reintroduce the divergence this test guards against.
+    expect(isRuleFusable(rule, analysis)).toBe(false);
+
+    const compile = (enableRegexFusion: boolean) => {
+      const generated = generateOptimizedTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+        optimize: true,
+        enableRegexFusion,
+      });
+      const body = generated.code.replace(/^export const (\w+)/gm, "const $1");
+      const ruleNames = [
+        ...generated.code.matchAll(/^export const (\w+)/gm),
+      ].map((m) => m[1] as string);
+      const factory = new Function(
+        ...Object.keys(core),
+        `${body}\nreturn { ${ruleNames.join(", ")} };`,
+      );
+      const built = factory(...Object.values(core)) as Record<
+        string,
+        (
+          input: string,
+          pos: number,
+        ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>
+      >;
+      return built["r"] as (
+        input: string,
+        pos: number,
+      ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
+    };
+
+    const unfused = compile(false);
+    // With the fix, `enableRegexFusion: true` on this grammar never
+    // fuses `r` at all (isRuleFusable is false), so "fused" here means
+    // "codegen ran with the flag on, and correctly declined to fuse."
+    const fused = compile(true);
+
+    for (const input of ["ab", "aab", "aba"]) {
+      const unfusedResult = unfused(input, ORIGIN);
+      const fusedResult = fused(input, ORIGIN);
+      expect(fusedResult.success).toBe(unfusedResult.success);
+      if (unfusedResult.success && fusedResult.success) {
+        expect(fusedResult.val).toEqual(unfusedResult.val);
+        expect(fusedResult.next).toEqual(unfusedResult.next);
+      }
+    }
+    // Spell out the specific regression directly: "ab" and "aba" must
+    // FAIL (the leading "a"? consumes "a" possessively, leaving only
+    // "b"/"ba" for the required "ab" literal, which cannot match).
+    expect(unfused("ab", ORIGIN).success).toBe(false);
+    expect(fused("ab", ORIGIN).success).toBe(false);
+    expect(unfused("aba", ORIGIN).success).toBe(false);
+    expect(fused("aba", ORIGIN).success).toBe(false);
+  });
+
   it("rejects a Star wrapping a multi-character StringLiteral (Array.from(run) can't recover per-iteration chunks)", () => {
     const grammar = createGrammarDefinition(
       "G",
@@ -352,7 +440,7 @@ describe("isRuleFusable: structural + determinism gates", () => {
 });
 
 describe("generateOptimizedTypeScriptParser({ enableRegexFusion: true, includeImports: true }): import generation", () => {
-  it("imports both regexFused and map from tpeg-core when at least one rule is fused, alongside the combinators non-fused rules still need", () => {
+  it("imports regexFusedMap from tpeg-core when at least one rule is fused, alongside the combinators non-fused rules still need", () => {
     const parsed = grammarDefinition(JSON_LIKE_GRAMMAR, ORIGIN);
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
@@ -372,8 +460,12 @@ describe("generateOptimizedTypeScriptParser({ enableRegexFusion: true, includeIm
           line.includes('from "@suzumiyaaoba/tpeg-core"'),
       );
     expect(coreImportLine).toBeDefined();
-    expect(coreImportLine).toContain("regexFused");
-    expect(coreImportLine).toContain("map");
+    // A fused rule compiles to a single `regexFusedMap(...)` call
+    // (`packages/core/src/regex-fused.ts`) rather than `map(regexFused(
+    // ...), ...)` -- see `regex-fusion.ts`'s `emit`/`emitFusedExpression`
+    // doc comments (Pillar 9 Phase 2) for why this collapses the fixed
+    // per-match allocation count.
+    expect(coreImportLine).toContain("regexFusedMap");
     // `object`/`pair`/`array`/`value` reference other rules and stay
     // unfused -- their combinators must still be imported (this is the
     // exact shape of bug the module doc comment on
@@ -663,13 +755,13 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
       optimize: true,
       enableRegexFusion: true,
     });
-    // `digits` compiled via regexFused; `pair` did not (it has an
+    // `digits` compiled via regexFusedMap; `pair` did not (it has an
     // ActionExpression, structurally disqualifying).
-    expect(generated.code).toContain("regexFused(");
+    expect(generated.code).toContain("regexFusedMap(");
     const digitsBlock = generated.code
       .split("\n\n")
       .find((block) => block.startsWith("export const digits"));
-    expect(digitsBlock).toContain("regexFused(");
+    expect(digitsBlock).toContain("regexFusedMap(");
 
     const core = await import("@suzumiyaaoba/tpeg-core");
     const body = generated.code.replace(/^export const (\w+)/gm, "const $1");
@@ -932,5 +1024,308 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
     const result = fused("12+345", ORIGIN);
     expect(result.success).toBe(true);
     if (result.success) expect(result.val).toBe(5);
+  });
+});
+
+/** Parses `src`, generates it with `enableRegexFusion: true` and the
+ * given `scope`, and returns the compiled parser for `ruleName` -- the
+ * sub-expression-fusion counterpart of `compileRuleFor` above (which is
+ * always whole-rule scope). Parses TPEG source text directly rather than
+ * building an AST by hand, since the grammars below (labels, actions,
+ * lookaheads, cuts) are much more readable written out. */
+async function compileScopedRule(
+  src: string,
+  ruleName: string,
+  scope: "rule" | "subtree",
+) {
+  const parsed = grammarDefinition(src, ORIGIN);
+  if (!parsed.success) {
+    throw new Error(`test grammar failed to parse: ${parsed.error.message}`);
+  }
+  const core = await import("@suzumiyaaoba/tpeg-core");
+  const generated = generateOptimizedTypeScriptParser(parsed.val, {
+    includeImports: false,
+    includeTypes: false,
+    optimize: true,
+    enableRegexFusion: true,
+    regexFusionScope: scope,
+  });
+  const body = generated.code.replace(/^export const (\w+)/gm, "const $1");
+  const ruleNames = [...generated.code.matchAll(/^export const (\w+)/gm)].map(
+    (m) => m[1] as string,
+  );
+  const factory = new Function(
+    ...Object.keys(core),
+    `${body}\nreturn { ${ruleNames.join(", ")} };`,
+  );
+  const built = factory(...Object.values(core)) as Record<
+    string,
+    (
+      input: string,
+      pos: number,
+    ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>
+  >;
+  return {
+    parser: built[ruleName] as (
+      input: string,
+      pos: number,
+    ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>,
+    code: generated.code,
+  };
+}
+
+/** Runs `input` through both `unfused` and `fused` and asserts they agree
+ * on success, stop offset, and value -- the standard differential shape
+ * every test below uses to check a fusion decision is semantics-
+ * preserving, not just "compiles." */
+async function expectSameResult(
+  unfused: (
+    input: string,
+    pos: number,
+  ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>,
+  fused: (
+    input: string,
+    pos: number,
+  ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>,
+  input: string,
+) {
+  const unfusedResult = unfused(input, ORIGIN);
+  const fusedResult = fused(input, ORIGIN);
+  expect(fusedResult.success).toBe(unfusedResult.success);
+  if (unfusedResult.success && fusedResult.success) {
+    expect(fusedResult.val).toEqual(unfusedResult.val);
+    expect(fusedResult.next).toEqual(unfusedResult.next);
+  }
+}
+
+describe("planFusion: sub-expression fusion (Pillar 9 Phase 2)", () => {
+  it("does not treat a bare CharacterClass/StringLiteral as a fusion root under scope: subtree (weight 1 < MIN_FUSION_WEIGHT) -- fusing it would be a pessimization relative to charClass/literal's own zero-allocation success path", () => {
+    const parsed = grammarDefinition(
+      `grammar G { r = [a-z] "x" other \n other = "y" }`,
+      ORIGIN,
+    );
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const analysis = analyzeFirstSets(parsed.val);
+    const plan = planFusion(parsed.val, analysis, { scope: "subtree" });
+    expect(plan.roots.size).toBe(0);
+  });
+
+  it("treats a Sequence of 3+ leaves as a fusion root under scope: subtree (weight 3 clears MIN_FUSION_WEIGHT), and always treats an unbounded repetition as one regardless of weight", () => {
+    // `seq3` and `other` are each their OWN rule (rather than `seq3`'s
+    // elements sitting directly inside `r`'s own Sequence alongside an
+    // `Identifier`) deliberately: mixing a disqualifying `Identifier`
+    // into the SAME `Sequence` as `seq3`'s leaves would disqualify that
+    // whole `Sequence`, and `planFusion` does not attempt to fuse a
+    // partial PREFIX run of an otherwise-disqualified `Sequence` (see
+    // `planFusion`'s doc comment's "explicit non-goal" -- fusing only
+    // `[A,B]` out of `[A,B,C]` would change `sequence()`'s tuple arity).
+    // Each rule's OWN pattern is a separate, independently-evaluated
+    // root candidate (`planFusion` visits every rule's pattern, not just
+    // the start rule's).
+    const parsed = grammarDefinition(
+      `grammar G {
+        r = seq3 other
+        seq3 = [a-z] "x" [0-9]
+        other = [a-z]+
+      }`,
+      ORIGIN,
+    );
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const analysis = analyzeFirstSets(parsed.val);
+    const plan = planFusion(parsed.val, analysis, { scope: "subtree" });
+    // Two roots expected: `seq3`'s whole pattern (weight 3), and
+    // `other`'s whole `[a-z]+` pattern (weight Infinity). `r` itself
+    // contributes none -- both its elements are `Identifier`s.
+    expect(plan.roots.size).toBe(2);
+    const weights = plan.sites.map((s) => s.weight).sort();
+    expect(weights[0]).toBe(3);
+    expect(weights[1]).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('fuses only the trailing repetition of `[a-z]* "x"`, not the whole rule (the classic possessive-vs-backtracking counterexample) -- and produces output identical to the unfused path across discriminating inputs', async () => {
+    const src = `grammar G { r = [a-z]* "x" }`;
+    const parsed = grammarDefinition(src, ORIGIN);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const analysis = analyzeFirstSets(parsed.val);
+
+    // Whole-rule fusion correctly refuses `r` (the classic
+    // [a-z]* "x" counterexample); subtree fusion must ALSO refuse `r`
+    // as a whole, but should find the Star alone (trailing edge within
+    // the Sequence, so its own `tail` is empty) fusable and profitable.
+    expect(isRuleFusable(parsed.val.rules[0] as never, analysis)).toBe(false);
+    const plan = planFusion(parsed.val, analysis, { scope: "subtree" });
+    expect(plan.roots.size).toBe(1);
+    const [site] = plan.sites;
+    expect(site?.expr.type).toBe("Star");
+
+    const unfusedResult = await compileScopedRule(src, "r", "rule");
+    const fusedResult = await compileScopedRule(src, "r", "subtree");
+    // scope: "rule" leaves `r` entirely unfused (isRuleFusable is false).
+    expect(unfusedResult.code).not.toContain("regexFusedMap(");
+    // scope: "subtree" fuses the Star alone.
+    expect(fusedResult.code).toContain("regexFusedMap(");
+
+    for (const input of ["x", "abcx", "abc", "", "abcxyz", "abcxx"]) {
+      await expectSameResult(unfusedResult.parser, fusedResult.parser, input);
+    }
+  });
+
+  it('fuses the compound repeated body of `("ab" "cd" "ef")* "!"` -- Star itself stays unfused (isSimpleRepeatable rejects a Sequence body), but the Sequence it wraps becomes its own fusion root, reached by recursing INTO the Star -- one `zeroOrMore(regexFusedMap(...))` call per iteration instead of a chain of literal() calls per iteration', async () => {
+    const src = `grammar G { r = ("ab" "cd" "ef")* "!" }`;
+    const parsed = grammarDefinition(src, ORIGIN);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const analysis = analyzeFirstSets(parsed.val);
+    const plan = planFusion(parsed.val, analysis, { scope: "subtree" });
+    expect(plan.roots.size).toBe(1);
+    const [site] = plan.sites;
+    // TPEG's `(...)` produces a `Group` node wrapping the inner
+    // Sequence, not the Sequence directly -- `Star`'s `.expression` IS
+    // that Group. `tryRoot` fuses the Group as-is (its structural/
+    // determinism checks and `weight` both delegate transparently to the
+    // inner Sequence, and `emit`'s `Group` case likewise emits the
+    // inner's pattern/valueExpr with no wrapping capture group), so
+    // fusing the Group is byte-identical to fusing the Sequence would
+    // have been.
+    expect(site?.expr.type).toBe("Group");
+    expect(site?.weight).toBe(3);
+
+    const unfusedResult = await compileScopedRule(src, "r", "rule");
+    const fusedResult = await compileScopedRule(src, "r", "subtree");
+    expect(fusedResult.code).toContain("zeroOrMore(regexFusedMap(");
+
+    for (const input of [
+      "!",
+      "abcdef!",
+      "abcdefabcdef!",
+      "abcdefabcd!",
+      "xyz!",
+      "abcdef",
+    ]) {
+      await expectSameResult(unfusedResult.parser, fusedResult.parser, input);
+    }
+  });
+
+  it("reaches a fusion root through a LabeledExpression and an ActionExpression -- the headline sub-expression-fusion capability whole-rule fusion structurally can never reach (an ActionExpression anywhere disqualifies the whole rule under scope: rule), verified end to end with the exact idiom BENCH_INLINE_REGULAR_GRAMMAR uses", async () => {
+    const src = `grammar G {
+      key = h:[a-zA-Z_] t:[a-zA-Z0-9_]* { return h + t.join(""); }
+    }`;
+    const parsed = grammarDefinition(src, ORIGIN);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const analysis = analyzeFirstSets(parsed.val);
+
+    // Whole rule is structurally disqualified (ActionExpression).
+    expect(isRuleFusable(parsed.val.rules[0] as never, analysis)).toBe(false);
+    const plan = planFusion(parsed.val, analysis, { scope: "subtree" });
+    expect(plan.roots.size).toBe(1);
+    const [site] = plan.sites;
+    expect(site?.expr.type).toBe("Star");
+
+    const unfusedResult = await compileScopedRule(src, "key", "rule");
+    const fusedResult = await compileScopedRule(src, "key", "subtree");
+    expect(unfusedResult.code).not.toContain("regexFusedMap(");
+    expect(fusedResult.code).toContain("regexFusedMap(");
+
+    for (const input of ["a", "abc123", "z_9", "hello_world_42", "a1b2c3"]) {
+      await expectSameResult(unfusedResult.parser, fusedResult.parser, input);
+    }
+    // Pin the actual reconstructed value once, directly: the fused `t`
+    // must still be exactly the `string[]` `t.join("")` expects.
+    const result = fusedResult.parser("hello_world", ORIGIN);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.val).toBe("hello_world");
+  });
+
+  it("fuses a subtree reached through a PositiveLookahead without corrupting the lookahead's own non-consuming, value-discarding semantics", async () => {
+    // Explicit parens: `&[a-z]+` alone parses as `(&[a-z])+` (`+` binds
+    // to the WHOLE lookahead, not the class inside it) -- degenerate
+    // (`oneOrMore` over a zero-width, never-advancing assertion hits its
+    // own infinite-loop guard after one iteration) and not what this
+    // test wants to exercise: a Plus INSIDE a lookahead becoming its own
+    // fusion root.
+    const src = "grammar G { r = &([a-z]+) [a-z]+ [0-9] }";
+    const parsed = grammarDefinition(src, ORIGIN);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const analysis = analyzeFirstSets(parsed.val);
+    const plan = planFusion(parsed.val, analysis, { scope: "subtree" });
+    // Two independent roots: the `[a-z]+` INSIDE the lookahead, and the
+    // separate `[a-z]+` that does the actual consuming match -- distinct
+    // Expression objects even though structurally identical.
+    expect(plan.roots.size).toBe(2);
+
+    const unfusedResult = await compileScopedRule(src, "r", "rule");
+    const fusedResult = await compileScopedRule(src, "r", "subtree");
+    expect(unfusedResult.code).not.toContain("regexFusedMap(");
+    expect(fusedResult.code).toContain("regexFusedMap(");
+
+    for (const input of ["abc1", "a1", "1", "abc", "ABC1", ""]) {
+      await expectSameResult(unfusedResult.parser, fusedResult.parser, input);
+    }
+  });
+
+  it("fuses a subtree sitting after a Cut without disturbing commit's fatal-failure propagation -- once the cut fires, a failure in the fused node must fail the WHOLE rule, never fall through to the next alternative", async () => {
+    const src = `grammar G { r = "key" ~ [a-z]+ / "other" }`;
+    const parsed = grammarDefinition(src, ORIGIN);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const analysis = analyzeFirstSets(parsed.val);
+    const plan = planFusion(parsed.val, analysis, { scope: "subtree" });
+    expect(plan.roots.size).toBe(1);
+    const [site] = plan.sites;
+    expect(site?.expr.type).toBe("Plus");
+
+    const unfusedResult = await compileScopedRule(src, "r", "rule");
+    const fusedResult = await compileScopedRule(src, "r", "subtree");
+    expect(fusedResult.code).toContain("regexFusedMap(");
+
+    for (const input of [
+      "keyabc", // cut fires, [a-z]+ matches -- success
+      "key123", // cut fires, [a-z]+ fails on "1" -- must FAIL, not fall through to "other"
+      "other", // cut never fires -- second alternative matches normally
+      "key", // cut fires, [a-z]+ has nothing to match -- must fail
+      "",
+    ]) {
+      await expectSameResult(unfusedResult.parser, fusedResult.parser, input);
+    }
+    // Spell out the specific cut-interaction regression directly:
+    // "key123" must fail for BOTH (never silently succeed by falling
+    // through to "other", which "key123" doesn't match either, so a
+    // fusion bug that dropped the cut's fatal flag would show up as an
+    // incorrect .success rather than merely a different .next).
+    expect(unfusedResult.parser("key123", ORIGIN).success).toBe(false);
+    expect(fusedResult.parser("key123", ORIGIN).success).toBe(false);
+  });
+
+  it("regexFusionScope: 'rule' (the default) is unaffected by planFusion's subtree machinery -- byte-identical set of roots to isRuleFusable's own per-rule verdicts, on a grammar mixing fusable and unfusable rules", () => {
+    const src = `
+      grammar G {
+        value = string / number / ref
+        string = "\\"" [^"]* "\\""
+        number = [0-9]+
+        ref = identifier
+        identifier = [a-z]+
+      }
+    `;
+    const parsed = grammarDefinition(src, ORIGIN);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const analysis = analyzeFirstSets(parsed.val);
+
+    const plan = planFusion(parsed.val, analysis, { scope: "rule" });
+    const fusedNames = parsed.val.rules
+      .filter((r) => plan.roots.has(r.pattern))
+      .map((r) => r.name)
+      .sort();
+    const expectedNames = parsed.val.rules
+      .filter((r) => isRuleFusable(r, analysis))
+      .map((r) => r.name)
+      .sort();
+    expect(fusedNames).toEqual(expectedNames);
+    expect(fusedNames).toEqual(["identifier", "number", "string"]);
   });
 });

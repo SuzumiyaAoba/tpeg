@@ -42,6 +42,7 @@ import {
   generateQualifiedIdentifierCode,
   generateQuantifiedCode,
   generateStringLiteralCode,
+  tryGenerateCharClassRunCode,
   wrapWithAction,
   wrapWithMemoize,
   wrapWithTransform,
@@ -56,7 +57,11 @@ import {
 } from "./performance-utils";
 import type { ReentrancyAnalysis } from "./reentrancy";
 import { analyzeReentrancy } from "./reentrancy";
-import { emitFusedRule, isRuleFusable } from "./regex-fusion";
+import {
+  MIN_FUSION_WEIGHT,
+  emitFusedExpression,
+  planFusion,
+} from "./regex-fusion";
 
 /**
  * Enhanced code generation options with performance settings
@@ -103,15 +108,16 @@ export interface OptimizedCodeGenOptions {
    */
   enablePredictiveDispatch?: boolean;
   /**
-   * Compiles a rule's ENTIRE pattern to a single `regexFused(...)` call
+   * Compiles a fusion root -- by default, a rule's ENTIRE pattern (see
+   * `regexFusionScope` below) -- to a single `regexFusedMap(...)` call
    * (`packages/core/src/regex-fused.ts`) instead of a combinator tree,
-   * whenever `./regex-fusion.ts`'s `isRuleFusable` proves it safe (no
+   * whenever `./regex-fusion.ts`'s `planFusion` proves it safe (no
    * non-terminal references, and every repetition/choice inside the
    * pattern is provably deterministic -- see that module's doc comment
    * for both conditions and why they're each necessary).
    *
    * Default `false`, unlike `enablePredictiveDispatch`: fusion changes
-   * how a rule's value is PRODUCED (one regex match plus a
+   * how a node's value is PRODUCED (one regex match plus a
    * reconstruction expression built from its capture groups, in place
    * of nested combinator calls), even though `./regex-fusion.ts` builds
    * that reconstruction to be byte-identical to the unfused shape. This
@@ -127,6 +133,46 @@ export interface OptimizedCodeGenOptions {
    * entry) -- both high enough to justify building this.
    */
   enableRegexFusion?: boolean;
+  /**
+   * Only meaningful when `enableRegexFusion` is on. `"rule"` (the
+   * default): consider only each rule's own top-level pattern as a
+   * fusion candidate, exactly this module's original behavior -- setting
+   * `enableRegexFusion: true` alone, with no `regexFusionScope`, changes
+   * nothing about what fuses. `"subtree"`: additionally fuse any MAXIMAL
+   * fusable node reachable by walking a rule's pattern top-down,
+   * including through a `LabeledExpression`/`ActionExpression` --
+   * reaching real, action-bearing grammars whole-rule fusion could never
+   * touch (an action anywhere in a rule disqualifies the WHOLE rule
+   * under `"rule"` scope). See `./regex-fusion.ts`'s `planFusion` doc
+   * comment for the full soundness argument and why the two scopes are
+   * two independently-correct decisions, not a superset relationship.
+   */
+  regexFusionScope?: "rule" | "subtree";
+  /**
+   * Only meaningful when `enableRegexFusion` is on and
+   * `regexFusionScope: "subtree"`. Minimum `./regex-fusion.ts` `weight`
+   * (an estimate of leaf-parser invocations removed) for a sub-
+   * expression fusion candidate to be worth compiling to a
+   * `regexFusedMap` call at all -- see that module's `MIN_FUSION_WEIGHT`
+   * doc comment for the cost model. Not applied under `"rule"` scope
+   * (whole-rule fusion has never been weight-gated; changing that would
+   * be a behavior change for existing `enableRegexFusion: true` callers).
+   * Defaults to `MIN_FUSION_WEIGHT`. Exists as a real option mainly so
+   * `packages/parser/bench/`'s harness can sweep it; ordinary callers
+   * should not need to set this.
+   */
+  regexFusionMinWeight?: number;
+  /**
+   * Emit `charClassRun(...)` instead of `zeroOrMore`/`oneOrMore` driving
+   * `charClass`/`negatedCharClass` one character at a time, for a
+   * `Star`/`Plus`/`Quantified{0,}`/`Quantified{1,}` whose repeated
+   * element is a bare `CharacterClass`. See `CodeGenOptions`'s option of
+   * the same name (`./codegen.ts`) for the full rationale -- this
+   * generator's default is identical (`true`) for the identical reason:
+   * the emitted value is byte-identical to the unfused shape, so there's
+   * no risk surface to gate behind an opt-in.
+   */
+  enableCharClassRun?: boolean;
 }
 
 /**
@@ -229,6 +275,12 @@ export class OptimizedTPEGCodeGenerator {
   private ruleIndex: Map<string, number> = new Map();
   /** Declaration index of the rule currently being generated. */
   private currentRuleIndex = -1;
+  /** Name of the rule currently being generated -- used only as the
+   * `description` argument to `regexFusedMap` for a fusion root found
+   * inside it (see `generateFusedExpression`); every fusion root within
+   * one rule shares that rule's name as its failure-message description,
+   * matching whole-rule fusion's existing description exactly. */
+  private currentRuleName = "";
   private templateCache = new CodeTemplateCache();
   /** Converged FIRST-set analysis for the grammar currently being
    * generated, computed once per `generateGrammar` call when
@@ -241,15 +293,24 @@ export class OptimizedTPEGCodeGenerator {
    * Computed once per `generateGrammar` call when `enableMemoization` is
    * on; `null` otherwise. */
   private reentrancyAnalysis: ReentrancyAnalysis | null = null;
-  /** Names of rules `generateGrammar` decided to compile via
-   * `regexFused(...)` instead of a combinator tree -- computed once per
-   * `generateGrammar` call (empty when `enableRegexFusion` is off) and
-   * consulted by both `generateOptimizedImports` (to import
-   * `regexFused`/`map` instead of walking a fused rule's AST for its
-   * normal combinator set) and `generateOptimizedRule` (to actually emit
-   * the fused code), so the two passes can never disagree about which
-   * rules are fused. */
-  private fusedRuleNames: Set<string> = new Set();
+  /** AST nodes (by identity) `generateGrammar` decided to compile via
+   * `regexFusedMap(...)` instead of a combinator tree -- computed once
+   * per `generateGrammar` call by `./regex-fusion.ts`'s `planFusion`
+   * (empty when `enableRegexFusion` is off). A node in this set is
+   * always the HIGHEST fusable node on its path (see `planFusion`'s doc
+   * comment): under `regexFusionScope: "rule"` that's always (at most)
+   * one whole `rule.pattern` per rule, matching this module's original
+   * whole-rule-only behavior exactly; under `"subtree"` it can be any
+   * node reachable from a rule's pattern, including one reached through
+   * a `LabeledExpression`/`ActionExpression`.
+   *
+   * Consulted by BOTH `generateOptimizedExpression` (to emit the fused
+   * code the moment it reaches a root, instead of recursing further) and
+   * `collectUsedCombinators` (to import `regexFusedMap` instead of
+   * walking a fused node's subtree for its normal combinator set), so
+   * the two passes can never disagree about what's fused -- both simply
+   * ask the same `Set.has(expr)` question. */
+  private fusionRoots: ReadonlySet<Expression> = new Set();
 
   constructor(options: OptimizedCodeGenOptions = { language: "typescript" }) {
     this.options = {
@@ -262,6 +323,9 @@ export class OptimizedTPEGCodeGenerator {
       includeMonitoring: options.includeMonitoring ?? false,
       enablePredictiveDispatch: options.enablePredictiveDispatch ?? true,
       enableRegexFusion: options.enableRegexFusion ?? false,
+      regexFusionScope: options.regexFusionScope ?? "rule",
+      regexFusionMinWeight: options.regexFusionMinWeight ?? MIN_FUSION_WEIGHT,
+      enableCharClassRun: options.enableCharClassRun ?? true,
     };
   }
 
@@ -276,7 +340,7 @@ export class OptimizedTPEGCodeGenerator {
     this.ruleNames.clear();
     this.ruleIndex.clear();
     this.templateCache.clear();
-    this.fusedRuleNames.clear();
+    this.fusionRoots = new Set();
     this.firstSetAnalysis =
       this.options.enablePredictiveDispatch || this.options.enableRegexFusion
         ? analyzeFirstSets(grammar)
@@ -285,12 +349,10 @@ export class OptimizedTPEGCodeGenerator {
       ? analyzeReentrancy(grammar)
       : null;
     if (this.options.enableRegexFusion && this.firstSetAnalysis) {
-      const analysis = this.firstSetAnalysis;
-      for (const rule of grammar.rules) {
-        if (isRuleFusable(rule, analysis)) {
-          this.fusedRuleNames.add(rule.name);
-        }
-      }
+      this.fusionRoots = planFusion(grammar, this.firstSetAnalysis, {
+        scope: this.options.regexFusionScope,
+        minWeight: this.options.regexFusionMinWeight,
+      }).roots;
     }
 
     const performanceAnalysis = analyzeGrammarPerformance(grammar);
@@ -317,6 +379,7 @@ export class OptimizedTPEGCodeGenerator {
     const transformsByRuleName = collectTransformFunctions(grammar);
     grammar.rules.forEach((rule, index) => {
       this.currentRuleIndex = index;
+      this.currentRuleName = rule.name;
       const ruleCode = this.generateOptimizedRule(
         rule,
         transformsByRuleName.get(rule.name),
@@ -366,13 +429,14 @@ export class OptimizedTPEGCodeGenerator {
     // Analyze which combinators are actually needed
     const usedCombinators = new Set<string>();
 
-    // A fused rule (see `fusedRuleNames`'s doc comment) is compiled to
-    // `map(regexFused(...), ...)` in `generateOptimizedRule`, not to any
-    // of the combinators `collectUsedCombinators` would find by walking
-    // its AST -- skip that walk for fused rules so this pass and the
-    // actual per-rule codegen never disagree about what a rule needs.
+    // `collectUsedCombinators` itself checks `this.fusionRoots` at every
+    // node (see its doc comment) and stops descending -- adding
+    // `regexFusedMap` instead of whatever combinators a fused node's
+    // subtree would otherwise need -- so this pass and the actual
+    // per-rule codegen (`generateOptimizedExpression`, same check) can
+    // never disagree about what's fused, at rule level OR sub-expression
+    // level.
     grammar.rules.forEach((rule, index) => {
-      if (this.fusedRuleNames.has(rule.name)) return;
       this.collectUsedCombinators(
         rule.pattern,
         usedCombinators,
@@ -380,10 +444,6 @@ export class OptimizedTPEGCodeGenerator {
         index === 0,
       );
     });
-    if (this.fusedRuleNames.size > 0) {
-      usedCombinators.add("regexFused");
-      usedCombinators.add("map");
-    }
 
     // Add performance imports if needed. memoize and commitAtTopLevel
     // both live in tpeg-combinator, not tpeg-core, so they must not also
@@ -448,6 +508,18 @@ export class OptimizedTPEGCodeGenerator {
     currentRuleIndex: number,
     isStartRuleTopLevel = false,
   ): void {
+    // A fusion root (`this.fusionRoots`, populated by `planFusion` in
+    // `generateGrammar`) compiles to one `regexFusedMap(...)` call in
+    // `generateOptimizedExpression` -- checked FIRST, before the switch,
+    // so it applies uniformly whether `expr` is a whole rule's pattern
+    // (`regexFusionScope: "rule"`) or an interior node reached through
+    // recursion (`"subtree"`). Not walking further into `expr` here is
+    // what keeps this pass and `generateOptimizedExpression` in
+    // lockstep: neither one ever looks at what's inside a fused node.
+    if (this.fusionRoots.has(expr)) {
+      combinators.add("regexFusedMap");
+      return;
+    }
     switch (expr.type) {
       case "StringLiteral":
         combinators.add("literal");
@@ -517,20 +589,39 @@ export class OptimizedTPEGCodeGenerator {
         }
         break;
       case "Star":
-        combinators.add("zeroOrMore");
-        this.collectUsedCombinators(
-          expr.expression,
-          combinators,
-          currentRuleIndex,
-        );
+        // Mirrors generateOptimizedExpression's Star case exactly (same
+        // option check, same `tryGenerateCharClassRunCode` call), so the
+        // import set and the generated code can never disagree.
+        if (
+          this.options.enableCharClassRun &&
+          tryGenerateCharClassRunCode(expr.expression, 0) !== null
+        ) {
+          combinators.add("charClassRun");
+        } else {
+          combinators.add("zeroOrMore");
+          this.collectUsedCombinators(
+            expr.expression,
+            combinators,
+            currentRuleIndex,
+          );
+        }
         break;
       case "Plus":
-        combinators.add("oneOrMore");
-        this.collectUsedCombinators(
-          expr.expression,
-          combinators,
-          currentRuleIndex,
-        );
+        // Mirrors generateOptimizedExpression's Plus case -- see the
+        // Star case's comment just above.
+        if (
+          this.options.enableCharClassRun &&
+          tryGenerateCharClassRunCode(expr.expression, 1) !== null
+        ) {
+          combinators.add("charClassRun");
+        } else {
+          combinators.add("oneOrMore");
+          this.collectUsedCombinators(
+            expr.expression,
+            combinators,
+            currentRuleIndex,
+          );
+        }
         break;
       case "Optional":
         combinators.add("optional");
@@ -578,7 +669,8 @@ export class OptimizedTPEGCodeGenerator {
           currentRuleIndex,
         );
         break;
-      case "Quantified":
+      case "Quantified": {
+        const quantified = expr as Quantified;
         // Add the quantified combinator for quantified expressions
         combinators.add("quantified");
         // Also add basic combinators that might be used as fallbacks
@@ -586,12 +678,30 @@ export class OptimizedTPEGCodeGenerator {
         combinators.add("oneOrMore");
         combinators.add("optional");
         combinators.add("choice");
-        this.collectUsedCombinators(
-          expr.expression,
-          combinators,
-          currentRuleIndex,
-        );
+        // {0,}/{1,} over a bare CharacterClass collapses to
+        // `charClassRun` instead (mirrors `generateQuantifiedCode`'s
+        // decision exactly, via the same call) -- add its import, and
+        // skip recursing into the CharacterClass itself so it doesn't
+        // ALSO add an unused charClass/negatedCharClass import.
+        const usesRun =
+          this.options.enableCharClassRun &&
+          quantified.max === undefined &&
+          (quantified.min === 0 || quantified.min === 1) &&
+          tryGenerateCharClassRunCode(
+            quantified.expression,
+            quantified.min as 0 | 1,
+          ) !== null;
+        if (usesRun) {
+          combinators.add("charClassRun");
+        } else {
+          this.collectUsedCombinators(
+            quantified.expression,
+            combinators,
+            currentRuleIndex,
+          );
+        }
         break;
+      }
     }
   }
 
@@ -603,9 +713,15 @@ export class OptimizedTPEGCodeGenerator {
     transformFn?: TransformFunction,
     isStartRule = false,
   ): string {
-    const innerCode = this.fusedRuleNames.has(rule.name)
-      ? this.generateFusedRule(rule)
-      : this.generateOptimizedExpression(rule.pattern, isStartRule);
+    // `generateOptimizedExpression` itself checks `this.fusionRoots`
+    // first thing (see its doc comment) -- whether `rule.pattern` is a
+    // fusion root (`regexFusionScope: "rule"`, or a whole rule that also
+    // happens to be the maximal fusable node under `"subtree"`) is
+    // decided there, uniformly with every interior node.
+    const innerCode = this.generateOptimizedExpression(
+      rule.pattern,
+      isStartRule,
+    );
 
     // An explicit `@memoize` annotation wins over the automatic
     // reentrancy-based trigger below (and applies regardless of
@@ -643,21 +759,26 @@ export class OptimizedTPEGCodeGenerator {
   }
 
   /**
-   * Emits `map(regexFused(source, description), (m) => { const g =
-   * m.groups; return <valueExpr>; })` for a rule `fusedRuleNames` already
-   * confirmed fusable -- `./regex-fusion.ts`'s `emitFusedRule` builds
-   * both `source` (regex pattern text) and `valueExpr` (a JS expression,
-   * as source text, reconstructing the rule's original value shape from
-   * `m.groups`) from the same AST subtree, so the value produced here is
-   * byte-identical to what the unfused combinator tree would have
-   * produced -- see that module's doc comment's "Shape reconstruction"
-   * section. `JSON.stringify` on `source`/`rule.name` is what safely
-   * embeds them as JS string literals regardless of what characters
-   * they contain (backslashes from `\u{...}` escapes, quotes, etc.).
+   * Emits `regexFusedMap(source, description, (m) => <valueExpr>)` for a
+   * node `this.fusionRoots` already confirmed fusable (and, under
+   * `regexFusionScope: "subtree"`, profitable) -- `./regex-fusion.ts`'s
+   * `emitFusedExpression` builds both `source` (regex pattern text) and
+   * `valueExpr` (a JS expression, as source text, reading `m` -- the raw
+   * `RegExpExecArray` `regexFusedMap`'s callback receives -- to
+   * reconstruct the node's original value shape) from the same AST
+   * subtree, so the value produced here is byte-identical to what the
+   * unfused combinator tree would have produced -- see that module's doc
+   * comment's "Shape reconstruction" section. `description` is
+   * `this.currentRuleName`: every fusion root found while generating one
+   * rule shares that rule's name as its failure-message description,
+   * same as whole-rule fusion always has. `JSON.stringify` on
+   * `source`/`description` is what safely embeds them as JS string
+   * literals regardless of what characters they contain (backslashes
+   * from `\u{...}` escapes, quotes, etc.).
    */
-  private generateFusedRule(rule: RuleDefinition): string {
-    const { source, valueExpr } = emitFusedRule(rule);
-    return `map(regexFused(${JSON.stringify(source)}, ${JSON.stringify(rule.name)}), (m) => { const g = m.groups; return ${valueExpr}; })`;
+  private generateFusedExpression(expr: Expression): string {
+    const { source, valueExpr } = emitFusedExpression(expr);
+    return `regexFusedMap(${JSON.stringify(source)}, ${JSON.stringify(this.currentRuleName)}, (m) => ${valueExpr})`;
   }
 
   /**
@@ -676,6 +797,19 @@ export class OptimizedTPEGCodeGenerator {
     expr: Expression,
     isStartRuleTopLevelSequence = false,
   ): string {
+    // Checked FIRST, ahead of the template cache below: a fusion root
+    // (`this.fusionRoots`, see its doc comment) is emitted directly via
+    // `generateFusedExpression` and never descended into any further --
+    // this is what makes `expr` the HIGHEST fusable node on its path
+    // actually get compiled as one `regexFusedMap` call rather than
+    // being walked node-by-node into the normal combinator tree. Pure
+    // function of `expr`'s identity (computed once by `planFusion` in
+    // `generateGrammar`), so bypassing the cache costs nothing -- each
+    // root is reached at most once anyway, since the AST is a tree.
+    if (this.fusionRoots.has(expr)) {
+      return this.generateFusedExpression(expr);
+    }
+
     // Use object identity for caching when possible. Identifier codegen
     // depends on this.currentRuleIndex (whether the reference needs a
     // `lazy` wrapper), so it must be part of the key - otherwise the same
@@ -704,10 +838,20 @@ export class OptimizedTPEGCodeGenerator {
           return this.generateOptimizedChoice(expr as Choice);
         case "Group":
           return this.generateOptimizedExpression((expr as Group).expression);
-        case "Star":
+        case "Star": {
+          const run = this.options.enableCharClassRun
+            ? tryGenerateCharClassRunCode((expr as Star).expression, 0)
+            : null;
+          if (run !== null) return run;
           return `zeroOrMore(${this.generateOptimizedExpression((expr as Star).expression)})`;
-        case "Plus":
+        }
+        case "Plus": {
+          const run = this.options.enableCharClassRun
+            ? tryGenerateCharClassRunCode((expr as Plus).expression, 1)
+            : null;
+          if (run !== null) return run;
           return `oneOrMore(${this.generateOptimizedExpression((expr as Plus).expression)})`;
+        }
         case "Optional":
           return `optional(${this.generateOptimizedExpression((expr as Optional).expression)})`;
         case "Quantified":
@@ -921,7 +1065,7 @@ export class OptimizedTPEGCodeGenerator {
 
   private generateQuantified(expr: Quantified): string {
     const inner = this.generateOptimizedExpression(expr.expression);
-    return generateQuantifiedCode(expr, inner);
+    return generateQuantifiedCode(expr, inner, this.options.enableCharClassRun);
   }
 
   private generateLabeledExpression(expr: LabeledExpression): string {

@@ -280,19 +280,54 @@ export const generateStringLiteralCode = (
 ): string => `literal("${intern(escapeStringLiteral(value))}")`;
 
 /**
- * Generates a `charClass(...)`/`negatedCharClass(...)` call for a
- * `CharacterClass` node. Identical between the base and optimized
- * generators, so shared here rather than duplicated.
+ * Renders a `CharacterClass` node's `ranges` as the comma-joined argument
+ * list `charClass(...)`/`charClassRun(...)` both expect (without the
+ * enclosing call) -- shared by `generateCharacterClassCode` and
+ * `tryGenerateCharClassRunCode` so the two can never drift on how a
+ * range/single-char spec gets escaped.
  */
-export const generateCharacterClassCode = (expr: CharacterClass): string => {
-  const ranges = expr.ranges
+const characterClassRangesCode = (expr: CharacterClass): string =>
+  expr.ranges
     .map((range) =>
       range.end
         ? `["${escapeStringLiteral(range.start)}", "${escapeStringLiteral(range.end)}"]`
         : `"${escapeStringLiteral(range.start)}"`,
     )
     .join(", ");
+
+/**
+ * Generates a `charClass(...)`/`negatedCharClass(...)` call for a
+ * `CharacterClass` node. Identical between the base and optimized
+ * generators, so shared here rather than duplicated.
+ */
+export const generateCharacterClassCode = (expr: CharacterClass): string => {
+  const ranges = characterClassRangesCode(expr);
   return expr.negated ? `negatedCharClass(${ranges})` : `charClass(${ranges})`;
+};
+
+/**
+ * Generates a `charClassRun(...)` call (`packages/core/src/char-class.ts`)
+ * collapsing a `Star`/`Plus`/`Quantified{0,}`/`Quantified{1,}` whose
+ * repeated element is a bare `CharacterClass` into a single scan -- one
+ * `ParseSuccess` and one exact-size array instead of the repetition
+ * combinator driving `charClass`/`negatedCharClass` one character at a
+ * time (see `charClassRun`'s own doc comment for why this produces the
+ * EXACT same value `zeroOrMore`/`oneOrMore` over the same class would).
+ *
+ * Returns `null` when `inner` isn't a bare `CharacterClass` -- nothing to
+ * do here, the caller falls back to generating `inner` normally and
+ * wrapping it in `zeroOrMore`/`oneOrMore`. Shared between `codegen.ts`
+ * and `codegen-optimized.ts`, and also consulted by both generators'
+ * `collectUsedCombinators` so the import decision and the codegen
+ * decision can never disagree (they call this exact function).
+ */
+export const tryGenerateCharClassRunCode = (
+  inner: Expression,
+  min: 0 | 1,
+): string | null => {
+  if (inner.type !== "CharacterClass") return null;
+  const ranges = characterClassRangesCode(inner);
+  return `charClassRun([${ranges}], ${min}${inner.negated ? ", true" : ""})`;
 };
 
 /**
@@ -340,16 +375,31 @@ export const generateQualifiedIdentifierCode = (
  * Generates the combinator call for a `Quantified` node, given its
  * already-generated inner expression. Identical between the base and
  * optimized generators (only how `inner` itself was produced differs), so
- * shared here rather than duplicated.
+ * shared here rather than duplicated. `enableCharClassRun` mirrors
+ * `CodeGenOptions`/`OptimizedCodeGenOptions`'s option of the same name
+ * (default `true`) -- both generators pass their own resolved option
+ * value through here for the `{0,}`/`{1,}` cases, which are the only
+ * ones `tryGenerateCharClassRunCode` can apply to.
  */
 export const generateQuantifiedCode = (
   expr: Quantified,
   inner: string,
+  enableCharClassRun = true,
 ): string => {
   if (expr.max === undefined) {
     // {n,} - at least n
-    if (expr.min === 0) return `zeroOrMore(${inner})`;
-    if (expr.min === 1) return `oneOrMore(${inner})`;
+    if (expr.min === 0) {
+      const run = enableCharClassRun
+        ? tryGenerateCharClassRunCode(expr.expression, 0)
+        : null;
+      return run ?? `zeroOrMore(${inner})`;
+    }
+    if (expr.min === 1) {
+      const run = enableCharClassRun
+        ? tryGenerateCharClassRunCode(expr.expression, 1)
+        : null;
+      return run ?? `oneOrMore(${inner})`;
+    }
     return `quantified(${inner}, ${expr.min})`;
   }
 
@@ -393,6 +443,25 @@ export interface CodeGenOptions {
   includeImports?: boolean;
   /** Generate with type annotations */
   includeTypes?: boolean;
+  /**
+   * Emit `charClassRun(...)` (`packages/core/src/char-class.ts`) instead
+   * of `zeroOrMore`/`oneOrMore` driving `charClass`/`negatedCharClass`
+   * one character at a time, for a `Star`/`Plus`/`Quantified{0,}`/
+   * `Quantified{1,}` whose repeated element is a bare `CharacterClass`.
+   * See `tryGenerateCharClassRunCode`'s doc comment for why this produces
+   * the exact same value.
+   *
+   * Default `true`, like `enablePredictiveDispatch`
+   * (`OptimizedCodeGenOptions`) and unlike this package's opt-in AST
+   * rewrites: the emitted value is byte-identical to the unfused shape
+   * (no proof obligation the way `enableRegexFusion` has, and no
+   * "does an ancestor's action read this rule's value shape" caveat the
+   * way `./ast-optimize.ts`'s rewrites have), so there's no risk surface
+   * to gate behind an opt-in. Exists as a real (not synthetic) toggle
+   * mainly so `packages/parser/bench/`'s harness can isolate the axis --
+   * ordinary callers should never need to set this.
+   */
+  enableCharClassRun?: boolean;
 }
 
 /**
@@ -424,6 +493,7 @@ export class TPEGCodeGenerator {
       namePrefix: options.namePrefix ?? "",
       includeImports: options.includeImports ?? true,
       includeTypes: options.includeTypes ?? true,
+      enableCharClassRun: options.enableCharClassRun ?? true,
     };
   }
 
@@ -698,11 +768,19 @@ export class TPEGCodeGenerator {
   }
 
   private generateStar(expr: Star): string {
+    const run = this.options.enableCharClassRun
+      ? tryGenerateCharClassRunCode(expr.expression, 0)
+      : null;
+    if (run !== null) return run;
     const inner = this.generateExpression(expr.expression);
     return `zeroOrMore(${inner})`;
   }
 
   private generatePlus(expr: Plus): string {
+    const run = this.options.enableCharClassRun
+      ? tryGenerateCharClassRunCode(expr.expression, 1)
+      : null;
+    if (run !== null) return run;
     const inner = this.generateExpression(expr.expression);
     return `oneOrMore(${inner})`;
   }
@@ -714,7 +792,7 @@ export class TPEGCodeGenerator {
 
   private generateQuantified(expr: Quantified): string {
     const inner = this.generateExpression(expr.expression);
-    return generateQuantifiedCode(expr, inner);
+    return generateQuantifiedCode(expr, inner, this.options.enableCharClassRun);
   }
 
   private generatePositiveLookahead(expr: PositiveLookahead): string {
@@ -811,20 +889,40 @@ export class TPEGCodeGenerator {
         }
         break;
       case "Star":
-        combinators.add("zeroOrMore");
-        this.collectUsedCombinators(
-          expr.expression,
-          combinators,
-          currentRuleIndex,
-        );
+        // Mirrors generateStar's decision exactly (same option check,
+        // same `tryGenerateCharClassRunCode` call), so the import set and
+        // the generated code can never disagree: a `charClassRun` call
+        // with no import, or an unused `zeroOrMore` import.
+        if (
+          this.options.enableCharClassRun &&
+          tryGenerateCharClassRunCode(expr.expression, 0) !== null
+        ) {
+          combinators.add("charClassRun");
+        } else {
+          combinators.add("zeroOrMore");
+          this.collectUsedCombinators(
+            expr.expression,
+            combinators,
+            currentRuleIndex,
+          );
+        }
         break;
       case "Plus":
-        combinators.add("oneOrMore");
-        this.collectUsedCombinators(
-          expr.expression,
-          combinators,
-          currentRuleIndex,
-        );
+        // Mirrors generatePlus's decision exactly -- see the Star case's
+        // comment just above.
+        if (
+          this.options.enableCharClassRun &&
+          tryGenerateCharClassRunCode(expr.expression, 1) !== null
+        ) {
+          combinators.add("charClassRun");
+        } else {
+          combinators.add("oneOrMore");
+          this.collectUsedCombinators(
+            expr.expression,
+            combinators,
+            currentRuleIndex,
+          );
+        }
         break;
       case "Optional":
         combinators.add("optional");
@@ -874,11 +972,25 @@ export class TPEGCodeGenerator {
         break;
       case "Quantified": {
         const quantified = expr as Quantified;
-        // Add the appropriate combinator based on quantification
+        // Add the appropriate combinator based on quantification. The
+        // {n,} branch mirrors generateQuantifiedCode's decision exactly
+        // (same `tryGenerateCharClassRunCode` calls) for min 0/1 -- see
+        // the Star/Plus cases' comment above.
+        let usesRun = false;
         if (quantified.max === undefined) {
-          if (quantified.min === 0) combinators.add("zeroOrMore");
-          else if (quantified.min === 1) combinators.add("oneOrMore");
-          else combinators.add("quantified");
+          if (quantified.min === 0) {
+            usesRun =
+              this.options.enableCharClassRun &&
+              tryGenerateCharClassRunCode(quantified.expression, 0) !== null;
+            combinators.add(usesRun ? "charClassRun" : "zeroOrMore");
+          } else if (quantified.min === 1) {
+            usesRun =
+              this.options.enableCharClassRun &&
+              tryGenerateCharClassRunCode(quantified.expression, 1) !== null;
+            combinators.add(usesRun ? "charClassRun" : "oneOrMore");
+          } else {
+            combinators.add("quantified");
+          }
         } else if (quantified.min === quantified.max) {
           if (quantified.min !== 1) combinators.add("quantified");
         } else {
@@ -888,11 +1000,13 @@ export class TPEGCodeGenerator {
             combinators.add("quantified");
           }
         }
-        this.collectUsedCombinators(
-          quantified.expression,
-          combinators,
-          currentRuleIndex,
-        );
+        if (!usesRun) {
+          this.collectUsedCombinators(
+            quantified.expression,
+            combinators,
+            currentRuleIndex,
+          );
+        }
         break;
       }
     }

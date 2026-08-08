@@ -44,6 +44,14 @@ Options:
                              tree (see packages/core/src/regex-fused.ts).
                              Requires --optimize. Off by default pending
                              more real-world grammar coverage.
+      --regex-fusion-subtree Like --regex-fusion (implies it), but also
+                             fuses any maximal fusable SUB-expression, not
+                             just a rule's entire pattern -- reaches
+                             non-terminal-free fragments sitting behind a
+                             label or a semantic action, which disqualify
+                             the whole rule from --regex-fusion alone (see
+                             packages/parser/src/regex-fusion.ts's
+                             planFusion). Requires --optimize.
       --auto-cut             Insert cut/commit at provably safe positions
                              in ordered choices (see
                              packages/parser/src/ast-optimize.ts's
@@ -70,6 +78,7 @@ Examples:
   tpeg grammar.tpeg --optimize --name-prefix my_ > parser.ts
   tpeg grammar.tpeg --optimize --ast-optimize > parser.ts
   tpeg grammar.tpeg --optimize --regex-fusion --auto-cut > parser.ts
+  tpeg grammar.tpeg --optimize --regex-fusion-subtree > parser.ts
 `;
 
 interface CliOptions {
@@ -78,6 +87,7 @@ interface CliOptions {
   optimize: boolean;
   astOptimize: boolean;
   regexFusion: boolean;
+  regexFusionSubtree: boolean;
   autoCut: boolean;
   promoteCuts: boolean;
   types: boolean;
@@ -97,6 +107,7 @@ function parseCliArgs(argv: string[]): {
       optimize: { type: "boolean", default: false },
       "ast-optimize": { type: "boolean", default: false },
       "regex-fusion": { type: "boolean", default: false },
+      "regex-fusion-subtree": { type: "boolean", default: false },
       "auto-cut": { type: "boolean", default: false },
       "promote-cuts": { type: "boolean", default: false },
       "no-types": { type: "boolean", default: false },
@@ -114,7 +125,19 @@ function parseCliArgs(argv: string[]): {
         : {}),
       optimize: values.optimize ?? false,
       astOptimize: values["ast-optimize"] ?? false,
-      regexFusion: values["regex-fusion"] ?? false,
+      // `--regex-fusion-subtree` implies `--regex-fusion`: no one passing
+      // the more aggressive flag wants fusion to end up disabled, so
+      // requiring both separately would be pure friction. NOT because
+      // "subtree" is a strict superset of "rule" -- it isn't (see
+      // `planFusion`'s doc comment): "subtree" scope weight-gates EVERY
+      // candidate, including a whole rule's own pattern, so a rule that
+      // "rule" scope fuses unconditionally (e.g. a single bare literal,
+      // weight 1) can end up UNFUSED under "subtree" if it doesn't clear
+      // `MIN_FUSION_WEIGHT` -- a deliberate correction, not a regression.
+      regexFusion:
+        (values["regex-fusion"] ?? false) ||
+        (values["regex-fusion-subtree"] ?? false),
+      regexFusionSubtree: values["regex-fusion-subtree"] ?? false,
       autoCut: values["auto-cut"] ?? false,
       promoteCuts: values["promote-cuts"] ?? false,
       types: !(values["no-types"] ?? false),
@@ -182,7 +205,7 @@ export function run(argv: string[]): number {
 
   if (options.regexFusion && !options.optimize) {
     process.stderr.write(
-      "error: --regex-fusion requires --optimize (the standard generator has no such option)\n",
+      "error: --regex-fusion/--regex-fusion-subtree requires --optimize (the standard generator has no such option)\n",
     );
     return 1;
   }
@@ -196,6 +219,19 @@ export function run(argv: string[]): number {
   // choice's alternatives into disjoint-prefixed sequences that only then
   // become cut candidates, so running cuts second finds a superset of the
   // cut sites running them first would.
+  //
+  // Regex fusion (`--regex-fusion`/`--regex-fusion-subtree`) has no step
+  // here at all -- it isn't an AST rewrite, it's entirely internal to
+  // `generateOptimizedTypeScriptParser` (`packages/parser/src/regex-
+  // fusion.ts`'s `planFusion`, consulted while walking the FINAL grammar
+  // below). It necessarily runs last relative to every rewrite in this
+  // function: fusing before `applyAstOptimizations`/`insertAutomaticCuts`
+  // ran would fuse a `Choice` alternative into one opaque leaf before
+  // left-factoring could restructure it or `insertAutomaticCuts` could
+  // find a cut site inside it -- see `packages/parser/src/codegen-
+  // optimized.ts`'s `generateOptimizedExpression` for where the fusion
+  // check actually happens (after these AST passes have already produced
+  // `grammar` below, at codegen time, not before it).
   const astOptimized = options.astOptimize
     ? applyAstOptimizations(parseResult.val)
     : parseResult.val;
@@ -226,6 +262,12 @@ export function run(argv: string[]): number {
     ? generateOptimizedTypeScriptParser(grammar, {
         ...sharedOptions,
         ...(options.regexFusion ? { enableRegexFusion: true } : {}),
+        // `regexFusionScope` defaults to `"rule"` in the codegen itself
+        // (byte-identical to pre-Pillar-9-Phase-2 output) -- only pass
+        // `"subtree"` explicitly when `--regex-fusion-subtree` was given.
+        ...(options.regexFusionSubtree
+          ? { regexFusionScope: "subtree" as const }
+          : {}),
       })
     : generateTypeScriptParser(grammar, sharedOptions);
 

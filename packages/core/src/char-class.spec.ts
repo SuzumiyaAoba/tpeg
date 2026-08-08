@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { charClass, negatedCharClass } from "./char-class";
+import { charClass, charClassRun, negatedCharClass } from "./char-class";
+import { oneOrMore, zeroOrMore } from "./repetition";
 
 describe("charClass", () => {
   it("should parse a single character", () => {
@@ -202,6 +203,128 @@ describe("charClass", () => {
     // Range from 😀 (1F600) to 🤣 (1F923)
     const result = charClass(["😀", "🤣"])(input, pos);
     expect(result.success).toBe(false);
+  });
+
+  // Regression battery for the `charCodeAt`-first hot path
+  // (`makeCharClassParser`): the only place its decode can diverge from
+  // the old `getCharAt` (`codePointAt` + `String.fromCodePoint`, then a
+  // re-decode) is an UNPAIRED surrogate. Each case below is one code
+  // unit wide and must be treated as exactly that -- one array element,
+  // `next` advancing by 1 -- never merged with, or split from, a
+  // neighboring code unit.
+  describe("unpaired surrogate handling (hot-path decode correctness)", () => {
+    it("treats a lone lead surrogate at end-of-input as one code unit", () => {
+      // Matched via a class covering the whole lead-surrogate range so
+      // the non-ASCII / cold decode path is exercised.
+      const result = charClass(["\uD800", "\uDBFF"])("\uD800", 0);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("\uD800");
+        expect(result.next).toBe(1);
+      }
+    });
+
+    it("treats a lead surrogate followed by a non-trail character as one code unit (does not merge with the next character)", () => {
+      const result = charClass(["\uD800", "\uDBFF"])("\uD800X", 0);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("\uD800");
+        expect(result.next).toBe(1);
+      }
+    });
+
+    it("treats a lone trail surrogate as one code unit", () => {
+      const result = charClass(["\uDC00", "\uDFFF"])("\uDC00", 0);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("\uDC00");
+        expect(result.next).toBe(1);
+      }
+    });
+
+    it("still decodes a well-formed surrogate pair as a single 2-code-unit character", () => {
+      const result = charClass(["😀", "🤣"])("😁", 0);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("😁");
+        expect(result.next).toBe(2);
+      }
+    });
+  });
+});
+
+describe("charClassRun", () => {
+  it("returns the same array, .next, and success as oneOrMore(charClass(...)) across a mixed corpus (min=1)", () => {
+    const specs: [string, string] = ["0", "9"];
+    const inputs = ["", "5", "42", "42abc", "abc", "1234567890x"];
+    for (const input of inputs) {
+      const viaRepetition = oneOrMore(charClass(specs))(input, 0);
+      const viaRun = charClassRun([specs], 1)(input, 0);
+      expect(viaRun.success).toBe(viaRepetition.success);
+      if (viaRepetition.success && viaRun.success) {
+        expect(viaRun.val).toEqual(viaRepetition.val);
+        expect(viaRun.next).toEqual(viaRepetition.next);
+      }
+    }
+  });
+
+  it("returns the same array, .next, and success as zeroOrMore(charClass(...)) across a mixed corpus (min=0), including the zero-match empty-array case", () => {
+    const specs: [string, string] = ["a", "z"];
+    const inputs = ["", "hello", "hello123", "123", "HELLO"];
+    for (const input of inputs) {
+      const viaRepetition = zeroOrMore(charClass(specs))(input, 0);
+      const viaRun = charClassRun([specs], 0)(input, 0);
+      expect(viaRun.success).toBe(true);
+      expect(viaRepetition.success).toBe(true);
+      if (viaRepetition.success && viaRun.success) {
+        expect(viaRun.val).toEqual(viaRepetition.val);
+        expect(viaRun.next).toEqual(viaRepetition.next);
+      }
+    }
+  });
+
+  it("matches zeroOrMore(negatedCharClass(...)) when negated: true, across astral input", () => {
+    const input = '"🌍 says hello 😀"x';
+    const viaRepetition = zeroOrMore(negatedCharClass('"'))(input, 1);
+    const viaRun = charClassRun(['"'], 0, true)(input, 1);
+    expect(viaRepetition.success).toBe(true);
+    expect(viaRun.success).toBe(true);
+    if (viaRepetition.success && viaRun.success) {
+      expect(viaRun.val).toEqual(viaRepetition.val);
+      expect(viaRun.next).toEqual(viaRepetition.next);
+      // Sanity: the run should have stopped exactly at the closing quote.
+      expect(input[viaRun.next]).toBe('"');
+    }
+  });
+
+  it("fails with min=1 and zero matches, matching oneOrMore's first-failure behavior", () => {
+    const viaRepetition = oneOrMore(charClass(["0", "9"]))("abc", 0);
+    const viaRun = charClassRun([["0", "9"]], 1)("abc", 0);
+    expect(viaRepetition.success).toBe(false);
+    expect(viaRun.success).toBe(false);
+  });
+
+  it("succeeds with an empty array with min=0 and zero matches, matching zeroOrMore", () => {
+    const result = charClassRun([["0", "9"]], 0)("abc", 0);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toEqual([]);
+      expect(result.next).toBe(0);
+    }
+  });
+
+  it("reconstructs a per-code-point array across an astral (surrogate-pair) run, one array element per emoji", () => {
+    const emojis = "😀😁😂";
+    const viaRepetition = zeroOrMore(charClass(["😀", "🤣"]))(emojis, 0);
+    const viaRun = charClassRun([["😀", "🤣"]], 0)(emojis, 0);
+    expect(viaRepetition.success).toBe(true);
+    expect(viaRun.success).toBe(true);
+    if (viaRepetition.success && viaRun.success) {
+      expect(viaRun.val).toEqual(viaRepetition.val);
+      expect(viaRun.val.length).toBe(3);
+      expect(viaRun.next).toEqual(viaRepetition.next);
+      expect(viaRun.next).toBe(6); // 3 astral chars * 2 code units each
+    }
   });
 });
 

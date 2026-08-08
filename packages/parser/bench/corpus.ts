@@ -166,6 +166,38 @@ export function generateKeywordCorpus(count: number, seed = 0): string {
 }
 
 /**
+ * A config-file-shaped document of roughly `targetLength` characters --
+ * matches `BENCH_INLINE_REGULAR_GRAMMAR` in `grammars.ts`: one `key =
+ * value` entry per line, `key` an identifier, `value` cycling through
+ * the grammar's two `val` alternatives (a quoted string, and a plain or
+ * decimal number, exercising `"-"? [0-9]+ ("." [0-9]+)?` fully across
+ * the cycle). Leading spaces before the key and around `=` exercise
+ * `entry`'s inline `[ \t\n\r]*` runs -- the exact sub-expressions
+ * `regexFusionScope: "subtree"` targets.
+ */
+export function generateInlineRegularCorpus(
+  targetLength: number,
+  seed = 0,
+): string {
+  const lines: string[] = [];
+  let length = 0;
+  let i = seed;
+  while (length < targetLength) {
+    // Matches `key = h:[a-zA-Z_] t:[a-zA-Z0-9_]* {...}` -- a letter,
+    // then letters/digits/underscores.
+    const key = `key_${i}`;
+    const kind = i % 3;
+    const value =
+      kind === 0 ? `"value${i}"` : kind === 1 ? `${i}` : `-${i}.${i % 10}`;
+    const line = `  ${key} = ${value}\n`;
+    lines.push(line);
+    length += line.length;
+    i++;
+  }
+  return lines.join("");
+}
+
+/**
  * Builds `count` inputs of (approximately) the same size/shape by calling
  * `generate(seed)` with `seed = 0, 1, 2, ...`.
  *

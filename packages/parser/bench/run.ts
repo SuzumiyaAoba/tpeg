@@ -22,6 +22,7 @@ import {
   DEFAULT_PATHOLOGICAL_DEPTH,
   generateChainInput,
   generateConfigCorpus,
+  generateInlineRegularCorpus,
   generateJsonCorpus,
   generateKeywordCorpus,
   generateMultiplicationChain,
@@ -35,6 +36,8 @@ import {
   BENCH_CUTTABLE_CONFIG_MEMOIZED_GRAMMAR,
   BENCH_CUTTABLE_CONFIG_MEMOIZED_ROOT_RULE,
   BENCH_CUTTABLE_CONFIG_ROOT_RULE,
+  BENCH_INLINE_REGULAR_GRAMMAR,
+  BENCH_INLINE_REGULAR_ROOT_RULE,
   BENCH_JSON_GRAMMAR,
   BENCH_JSON_ROOT_RULE,
   BENCH_KEYWORD_GRAMMAR,
@@ -98,6 +101,24 @@ const JSON_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
     },
   },
   {
+    // Pillar 9 Phase 1: `string`'s `[^"]*` and `number`'s `[0-9]+`
+    // collapse to a single `charClassRun(...)` scan instead of
+    // `zeroOrMore`/`oneOrMore` driving `charClass`/`negatedCharClass` one
+    // character at a time -- see `packages/core/src/char-class.ts`'s
+    // `charClassRun` doc comment. Isolated against the "predictive
+    // dispatch on, memoization off" arm directly above so its own
+    // leaf-invocation delta (moving into `collapsedInvocationsPerParse`
+    // instead) is visible independent of memoization/predictive dispatch.
+    label:
+      "optimized codegen, predictive dispatch on, charClassRun on, memoization off",
+    options: {
+      optimize: true,
+      enableMemoization: false,
+      enablePredictiveDispatch: true,
+      enableCharClassRun: true,
+    },
+  },
+  {
     // Pillar 4b: `string`/`number`/`boolean`/`nullLiteral` (everything
     // but `value`/`object`/`pair`/`array`, which reference other rules)
     // compile to a single `regexFused(...)` call each instead of a
@@ -133,6 +154,15 @@ const ARITHMETIC_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
   {
     label: "left-factored, no memoization",
     options: { optimize: false, leftFactor: true },
+  },
+  {
+    // Pillar 9 Phase 1: `number = [0-9]+` collapses to a single
+    // `charClassRun(...)` scan -- isolated against the "left-factored, no
+    // memoization" arm directly above so its own effect (leaf invocations
+    // moving into `collapsedInvocationsPerParse`) is visible independent
+    // of memoization/left-factoring.
+    label: "left-factored, charClassRun on",
+    options: { optimize: false, leftFactor: true, enableCharClassRun: true },
   },
   {
     label: "left-factored + memoization",
@@ -203,6 +233,21 @@ const CUTTABLE_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
       enablePredictiveDispatch: true,
     },
   },
+  {
+    // Pillar 9 Phase 1: `name`'s trailing `[a-zA-Z0-9_]*` and `value`'s /
+    // `text`'s `[^\n]*` each collapse to a single `charClassRun(...)`
+    // scan. Isolated against the "predictive dispatch on" arm directly
+    // above so its own effect is visible on its own.
+    label:
+      "optimized codegen, memoization on, auto-cut on, predictive dispatch on, charClassRun on",
+    options: {
+      optimize: true,
+      enableMemoization: true,
+      autoCut: true,
+      enablePredictiveDispatch: true,
+      enableCharClassRun: true,
+    },
+  },
 ];
 
 /**
@@ -228,7 +273,104 @@ const KEYWORD_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
       enablePredictiveDispatch: true,
     },
   },
+  {
+    // Pillar 9 Phase 1: `ident`'s trailing `[a-z0-9]*` collapses to a
+    // single `charClassRun(...)` scan. Isolated against the arm directly
+    // above so its own effect is visible on its own.
+    label:
+      "optimized codegen, predictive dispatch on, charClassRun on, memoization off",
+    options: {
+      optimize: true,
+      enableMemoization: false,
+      enablePredictiveDispatch: true,
+      enableCharClassRun: true,
+    },
+  },
 ];
+
+/**
+ * Pillar 9 Phase 2's own gate/measurement arms, run only against
+ * `BENCH_INLINE_REGULAR_GRAMMAR` -- see that grammar's doc comment in
+ * `grammars.ts` for why every OTHER bench grammar's shape already
+ * factors regular fragments into their own rules, making
+ * `regexFusionScope: "subtree"` measure ~zero delta against them. Adding
+ * a "subtree" arm to `JSON_CONFIGS`/`ARITHMETIC_CONFIGS`/
+ * `CUTTABLE_CONFIGS`/`KEYWORD_CONFIGS` would report that same flat zero
+ * on each -- noise, not a finding -- so it's confined to the one grammar
+ * built specifically to exercise it.
+ *
+ * Arm 2 (`regexFusionScope: "rule"`) is NOT a zero baseline -- `val` has
+ * no `Identifier`/label/action, so whole-rule fusion already reaches it
+ * (see `BENCH_INLINE_REGULAR_GRAMMAR`'s doc comment in `grammars.ts`),
+ * giving arm 2 a real, if partial, leaf-invocation drop over arm 1. What
+ * `"rule"` scope structurally CANNOT reach, no matter how simple the
+ * fragment: `entry`'s four inline `[ \t\n\r]*` runs (`entry`'s own
+ * pattern contains `Identifier` references to `key`/`val`, disqualifying
+ * the whole rule) and `key`'s `t:[a-zA-Z0-9_]*` (behind a label and an
+ * `ActionExpression`). Arm 3's delta over arm 2 isolates exactly that --
+ * what sub-expression fusion adds beyond whatever whole-rule fusion could
+ * already do on this grammar. Arm 5 (subtree fusion + charClassRun
+ * together) shows whether the two are additive or whether charClassRun
+ * subsumes most of what subtree fusion would otherwise reach on the
+ * `Star`-shaped sites (both target the same `[ \t\n\r]*`/`[a-zA-Z0-9_]*`
+ * runs, via different mechanisms -- see `regex-fusion.ts`'s
+ * `MIN_FUSION_WEIGHT` doc comment for why `charClassRun` strictly
+ * dominates a fused `Star`/`Plus` over a bare `CharacterClass`
+ * specifically, which is most of what `entry`/`key` have; `val`'s fused
+ * `Choice` is untouched by `charClassRun` either way, since that
+ * combinator only ever replaces a repetition, not a whole rule).
+ */
+const INLINE_REGULAR_CONFIGS: { label: string; options: CompileRuleOptions }[] =
+  [
+    {
+      label: "optimized codegen, predictive dispatch on, memoization off",
+      options: {
+        optimize: true,
+        enableMemoization: false,
+        enablePredictiveDispatch: true,
+      },
+    },
+    {
+      label: "+ regex fusion (scope: rule) -- reaches val only, not entry/key",
+      options: {
+        optimize: true,
+        enableMemoization: false,
+        enablePredictiveDispatch: true,
+        enableRegexFusion: true,
+        regexFusionScope: "rule",
+      },
+    },
+    {
+      label: "+ regex fusion (scope: subtree) -- Pillar 9 Phase 2",
+      options: {
+        optimize: true,
+        enableMemoization: false,
+        enablePredictiveDispatch: true,
+        enableRegexFusion: true,
+        regexFusionScope: "subtree",
+      },
+    },
+    {
+      label: "+ charClassRun on (no regex fusion)",
+      options: {
+        optimize: true,
+        enableMemoization: false,
+        enablePredictiveDispatch: true,
+        enableCharClassRun: true,
+      },
+    },
+    {
+      label: "+ regex fusion (scope: subtree) + charClassRun on",
+      options: {
+        optimize: true,
+        enableMemoization: false,
+        enablePredictiveDispatch: true,
+        enableRegexFusion: true,
+        regexFusionScope: "subtree",
+        enableCharClassRun: true,
+      },
+    },
+  ];
 
 function section(title: string): void {
   console.log(`\n=== ${title} ===`);
@@ -437,6 +579,24 @@ function run(): void {
       timedInputs,
       warmupInputs,
       KEYWORD_CONFIGS,
+    );
+  }
+
+  {
+    const { timedInputs, warmupInputs } = buildInputSets(
+      200,
+      WARMUP_COUNT,
+      (seed) => generateInlineRegularCorpus(2_000, seed * 100),
+    );
+    runSection(
+      "Inline-regular config grammar (Pillar 9 Phase 2 target -- see " +
+        "grammars.ts: inline whitespace + a label/action-guarded key, " +
+        "the shape whole-rule fusion structurally cannot reach)",
+      BENCH_INLINE_REGULAR_GRAMMAR,
+      BENCH_INLINE_REGULAR_ROOT_RULE,
+      timedInputs,
+      warmupInputs,
+      INLINE_REGULAR_CONFIGS,
     );
   }
 

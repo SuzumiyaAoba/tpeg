@@ -88,6 +88,16 @@ describe("analyzeReentrancy", () => {
     // a0). a1..a9 are each reachable from more than one alternative of
     // their caller's Choice; a0 itself is the entry point, never
     // re-invoked within a single parse, so it's correctly excluded.
+    //
+    // Also the deliberate negative control for dominance minimization
+    // (reentrancy.ts's `minimizeByDominance`): a1..a9 each have exactly
+    // one caller (a(N-1)), so a naive "unique caller" check alone might
+    // seem to license dropping most of them -- but every one of those
+    // chains resolves to a0, which is NOT itself in the raw reentrant
+    // set (it's the sole entry point, never re-invoked), so NONE of
+    // a1..a9 are dominated. All nine keep their own memo table, exactly
+    // as this test asserts -- the pillar this module exists for must
+    // not regress.
     const grammar = parse(ACYCLIC_CHAIN_GRAMMAR);
     const { reentrantRules } = analyzeReentrancy(grammar);
     expect([...reentrantRules].sort()).toEqual([
@@ -103,22 +113,29 @@ describe("analyzeReentrancy", () => {
     ]);
   });
 
-  it("flags product/atom/number (not sum) for the unfactored arithmetic grammar", () => {
+  it("flags product alone (not atom/number/sum) for the unfactored arithmetic grammar, once dominance minimization is applied", () => {
     // sum = product "+" sum / product "-" sum / product
     // product = atom "*" product / atom "/" product / atom
     // atom = "(" sum ")" / number
-    // `product` is shared by all 3 alternatives of `sum`'s choice --
-    // reentrant. `atom` is shared by all 3 alternatives of `product`'s
-    // choice -- reentrant. `number` is only reachable through `atom`
-    // (transitively), so it also shows up: this analysis deliberately
-    // does not try to prove `number`'s redundancy is fully absorbed by
-    // memoizing `atom` alone (see reentrancy.ts's module doc comment --
-    // over-inclusion here is a safe, minor cost, not a soundness bug).
-    // `sum` itself is the entry point (never re-invoked in this
-    // grammar), so it's excluded.
+    //
+    // Raw overlap detection flags `product` (shared by all 3 alternatives
+    // of `sum`'s choice), `atom` (shared by all 3 alternatives of
+    // `product`'s choice), and `number` (transitively, only reachable
+    // through `atom`). `atom`'s only caller in the whole grammar is
+    // `product`; `number`'s only caller is `atom`; walking that chain
+    // resolves to `product`, which IS itself raw-reentrant and has no
+    // sole caller of its own (`sum` calls it 3 times, so `product`'s
+    // caller set is {sum} ∪ {product} (self-recursive) -- size 2, not
+    // unique) -- so `product` survives as the chain's root and both
+    // `atom`/`number` are dominated by it (see reentrancy.ts's
+    // "Dominance-based minimization" section for the soundness argument
+    // and an empirical validation that memoizing `product` alone
+    // produces the identical `leafInvocationsPerParse` as memoizing all
+    // three). `sum` itself is the entry point (never re-invoked in this
+    // grammar), so it was never in the raw set to begin with.
     const grammar = parse(UNFACTORED_ARITHMETIC_GRAMMAR);
     const { reentrantRules } = analyzeReentrancy(grammar);
-    expect([...reentrantRules].sort()).toEqual(["atom", "number", "product"]);
+    expect([...reentrantRules]).toEqual(["product"]);
   });
 
   it("flags nothing for JSON's FIRST-disjoint value choice", () => {
@@ -248,6 +265,96 @@ describe("analyzeReentrancy", () => {
       ],
     );
     const { reentrantRules } = analyzeReentrancy(grammar);
+    expect([...reentrantRules]).toEqual([]);
+  });
+
+  // Dominance minimization (`minimizeByDominance`) must only remove a
+  // rule whose EVERY caller resolves, via a chain of unique-caller
+  // edges, up to one already-reentrant ancestor. This is the negative
+  // case: `leaf` is reachable from two textually distinct rules (`x`
+  // and `y`), so no single ancestor's memoization can be relied on to
+  // bound every path to it -- `y`'s own invocation of `leaf` is entirely
+  // outside whatever redundancy `x`'s local optional-fallthrough
+  // (`(leaf)? leaf`) would shield.
+  it("does not dominate (and does not remove) a rule reachable from two distinct callers", () => {
+    const grammar = createGrammarDefinition(
+      "TwoCallers",
+      [],
+      [
+        createRuleDefinition(
+          "s",
+          createChoice([createIdentifier("x"), createIdentifier("y")]),
+        ),
+        createRuleDefinition(
+          "x",
+          createSequence([
+            createOptional(createIdentifier("leaf")),
+            createIdentifier("leaf"),
+            createStringLiteral("a", '"'),
+          ]),
+        ),
+        createRuleDefinition(
+          "y",
+          createSequence([
+            createIdentifier("leaf"),
+            createStringLiteral("b", '"'),
+          ]),
+        ),
+        createRuleDefinition("leaf", createStringLiteral("L", '"')),
+      ],
+    );
+    const { reentrantRules } = analyzeReentrancy(grammar);
+    expect([...reentrantRules]).toEqual(["leaf"]);
+  });
+
+  // Cut-aware suppression (`preCutOnlyTotal`, consulted by `walkChoice`).
+  // A NULLABLE element must precede the cut for this to have anything to
+  // suppress at all -- `walkSequence`'s existing non-nullable early-break
+  // already stops before reaching a cut preceded by, e.g., a keyword
+  // literal, which is why `"key"?` (not `"key"`) appears before `~`
+  // below.
+  it("suppresses a reentrancy finding for a rule invoked only AFTER a cut in an earlier alternative, once a later alternative also invokes it", () => {
+    const grammar = parse(`
+      grammar G {
+        r = "key"? ~ shared / shared "other"
+        shared = "x"
+      }
+    `);
+    const { reentrantRules } = analyzeReentrancy(grammar);
+    // Once `r`'s first alternative reaches the cut (guaranteed, since
+    // "key"? always succeeds), the second alternative can never run --
+    // so `shared`'s two textual occurrences can never both execute in
+    // one parse attempt.
+    expect([...reentrantRules]).toEqual([]);
+  });
+
+  it("does NOT suppress the same pairing when the cut sits in the LATER alternative instead -- ordered choice tries the earlier one first, unprotected by a cut that hasn't been reached yet", () => {
+    const grammar = parse(`
+      grammar G {
+        r = shared "other" / "key"? ~ shared
+        shared = "x"
+      }
+    `);
+    const { reentrantRules } = analyzeReentrancy(grammar);
+    // The first alternative's invocation of `shared` happens (and may
+    // fail, backtracking into the second alternative) BEFORE the second
+    // alternative's cut could ever fire -- a cut can only protect
+    // alternatives that come AFTER it textually, never ones that were
+    // already tried and failed first.
+    expect([...reentrantRules]).toEqual(["shared"]);
+  });
+
+  it('is a no-op (nothing to suppress) when a non-nullable element already precedes the cut -- the common `"keyword" ~ body` shape', () => {
+    const grammar = parse(`
+      grammar G {
+        r = "key" ~ shared / shared "other"
+        shared = "x"
+      }
+    `);
+    const { reentrantRules } = analyzeReentrancy(grammar);
+    // `walkSequence`'s existing non-nullable early-break already stops
+    // at "key", before ever reaching the cut or `shared` -- this finding
+    // was never made in the first place, cut-awareness or not.
     expect([...reentrantRules]).toEqual([]);
   });
 });

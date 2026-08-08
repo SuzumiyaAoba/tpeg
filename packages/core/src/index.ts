@@ -25,7 +25,7 @@ export * from "./utils";
  */
 import { any, anyChar, lit, literal } from "./basic";
 import { capture, captureChoice, captureSequence } from "./capture";
-import { charClass } from "./char-class";
+import { charClass, charClassRun } from "./char-class";
 import {
   choice,
   commit,
@@ -67,6 +67,7 @@ export const parsers = {
 
   // Character class parsers
   charClass,
+  charClassRun,
 
   // Combinators
   sequence,
