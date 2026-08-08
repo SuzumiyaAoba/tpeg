@@ -1,6 +1,13 @@
-import { describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { any, anyChar, benchmarkParser, lit, literal } from "./basic";
+import { resetFailureWatermark } from "./failure";
 import { parse } from "./utils";
+
+// See `combinators.spec.ts`'s identical `beforeEach` -- the farthest-failure
+// watermark (`./failure.ts`) is module-global, keyed by input string VALUE.
+beforeEach(() => {
+  resetFailureWatermark();
+});
 
 /**
  * Helper function to create a position (offset) for cleaner test setup

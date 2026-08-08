@@ -1,6 +1,13 @@
-import { describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { charClass, charClassRun, negatedCharClass } from "./char-class";
+import { resetFailureWatermark } from "./failure";
 import { oneOrMore, zeroOrMore } from "./repetition";
+
+// See `combinators.spec.ts`'s identical `beforeEach` -- the farthest-failure
+// watermark (`./failure.ts`) is module-global, keyed by input string VALUE.
+beforeEach(() => {
+  resetFailureWatermark();
+});
 
 describe("charClass", () => {
   it("should parse a single character", () => {

@@ -248,7 +248,14 @@ export const quantified = <T>(
     let currentPos = pos;
     let count = 0;
 
-    // Parse exactly min times first (required)
+    // Parse exactly min times first (required). This loop is bounded by
+    // `min` itself (a plain `for` counter), so it can never actually loop
+    // forever -- unlike `zeroOrMore`/`oneOrMore`'s genuinely-unbounded
+    // loops, there is nothing here for an infinite-loop guard to protect
+    // against. A zero-width match (a nullable `parser`) is a legitimate
+    // `e{n,m}` result, not an error: e.g. `("a"?){2,2}` on input with no
+    // leading "a" must succeed with two empty matches, per standard PEG
+    // semantics for a bounded repetition.
     for (let i = 0; i < min; i++) {
       const result = parser(input, currentPos);
       if (!result.success) {
@@ -257,16 +264,6 @@ export const quantified = <T>(
         // call already recorded its position/expectation in the shared
         // watermark.
         return result;
-      }
-
-      // Check for infinite loop (position doesn't advance)
-      if (result.next === currentPos) {
-        return createInfiniteLoopError(
-          input,
-          currentPos,
-          parserName,
-          `Repetition: ${i + 1}/${min} (required)`,
-        );
       }
 
       results.push(result.val);
@@ -288,8 +285,12 @@ export const quantified = <T>(
         break;
       }
 
-      // Check for infinite loop (position doesn't advance)
-      if (result.next === currentPos) {
+      // Check for infinite loop (position doesn't advance) -- only
+      // meaningful when `max` is `undefined`: a concrete `max` already
+      // bounds this loop via `limit`, exactly like the required loop
+      // above, so a zero-width match there is likewise a legitimate
+      // result, not an infinite loop.
+      if (max === undefined && result.next === currentPos) {
         return createInfiniteLoopError(
           input,
           currentPos,

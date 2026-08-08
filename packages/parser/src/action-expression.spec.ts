@@ -13,7 +13,9 @@ import {
   createActionExpression,
   createCharRange,
   createCharacterClass,
+  createChoice,
   createGrammarDefinition,
+  createGroup,
   createLabeledExpression,
   createPlus,
   createRuleDefinition,
@@ -291,6 +293,132 @@ describe("ActionExpression code generation (runtime)", () => {
 
     const parsed = number("abc", 0);
     expect(parsed.success).toBe(false);
+  });
+
+  test("an action on a labeled Choice can reference the winning alternative's label (regression: collectTopLevelLabels didn't traverse Choice)", async () => {
+    // docs/peg-grammar.md's "Capture Inference" section documents
+    // `choice = a:first / b:second -> captures: { a?: T1, b?: T2 }`.
+    // `choice()` (tpeg-core) already passes the winning alternative's own
+    // captured object through unchanged, so the only thing codegen must
+    // get right is DESTRUCTURING every possible label before the action
+    // runs -- previously `collectTopLevelLabels` only looked at `Sequence`/
+    // a single `LabeledExpression`, never at `Choice`, so `str` below was
+    // referenced but never declared, throwing `ReferenceError` at runtime.
+    const core = await import("@suzumiyaaoba/tpeg-core");
+
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createActionExpression(
+            createGroup(
+              createChoice([
+                createLabeledExpression("str", createStringLiteral("a")),
+                createLabeledExpression("str", createStringLiteral("b")),
+              ]),
+            ),
+            "return str.toUpperCase();",
+          ),
+        ),
+      ],
+    );
+
+    const result = generateTypeScriptParser(grammar, {
+      includeImports: false,
+      includeTypes: false,
+    });
+    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+    const moduleFactory = new Function(
+      ...Object.keys(core),
+      `${body}\nreturn { start };`,
+    );
+    const { start } = moduleFactory(...Object.values(core));
+
+    const parsedA = start("a", 0);
+    expect(parsedA.success).toBe(true);
+    if (parsedA.success) expect(parsedA.val).toBe("A");
+
+    const parsedB = start("b", 0);
+    expect(parsedB.success).toBe(true);
+    if (parsedB.success) expect(parsedB.val).toBe("B");
+  });
+
+  test("an action on a parenthesized (grouped) labeled Sequence can reference each label (regression: collectTopLevelLabels didn't unwrap Group before checking Sequence)", async () => {
+    const core = await import("@suzumiyaaoba/tpeg-core");
+
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createActionExpression(
+            createGroup(
+              createSequence([
+                createLabeledExpression("left", createStringLiteral("a")),
+                createLabeledExpression("right", createStringLiteral("b")),
+              ]),
+            ),
+            "return `${left}-${right}`;",
+          ),
+        ),
+      ],
+    );
+
+    const result = generateTypeScriptParser(grammar, {
+      includeImports: false,
+      includeTypes: false,
+    });
+    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+    const moduleFactory = new Function(
+      ...Object.keys(core),
+      `${body}\nreturn { start };`,
+    );
+    const { start } = moduleFactory(...Object.values(core));
+
+    const parsed = start("ab", 0);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.val).toBe("a-b");
+  });
+
+  test("the optimized code generator also destructures labels through a Choice (shares collectTopLevelLabels with the base generator)", async () => {
+    const core = await import("@suzumiyaaoba/tpeg-core");
+
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createActionExpression(
+            createGroup(
+              createChoice([
+                createLabeledExpression("str", createStringLiteral("a")),
+                createLabeledExpression("str", createStringLiteral("b")),
+              ]),
+            ),
+            "return str.toUpperCase();",
+          ),
+        ),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      includeImports: false,
+      includeTypes: false,
+    });
+    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+    const moduleFactory = new Function(
+      ...Object.keys(core),
+      `${body}\nreturn { start };`,
+    );
+    const { start } = moduleFactory(...Object.values(core));
+
+    const parsed = start("b", 0);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.val).toBe("B");
   });
 
   test("the optimized code generator supports actions with the same runtime behavior", async () => {

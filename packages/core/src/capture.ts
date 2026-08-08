@@ -21,6 +21,36 @@ export type CapturedValue = { [key: string]: unknown };
 export type CaptureResult<T> = T extends CapturedValue ? T : never;
 
 /**
+ * Non-enumerable marker distinguishing an object `capture(...)` itself
+ * produced from an arbitrary object-shaped VALUE that merely happens to
+ * flow through an unlabeled `Sequence` element -- e.g. an unlabeled
+ * reference to another rule whose OWN pattern uses labels internally
+ * (`pair = key:Ident "=" value:Ident`) produces an object (`{key, value}`)
+ * with no capture() of its own at the referencing site. Without this tag,
+ * `mergeCaptures`/`captureSequence` (below) can't tell that object apart
+ * from a genuine same-level capture and would flatten its fields into the
+ * caller's result -- silently leaking an unrelated rule's internal field
+ * names into whichever grammar rule happens to reference it unlabeled.
+ * `enumerable: false` keeps it out of `Object.keys`/a spread/`JSON.stringify`
+ * of the captured value itself; `Object.assign` (which `mergeCaptures` uses
+ * to build the merged result) also only copies OWN ENUMERABLE properties,
+ * so the tag never propagates onto a `mergeCaptures` merge's own output --
+ * intentional, so that an unlabeled reference to a `captureSequence` rule
+ * (no `capture(...)` of its own) is excluded from a further outer merge
+ * exactly the same way.
+ */
+const CAPTURE_TAG = Symbol("tpeg.capture");
+
+/** `true` iff `value` is an object `capture(...)` produced (directly, not
+ * merely something object-shaped that flowed through unlabeled) -- see
+ * `CAPTURE_TAG`'s doc comment. */
+const isCaptureTagged = (value: unknown): value is CapturedValue =>
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  (value as Record<PropertyKey, unknown>)[CAPTURE_TAG] === true;
+
+/**
  * Creates a capture parser that labels a value with a given name.
  *
  * @template T The type of value to capture
@@ -47,6 +77,10 @@ export const capture = <T, L extends string>(
     }
 
     const capturedValue = { [label]: result.val } as { [K in L]: T };
+    Object.defineProperty(capturedValue, CAPTURE_TAG, {
+      value: true,
+      enumerable: false,
+    });
 
     return {
       success: true as const,
@@ -61,20 +95,31 @@ export const capture = <T, L extends string>(
  * Merges multiple captured objects into a single object.
  * Used internally by the sequence combinator when dealing with labeled expressions.
  *
- * @param captures Array of captured objects to merge
- * @returns Merged object containing all captures
+ * Only merges entries `capture(...)` itself produced (see `CAPTURE_TAG`'s doc
+ * comment) -- an entry that merely happens to be object-shaped (e.g. an
+ * unlabeled reference to another rule that uses labels internally) is
+ * skipped, exactly like a non-object entry (a plain string/array/etc. from
+ * an unlabeled literal) already was. Without this, that unrelated rule's
+ * own field names would silently leak into the merged result.
+ *
+ * @param captures Array of values to merge (only `capture(...)`-tagged ones
+ *   actually contribute fields)
+ * @returns Merged object containing every tagged capture's fields
  *
  * @example
  * ```typescript
- * const merged = mergeCaptures([{ name: "hello" }, { value: 42 }]);
- * // merged = { name: "hello", value: 42 }
+ * const merged = mergeCaptures([
+ *   capture("name", literal("hello"))("hello", 0).val,
+ *   capture("value", literal("world"))("world", 0).val,
+ * ]);
+ * // merged = { name: "hello", value: "world" }
  * ```
  */
 export const mergeCaptures = (captures: unknown[]): CapturedValue => {
   const result: CapturedValue = {};
 
   for (const capture of captures) {
-    if (capture && typeof capture === "object" && !Array.isArray(capture)) {
+    if (isCaptureTagged(capture)) {
       Object.assign(result, capture);
     }
   }
@@ -136,12 +181,11 @@ export const captureSequence = <P extends Parser<unknown>[]>(
       results.push(result.val);
       currentPos = result.next;
 
-      // Check if this result is a captured value (object with string keys)
-      if (
-        result.val &&
-        typeof result.val === "object" &&
-        !Array.isArray(result.val)
-      ) {
+      // Only a `capture(...)`-tagged result makes this a genuine capture
+      // -- see `CAPTURE_TAG`'s doc comment for why an incidentally
+      // object-shaped but untagged result (e.g. an unlabeled reference to
+      // another rule that uses labels internally) must NOT flip this.
+      if (isCaptureTagged(result.val)) {
         hasCaptures = true;
       }
     }

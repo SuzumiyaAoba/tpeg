@@ -1,5 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { lit } from "./basic";
+import { commit, seq } from "./combinators";
+import { resetFailureWatermark } from "./failure";
 import {
   assert,
   and,
@@ -10,6 +12,12 @@ import {
   positive,
 } from "./lookahead";
 import { createTestPos } from "./test-utils";
+
+// See `combinators.spec.ts`'s identical `beforeEach` -- the farthest-failure
+// watermark (`./failure.ts`) is module-global, keyed by input string VALUE.
+beforeEach(() => {
+  resetFailureWatermark();
+});
 
 describe("andPredicate", () => {
   it("should succeed if the parser succeeds", () => {
@@ -131,6 +139,23 @@ describe("notPredicate", () => {
     const pos = createTestPos(0);
     const result = notPredicate(lit("a"))(input, pos);
     expect(result.success).toBe(true); // fails to match "a", so notPredicate succeeds
+  });
+
+  it("treats a fatal (cut/commit) failure inside the probed parser as an ordinary failure -- the probe still succeeds, unlike optional/withDefault", () => {
+    // Deliberate, documented asymmetry with `optional`/`withDefault`: a
+    // lookahead probes without ever committing to anything, so a cut
+    // reached while probing doesn't mean "stop backtracking here" the way
+    // it does when a probe's result is the actual parse outcome. Pinned so
+    // a future change doesn't "fix" this into matching `optional`'s
+    // fatal-propagating behavior by mistake.
+    const committedBranch = seq(lit("i"), commit(lit("f")));
+    const input = "ix";
+    const pos = createTestPos(0);
+    const result = notPredicate(committedBranch)(input, pos);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.next).toEqual(pos);
+    }
   });
 
   it("should handle end of input", () => {

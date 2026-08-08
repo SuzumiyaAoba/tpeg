@@ -1101,6 +1101,81 @@ describe("degenerateNegativeLookaheads", () => {
       }
     }
   });
+
+  it("clause 1 (character-set difference) handles an astral (surrogate-pair) code point in the excluded set correctly", async () => {
+    // `!"\u{1F600}" .` -- U+1F600 is 2 UTF-16 code units. `charSetView`
+    // must treat it as ONE code point (not two), or the synthesized
+    // `CharacterClass` would exclude/include the wrong set and disagree
+    // with the un-degenerated `!a .` on inputs containing it.
+    const astral = "\u{1F600}";
+    const original = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createSequence([
+            createNegativeLookahead(createStringLiteral(astral, '"')),
+            createAnyChar(),
+          ]),
+        ),
+      ],
+    );
+    const degenerated = degenerateNegativeLookaheads(original);
+    const pattern = degenerated.rules[0]?.pattern;
+    expect(pattern?.type).toBe("CharacterClass");
+
+    const originalParser = await compileRuleForTest(original, "r");
+    const degeneratedParser = await compileRuleForTest(degenerated, "r");
+
+    for (const input of [astral, "a", "\u{1F601}", ""]) {
+      const originalResult = originalParser(input, ORIGIN);
+      const degeneratedResult = degeneratedParser(input, ORIGIN);
+      expect(degeneratedResult.success).toBe(originalResult.success);
+      if (originalResult.success && degeneratedResult.success) {
+        expect(degeneratedResult.next).toEqual(originalResult.next);
+      }
+    }
+  });
+
+  it("clause 2 (FIRST-disjoint deletion) handles an astral (surrogate-pair) code point in the lookahead correctly", async () => {
+    // `!"\u{1F600}" "xyz"` -- `b` ("xyz") isn't a single-code-point
+    // CharSet, so clause 1 can't apply; clause 2 needs FIRST(a) (the
+    // astral code point) and FIRST(b) ('x') to be correctly computed as
+    // disjoint -- if the astral character were mishandled as 2 UTF-16
+    // code units instead of 1 code point, this FIRST-set computation
+    // could go wrong.
+    const astral = "\u{1F600}";
+    const original = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createSequence([
+            createNegativeLookahead(createStringLiteral(astral, '"')),
+            createStringLiteral("xyz", '"'),
+          ]),
+        ),
+      ],
+    );
+    const degenerated = degenerateNegativeLookaheads(original);
+    const pattern = degenerated.rules[0]?.pattern;
+    // Clause 2 deletes the lookahead entirely -- left with bare "xyz".
+    expect(pattern?.type).toBe("StringLiteral");
+
+    const originalParser = await compileRuleForTest(original, "r");
+    const degeneratedParser = await compileRuleForTest(degenerated, "r");
+
+    for (const input of ["xyz", astral, "abc", ""]) {
+      const originalResult = originalParser(input, ORIGIN);
+      const degeneratedResult = degeneratedParser(input, ORIGIN);
+      expect(degeneratedResult.success).toBe(originalResult.success);
+      if (originalResult.success && degeneratedResult.success) {
+        expect(degeneratedResult.next).toEqual(originalResult.next);
+      }
+    }
+  });
 });
 
 describe("applyAstOptimizations", () => {

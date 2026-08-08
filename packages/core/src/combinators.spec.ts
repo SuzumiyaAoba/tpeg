@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { lit } from "./basic";
 import {
   choice,
@@ -12,8 +12,18 @@ import {
   withDefault,
 } from "./combinators";
 import type { FirstCharFilter } from "./combinators";
+import { resetFailureWatermark } from "./failure";
 import type { Parser } from "./types";
 import { createFailure } from "./utils";
+
+// The farthest-failure watermark (`./failure.ts`) is module-global state
+// keyed by the input string's VALUE, not by test identity -- two unrelated
+// tests that `fail()` on an identical string content would otherwise
+// silently share (and pollute) each other's watermark. See
+// `failure.spec.ts`'s identical `beforeEach` for the full rationale.
+beforeEach(() => {
+  resetFailureWatermark();
+});
 
 describe("seq", () => {
   it("should parse a sequence of parsers", () => {
@@ -743,6 +753,15 @@ describe("maybe", () => {
       expect(result.next).toEqual(pos);
     }
   });
+
+  it("re-raises a fatal (cut/commit) failure instead of swallowing it into null -- mirrors optional's identical guard in repetition.ts", () => {
+    const committedBranch = seq(lit("if"), commit(lit("then")));
+    const result = maybe(committedBranch)("ifelse", 0);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.fatal).toBe(true);
+    }
+  });
 });
 
 describe("withDefault", () => {
@@ -765,6 +784,24 @@ describe("withDefault", () => {
     if (result.success) {
       expect(result.val).toBe("default");
       expect(result.next).toEqual(pos); // Position should not advance
+    }
+  });
+
+  it("re-raises a fatal (cut/commit) failure instead of swallowing it into the default", () => {
+    // Without this, `withDefault(seq(lit("if"), commit(cond)), fallback)`
+    // would silently discard the cut's intent the moment `cond` fails --
+    // exactly the bug `optional` (repetition.ts) already guards against.
+    // Widened to `Parser<unknown>` so `withDefault`'s default-value
+    // parameter isn't forced into the branch's own literal tuple type --
+    // irrelevant here since the fatal path never actually returns it.
+    const committedBranch: Parser<unknown> = seq(
+      lit("if"),
+      commit(lit("then")),
+    );
+    const result = withDefault(committedBranch, "default")("ifelse", 0);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.fatal).toBe(true);
     }
   });
 });

@@ -185,19 +185,38 @@ const labelOf = (expr: Expression): string | undefined => {
 /**
  * Collects the label names directly visible on an expression: either the
  * expression itself is a (possibly grouped) `LabeledExpression`, or - if
- * it's a `Sequence` - each of its immediate elements that is one. This
- * mirrors the runtime merge performed by `captureSequence`/`mergeCaptures`
- * (`@suzumiyaaoba/tpeg-core`'s `capture.ts`), which merges each direct
- * child's captured object into one - so the label set computed here always
- * matches the keys actually present on the merged value at runtime.
+ * it's a `Sequence` - each of its immediate elements that is one, or - if
+ * it's a `Choice` - the union of whatever's visible on each alternative
+ * (only one alternative ever actually runs, so `captureChoice`/`choice`
+ * pass its own captured object through unchanged; a caller destructuring
+ * the union just gets `undefined` for whichever labels the OTHER
+ * alternatives would have bound - see `docs/peg-grammar.md`'s "Capture
+ * Inference" section, `choice = a:first / b:second -> captures: {a?: T1,
+ * b?: T2}"). This mirrors the runtime merge performed by
+ * `captureSequence`/`mergeCaptures` (`@suzumiyaaoba/tpeg-core`'s
+ * `capture.ts`), which merges each direct child's captured object into one
+ * - so the label set computed here always matches the keys actually
+ * present on the merged value at runtime.
+ *
+ * `Group` is unwrapped before either check (it's transparent at codegen
+ * time - see `labelOf`), so a parenthesized `(a:"x" b:"y")` or
+ * `(a:"x" / b:"y")` is recognized exactly like its unparenthesized form.
  */
 export const collectTopLevelLabels = (expr: Expression): string[] => {
-  if (expr.type === "Sequence") {
-    return (expr as Sequence).elements
+  const unwrapped = expr.type === "Group" ? (expr as Group).expression : expr;
+  if (unwrapped.type === "Sequence") {
+    return (unwrapped as Sequence).elements
       .map(labelOf)
       .filter((label): label is string => label !== undefined);
   }
-  const single = labelOf(expr);
+  if (unwrapped.type === "Choice") {
+    const seen = new Set<string>();
+    for (const alt of (unwrapped as Choice).alternatives) {
+      for (const label of collectTopLevelLabels(alt)) seen.add(label);
+    }
+    return [...seen];
+  }
+  const single = labelOf(unwrapped);
   return single !== undefined ? [single] : [];
 };
 

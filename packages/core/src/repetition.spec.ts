@@ -1,7 +1,8 @@
-import { describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { literal as lit } from "./basic";
 import { charClass } from "./char-class";
 import { choice, commit, seq } from "./combinators";
+import { resetFailureWatermark } from "./failure";
 import {
   oneOrMore,
   opt,
@@ -13,6 +14,12 @@ import {
 } from "./repetition";
 import type { Parser } from "./types";
 import { isFailure, isSuccess } from "./utils";
+
+// See `combinators.spec.ts`'s identical `beforeEach` -- the farthest-failure
+// watermark (`./failure.ts`) is module-global, keyed by input string VALUE.
+beforeEach(() => {
+  resetFailureWatermark();
+});
 
 describe("opt", () => {
   it("should parse with the given parser", () => {
@@ -590,7 +597,7 @@ describe("quantified", () => {
     );
   });
 
-  it("should detect infinite loops", () => {
+  it("should detect infinite loops when the tail is genuinely unbounded (`max` omitted)", () => {
     // Parser that always succeeds but consumes no input
     const infiniteParser: Parser<string> = (_input, pos) => ({
       success: true,
@@ -599,12 +606,46 @@ describe("quantified", () => {
       next: pos, // Does not advance position
     });
 
-    const parser = quantified(infiniteParser, 1, 3);
+    // No `max` -- the optional tail loops until `Number.POSITIVE_INFINITY`,
+    // exactly the shape `zeroOrMore`/`oneOrMore` guard against.
+    const parser = quantified(infiniteParser, 1);
     const result = parser("test", 0);
 
     expect(isFailure(result)).toBe(true);
     if (isFailure(result)) {
       expect(result.error.message).toContain("Infinite loop detected");
+    }
+  });
+
+  it("should succeed (not report an infinite loop) for a BOUNDED repetition over a zero-width match", () => {
+    // A concrete `max` makes this loop's iteration count fixed by
+    // construction (bounded by the `for` loop's own counter), so a
+    // zero-width match is a legitimate `e{n,m}` result over a nullable
+    // `e`, per standard PEG semantics -- not an infinite-loop error. This
+    // is also exactly what TPEG's own `{n,m}` grammar syntax compiles a
+    // bounded repetition of a nullable expression (e.g. `("a"?){2,3}`)
+    // down to (see `codegen.ts`'s `generateQuantified`).
+    const zeroWidthParser: Parser<string> = (_input, pos) => ({
+      success: true,
+      val: "",
+      current: pos,
+      next: pos, // Does not advance position
+    });
+
+    const requiredOnly = quantified(zeroWidthParser, 2, 2);
+    const result1 = requiredOnly("test", 0);
+    expect(isSuccess(result1)).toBe(true);
+    if (isSuccess(result1)) {
+      expect(result1.val).toEqual(["", ""]);
+      expect(result1.next).toBe(0);
+    }
+
+    const requiredPlusBoundedOptional = quantified(zeroWidthParser, 1, 3);
+    const result2 = requiredPlusBoundedOptional("test", 0);
+    expect(isSuccess(result2)).toBe(true);
+    if (isSuccess(result2)) {
+      expect(result2.val).toEqual(["", "", ""]);
+      expect(result2.next).toBe(0);
     }
   });
 

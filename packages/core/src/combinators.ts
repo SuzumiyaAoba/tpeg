@@ -628,6 +628,16 @@ export const withDefault =
       return result;
     }
 
+    // A cut/commit (see `commit` above) inside `parser` marks its failure
+    // `fatal`, meaning "do not treat this as backtrackable" -- re-raise it
+    // instead of the usual "swallow and fall back to the default", exactly
+    // like `optional` (`repetition.ts`) already does for the same reason:
+    // otherwise `withDefault(seq(lit("if"), commit(cond)), fallback)` would
+    // silently discard the cut's intent the moment `cond` fails.
+    if (isFatalFailure(result)) {
+      return result;
+    }
+
     return {
       success: true,
       val: defaultValue,

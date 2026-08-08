@@ -5,9 +5,10 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { TPEGCodeGenerator } from "./codegen";
+import { TPEGCodeGenerator, generateTypeScriptParser } from "./codegen";
 import {
   createGrammarDefinition,
+  createOptional,
   createQuantified,
   createRuleDefinition,
   createStringLiteral,
@@ -197,6 +198,71 @@ describe("quantified expression code generation", () => {
       expect(result.imports).toContain(
         'import { literal, oneOrMore, optional, zeroOrMore } from "@suzumiyaaoba/tpeg-core";',
       );
+    });
+  });
+
+  describe("bounded repetition over a nullable inner expression (regression)", () => {
+    it('`("a"?){2,3}` succeeds on input with no leading "a", per standard PEG semantics for a bounded quantifier', async () => {
+      // Regression test for a real bug in `quantified` (tpeg-core's
+      // repetition.ts): its infinite-loop guard used to fire even when the
+      // repetition count is bounded (a `for` loop, never actually able to
+      // loop forever), turning a well-defined `e{n,m}` match over a
+      // nullable `e` into a hard parse failure. `("a"?){2,3}` compiles to
+      // `quantified(optional(literal("a")), 2, 3)` -- see the "range
+      // quantifiers" describe block above for the plain codegen-text
+      // version of this same shape.
+      const core = await import("@suzumiyaaoba/tpeg-core");
+
+      const grammar = createGrammarDefinition(
+        "Test",
+        [],
+        [
+          createRuleDefinition(
+            "rule",
+            createQuantified(
+              createOptional(createStringLiteral("a", '"')),
+              2,
+              3,
+            ),
+          ),
+        ],
+      );
+
+      const result = generateTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+      });
+      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+      const moduleFactory = new Function(
+        ...Object.keys(core),
+        `${body}\nreturn { rule };`,
+      );
+      const { rule } = moduleFactory(...Object.values(core));
+
+      // Nothing to match, but the repetition is greedy: it still runs all
+      // the way to `max` = 3 (each iteration's zero-width `[]` is a
+      // genuine success, not a stopping condition) -- it just consumes no
+      // input while doing so.
+      const noLeadingA = rule("bbb", 0);
+      expect(noLeadingA.success).toBe(true);
+      if (noLeadingA.success) {
+        expect(noLeadingA.val).toEqual([[], [], []]);
+        expect(noLeadingA.next).toBe(0);
+      }
+
+      const oneLeadingA = rule("a", 0);
+      expect(oneLeadingA.success).toBe(true);
+      if (oneLeadingA.success) {
+        expect(oneLeadingA.val).toEqual([["a"], [], []]);
+        expect(oneLeadingA.next).toBe(1);
+      }
+
+      const threeLeadingAs = rule("aaaa", 0);
+      expect(threeLeadingAs.success).toBe(true);
+      if (threeLeadingAs.success) {
+        expect(threeLeadingAs.val).toEqual([["a"], ["a"], ["a"]]);
+        expect(threeLeadingAs.next).toBe(3); // Stops at max = 3
+      }
     });
   });
 });
