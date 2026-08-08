@@ -1,3 +1,5 @@
+import type { CharRange } from "./types";
+
 /**
  * `CharSet`: a set of Unicode code points, represented as a sorted,
  * non-overlapping, non-adjacent list of inclusive intervals over
@@ -176,3 +178,21 @@ export const isDisjoint = (a: CharSet, b: CharSet): boolean => {
   }
   return true;
 };
+
+/**
+ * Renders `set` back into the AST's `CharRange[]` shape (`{start, end?}`,
+ * single-character strings) -- the inverse of `fromChar`/
+ * `fromCodePointRange`, used to synthesize a `CharacterClass` node from a
+ * computed set (see `ast-optimize-negative-lookahead.ts`'s generalized
+ * `!a b` rewrite). A single-code-point interval (`lo === hi`) omits
+ * `end`, matching how a plain grammar-source character is written
+ * (`{start: c}`, no `end`) -- not required for correctness (an `end`
+ * equal to `start` would mean the same thing), just keeps synthesized
+ * output indistinguishable from what a human would have written.
+ */
+export const toCharRanges = (set: CharSet): CharRange[] =>
+  set.map(({ lo, hi }) =>
+    lo === hi
+      ? { start: String.fromCodePoint(lo) }
+      : { start: String.fromCodePoint(lo), end: String.fromCodePoint(hi) },
+  );

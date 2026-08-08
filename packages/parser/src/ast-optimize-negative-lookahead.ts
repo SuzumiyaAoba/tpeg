@@ -1,21 +1,80 @@
 /**
- * Negative-lookahead degeneration: `!a .` -> a negated character class.
+ * Negative-lookahead generalization: `!a b` -> a computed replacement,
+ * whenever that's provably sound. Two independent clauses, tried in
+ * order for each `[NegativeLookahead(a), b]` pair found as two adjacent
+ * elements of a `Sequence`:
  *
- * `Sequence([NegativeLookahead(a), AnyChar])` succeeds iff `a` does NOT
- * match at the current position AND a character is available to consume,
- * and then consumes exactly that one character -- exactly what a negated
- * `CharacterClass` built from `a` does directly, provided `a` itself
- * matches exactly one character based only on that character (a
- * single-character `StringLiteral` or a `CharacterClass`; anything else,
- * e.g. a multi-character literal or a rule reference, is left alone).
+ * 1. **Character-set difference** (the general form of the original
+ *    `!a .` -> negated-character-class degeneration this module started
+ *    as, where `b` was always `AnyChar`): whenever BOTH `a` and `b` are
+ *    representable as a single-code-point `CharSet` (a `CharacterClass`,
+ *    a 1-character `StringLiteral`, or `AnyChar` for the universal set --
+ *    see `charSetView`), `!a b` matches code point `c` iff `c ∉ A ∧ c ∈
+ *    B` iff `c ∈ B ∖ A` -- consuming exactly one code point either way.
+ *    `!a b` is replaced by `CharacterClass(B ∖ A)`. Needs no FIRST-set
+ *    analysis; subsumes the original `AnyChar`-only degeneration (`B =
+ *    ALL_CHARS` makes `B ∖ A` just `complement(A)`); and fires even when
+ *    `A`/`B` overlap (e.g. `!"\n" [^x]` -> `[^x\n]`), a case FIRST-set
+ *    disjointness alone could never simplify since overlapping sets are
+ *    never "disjoint." If `B ∖ A` is empty -- the pattern can never
+ *    match (e.g. `!"a" "a"`) -- the pair is left untouched: synthesizing
+ *    a "never matches" node isn't this pass's job, and a grammar author
+ *    writing that is almost certainly not relying on it as intentional
+ *    behavior worth preserving byte-for-byte.
  *
- * This changes value shape (the `Sequence` contributes two array slots,
- * `[undefined, char]`; the replacement contributes one, `char`), so it
- * uses the same `isShapeSensitiveRule` gate as `leftFactorChoices` (see
+ * 2. **FIRST-disjoint deletion**: when clause 1 doesn't apply (`b` isn't
+ *    representable as a single-code-point `CharSet` -- a multi-character
+ *    literal, an `Identifier`, a `Sequence`, ...), `!a` is dropped
+ *    entirely (`!a b -> b`) whenever `a` and `b` are BOTH non-nullable
+ *    and `FIRST(a) ∩ FIRST(b) = ∅`.
+ *
+ *    Proof: at the current position, if `a` fails, `!a` succeeds
+ *    consuming nothing, so `!a b` behaves exactly like `b` there. If `a`
+ *    succeeds, it consumed >= 1 character (non-nullable), so the current
+ *    character is in `FIRST(a)` (a sound over-approximation of what `a`
+ *    can start with); disjointness puts that character outside
+ *    `FIRST(b)`. Since `b` is also non-nullable, a successful `b` at
+ *    this position would need to consume >= 1 character starting with
+ *    something in `FIRST(b)` -- which the current character isn't -- so
+ *    `b` fails too. Either way, `!a b` and `b` agree: both fail, or `!a`
+ *    trivially succeeds and only `b`'s own outcome matters.
+ *
+ *    Lower value on its own than clause 1: it only fires where the
+ *    grammar already wrote a provably-redundant `!a`, and
+ *    `isShapeSensitiveRule`'s action/transform gate (shared with clause 1
+ *    below) additionally excludes every action-bearing rule -- measured
+ *    zero effect on any grammar in this repo's own bench/example corpus.
+ *    Included anyway because it falls out of FIRST-set machinery this
+ *    module needed to reach for regardless, at a small, self-contained
+ *    marginal cost.
+ *
+ * Both clauses change value shape the same way the original `!a .`
+ * degeneration did (`Sequence` contributes `[undefined, bVal]`, two
+ * slots; the replacement contributes one -- the matched character for
+ * clause 1, `bVal` alone for clause 2), so both use the same
+ * `isShapeSensitiveRule` gate `leftFactorChoices` uses (see
  * `ast-optimize.ts`'s module doc comment).
  */
 
 import { isShapeSensitiveRule } from "./ast-optimize-shared";
+import {
+  ALL_CHARS,
+  type CharSet,
+  complement,
+  difference,
+  fromChar,
+  fromCodePointRange,
+  isEmpty,
+  toCharRanges,
+  union,
+} from "./char-set";
+import {
+  type GrammarFirstSetAnalysis,
+  analyzeFirstSets,
+  firstSetOfExpression,
+  firstSetsDisjoint,
+  isNullable,
+} from "./first-sets";
 import type {
   CharacterClass,
   Expression,
@@ -24,37 +83,95 @@ import type {
 } from "./types";
 import { createChoice, createSequence } from "./types";
 
-/** A negated-`CharacterClass` view of "not `expr`" for a single-character
- * `expr`, or `null` if `expr` doesn't match exactly one character based
- * only on that character's identity. */
-const negatedCharClassView = (expr: Expression): CharacterClass | null => {
+/** A single-code-point `CharSet` view of `expr`, or `null` if `expr`
+ * doesn't denote exactly one code point based only on its own structure
+ * (independent of any grammar-wide analysis) -- a `CharacterClass`, a
+ * 1-character `StringLiteral`, or `AnyChar` (the universal set). Exact,
+ * unlike `first-sets.ts`'s `alwaysMatchesSet` (a deliberately narrower
+ * "guaranteed lower bound" used for a different purpose): every code
+ * point returned here is one this expression matches, and every code
+ * point this expression matches is returned here. */
+const charSetView = (expr: Expression): CharSet | null => {
+  if (expr.type === "AnyChar") return ALL_CHARS;
   if (expr.type === "CharacterClass") {
-    return {
-      type: "CharacterClass",
-      ranges: expr.ranges,
-      negated: !expr.negated,
-    };
+    let raw: CharSet = [];
+    for (const r of expr.ranges) {
+      raw = union(
+        raw,
+        r.end === undefined
+          ? fromChar(r.start)
+          : fromCodePointRange(r.start, r.end),
+      );
+    }
+    return expr.negated ? complement(raw) : raw;
   }
-  if (expr.type === "StringLiteral" && expr.value.length === 1) {
-    return {
-      type: "CharacterClass",
-      ranges: [{ start: expr.value }],
-      negated: true,
-    };
+  if (expr.type === "StringLiteral" && [...expr.value].length === 1) {
+    return fromChar(expr.value);
   }
   return null;
 };
 
-const degenerateSequenceElements = (elements: Expression[]): Expression[] => {
+/**
+ * Renders `set` as a `CharacterClass` AST node, choosing whichever of
+ * `set` itself or `complement(set)` (negated) has FEWER ranges. Matters
+ * because `set` here is typically `B ∖ A` (a `difference`), and for the
+ * common case `A` = a small class and `B` = `AnyChar` (`ALL_CHARS`),
+ * `B ∖ A` is `complement(A)` -- a set covering nearly the entire Unicode
+ * code space, carved only where `A` excludes it. Emitting THAT directly
+ * (`negated: false`) would produce a sprawling multi-range
+ * `CharacterClass` (and, at codegen time, a correspondingly bloated
+ * `Uint8Array`/range-list construction); emitting it as `negated(A)`
+ * instead reproduces exactly what the pre-generalization `!a . -> [^a]`
+ * degeneration already produced -- one small range list either way,
+ * whichever side of the negation happens to be smaller.
+ */
+const charSetToCharacterClass = (set: CharSet): CharacterClass => {
+  const ranges = toCharRanges(set);
+  const negatedRanges = toCharRanges(complement(set));
+  return negatedRanges.length < ranges.length
+    ? { type: "CharacterClass", ranges: negatedRanges, negated: true }
+    : { type: "CharacterClass", ranges, negated: false };
+};
+
+/** Clause 2's precondition: `a` and `b` are both non-nullable and share
+ * no possible starting character. See this module's doc comment for the
+ * proof that `!a b` and `b` then agree on every input. */
+const isFirstDisjointDeletable = (
+  a: Expression,
+  b: Expression,
+  analysis: GrammarFirstSetAnalysis,
+): boolean =>
+  !isNullable(a, analysis.nullableRules) &&
+  !isNullable(b, analysis.nullableRules) &&
+  firstSetsDisjoint(
+    firstSetOfExpression(a, analysis.firstSets, analysis.nullableRules),
+    firstSetOfExpression(b, analysis.firstSets, analysis.nullableRules),
+  );
+
+const degenerateSequenceElements = (
+  elements: Expression[],
+  analysis: GrammarFirstSetAnalysis,
+): Expression[] => {
   const result: Expression[] = [];
   let i = 0;
   while (i < elements.length) {
     const el = elements[i] as Expression;
     const next = elements[i + 1];
-    if (el.type === "NegativeLookahead" && next?.type === "AnyChar") {
-      const view = negatedCharClassView(el.expression);
-      if (view) {
-        result.push(view);
+    if (el.type === "NegativeLookahead" && next !== undefined) {
+      const excludeSet = charSetView(el.expression);
+      const targetSet = charSetView(next);
+      if (excludeSet && targetSet) {
+        // Clause 1: character-set difference.
+        const resultSet = difference(targetSet, excludeSet);
+        if (!isEmpty(resultSet)) {
+          result.push(charSetToCharacterClass(resultSet));
+          i += 2;
+          continue;
+        }
+      } else if (isFirstDisjointDeletable(el.expression, next, analysis)) {
+        // Clause 2: FIRST-disjoint deletion (only reachable when clause 1
+        // didn't apply -- `next` isn't a single-code-point CharSet).
+        result.push(next);
         i += 2;
         continue;
       }
@@ -67,25 +184,31 @@ const degenerateSequenceElements = (elements: Expression[]): Expression[] => {
 
 const degenerateNegativeLookaheadsInExpression = (
   expr: Expression,
+  analysis: GrammarFirstSetAnalysis,
 ): Expression => {
   switch (expr.type) {
     case "Sequence": {
       const elements = degenerateSequenceElements(
-        expr.elements.map(degenerateNegativeLookaheadsInExpression),
+        expr.elements.map((el) =>
+          degenerateNegativeLookaheadsInExpression(el, analysis),
+        ),
+        analysis,
       );
-      // A `[NegativeLookahead, AnyChar]` pair degenerating out of a
-      // 2-element Sequence leaves exactly 1 element -- unwrap to that
-      // bare element rather than emitting a needless `Sequence([x])`
-      // wrapper (whose own `.val` would be `[xval]`, a 1-tuple, instead
-      // of `xval` directly). Safe under the same rule-level shape gate
-      // that already covers this transform.
+      // A `[NegativeLookahead, b]` pair degenerating out of a 2-element
+      // Sequence leaves exactly 1 element -- unwrap to that bare element
+      // rather than emitting a needless `Sequence([x])` wrapper (whose
+      // own `.val` would be `[xval]`, a 1-tuple, instead of `xval`
+      // directly). Safe under the same rule-level shape gate that
+      // already covers this transform.
       return elements.length === 1
         ? (elements[0] as Expression)
         : createSequence(elements);
     }
     case "Choice":
       return createChoice(
-        expr.alternatives.map(degenerateNegativeLookaheadsInExpression),
+        expr.alternatives.map((alt) =>
+          degenerateNegativeLookaheadsInExpression(alt, analysis),
+        ),
       );
     case "Group":
     case "Star":
@@ -98,25 +221,43 @@ const degenerateNegativeLookaheadsInExpression = (
     case "ActionExpression":
       return {
         ...expr,
-        expression: degenerateNegativeLookaheadsInExpression(expr.expression),
+        expression: degenerateNegativeLookaheadsInExpression(
+          expr.expression,
+          analysis,
+        ),
       };
     default:
       return expr;
   }
 };
 
-/** Returns a new `GrammarDefinition` with `!a .` degenerated to a negated
- * character class throughout every rule that isn't shape-sensitive (see
- * `ast-optimize.ts`'s module doc comment and `isShapeSensitiveRule`). */
+/** Returns a new `GrammarDefinition` with `!a b` degenerated (see this
+ * module's doc comment for both clauses) throughout every rule that
+ * isn't shape-sensitive (see `ast-optimize.ts`'s module doc comment and
+ * `isShapeSensitiveRule`). */
 export const degenerateNegativeLookaheads = (
   grammar: GrammarDefinition,
 ): GrammarDefinition => {
+  // Computed once, from the ORIGINAL (pre-rewrite) grammar, and used
+  // only to decide this pass's own local edits -- the same "one analysis
+  // per pass, discarded afterward" pattern `insertAutomaticCuts`/
+  // `promoteGlobalCuts` already use elsewhere in this pipeline. A rule's
+  // FIRST set / nullability is a property of the rules it references
+  // (fixed, whole-grammar facts), not of what this pass does to some
+  // OTHER part of a sequence, so reusing one snapshot throughout is
+  // sound; downstream passes that need FIRST sets on the rewritten
+  // grammar (e.g. `promoteGlobalCuts` in the CLI pipeline) already
+  // recompute fresh rather than reusing this one.
+  const analysis = analyzeFirstSets(grammar);
   const rules: RuleDefinition[] = grammar.rules.map((rule) =>
     isShapeSensitiveRule(grammar, rule)
       ? rule
       : {
           ...rule,
-          pattern: degenerateNegativeLookaheadsInExpression(rule.pattern),
+          pattern: degenerateNegativeLookaheadsInExpression(
+            rule.pattern,
+            analysis,
+          ),
         },
   );
 

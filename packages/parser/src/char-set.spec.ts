@@ -12,6 +12,7 @@ import {
   intersect,
   isDisjoint,
   isEmpty,
+  toCharRanges,
   union,
 } from "./char-set";
 
@@ -130,5 +131,30 @@ describe("char-set algebra", () => {
 
   it("MAX_CODE_POINT is the upper bound of the universal set", () => {
     expect(ALL_CHARS).toEqual([{ lo: 0, hi: MAX_CODE_POINT }]);
+  });
+
+  it("toCharRanges omits `end` for a single-code-point interval and includes it otherwise, round-tripping through fromChar/fromCodePointRange", () => {
+    expect(toCharRanges(fromChar("x"))).toEqual([{ start: "x" }]);
+    expect(toCharRanges(digits)).toEqual([{ start: "0", end: "9" }]);
+    expect(toCharRanges(EMPTY_SET)).toEqual([]);
+  });
+
+  it("toCharRanges is astral-safe: an emoji range round-trips through code points, not UTF-16 code units", () => {
+    const [range] = toCharRanges(astral);
+    expect(range).toEqual({ start: "\u{1F600}", end: "\u{1F64F}" });
+    // Re-deriving a CharSet from the rendered range must reproduce the
+    // original set exactly.
+    expect(
+      fromCodePointRange(range?.start as string, range?.end as string),
+    ).toEqual(astral);
+  });
+
+  it("toCharRanges renders a multi-interval set (from difference/complement) as one CharRange per interval, in ascending order", () => {
+    // digits minus "5" -> two intervals: 0-4 and 6-9.
+    const notFive = difference(digits, fromChar("5"));
+    expect(toCharRanges(notFive)).toEqual([
+      { start: "0", end: "4" },
+      { start: "6", end: "9" },
+    ]);
   });
 });

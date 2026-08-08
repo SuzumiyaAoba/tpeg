@@ -762,7 +762,36 @@ describe("degenerateNegativeLookaheads", () => {
     );
   });
 
-  it("does not degenerate when NegativeLookahead isn't immediately followed by AnyChar", () => {
+  it("does not degenerate when the following element is an external/undefined rule reference -- neither clause can prove anything about it", () => {
+    // `other` is never defined in this grammar -- an unresolved
+    // Identifier gets `unknown` FIRST-set treatment, and
+    // `firstSetsDisjoint` always returns `false` when either side is
+    // `unknown` (the safe direction), so clause 2 correctly declines.
+    // Clause 1 doesn't apply either: an Identifier isn't a
+    // single-code-point CharSet view.
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createSequence([
+            createNegativeLookahead(
+              createCharacterClass([createCharRange("0", "9")], false),
+            ),
+            createIdentifier("other"),
+          ]),
+        ),
+      ],
+    );
+
+    const result = degenerateNegativeLookaheads(grammar);
+    expect(result.rules[0]?.pattern).toEqual(
+      grammar.rules[0]?.pattern as Expression,
+    );
+  });
+
+  it("generalizes past AnyChar: `!charClass singleCharLiteral` also degenerates into a CharacterClass, since a 1-character StringLiteral is a single-code-point CharSet too", () => {
     const grammar = createGrammarDefinition(
       "Test",
       [],
@@ -780,9 +809,181 @@ describe("degenerateNegativeLookaheads", () => {
     );
 
     const result = degenerateNegativeLookaheads(grammar);
+    const pattern = result.rules[0]?.pattern;
+    expect(pattern?.type).toBe("CharacterClass");
+    if (pattern?.type === "CharacterClass") {
+      // "x" is not a digit, so the difference {x} \ digits is just {x}
+      // unchanged -- semantically identical to the original literal "x",
+      // just represented as a (non-negated, since that's the smaller
+      // encoding) single-character class.
+      expect(pattern.negated).toBe(false);
+      expect(pattern.ranges).toEqual([{ start: "x" }]);
+    }
+  });
+
+  it("degenerates via character-set difference even when the excluded and target sets OVERLAP -- a case FIRST-set disjointness alone could never simplify", () => {
+    // !"\n" [^x]  ->  [^x\n]
+    // Neither set is a subset of the other (both exclude different
+    // things), so no "these are disjoint" argument applies -- this is
+    // exactly the capability clause 1 has that a FIRST-set-only approach
+    // doesn't.
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createSequence([
+            createNegativeLookahead(createStringLiteral("\n", '"')),
+            createCharacterClass([createCharRange("x", "x")], true),
+          ]),
+        ),
+      ],
+    );
+
+    const result = degenerateNegativeLookaheads(grammar);
+    const pattern = result.rules[0]?.pattern;
+    expect(pattern?.type).toBe("CharacterClass");
+    if (pattern?.type === "CharacterClass") {
+      expect(pattern.negated).toBe(true);
+      expect(
+        pattern.ranges.sort((a, b) => a.start.localeCompare(b.start)),
+      ).toEqual(
+        [{ start: "\n" }, { start: "x" }].sort((a, b) =>
+          a.start.localeCompare(b.start),
+        ),
+      );
+    }
+  });
+
+  it("does not degenerate via clause 1 when the resulting set would be empty -- the pattern can never match, and synthesizing a never-matching node isn't this pass's job", () => {
+    // !"a" "a": excluding "a", then requiring exactly "a" -- provably
+    // unsatisfiable. Left untouched rather than emitting a
+    // CharacterClass with zero ranges (which downstream codegen, e.g.
+    // charClass(...NonEmptyArray<...>), doesn't accept).
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createSequence([
+            createNegativeLookahead(createStringLiteral("a", '"')),
+            createStringLiteral("a", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const result = degenerateNegativeLookaheads(grammar);
     expect(result.rules[0]?.pattern).toEqual(
       grammar.rules[0]?.pattern as Expression,
     );
+  });
+
+  it("clause 2: deletes a redundant `!a` when `a`/`b` are both non-nullable and FIRST-disjoint, even though `b` isn't a single-code-point CharSet (a multi-character literal)", () => {
+    // !"//" "/*"  ->  "/*"   (FIRST("//") = {/}, FIRST("/*") = {/} --
+    // NOT disjoint by first character alone, so pick a pair that IS.
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createSequence([
+            createNegativeLookahead(createStringLiteral("ab", '"')),
+            createStringLiteral("xy", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const result = degenerateNegativeLookaheads(grammar);
+    expect(result.rules[0]?.pattern).toEqual(createStringLiteral("xy", '"'));
+  });
+
+  it("clause 2 does not fire when FIRST sets are NOT disjoint", () => {
+    // "ab" and "ac" both start with "a" -- FIRST sets overlap.
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createSequence([
+            createNegativeLookahead(createStringLiteral("ab", '"')),
+            createStringLiteral("ac", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const result = degenerateNegativeLookaheads(grammar);
+    expect(result.rules[0]?.pattern).toEqual(
+      grammar.rules[0]?.pattern as Expression,
+    );
+  });
+
+  it("clause 2 does not fire when either side is nullable", () => {
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createSequence([
+            createNegativeLookahead(
+              createOptional(createStringLiteral("ab", '"')),
+            ),
+            createStringLiteral("xy", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const result = degenerateNegativeLookaheads(grammar);
+    expect(result.rules[0]?.pattern).toEqual(
+      grammar.rules[0]?.pattern as Expression,
+    );
+  });
+
+  it("produces code that parses identically to the un-degenerated grammar for the overlapping-sets case, across inputs that discriminate a wrong implementation", async () => {
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createSequence([
+            createNegativeLookahead(createStringLiteral("\n", '"')),
+            createCharacterClass([createCharRange("x", "x")], true),
+          ]),
+        ),
+      ],
+    );
+    const degenerated = degenerateNegativeLookaheads(grammar);
+
+    const unfused = await compileRuleFor(grammar, "r");
+    const fused = await compileRuleFor(degenerated, "r");
+
+    // `.val` is NOT compared here -- see this file's header comment:
+    // `degenerateNegativeLookaheads` deliberately changes value shape
+    // (2 tuple slots -> 1), the same documented, accepted difference
+    // `leftFactorChoices` has. Only accept/reject and stop position are
+    // required to match.
+    for (const input of ["a", "x", "\n", "", "y"]) {
+      const unfusedResult = unfused(input, ORIGIN);
+      const fusedResult = fused(input, ORIGIN);
+      expect(fusedResult.success).toBe(unfusedResult.success);
+      if (unfusedResult.success && fusedResult.success) {
+        expect(fusedResult.next).toEqual(unfusedResult.next);
+      }
+    }
+    // The degenerated shape itself: a single matched character, not a
+    // `[undefined, char]` tuple.
+    const degeneratedResult = fused("a", ORIGIN);
+    expect(degeneratedResult.success).toBe(true);
+    if (degeneratedResult.success) expect(degeneratedResult.val).toBe("a");
   });
 
   it("does not degenerate within a rule containing an ActionExpression anywhere", () => {
