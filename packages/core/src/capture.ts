@@ -199,12 +199,13 @@ export const captureChoice = <T extends unknown[]>(
   // copy here duplicated the exact same fatal-swap subtlety `choice` has
   // (see that function's doc comment) AND its own farthest-error
   // tracking (`longestError`, which read `result.error.pos` on every
-  // failing candidate -- exactly the per-failure materialization Pillar 6
-  // eliminates for `choice` by routing through the shared, singleton-aware
-  // helper instead). Left as an independent copy, capture-heavy grammars
-  // (which is most TPEG-generated code, since `captureSequence`/
-  // `captureChoice` are what codegen emits for labeled rules) would have
-  // silently defeated this pillar's whole point.
+  // failing candidate -- exactly the per-failure materialization the
+  // lazy watermark in `./failure.ts` eliminates for `choice` by routing
+  // through the shared, singleton-aware helper instead). Left as an
+  // independent copy, capture-heavy grammars (which is most
+  // TPEG-generated code, since `captureSequence`/`captureChoice` are what
+  // codegen emits for labeled rules) would have silently defeated that
+  // watermark's whole point.
   const candidates = parsers as unknown as readonly Parser<T[number]>[];
   return (input: string, pos: number) =>
     tryOrderedCandidates(candidates, input, pos, "captureChoice");

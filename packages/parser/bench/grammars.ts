@@ -47,7 +47,7 @@ export const BENCH_JSON_ROOT_RULE = "value";
  * a naive backtracking PEG implementation re-parses that term once per
  * failed alternative before falling through to the bare `product`/`atom`
  * alternative. This is the textbook case packrat memoization and left
- * factoring both target (see plan Phase 2-d and 2-e) -- it exists here
+ * factoring both target -- it exists here
  * specifically to give the benchmark something with real, measurable
  * backtracking, as opposed to `BENCH_JSON_GRAMMAR`'s mostly-linear cost.
  *
@@ -91,8 +91,8 @@ export const BENCH_UNFACTORED_ARITHMETIC_ROOT_RULE = "expr";
  * cycle" is the wrong question for "will memoizing this rule matter" --
  * what matters is whether the rule is *reachable from more than one
  * point at the same input offset*, which has nothing to do with
- * recursion. See the plan's Phase 1 (`packages/parser/src/
- * reentrancy.ts`) for the replacement analysis, which correctly flags
+ * recursion. See `packages/parser/src/
+ * reentrancy.ts`'s analysis, the replacement analysis, which correctly flags
  * `a1`..`a9` (every rule reachable from more than one alternative of an
  * enclosing choice) as memoization targets despite none of them being
  * recursive.
@@ -125,8 +125,8 @@ export const BENCH_ACYCLIC_CHAIN_ROOT_RULE = "a0";
  * alternative of >= 2 elements.
  *
  * Hand-evaluated cut sites (verified empirically: `insertAutomaticCuts`
- * inserts exactly 3 `Cut` AST nodes, one per alternative -- see the perf
- * plan's Phase 0 section for why this differs from the generated code's
+ * inserts exactly 3 `Cut` AST nodes, one per alternative -- this differs
+ * from the generated code's
  * raw `commit(` occurrence count):
  *   - alt 1 (`"[" name "]" nl`): cut after `"["` (k=1); FIRST(`"["`) =
  *     {`[`} is disjoint from FIRST(`name`) = `[a-zA-Z_]` and FIRST(`"#"`)
@@ -136,7 +136,7 @@ export const BENCH_ACYCLIC_CHAIN_ROOT_RULE = "a0";
  *   - alt 3 (`"#" text nl`): last alternative -- vacuously safe (nothing
  *     left to exclude).
  *
- * Exists to give Pillar 7 (`promoteGlobalCuts`, `packages/parser/src/
+ * Exists to give `promoteGlobalCuts` (`packages/parser/src/
  * ast-optimize.ts`, cut promotion to `commitAtTopLevel`) a workload:
  * `entry` is referenced only from `doc = entry+`, with no enclosing
  * `Choice` and no lookahead around that reference -- the promotion
@@ -155,8 +155,8 @@ export const BENCH_ACYCLIC_CHAIN_ROOT_RULE = "a0";
  * grammar and is exactly why `BENCH_CUTTABLE_CONFIG_MEMOIZED_GRAMMAR`
  * (below) exists as a separate constant for the memo-table-truncation
  * measurement specifically -- this one is for the cut-promotion-count and
- * general-throughput measurements Phase 0's baseline table already
- * recorded against it, which an added `@memoize` annotation would change.
+ * general-throughput measurements already recorded against it, which an
+ * added `@memoize` annotation would change.
  */
 export const BENCH_CUTTABLE_CONFIG_GRAMMAR = `
 grammar BenchCuttable {
@@ -179,12 +179,13 @@ export const BENCH_CUTTABLE_CONFIG_ROOT_RULE = "doc";
  * unconditionally, per `codegen-optimized.ts`'s `generateOptimizedRule`.
  * This is what a real user reaching for `@memoize` on a rule they expect
  * to backtrack into heavily (independent of whether this specific corpus
- * happens to trigger it) would write. Exists SPECIFICALLY so Pillar 7's
- * `peakMemoWindow` claim ("truncation bounds the table independent of
- * input length") has a memo table to bound in the first place -- forcing
- * memoization is the only way to construct that on an otherwise-linear,
- * non-backtracking grammar shape without abandoning the property that
- * makes it Pillar-7-promotable to begin with (a genuinely reentrant
+ * happens to trigger it) would write. Exists SPECIFICALLY so
+ * `promoteGlobalCuts`'s `peakMemoWindow` claim ("truncation bounds the
+ * table independent of input length") has a memo table to bound in the
+ * first place -- forcing memoization is the only way to construct that on
+ * an otherwise-linear, non-backtracking grammar shape without abandoning
+ * the property that makes it promotable to `commitAtTopLevel` to begin
+ * with (a genuinely reentrant
  * `entry` would need its own `Choice`/lookahead structure, which would
  * then need its own disjointness argument at the reference site).
  */
@@ -219,7 +220,7 @@ export const BENCH_CUTTABLE_CONFIG_MEMOIZED_ROOT_RULE = "doc";
  * statement starting with 'i', all four 'i'-led alternatives (plus the
  * fallback) remain candidates after the first character, the same
  * problem FIRST_1 has with any keyword-dense grammar. Exists to give
- * Pillar 8 (literal-trie dispatch, extending `predictiveChoice` past one
+ * the literal-trie dispatch (extending `predictiveChoice` past one
  * character) a workload -- none of the other bench grammars have
  * alternatives sharing a first character at all, so a FIRST_1 baseline
  * measured against them can't show this degeneration or the fix.
@@ -251,11 +252,12 @@ grammar BenchKeyword {
 export const BENCH_KEYWORD_ROOT_RULE = "program";
 
 /**
- * Pillar 9 Phase 2's own gate-measurement grammar (see the perf plan):
+ * Sub-expression fusion's own gate-measurement grammar:
  * every OTHER bench grammar above factors each regular fragment (a run
  * of digits, a whitespace run, a quoted-string body) into its OWN named
  * rule -- exactly the shape whole-rule fusion (`enableRegexFusion` with
- * `regexFusionScope: "rule"`, the pre-Phase-2 behavior) already reaches.
+ * `regexFusionScope: "rule"`, the behavior before sub-expression fusion
+ * existed) already reaches.
  * Measuring sub-expression fusion (`regexFusionScope: "subtree"`)
  * against those grammars would show ~zero delta and prove nothing about
  * whether the feature works -- it would only prove the existing bench

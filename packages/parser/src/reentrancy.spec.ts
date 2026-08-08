@@ -24,7 +24,7 @@ const ORIGIN = 0;
 // cross-directory import doesn't typecheck. If the bench grammars change,
 // keep these in sync -- the point of this spec is that the analysis's
 // predictions match the exact grammars the bench's own docstrings and
-// this plan's Phase 1 measurements were made against.
+// measurements were made against.
 const ACYCLIC_CHAIN_GRAMMAR = `
 grammar BenchAcyclicChain {
   a0 = a1 "x" / a1 "y" / a1
@@ -76,9 +76,9 @@ function parse(src: string) {
 
 describe("analyzeReentrancy", () => {
   // These three are the exact grammars from `packages/parser/bench/
-  // grammars.ts`, empirically measured while designing this analysis
-  // (see the plan's Phase 1 section) -- this spec is the acceptance test
-  // for the algorithm the plan promised, not just illustrative examples.
+  // grammars.ts`, empirically measured while designing this analysis --
+  // this spec is the acceptance test for the algorithm's guarantees, not
+  // just illustrative examples.
 
   it("flags every non-root rule of an acyclic unfactored chain (BENCH_ACYCLIC_CHAIN_GRAMMAR)", () => {
     // 10 levels of unfactored 3-way choice, none of them recursive --

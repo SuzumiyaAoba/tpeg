@@ -310,7 +310,7 @@ export interface Cut {
   type: "Cut";
   /**
    * Set by `promoteGlobalCuts` (`packages/parser/src/ast-optimize.ts`,
-   * Pillar 7 of the PEG-theory perf plan) when this specific cut has been
+   * global cut promotion) when this specific cut has been
    * proven safe to compile to `commitAtTopLevel` (packrat memo-table
    * truncation) rather than the ordinary, purely-local `commit`. Absent
    * (not merely `false`) on every `Cut` produced anywhere else in this

@@ -465,7 +465,7 @@ describe("Capture Integration Tests", () => {
       // `charClassRun(...)` rather than `oneOrMore(charClass(...))` --
       // even reached through a LabeledExpression, which is transparent
       // to this decision (see `packages/core/src/char-class.ts`'s
-      // `charClassRun` doc comment, Pillar 9 Phase 1).
+      // `charClassRun` doc comment).
       expect(result.code).toContain("charClassRun");
     });
   });

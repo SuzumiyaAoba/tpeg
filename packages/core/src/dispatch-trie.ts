@@ -10,8 +10,8 @@ export const ASCII_TABLE_SIZE = 128;
 
 /**
  * One node of the literal-prefix dispatch trie `predictiveChoice`
- * (`./combinators.ts`) builds per ASCII first-character bucket (Pillar 8 of
- * the perf plan): extends FIRST_1 dispatch past a single character for
+ * (`./combinators.ts`) builds per ASCII first-character bucket: extends
+ * FIRST_1 dispatch past a single character for
  * alternatives that share a longer literal prefix (e.g. `if`/`import`/
  * `interface`/`instanceof` all starting with `i`), without requiring a
  * fixed lookahead depth the way a FIRST_2/FIRST_3 table would.
@@ -68,8 +68,8 @@ const dispatchTrieCandidates = <T>(
  * descending (returns `children: null`) once fewer than two entries still
  * have an unconsumed literal character to discriminate on -- a single
  * remaining candidate needs no further narrowing, and this deliberately
- * does NOT build a depth-1 node just to hold one entry, matching the
- * plan's "candidates >= 2 AND prefixed >= 2" condition at every level, not
+ * does NOT build a depth-1 node just to hold one entry: the "candidates >=
+ * 2 AND prefixed >= 2" condition below is enforced at every level, not
  * just the root.
  *
  * An entry with `remaining === ""` (no literal information left, whether

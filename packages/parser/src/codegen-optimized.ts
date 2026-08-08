@@ -102,8 +102,8 @@ export interface OptimizedCodeGenOptions {
    * diagnostic narrowing, not a behavior change. That's a much narrower
    * risk surface than an AST rewrite, so it defaults on.
    *
-   * Benchmark effect (`packages/parser/bench/run.ts`, JSON grammar,
-   * pre-Pillar-1 FIRST sets): ~1.73x throughput, leaf invocations/char
+   * Benchmark effect (`packages/parser/bench/run.ts`, JSON grammar):
+   * ~1.73x throughput, leaf invocations/char
    * 1.45x -> 1.15x. Set to `false` to opt back out.
    */
   enablePredictiveDispatch?: boolean;
@@ -126,8 +126,8 @@ export interface OptimizedCodeGenOptions {
    * so it stays opt-in pending more real-world grammar coverage, the
    * same conservative posture `./ast-optimize.ts`'s rewrites take.
    *
-   * Gate measurement backing this option (see the perf plan's Pillar 4a
-   * section): on the JSON and unfactored-arithmetic bench grammars,
+   * Gate measurement backing this option: on the JSON and
+   * unfactored-arithmetic bench grammars (`packages/parser/bench/grammars.ts`),
    * ~82-87% of leaf-parser invocations belong to wholly-clean rules,
    * with a ~6.7x collapse factor (leaf invocations saved per rule
    * entry) -- both high enough to justify building this.
@@ -212,7 +212,7 @@ const unwrapTransparentPrefix = (expr: Expression): Expression => {
 
 /**
  * Derives a Choice alternative's known literal prefix for `predictiveChoice`'s
- * optional third tuple slot (Pillar 8 of the perf plan, `packages/core/src/
+ * optional third tuple slot (`packages/core/src/
  * combinators.ts`'s `DispatchTrieNode`), or `null` if it doesn't have one.
  *
  * Returns non-`null` only for a bare `StringLiteral` of length >= 2, or a
@@ -548,7 +548,7 @@ export class OptimizedTPEGCodeGenerator {
         );
         // Mirrors codegen.ts's identical guard: when this IS the start
         // rule's own top-level Sequence, OR a Cut here was marked
-        // `global: true` by `promoteGlobalCuts` (Pillar 7), it emits
+        // `global: true` by `promoteGlobalCuts`, it emits
         // `commitAtTopLevel` (tpeg-combinator) instead of `commit`
         // (tpeg-core) -- see generateOptimizedSequence -- so `commit`
         // must not be added to the tpeg-core import set in that case.
@@ -1025,7 +1025,7 @@ export class OptimizedTPEGCodeGenerator {
       return null;
     }
 
-    // Pillar 8: a literal-prefix trie slot is only emitted for a Choice
+    // A literal-prefix trie slot is only emitted for a Choice
     // where at least one alternative actually has one -- see
     // `literalPrefixForExpression`'s doc comment. This keeps every Choice
     // WITHOUT a qualifying alternative byte-identical to before this

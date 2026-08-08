@@ -160,8 +160,9 @@ export const sequence = <P extends Parser<unknown>[]>(
         // with an enriched message/context: virtually every rule body is
         // a `sequence`, so re-wrapping here would read (and thus
         // materialize) the `error` getter on almost every leaf failure in
-        // the grammar -- the single biggest hazard to Pillar 6's whole
-        // point (see `./failure.ts`'s doc comment). The failed element's
+        // the grammar -- the single biggest hazard to the lazy-diagnostics
+        // watermark's whole point (see `./failure.ts`'s doc comment). The
+        // failed element's
         // own `fail()` call already recorded its position/expectation in
         // the shared watermark; there is nothing this wrapper adds besides
         // an "in sequence" context label, which the watermark doesn't
@@ -382,7 +383,7 @@ const describeFirstCharFilter = (filter: FirstCharFilter): string => {
  * doc comment and `firstCharFilterMatches` for why a UTF-16-code-unit
  * comparison would silently mismatch a surrogate pair.
  *
- * ## Past FIRST_1: an optional literal-prefix trie (Pillar 8)
+ * ## Past FIRST_1: an optional literal-prefix trie
  *
  * FIRST_1 dispatch degenerates on keyword-dense grammars where several
  * alternatives share a first character (`true`/`this`/`throw`,
@@ -454,7 +455,7 @@ export const predictiveChoice = <T extends unknown[]>(
   const allCandidates: readonly Parser<T[number]>[] = parsers;
 
   // Each entry is the root {@link DispatchTrieNode} for that ASCII first
-  // character (Pillar 8): `children: null` (the common case -- no
+  // character: `children: null` (the common case -- no
   // alternative surviving this bucket has a length->=2 literal prefix, or
   // fewer than two do) makes `.candidates` behave exactly like the flat
   // per-code array this table held before tries existed; `children`

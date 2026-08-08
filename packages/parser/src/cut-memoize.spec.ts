@@ -185,7 +185,7 @@ describe("commitAtTopLevel (Phase 3: cut-driven memo table truncation), parsed f
   });
 });
 
-describe("promoteGlobalCuts (Pillar 7: cut promotion beyond the start rule's own top-level sequence)", () => {
+describe("promoteGlobalCuts (cut promotion beyond the start rule's own top-level sequence)", () => {
   test("a cut in a rule referenced only through a Plus from the start rule promotes to commitAtTopLevel and reproduces the same space claim as the Phase 3 case", async () => {
     const core = await import("@suzumiyaaoba/tpeg-core");
     const combinator = await import("@suzumiyaaoba/tpeg-combinator");

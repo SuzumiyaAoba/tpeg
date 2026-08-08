@@ -1,5 +1,5 @@
 /**
- * Correctness tests for Pillar 4b's regex fusion: `isRuleFusable`'s two
+ * Correctness tests for regex fusion: `isRuleFusable`'s two
  * gates (structural + determinism) and `emitFusedRule`'s shape
  * reconstruction, exercised both at the unit level and end-to-end
  * through `generateOptimizedTypeScriptParser({ enableRegexFusion: true })`.
@@ -122,7 +122,7 @@ describe("isRuleFusable: structural + determinism gates", () => {
   });
 
   it('accepts a repetition whose immediate follower is nullable but whose PROPERLY COMPOSED tail is disjoint: number = "-"? [0-9]+ ("." [0-9]+)?', () => {
-    // This is the case the plan's original two-clause condition
+    // This is the case the original two-clause condition
     // ("FIRST(e) ∩ FIRST(next) = ∅ AND next non-nullable") would have
     // wrongly rejected: `("." [0-9]+)?` immediately after the first
     // `[0-9]+` IS nullable. The refined condition (composing the FIRST
@@ -463,7 +463,7 @@ describe("generateOptimizedTypeScriptParser({ enableRegexFusion: true, includeIm
     // A fused rule compiles to a single `regexFusedMap(...)` call
     // (`packages/core/src/regex-fused.ts`) rather than `map(regexFused(
     // ...), ...)` -- see `regex-fusion.ts`'s `emit`/`emitFusedExpression`
-    // doc comments (Pillar 9 Phase 2) for why this collapses the fixed
+    // doc comments for why this collapses the fixed
     // per-match allocation count.
     expect(coreImportLine).toContain("regexFusedMap");
     // `object`/`pair`/`array`/`value` reference other rules and stay
@@ -1098,7 +1098,7 @@ async function expectSameResult(
   }
 }
 
-describe("planFusion: sub-expression fusion (Pillar 9 Phase 2)", () => {
+describe("planFusion: sub-expression fusion", () => {
   it("does not treat a bare CharacterClass/StringLiteral as a fusion root under scope: subtree (weight 1 < MIN_FUSION_WEIGHT) -- fusing it would be a pessimization relative to charClass/literal's own zero-allocation success path", () => {
     const parsed = grammarDefinition(
       `grammar G { r = [a-z] "x" other \n other = "y" }`,

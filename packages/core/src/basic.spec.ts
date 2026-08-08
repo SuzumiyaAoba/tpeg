@@ -171,10 +171,9 @@ describe("anyChar parser", () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         // Message is now built from the shared farthest-failure watermark
-        // (`./failure.ts`) rather than a per-call literal string -- see
-        // Pillar 6 of the perf plan. `expected`/`found`/`parserName` are
-        // unaffected: this is the single-failure case where they still
-        // resolve unambiguously.
+        // (`./failure.ts`) rather than a per-call literal string.
+        // `expected`/`found`/`parserName` are unaffected: this is the
+        // single-failure case where they still resolve unambiguously.
         expect(result.error.message).toBe(
           'Expected any character, found "end of input"',
         );
@@ -389,7 +388,7 @@ describe("literal parser", () => {
     it("should report error at first mismatched character", () => {
       // Purpose: Verify detailed error position reporting. `expected`/
       // `found` now describe the whole literal, not the one mismatched
-      // character -- see Pillar 6 of the perf plan: a single `Expectation`
+      // character -- see `./failure.ts`'s watermark: a single `Expectation`
       // is allocated once per `literal(...)` call rather than once per
       // mismatched character. `pos` still pinpoints the exact mismatch.
       const parser = literal("expected");

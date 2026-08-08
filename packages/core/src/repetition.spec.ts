@@ -271,9 +271,9 @@ describe("repetition edge cases", () => {
   });
 
   // 新しいテストケース：エラーメッセージの品質確認
-  // Pillar 6（性能計画）以降、`oneOrMore` は最初の失敗を「in oneOrMore」で
-  // 包み直さず、子パーサー自身の失敗をそのまま返す（`fail()` が既に
-  // 大域ウォーターマークへ記録済みのため）。
+  // `./failure.ts` の大域ウォーターマーク導入以降、`oneOrMore` は最初の失敗を
+  // 「in oneOrMore」で包み直さず、子パーサー自身の失敗をそのまま返す
+  // （`fail()` が既に大域ウォーターマークへ記録済みのため）。
   it("should provide meaningful error messages for oneOrMore failures", () => {
     const input = "xyz";
     const pos = 0;
@@ -543,9 +543,9 @@ describe("quantified", () => {
     const parser = quantified(lit("a"), 3, 5);
 
     // Test insufficient matches. `quantified`'s required-repetition loop
-    // now relays the child's failure UNCHANGED (see Pillar 6 of the perf
-    // plan) instead of wrapping it with its own message/parserName -- the
-    // failure is `lit("a")`'s own.
+    // now relays the child's failure UNCHANGED (see `./failure.ts`'s
+    // watermark) instead of wrapping it with its own message/parserName --
+    // the failure is `lit("a")`'s own.
     const result1 = parser("aa", 0);
     expect(isFailure(result1)).toBe(true);
     if (isFailure(result1)) {

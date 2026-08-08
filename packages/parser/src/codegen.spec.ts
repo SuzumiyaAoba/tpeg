@@ -331,8 +331,8 @@ describe("TPEG Code Generation", () => {
       // `Star`/`Plus` over a BARE `CharacterClass` collapse to a single
       // `charClassRun(...)` scan instead of `zeroOrMore`/`oneOrMore`
       // driving `charClass` one character at a time -- see
-      // `packages/core/src/char-class.ts`'s `charClassRun` doc comment
-      // (Pillar 9 Phase 1). `optional(literal(" "))` is unaffected: that
+      // `packages/core/src/char-class.ts`'s `charClassRun` doc comment.
+      // `optional(literal(" "))` is unaffected: that
       // optimization only applies to Star/Plus/Quantified{0,1,}.
       expect(result.code).toContain('charClassRun([["a", "z"]], 0)');
       expect(result.code).toContain('charClassRun([["0", "9"]], 1)');

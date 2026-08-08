@@ -57,7 +57,7 @@
  * `first-sets.ts`'s `sequenceFirstSet`/`Choice` handling (see below),
  * with rule names standing in for characters.
  *
- * ## Dominance-based minimization (Pillar 11)
+ * ## Dominance-based minimization
  *
  * `invocableAtZero` follows `Identifier` references transitively (rule
  * `R`'s set includes everything reachable from `R`'s own body at offset
@@ -96,7 +96,7 @@
  * reasoning still governs every case this minimization declines to
  * resolve.
  *
- * ## Cut-aware suppression (Pillar 11)
+ * ## Cut-aware suppression
  *
  * A `Cut` (`~`) inside a `Sequence` makes its ENCLOSING `Choice`'s later
  * alternatives provably unreachable once the cut fires: ordered choice
@@ -457,7 +457,7 @@ const collectAllIdentifiers = (expr: Expression, into: Set<string>): void => {
  * terminal rule isn't in `rawReentrantRules`, none of `a1`..`a9` are
  * dominated; all nine keep their own memo table, exactly as before this
  * minimization existed. This is the deliberate negative-control case:
- * the pillar this whole module was built around must not regress.
+ * the guarantee this whole module was built around must not regress.
  */
 const minimizeByDominance = (
   grammar: GrammarDefinition,

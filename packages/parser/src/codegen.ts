@@ -133,7 +133,7 @@ ${transformFn.body}
 
 /**
  * Does `expr` contain a `Cut` marked `global: true` (by `promoteGlobalCuts`,
- * `packages/parser/src/ast-optimize.ts`, Pillar 7 of the perf plan)
+ * `packages/parser/src/ast-optimize.ts`)
  * anywhere in its subtree? Used to decide whether `commitAtTopLevel`
  * (`@suzumiyaaoba/tpeg-combinator`) needs importing beyond the existing
  * start-rule-top-level-Sequence case this module already handles.
@@ -723,7 +723,7 @@ export class TPEGCodeGenerator {
     // that matters), so `commitAtTopLevel(...)` is emitted instead of the
     // ordinary `commit(...)`, letting `memoize` discard now-unreachable
     // cache entries as the parse commits past them. A `Cut` marked
-    // `global: true` by `promoteGlobalCuts` (`ast-optimize.ts`, Pillar 7)
+    // `global: true` by `promoteGlobalCuts` (`ast-optimize.ts`)
     // gets the same treatment regardless of `isStartRuleTopLevel` -- that
     // function only sets the flag where the broader promotion argument
     // holds (see its module doc comment).

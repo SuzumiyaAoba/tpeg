@@ -111,7 +111,7 @@ describe("tpeg CLI", () => {
     // `[0-9]+` (a Plus over a bare CharacterClass) now collapses to a
     // single `charClassRun(...)` scan instead of `oneOrMore(charClass(...))`
     // -- see `packages/core/src/char-class.ts`'s `charClassRun` doc
-    // comment (Pillar 9 Phase 1).
+    // comment.
     expect(stdout).toContain("charClassRun");
   });
 

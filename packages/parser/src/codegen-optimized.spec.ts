@@ -550,7 +550,7 @@ describe("enablePredictiveDispatch", () => {
     ],
   );
 
-  it("emits predictiveChoice by default (Phase 0 of the perf plan: on unless explicitly disabled)", () => {
+  it("emits predictiveChoice by default (on unless explicitly disabled)", () => {
     const result = generateOptimizedTypeScriptParser(JSON_LIKE_GRAMMAR, {
       enableMemoization: false,
     });
@@ -585,8 +585,8 @@ describe("enablePredictiveDispatch", () => {
   });
 
   it("falls back to plain choice() for a Choice with no computable, non-nullable FIRST set on any alternative", () => {
-    // AnyChar is no longer a case that forces this fallback (Pillar 1:
-    // its FIRST set is now the exact universal set, not `unknown`) --
+    // AnyChar is no longer a case that forces this fallback (its FIRST
+    // set is now the exact universal set, not `unknown`) --
     // a cross-module QualifiedIdentifier is still genuinely unresolvable
     // here, so it's the regression case for this fallback path now.
     const grammar = createGrammarDefinition(
@@ -769,7 +769,7 @@ describe("enablePredictiveDispatch", () => {
   });
 });
 
-describe("literalPrefixForExpression / predictiveChoice's literal-prefix trie slot (Pillar 8)", () => {
+describe("literalPrefixForExpression / predictiveChoice's literal-prefix trie slot", () => {
   // Mirrors packages/parser/bench/grammars.ts's BENCH_KEYWORD_GRAMMAR at
   // a smaller scale: 'i'/'t' each lead two keywords, plus a no-prefix
   // `ident` fallback -- exactly the shape FIRST_1 dispatch degenerates on.
@@ -829,7 +829,7 @@ describe("literalPrefixForExpression / predictiveChoice's literal-prefix trie sl
     );
   });
 
-  it("does NOT emit a third tuple element for a Choice where no alternative has a length->=2 literal prefix (byte-identical to before Pillar 8)", () => {
+  it("does NOT emit a third tuple element for a Choice where no alternative has a length->=2 literal prefix (byte-identical to before the literal-prefix trie existed)", () => {
     // Mirrors BENCH_JSON_GRAMMAR's `value` shape: every alternative is a
     // bare Identifier reference, never a StringLiteral or a Sequence
     // starting with one.
@@ -885,9 +885,9 @@ describe("literalPrefixForExpression / predictiveChoice's literal-prefix trie sl
       code.split("\n").find((l) => l.startsWith("export const value"));
     // `value`'s own Choice (bare Identifier alternatives) gets NO literal
     // prefix on any alternative, so its predictiveChoice(...) call must
-    // stay a plain 2-tuple-per-entry array -- unaffected by Pillar 8
-    // existing at all, even though a DIFFERENT rule in the same grammar
-    // (`bool`) does gain prefixes.
+    // stay a plain 2-tuple-per-entry array -- unaffected by the
+    // literal-prefix trie existing at all, even though a DIFFERENT rule
+    // in the same grammar (`bool`) does gain prefixes.
     expect(valueLine(withPredictive.code)).toContain("predictiveChoice([");
     expect(valueLine(withPredictive.code)).not.toMatch(/"[a-zA-Z]+"\]/);
     expect(valueLine(withoutPredictive.code)).toContain("choice(");

@@ -1,6 +1,6 @@
 /**
- * Direct unit tests for the farthest-failure watermark (`./failure.ts`,
- * Pillar 6 of the perf plan). Previously only exercised indirectly via
+ * Direct unit tests for the farthest-failure watermark (`./failure.ts`).
+ * Previously only exercised indirectly via
  * `combinators.spec.ts`'s `choice`/`predictiveChoice` tests -- this file
  * targets `fail`/`materializeParseError`/`resetFailureWatermark`/
  * `snapshotFailureWatermark`/`restoreFailureWatermark`/`isFatalFailure`

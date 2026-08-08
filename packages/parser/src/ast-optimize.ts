@@ -18,7 +18,7 @@
  * - `ast-optimize-negative-lookahead.ts`: `degenerateNegativeLookaheads`
  *   (`!a .` -> a negated character class)
  * - `ast-optimize-cut-insertion.ts`: `insertAutomaticCuts`
- * - `ast-optimize-cut-promotion.ts`: `promoteGlobalCuts` (Pillar 7)
+ * - `ast-optimize-cut-promotion.ts`: `promoteGlobalCuts`
  * Helpers shared by more than one pass (`containsLabel`,
  * `isShapeSensitiveRule`) live in `ast-optimize-shared.ts`.
  *
@@ -152,7 +152,7 @@
  * `buildCutGroups`) and its labeled-`Choice` fallback (`findCutPosition`).
  *
  * See `ast-optimize-cut-promotion.ts`'s own doc comment for `promoteGlobalCuts`
- * (Pillar 7 global cut promotion), a separate, more involved rewrite built
+ * (global cut promotion), a separate, more involved rewrite built
  * on top of whatever cuts already exist in the grammar.
  */
 

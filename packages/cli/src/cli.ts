@@ -238,8 +238,8 @@ export function run(argv: string[]): number {
   const cutInserted = options.autoCut
     ? insertAutomaticCuts(astOptimized)
     : astOptimized;
-  // `promoteGlobalCuts` (packages/parser/src/ast-optimize.ts, Pillar 7 of
-  // the perf plan) needs a FIRST-set analysis of the SAME grammar it's
+  // `promoteGlobalCuts` (packages/parser/src/ast-optimize.ts, global cut
+  // promotion) needs a FIRST-set analysis of the SAME grammar it's
   // marking cuts in -- computed fresh here rather than reusing whatever
   // `insertAutomaticCuts` used internally, since `--ast-optimize`/
   // `--auto-cut` may have already changed the rule set.
@@ -263,8 +263,9 @@ export function run(argv: string[]): number {
         ...sharedOptions,
         ...(options.regexFusion ? { enableRegexFusion: true } : {}),
         // `regexFusionScope` defaults to `"rule"` in the codegen itself
-        // (byte-identical to pre-Pillar-9-Phase-2 output) -- only pass
-        // `"subtree"` explicitly when `--regex-fusion-subtree` was given.
+        // (matches output from before subtree-scoped fusion existed) --
+        // only pass `"subtree"` explicitly when `--regex-fusion-subtree`
+        // was given.
         ...(options.regexFusionSubtree
           ? { regexFusionScope: "subtree" as const }
           : {}),

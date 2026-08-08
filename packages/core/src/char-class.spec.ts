@@ -32,8 +32,7 @@ describe("charClass", () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       // Message now comes from the shared farthest-failure watermark
-      // (`./failure.ts`, Pillar 6 of the perf plan) rather than a
-      // per-call template string.
+      // (`./failure.ts`) rather than a per-call template string.
       expect(result.error.message).toBe('Expected a-c, found "d"');
       expect(result.error.expected).toBe("a-c");
       expect(result.error.found).toBe("d");

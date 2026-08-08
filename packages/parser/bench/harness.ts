@@ -7,8 +7,7 @@
  * parses real input. `packages/parser-sample/src/performance-demo.ts`
  * measures code-generation speed, not parse speed; `packages/core/src/
  * performance.spec.ts` and `packages/combinator/benchmark.spec.ts` measure
- * single-character primitives, not a parser executing on a document. See
- * the plan's Phase 1 rationale for the full argument.
+ * single-character primitives, not a parser executing on a document.
  *
  * Design notes:
  * - `compileRule` parses a grammar, generates code with `includeImports:
@@ -58,10 +57,10 @@ export interface MemoProbeStats {
   peakMemoEntries: number;
   /** Highest `(highest cached offset) - (current prune base) + 1` observed
    * for any single `memoize`-wrapped rule -- the size of the "window" of
-   * offsets that rule's cache has ever had to span at once. Pillar 7's
-   * promotion is supposed to keep this bounded independent of input
-   * length; Phase 0/Pillar 6-only configurations are expected to let it
-   * grow with input size. */
+   * offsets that rule's cache has ever had to span at once.
+   * `promoteGlobalCuts`'s cut promotion is supposed to keep this bounded
+   * independent of input length; configurations without it (ordinary,
+   * non-global commits only) are expected to let it grow with input size. */
   peakMemoWindow: number;
 }
 
@@ -233,8 +232,8 @@ export interface CompileRuleOptions {
    */
   autoCut?: boolean;
   /**
-   * Applies `promoteGlobalCuts` (packages/parser/src/ast-optimize.ts,
-   * Pillar 7 of the perf plan) to the parsed grammar before codegen,
+   * Applies `promoteGlobalCuts` (packages/parser/src/ast-optimize.ts)
+   * to the parsed grammar before codegen,
    * AFTER `autoCut` (a cut has to exist before it can be promoted).
    * Marks every provably-safe `Cut` `global: true`, which both codegens
    * then compile to `commitAtTopLevel` instead of the ordinary `commit` --
@@ -259,8 +258,8 @@ export interface CompileRuleOptions {
    * `choice(...)` for eligible `Choice` nodes.
    *
    * Defaults to `false` here, deliberately diverging from
-   * `generateOptimizedTypeScriptParser`'s own default (`true`, as of
-   * Phase 0 of the perf plan). `CONFIGS`/`JSON_CONFIGS` in `run.ts` rely
+   * `generateOptimizedTypeScriptParser`'s own default (`true`).
+   * `CONFIGS`/`JSON_CONFIGS` in `run.ts` rely
    * on this axis being off unless explicitly requested, to keep
    * "standard" / "memoization off" / "memoization on" isolated from
    * predictive dispatch's own effect -- if this defaulted to `true` too,
@@ -286,7 +285,7 @@ export interface CompileRuleOptions {
    * rule's own top-level pattern, byte-identical to this module's
    * original whole-rule-only fusion; `"subtree"` additionally fuses any
    * maximal fusable node reached by walking a rule's pattern top-down
-   * (Pillar 9 Phase 2 -- see `packages/parser/src/regex-fusion.ts`'s
+   * (see `packages/parser/src/regex-fusion.ts`'s
    * `planFusion`). Kept as its own axis, defaulting to match the
    * existing `enableRegexFusion` arms exactly, so a `"subtree"` arm can
    * be isolated against a `"rule"` baseline on the same grammar.
@@ -311,7 +310,7 @@ export interface CompileRuleOptions {
    * over a bare `CharacterClass` into a single `charClassRun(...)` scan.
    *
    * Defaults to `false` here, deliberately diverging from both
-   * generators' own default (`true`, Phase 1 of Pillar 9's perf plan) --
+   * generators' own default (`true`) --
    * same isolation reason `enablePredictiveDispatch` documents: leaving
    * this on by default in every arm would make it impossible to tell how
    * much of a delta belongs to this optimization specifically. Do not
@@ -475,7 +474,7 @@ export interface ParseThroughputResult {
    * it, like `leafInvocations`), or `null` if `compiled.memoStats` is
    * `null` (i.e. `CompileRuleOptions.probeMemo` wasn't set). See
    * `MemoProbeStats`'s own doc comment for what each field means -- in
-   * short, `peakMemoWindow` is the number to watch for Pillar 7's
+   * short, `peakMemoWindow` is the number to watch for `promoteGlobalCuts`'
    * "truncation actually bounds the table" claim.
    */
   peakMemoEntries: number | null;

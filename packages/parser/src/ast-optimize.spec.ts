@@ -1487,16 +1487,16 @@ describe("insertAutomaticCuts", () => {
     }
   });
 
-  describe("Pillar 3: partial exclusion via ordered-choice associativity", () => {
+  describe("Partial exclusion via ordered-choice associativity", () => {
     /**
      * `r = "a" "1" / "b" / "c" / "a" "2"`. The first alternative's prefix
      * FIRST is {"a"}, which is disjoint from "b" and "c" but NOT from the
-     * fourth alternative (also starting with "a") -- so the pre-Pillar-3
+     * fourth alternative (also starting with "a") -- so the original
      * all-or-nothing check (`findCutPosition`) gets ZERO benefit here: one
      * non-excluded sibling (the fourth) means no cut at all, even though
      * the first alternative provably excludes its two immediate
-     * neighbors. This is the exact "crossing" shape the plan's advisor
-     * review flagged as needing its own bench grammar to demonstrate.
+     * neighbors. This is the exact "crossing" shape that needs its own
+     * bench grammar to demonstrate the partial-exclusion behavior.
      */
     const crossingGrammar = () =>
       createGrammarDefinition(
@@ -1555,7 +1555,7 @@ describe("insertAutomaticCuts", () => {
       // whole point of this test), but it IS independently the last
       // alternative at the top level once the first group is consumed,
       // so it still gets its own vacuous "nothing left to exclude" cut --
-      // same mechanism as the pre-Pillar-3 last-alternative case,
+      // same mechanism as the original last-alternative case,
       // unrelated to the partial-exclusion grouping this test targets.
       if (lastAlt?.type === "Sequence") {
         expect(lastAlt.elements.map((e) => e.type)).toEqual([
@@ -1597,7 +1597,7 @@ describe("insertAutomaticCuts", () => {
       }
     });
 
-    it('negative control: a bare top-level cut (the naive, non-nested placement Pillar 3 avoids) DOES incorrectly reject "a2", proving the nested Choice above is load-bearing rather than incidental', async () => {
+    it('negative control: a bare top-level cut (the naive, non-nested placement the associativity-based restructuring above avoids) DOES incorrectly reject "a2", proving the nested Choice above is load-bearing rather than incidental', async () => {
       // Same crossing grammar, but this test does NOT call
       // `insertAutomaticCuts`. Instead it hand-builds the cut placement a
       // naive "runLength > 0 somewhere -> insert a cut" implementation
@@ -1853,14 +1853,14 @@ describe("insertAutomaticCuts", () => {
       }
     });
 
-    it("does not restructure a Choice containing a LabeledExpression, falling back to the pre-Pillar-3 all-or-nothing check instead", () => {
+    it("does not restructure a Choice containing a LabeledExpression, falling back to the original all-or-nothing check instead", () => {
       // Same crossing shape as above, but the fourth alternative carries
       // a label -- `containsLabel` must make this Choice bail out of
       // regrouping entirely. Under the all-or-nothing fallback, the first
       // alternative gets NO cut (the fourth isn't excluded), while the
       // fourth alternative -- now the last one -- still gets its own
       // vacuous "nothing left to exclude" cut, exactly as it would have
-      // before Pillar 3 existed.
+      // before this restructuring logic existed.
       const grammar = createGrammarDefinition(
         "CrossingLabeled",
         [],

@@ -1,7 +1,7 @@
 /**
  * Global cut promotion: marking a `Cut` safe for `commitAtTopLevel`.
  *
- * See the plan's Pillar 7 for the full theory. Short version: today's
+ * Today's
  * codegen (`codegen.ts`/`codegen-optimized.ts`) only ever emits
  * `commitAtTopLevel` (which lets `memoize`, `packages/combinator/src/
  * logic.ts`, discard now-unreachable cache entries) for a `Cut` that is a

@@ -430,9 +430,9 @@ describe("predictiveChoice", () => {
     }
   });
 
-  // Pillar 2 of the perf plan factored `choice`'s fatal-handling and
-  // farthest-error aggregation out into a helper (`tryOrderedCandidates`)
-  // shared with `predictiveChoice`'s ASCII-table dispatch path. Before
+  // `choice`'s fatal-handling and farthest-error aggregation was factored
+  // out into a helper (`tryOrderedCandidates`) shared with
+  // `predictiveChoice`'s ASCII-table dispatch path. Before
   // that, `predictiveChoice` got cut/commit semantics "for free" by
   // delegating its filtered candidate list straight to `choice(...)`; the
   // tests below exercise the same scenarios as `describe("choice")`'s
@@ -614,11 +614,11 @@ describe("predictiveChoice", () => {
     });
   });
 
-  describe("literal-prefix trie (third tuple slot, Pillar 8)", () => {
+  describe("literal-prefix trie (third tuple slot)", () => {
     const iFilter = charFilter("i");
 
     it('does not lose the shorter alternative to a deepest-node-wins bug: "==" / "=" on "=x" still matches "="', () => {
-      // The trace from the plan: input "=x" descends the trie one level
+      // The trace: input "=x" descends the trie one level
       // (matching "="'s shared first character), finds no child for "x",
       // and must fall back to trying BOTH "==" and "=" at this node, in
       // declaration order -- not just whichever alternative's literal is

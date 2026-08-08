@@ -25,7 +25,7 @@ let watermarkOffset = 0;
  * `commit()`'s (`@suzumiyaaoba/tpeg-core`) top-level counterpart: marks a
  * failure fatal exactly like `commit`, and ALSO advances the shared
  * watermark `memoize` (below) uses to discard now-unreachable cache
- * entries. See the plan's Phase 3 (Mizushima et al., PASTE 2010) for the
+ * entries. See Mizushima et al., PASTE 2010, for the
  * theory, and read the soundness restriction below before using this
  * directly -- it is easy to reach for and unsound to use in the wrong
  * place.
@@ -93,8 +93,8 @@ export const commitAtTopLevel =
  * Packrat memoization: caches a rule's parse result per (input, position),
  * so re-trying the same rule at the same offset -- exactly what backtracking
  * in an ordered `choice` or a shared-prefix reparse does -- is an O(1)
- * cache lookup instead of a full re-parse. See the plan's Phase 2-d
- * rationale and `packages/parser/bench/`'s "memoization on" results for the
+ * cache lookup instead of a full re-parse. See
+ * `packages/parser/bench/`'s "memoization on" results for the
  * measured effect (dramatic for genuine backtracking, a net negative for
  * grammars with nothing to reuse -- both expected, matching Ford (2002)'s
  * theory).

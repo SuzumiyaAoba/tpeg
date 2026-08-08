@@ -6,9 +6,9 @@
  * bench:parser` from the repo root (see `package.json`). Deliberately
  * named `run.ts` (not `*.spec.ts`/`*.test.ts`) and lives outside `src/`,
  * so `bun test`'s recursive scan never picks it up -- this is meant to be
- * read and diffed by a human across commits, not asserted on in CI (see
- * plan Phase 1.5 on why wall-clock assertions in CI are a separate,
- * risk-flagged concern).
+ * read and diffed by a human across commits, not asserted on in CI
+ * (wall-clock assertions are machine-dependent and flaky on shared CI
+ * runners -- see `packages/core/src/performance.spec.ts`'s doc comment).
  *
  * For an accurate heap-delta reading, run with `bun --expose-gc
  * run.ts` (the `bench` script already does this); without it,
@@ -74,11 +74,11 @@ const CONFIGS: { label: string; options: CompileRuleOptions }[] = [
  * Only meaningful for `BENCH_JSON_GRAMMAR`'s `value` rule, a 7-way
  * FIRST-disjoint `Choice` (object/array/string/number/true/false/null all
  * start with a different character) -- exactly the shape
- * `enablePredictiveDispatch` targets (Phase 3's FIRST-set dispatch, see
+ * `enablePredictiveDispatch` targets (FIRST-set dispatch, see
  * `packages/parser/src/first-sets.ts` and
  * `codegen-optimized.ts`'s `tryGeneratePredictiveChoice`). This is also
  * the one workload in this file where plain memoization *hurts*
- * (0% cache hit rate -- see the plan's Phase 1 results), so it's the
+ * (0% cache hit rate), so it's the
  * natural place to check whether predictive dispatch helps where
  * memoization can't.
  */
@@ -101,7 +101,7 @@ const JSON_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
     },
   },
   {
-    // Pillar 9 Phase 1: `string`'s `[^"]*` and `number`'s `[0-9]+`
+    // `string`'s `[^"]*` and `number`'s `[0-9]+`
     // collapse to a single `charClassRun(...)` scan instead of
     // `zeroOrMore`/`oneOrMore` driving `charClass`/`negatedCharClass` one
     // character at a time -- see `packages/core/src/char-class.ts`'s
@@ -119,11 +119,11 @@ const JSON_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
     },
   },
   {
-    // Pillar 4b: `string`/`number`/`boolean`/`nullLiteral` (everything
+    // `string`/`number`/`boolean`/`nullLiteral` (everything
     // but `value`/`object`/`pair`/`array`, which reference other rules)
     // compile to a single `regexFused(...)` call each instead of a
     // combinator tree -- see `packages/parser/src/regex-fusion.ts`. The
-    // Pillar 4a gate measurement (see the perf plan) found ~82% of leaf
+    // gate measurement backing this found ~82% of leaf
     // invocations on this grammar belong to exactly these rules, with a
     // ~6.65x collapse factor (leaf invocations per rule entry) -- this
     // arm measures how much of that survives shape reconstruction
@@ -156,7 +156,7 @@ const ARITHMETIC_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
     options: { optimize: false, leftFactor: true },
   },
   {
-    // Pillar 9 Phase 1: `number = [0-9]+` collapses to a single
+    // `number = [0-9]+` collapses to a single
     // `charClassRun(...)` scan -- isolated against the "left-factored, no
     // memoization" arm directly above so its own effect (leaf invocations
     // moving into `collapsedInvocationsPerParse`) is visible independent
@@ -169,9 +169,9 @@ const ARITHMETIC_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
     options: { optimize: true, enableMemoization: true, leftFactor: true },
   },
   {
-    // Pillar 4b: only `number = [0-9]+` is non-terminal-free in this
+    // Only `number = [0-9]+` is non-terminal-free in this
     // grammar (`expr`/`sum`/`product`/`atom` all reference other rules)
-    // -- the Pillar 4a gate measurement found it accounts for ~87% of
+    // -- the gate measurement above found it accounts for ~87% of
     // this grammar's leaf invocations on the multiplication-chain
     // corpus, with a ~6.77x collapse factor.
     label: "left-factored + memoization + regex fusion",
@@ -185,20 +185,20 @@ const ARITHMETIC_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
 ];
 
 /**
- * Phase 0/Pillar 7 gate for cut promotion to `commitAtTopLevel`:
+ * Cut promotion gate for `commitAtTopLevel`:
  * `insertAutomaticCuts` inserts 3 `Cut` AST nodes into
  * `BENCH_CUTTABLE_CONFIG_GRAMMAR`'s `entry` rule (see `grammars.ts`), but
- * without `promoteCuts` those all compile to plain `commit(...)` -- F1 in
- * the perf plan found `commitAtTopLevel` is gated on `isStartRuleTopLevel`,
+ * without `promoteCuts` those all compile to plain `commit(...)` --
+ * `commitAtTopLevel` is gated on `isStartRuleTopLevel`,
  * which `insertAutomaticCuts` (a `Choice`-alternative rewrite) never sets.
- * The first "auto-cut on" arm below is that baseline (recorded once, at
- * Phase 0): cut-with-memoization behaving like plain memoization, since no
+ * The first "auto-cut on" arm below is that baseline: cut-with-memoization
+ * behaving like plain memoization, since no
  * `commitAtTopLevel` is emitted. The "+ promote" arm turns `promoteCuts`
  * on and additionally enables the memo-table probe (`probeMemo`) --
- * `promoteGlobalCuts` (`ast-optimize.ts`, Pillar 7) proves all 3 of this
+ * `promoteGlobalCuts` (`ast-optimize.ts`) proves all 3 of this
  * grammar's cuts safe to promote (see that function's module doc comment),
  * so `peakMemoWindow` on that arm is the number to compare against the
- * "auto-cut on" arm's: Pillar 7's whole claim is that it collapses from
+ * "auto-cut on" arm's: `promoteGlobalCuts`'s whole claim is that it collapses from
  * growing with input size to a small constant, not that it changes
  * `leafInvocationsPerParse` or accepted/rejected input at all.
  */
@@ -234,7 +234,7 @@ const CUTTABLE_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
     },
   },
   {
-    // Pillar 9 Phase 1: `name`'s trailing `[a-zA-Z0-9_]*` and `value`'s /
+    // `name`'s trailing `[a-zA-Z0-9_]*` and `value`'s /
     // `text`'s `[^\n]*` each collapse to a single `charClassRun(...)`
     // scan. Isolated against the "predictive dispatch on" arm directly
     // above so its own effect is visible on its own.
@@ -251,13 +251,13 @@ const CUTTABLE_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
 ];
 
 /**
- * Phase 0 baseline for Pillar 8 (literal-trie dispatch, extending
+ * Baseline for the literal-trie dispatch (extending
  * `predictiveChoice` past a single character): unlike every other bench
  * grammar, `BENCH_KEYWORD_GRAMMAR`'s `stmt` choice has multiple
  * alternatives sharing a first character (`if`/`import`/`interface`/
  * `instanceof` all start with `i`), the shape `predictiveChoice`'s
  * FIRST_1 dispatch degenerates on. The "predictive dispatch on" arm here
- * is the number a future trie-dispatch pillar must beat -- `leaf
+ * is the number the literal-trie dispatch must beat -- `leaf
  * invocations/parse` should stay high on this arm despite predictive
  * dispatch being enabled, in contrast to `BENCH_JSON_GRAMMAR`'s 7-way
  * disjoint-first-character choice where the same flag collapses it
@@ -274,7 +274,7 @@ const KEYWORD_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
     },
   },
   {
-    // Pillar 9 Phase 1: `ident`'s trailing `[a-z0-9]*` collapses to a
+    // `ident`'s trailing `[a-z0-9]*` collapses to a
     // single `charClassRun(...)` scan. Isolated against the arm directly
     // above so its own effect is visible on its own.
     label:
@@ -289,7 +289,7 @@ const KEYWORD_CONFIGS: { label: string; options: CompileRuleOptions }[] = [
 ];
 
 /**
- * Pillar 9 Phase 2's own gate/measurement arms, run only against
+ * Sub-expression fusion's own gate/measurement arms, run only against
  * `BENCH_INLINE_REGULAR_GRAMMAR` -- see that grammar's doc comment in
  * `grammars.ts` for why every OTHER bench grammar's shape already
  * factors regular fragments into their own rules, making
@@ -341,7 +341,7 @@ const INLINE_REGULAR_CONFIGS: { label: string; options: CompileRuleOptions }[] =
       },
     },
     {
-      label: "+ regex fusion (scope: subtree) -- Pillar 9 Phase 2",
+      label: "+ regex fusion (scope: subtree)",
       options: {
         optimize: true,
         enableMemoization: false,
@@ -510,7 +510,7 @@ function run(): void {
       (seed) => generateConfigCorpus(50_000, seed * 1_000),
     );
     runSection(
-      "Cuttable config grammar (Pillar 7 target -- see grammars.ts: " +
+      "Cuttable config grammar (cut-promotion target -- see grammars.ts: " +
         "3 Cut AST nodes inserted by --auto-cut, promoted to " +
         "commitAtTopLevel by --promote-cuts)",
       BENCH_CUTTABLE_CONFIG_GRAMMAR,
@@ -526,15 +526,14 @@ function run(): void {
     // makes `peakMemoWindow` trivially 0 on every arm above regardless of
     // promotion -- there is no memo table to truncate in the first place.
     // BENCH_CUTTABLE_CONFIG_MEMOIZED_GRAMMAR forces one via an explicit
-    // `@memoize` on `entry`, so this section is where Pillar 7's actual
-    // claim ("promotion bounds the table independent of input length") is
-    // measurable: compare "auto-cut on" (no promotion, no
+    // `@memoize` on `entry`, so this section is where `promoteGlobalCuts`'s
+    // actual claim ("promotion bounds the table independent of input
+    // length") is measurable: compare "auto-cut on" (no promotion, no
     // `commitAtTopLevel`) against "+ promote" on `peakMemoWindow` alone --
     // `opsPerSec`/`leafInvocationsPerParse` are not expected to move (this
-    // is a space result, not a speed one; see the perf plan's Pillar 7
-    // verification section).
+    // is a space result, not a speed one).
     runSection(
-      "Cuttable config grammar, entry forced @memoize (Pillar 7 memo-" +
+      "Cuttable config grammar, entry forced @memoize (cut-promotion memo-" +
         "table-truncation measurement -- see grammars.ts)",
       BENCH_CUTTABLE_CONFIG_MEMOIZED_GRAMMAR,
       BENCH_CUTTABLE_CONFIG_MEMOIZED_ROOT_RULE,
@@ -571,7 +570,7 @@ function run(): void {
       (seed) => generateKeywordCorpus(2_000, seed * 100),
     );
     runSection(
-      "Keyword grammar (Pillar 8 target -- see grammars.ts: FIRST_1 " +
+      "Keyword grammar (literal-trie dispatch target -- see grammars.ts: FIRST_1 " +
         "predictive dispatch degenerates on shared-first-character " +
         "keyword alternatives)",
       BENCH_KEYWORD_GRAMMAR,
@@ -589,7 +588,7 @@ function run(): void {
       (seed) => generateInlineRegularCorpus(2_000, seed * 100),
     );
     runSection(
-      "Inline-regular config grammar (Pillar 9 Phase 2 target -- see " +
+      "Inline-regular config grammar (sub-expression fusion target -- see " +
         "grammars.ts: inline whitespace + a label/action-guarded key, " +
         "the shape whole-rule fusion structurally cannot reach)",
       BENCH_INLINE_REGULAR_GRAMMAR,

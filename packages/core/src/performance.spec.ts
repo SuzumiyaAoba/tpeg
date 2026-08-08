@@ -12,10 +12,10 @@ import {
 /**
  * Every assertion in this file is an absolute wall-clock (ms) or
  * absolute heap-byte threshold. Those are machine-dependent and flaky on
- * shared CI runners -- see the plan's Phase 1.5 rationale (bench harness
- * added in `packages/parser/bench/` for throughput measurement that
- * *is* meant to be read across commits; this file predates it and
- * measures single-primitive wall-clock time instead).
+ * shared CI runners -- `packages/parser/bench/`'s bench harness exists
+ * for throughput measurement that *is* meant to be read across commits;
+ * this file predates it and measures single-primitive wall-clock time
+ * instead.
  *
  * By default (plain `bun test`, what CI runs) these tests still execute
  * the timed operation and log the result, so a thrown error or an

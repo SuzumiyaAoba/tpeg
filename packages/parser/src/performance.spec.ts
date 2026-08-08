@@ -27,8 +27,9 @@ import {
 /**
  * Most assertions below are absolute ops/sec or absolute heap-byte
  * thresholds, which are machine-dependent and flaky on shared CI
- * runners (see the plan's Phase 1.5 rationale). By default (plain
- * `bun test`, what CI runs) those tests still execute the timed
+ * runners (see `packages/parser/bench/`'s bench harness for
+ * measurements that are meant to be read across commits). By default
+ * (plain `bun test`, what CI runs) those tests still execute the timed
  * operation and log the result, so a thrown error still fails the
  * suite -- only the numeric threshold check is skipped. Set
  * `TPEG_STRICT_PERF=1` to enforce them locally.

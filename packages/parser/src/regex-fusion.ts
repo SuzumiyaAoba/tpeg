@@ -1,14 +1,14 @@
 /**
- * Pillar 4b of the PEG-theory performance plan: compiling a whole rule's
+ * Compiling a whole rule's
  * pattern into a single `regexFused` call (`packages/core/src/
  * regex-fused.ts`) when that pattern denotes a regular language -- i.e.
  * contains no non-terminal references -- so a `Sequence` of N leaf
  * combinators (each allocating a `Pos`/`ParseSuccess` per character) is
  * replaced by one `RegExp.exec`.
  *
- * The gate measurement backing this (see the plan file's Pillar 4a
- * section) found ~82-87% of leaf-parser invocations in the JSON and
- * unfactored-arithmetic bench grammars belong to wholly-clean rules, with
+ * The gate measurement backing this found ~82-87% of leaf-parser
+ * invocations in the JSON and unfactored-arithmetic bench grammars
+ * (`packages/parser/bench/grammars.ts`) belong to wholly-clean rules, with
  * a ~6.7x collapse factor (leaf invocations per rule entry) -- both
  * numbers high enough to justify this module.
  *
@@ -29,9 +29,9 @@
  * 2. **Determinism**: for every repetition (`Star`/`Plus`/`Quantified`)
  *    and every `Choice` inside the fusable subtree, the translation to a
  *    JS regex's greedy/backtracking behavior must coincide with PEG's
- *    possessive one (see `checkFusionSafe`). Pillar 1's exact `CharSet`
- *    intersection (via `firstSetsDisjoint`) is what makes this checkable
- *    at all -- the pre-Pillar-1 approximate FIRST-set representation
+ *    possessive one (see `checkFusionSafe`). `./char-set.ts`'s exact
+ *    `CharSet` intersection (via `firstSetsDisjoint`) is what makes this
+ *    checkable at all -- an earlier, approximate FIRST-set representation
  *    couldn't prove disjointness for negated classes or lookahead-derived
  *    subtraction.
  *
@@ -41,10 +41,10 @@
  *    match fails. A naive `/[a-z]*x/` backtracks `[a-z]*` down by one and
  *    succeeds. `FIRST([a-z]) ∩ FIRST("x") = {x} ≠ ∅` catches this.
  *
- *    Two refinements over the plan's original two-clause wording
+ *    Two refinements over the original two-clause wording
  *    (`FIRST(e) ∩ FIRST(next) = ∅ AND next non-nullable`), both found
- *    during the Pillar 4a gate write-up and confirmed by hand-tracing
- *    before being coded here:
+ *    while investigating the gate measurement above and confirmed by
+ *    hand-tracing before being coded here:
  *
  *    - The correct "what follows" isn't just the single adjacent sibling
  *      -- it's the *properly composed* FIRST set of everything remaining

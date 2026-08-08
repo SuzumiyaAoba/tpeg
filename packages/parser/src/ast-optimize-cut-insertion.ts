@@ -55,7 +55,7 @@
  * *outer* choice -- so `D` is unaffected and still tried normally. See
  * `computeCutCandidate`/`buildCutGroups` below for the implementation;
  * when a run happens to cover every remaining alternative (the case the
- * pre-Pillar-3 all-or-nothing check already handled), the result
+ * original all-or-nothing check already handled), the result
  * collapses back to the same flat, unnested `Choice` shape as before --
  * this is a strict generalization, not a replacement, of the original
  * behavior.
@@ -74,7 +74,7 @@
  *
  * A `Choice` containing a `LabeledExpression` anywhere in any alternative
  * (`containsLabel`, same helper `leftFactorChoices` uses) is NOT
- * regrouped at all: it falls back to the original, pre-Pillar-3
+ * regrouped at all: it falls back to the original
  * all-or-nothing check (`findCutPosition`, which never restructures the
  * `Choice`'s own shape, only splices a bare `Cut` into an alternative's
  * existing `Sequence`). Regrouping changes which `Choice` node a labeled
@@ -98,8 +98,8 @@ import { createChoice, createCut, createSequence } from "./types";
 /**
  * Finds the number of leading elements of `alternative` after which a
  * `Cut` is provably safe to insert, or `null` if there is no such
- * position, WITHOUT restructuring the enclosing `Choice` -- the original,
- * pre-Pillar-3 all-or-nothing check, kept as the fallback for a `Choice`
+ * position, WITHOUT restructuring the enclosing `Choice` -- the original
+ * all-or-nothing check, kept as the fallback for a `Choice`
  * containing a `LabeledExpression` (see the module doc comment's
  * "Partial exclusion via ordered-choice associativity" section for why
  * that case doesn't use `computeCutCandidate`/`buildCutGroups` below).
@@ -237,7 +237,7 @@ const computeCutCandidate = (
  * pointless, see the module doc comment), and the result is either
  * flattened back into `result` directly (when the run happens to cover
  * every remaining alternative at this level -- the same flat shape the
- * pre-Pillar-3 all-or-nothing check already produced) or wrapped in its
+ * original all-or-nothing check already produced) or wrapped in its
  * own nested `Choice` (when it doesn't, so a sibling further out is left
  * reachable per the associativity argument).
  */
@@ -275,7 +275,7 @@ const buildCutGroups = (
       // sibling left outside it for a nested `Choice` boundary to
       // protect, so wrapping one here would be pure overhead -- push the
       // group's members directly, reproducing the exact flat shape the
-      // pre-Pillar-3 all-or-nothing check already produced in this case.
+      // original all-or-nothing check already produced in this case.
       result.push(...group);
     } else {
       result.push(createChoice(group));

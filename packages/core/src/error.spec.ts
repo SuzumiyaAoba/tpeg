@@ -85,7 +85,7 @@ describe("formatParseError", () => {
     const error: ParseError = {
       message: "Unexpected character",
       // offset 14 is the "n" in "line3" (line 3, column 2) -- the original
-      // (pre-Pillar-5) version of this test specified line/column directly
+      // version of this test specified line/column directly
       // as `{ offset: 10, line: 3, column: 2 }`, an offset/line pair that
       // was never actually consistent for this input (offset 10 is really
       // on line 2). That was invisible before because formatting trusted

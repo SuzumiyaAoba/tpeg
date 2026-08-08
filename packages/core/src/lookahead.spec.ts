@@ -26,8 +26,9 @@ describe("andPredicate", () => {
 
   it("should fail if the parser fails", () => {
     // `andPredicate` now relays the child's failure UNCHANGED instead of
-    // wrapping it with its own message/context/parserName -- see Pillar 6
-    // of the perf plan: the child's own `fail()` call already recorded
+    // wrapping it with its own message/context/parserName -- see
+    // `./failure.ts`'s lazy failure diagnostics: the child's own `fail()`
+    // call already recorded
     // the right position/expectation, so the failure is `lit("a")`'s own,
     // not "andPredicate"'s.
     const input = "bcd";
@@ -66,8 +67,8 @@ describe("andPredicate", () => {
   });
 
   it("relays the child parser's own failure unchanged rather than adding lookahead-specific context", () => {
-    // Superseded by Pillar 6 of the perf plan: `andPredicate` no longer
-    // wraps a child failure with its own "in positive lookahead" context
+    // Superseded by `./failure.ts`'s lazy failure diagnostics: `andPredicate`
+    // no longer wraps a child failure with its own "in positive lookahead" context
     // (see the "should fail if the parser fails" test above for the
     // rationale). Kept as a regression pin on the current behavior rather
     // than deleted outright.
@@ -96,7 +97,7 @@ describe("notPredicate", () => {
 
   it("should fail if the parser succeeds", () => {
     // Message now comes from the shared farthest-failure watermark
-    // (`./failure.ts`, Pillar 6 of the perf plan): `found` is the actual
+    // (`./failure.ts`'s lazy failure diagnostics): `found` is the actual
     // character at `pos` (derived), not the fixed phrase "matching
     // pattern"; there's no "in negative lookahead" context frame either.
     const input = "abc";
