@@ -93,6 +93,31 @@ let watermarkPos = -1;
 let watermarkExpected: readonly Expectation[] = [];
 
 /**
+ * `true` iff `expected` already contains an `Expectation` equivalent to
+ * `exp` -- either the exact same object (the common case: every leaf
+ * parser allocates its `Expectation` once at construction time and
+ * reuses that same instance on every failing call, so a `charClass`
+ * retried at an unchanged offset across backtracking hits this via plain
+ * `===`) or, failing that, one with the same `label`/`parserName` pair.
+ * The fallback matters because not every caller can reuse a single
+ * instance: `tryOrderedCandidates` (`./combinators.ts`) forwards a
+ * concrete (non-singleton) child failure's expectation(s) into the
+ * watermark by building a fresh `{ label, ... }` object on every call --
+ * a value-only comparison is what keeps that path from making `expected`
+ * grow without bound across repeated failures at the same position (e.g.
+ * a memoized rule whose failure is reported via forwarding, once per
+ * outer retry).
+ */
+const expectationSeen = (
+  expected: readonly Expectation[],
+  exp: Expectation,
+): boolean =>
+  expected.some(
+    (e) =>
+      e === exp || (e.label === exp.label && e.parserName === exp.parserName),
+  );
+
+/**
  * Records a control-flow failure at `pos` with expectation `exp`, updating
  * the shared farthest-failure watermark, and returns the zero-allocation
  * `FAIL` singleton. This is the one function every leaf parser (`literal`,
@@ -116,7 +141,7 @@ export const fail = (
   } else if (pos > watermarkPos) {
     watermarkPos = pos;
     watermarkExpected = [exp];
-  } else if (pos === watermarkPos && !watermarkExpected.includes(exp)) {
+  } else if (pos === watermarkPos && !expectationSeen(watermarkExpected, exp)) {
     watermarkExpected = [...watermarkExpected, exp];
   }
   return FAIL;
@@ -248,4 +273,68 @@ export const restoreFailureWatermark = (
   watermarkInput = snapshot.input;
   watermarkPos = snapshot.pos;
   watermarkExpected = snapshot.expected;
+};
+
+/**
+ * Re-applies a previously-captured watermark contribution -- `pos`/
+ * `expected` read back from a {@link FailureWatermarkSnapshot} taken
+ * right after some parser call finished -- using the exact same
+ * farther-wins/tie-unions/nearer-is-ignored rule {@link fail} applies for
+ * a single `Expectation`. For `@suzumiyaaoba/tpeg-combinator`'s
+ * `memoize`: a cache HIT returns a previously-computed `ParseResult`
+ * without re-running the wrapped parser, so none of the leaf `fail()`
+ * calls that originally produced that result run again -- without this,
+ * the watermark would silently miss whatever that call would have
+ * contributed. `memoize` snapshots the watermark right after each cache
+ * MISS's real call and re-merges that snapshot here on every later HIT,
+ * for both a cached success and a cached failure alike (a memoized
+ * rule's own internal failure can still be the parse's overall farthest
+ * one even where the rule as a whole went on to succeed via a later
+ * alternative).
+ *
+ * A no-op when `expected` is empty (a cache entry from before this
+ * rule's first `fail()` call anywhere, or one whose call never reached a
+ * leaf failure at all) -- there is nothing to merge, and an empty list
+ * must never be allowed to overwrite a real one the way a fresh
+ * farther-position `fail()` legitimately would.
+ *
+ * ## Known imprecision (diagnostics-only, matches this module's own
+ * documented lifecycle contract)
+ *
+ * The snapshot taken after a cache MISS reflects the watermark's state
+ * as adjusted by whatever was already in it *at that particular call*.
+ * If that call's own leaf failure was nearer than the watermark's
+ * position at the time (so `fail()` left the watermark unchanged), that
+ * nearer failure is invisible to this snapshot and can't be replayed on
+ * a later hit even if the watermark has since moved to a position where
+ * it WOULD be the new farthest. This can only make a later error message
+ * less precise, never wrong about success/failure/stop-position -- the
+ * same invariant this module's doc comment already establishes for the
+ * watermark generally.
+ */
+export const mergeFailureWatermark = (
+  input: string,
+  pos: number,
+  expected: readonly Expectation[],
+): void => {
+  if (expected.length === 0) return;
+  if (input !== watermarkInput) {
+    watermarkInput = input;
+    watermarkPos = pos;
+    watermarkExpected = [...expected];
+    return;
+  }
+  if (pos > watermarkPos) {
+    watermarkPos = pos;
+    watermarkExpected = [...expected];
+    return;
+  }
+  if (pos === watermarkPos) {
+    const fresh = expected.filter(
+      (exp) => !expectationSeen(watermarkExpected, exp),
+    );
+    if (fresh.length > 0) {
+      watermarkExpected = [...watermarkExpected, ...fresh];
+    }
+  }
 };

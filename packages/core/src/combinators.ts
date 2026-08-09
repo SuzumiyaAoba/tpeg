@@ -507,8 +507,26 @@ export const predictiveChoice = <T extends unknown[]>(
           index: i,
           // The first character is already spent choosing this ASCII
           // bucket, so the trie built from this bucket's entries
-          // discriminates starting from the prefix's SECOND character.
-          remaining: literalPrefix ? literalPrefix.slice(1) : "",
+          // discriminates starting from the prefix's SECOND character --
+          // UNLESS `filter` is `null`. A `null` filter is this module's
+          // "unconditionally triable, never excludable" marker (see this
+          // function's own doc comment, "Caller contract"): a `Cut`
+          // reachable without consuming input can fail fatally regardless
+          // of what character is actually at this position, so an
+          // alternative carrying one must survive into EVERY trie node,
+          // not just the ones matching its own `literalPrefix`'s second
+          // character onward. Treating `literalPrefix` as authoritative
+          // here even when `filter` is `null` would let `buildDispatchTrie`
+          // partition this alternative into only ONE child group by that
+          // prefix's next character, silently dropping it from every
+          // sibling group -- exactly the excludability the `null` filter
+          // was supposed to rule out, just one layer deeper than the
+          // ASCII-bucket check above already guards against. Forcing
+          // `remaining` to `""` here reuses `buildDispatchTrie`'s existing
+          // "no literal information left" handling (see its own doc
+          // comment), which already splices such an entry into every
+          // child group unconditionally.
+          remaining: filter && literalPrefix ? literalPrefix.slice(1) : "",
         });
         key += `${i},`;
       }

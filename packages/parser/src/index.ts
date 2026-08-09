@@ -74,6 +74,16 @@ export {
 
 export { analyzeReentrancy, type ReentrancyAnalysis } from "./reentrancy";
 
+// Export the reference PEG interpreter -- a differential-testing oracle,
+// independent of codegen, used by `codegen-differential.spec.ts`. See
+// that module's doc comment for why an independent implementation (not
+// just comparing codegen variants against each other) is needed.
+export {
+  makeReferenceInterpreter,
+  referenceRecognize,
+  ReferenceInterpreterLimitError,
+} from "./reference-interpreter";
+
 // Export AST rewrite passes (left-factoring, character-class merging,
 // negative-lookahead degeneration, automatic cut insertion). None of
 // these run by default in either codegen path -- see each function's

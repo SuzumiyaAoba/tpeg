@@ -1,6 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { parse } from "@suzumiyaaoba/tpeg-core";
 import { literal } from "@suzumiyaaoba/tpeg-core";
+import {
+  charClassRun,
+  choice,
+  notPredicate,
+  sequence,
+} from "@suzumiyaaoba/tpeg-core";
 import { commitAtTopLevel, memoize, recursive, withPosition } from "./logic";
 
 const pos = (offset: number): number => offset;
@@ -139,6 +145,76 @@ describe("logic combinators", () => {
       memoized("a", 0);
 
       expect(callCount).toBe(1);
+    });
+
+    describe("farthest-failure watermark on a cache hit", () => {
+      // A cache HIT returns a previously-computed `ParseResult` without
+      // re-running the wrapped parser, so none of the leaf `fail()` calls
+      // that originally produced it run again. `error`/`.expected`/`.pos`
+      // are derived from `tpeg-core`'s shared watermark
+      // (`packages/core/src/failure.ts`), populated as a SIDE EFFECT of
+      // those calls -- without replaying that contribution on a hit, the
+      // diagnostic would silently degrade to "Parse failed" the moment a
+      // second call at the same offset hits the cache (regression: this
+      // used to happen unconditionally).
+      it("reproduces the same error diagnostics on a cache hit as the original miss", () => {
+        const term = memoize(
+          choice(literal("aa"), charClassRun([["0", "9"]], 1)),
+        );
+        const miss = parse(term)("zz");
+        const hit = parse(term)("zz");
+        expect(miss.success).toBe(false);
+        expect(hit.success).toBe(false);
+        if (!miss.success && !hit.success) {
+          expect(hit.error.pos).toBe(miss.error.pos);
+          // `expected`'s declared type (`string | string[] | undefined`)
+          // makes `toEqual`'s generic parameter reject the `undefined`
+          // branch when passed directly -- both sides are already known
+          // non-`undefined` failures here, so `JSON.stringify` sidesteps
+          // that without weakening what's actually being compared.
+          expect(JSON.stringify(hit.error.expected)).toBe(
+            JSON.stringify(miss.error.expected),
+          );
+          expect(hit.error.message).toBe(miss.error.message);
+        }
+      });
+
+      it("reproduces diagnostics when the cache is populated by a probe (!e e), not a direct miss", () => {
+        // `notPredicate` snapshots and restores the watermark around its
+        // own probe (see `packages/core/src/lookahead.ts`) -- so if
+        // `term`'s failure inside that probe is what populates the
+        // memoize cache, and the SECOND `term` (the real one, right
+        // after) hits that cache, the watermark must still end up
+        // reflecting `term`'s own failure, not the restored/empty state
+        // the probe left behind.
+        const term = memoize(
+          choice(literal("aa"), charClassRun([["0", "9"]], 1)),
+        );
+        const grammar = sequence(notPredicate(term), term);
+        const result = parse(grammar)("zz");
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.pos).toBe(0);
+          expect(result.error.expected).toEqual(['"aa"', "0-9"]);
+        }
+      });
+
+      it("does not let expected grow across repeated parses of the same failing input", () => {
+        const term = memoize(
+          choice(literal("("), charClassRun([["0", "9"]], 1)),
+        );
+        const grammar = sequence(term, literal("!"));
+        const results = Array.from({ length: 4 }, () =>
+          parse(grammar)("iffoo"),
+        );
+        for (const r of results) {
+          expect(r.success).toBe(false);
+          if (!r.success) {
+            expect(r.error.pos).toBe(0);
+            expect(r.error.expected).toEqual(['"("', "0-9"]);
+          }
+        }
+      });
     });
   });
 

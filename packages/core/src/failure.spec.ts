@@ -23,6 +23,7 @@ import {
   fail,
   isFatalFailure,
   materializeParseError,
+  mergeFailureWatermark,
   resetFailureWatermark,
   restoreFailureWatermark,
   snapshotFailureWatermark,
@@ -73,6 +74,34 @@ describe("fail", () => {
     fail("abcdef", 2, exp);
     const error = materializeParseError(false);
     expect(error.expected).toBe("digit");
+  });
+
+  it("does not duplicate a DIFFERENT Expectation object with the same label/parserName", () => {
+    // `tryOrderedCandidates` (`./combinators.ts`) forwards a concrete
+    // child failure's expectation into the watermark by allocating a
+    // FRESH `{ label, parserName }` object on every call, rather than
+    // reusing one instance the way a leaf parser's own construction-time
+    // `Expectation` does -- so identity-only de-duplication would let
+    // `expected` grow without bound across repeated failures at the same
+    // position (e.g. a memoized rule's cached failure re-forwarded once
+    // per outer retry). Two independently-allocated objects with equal
+    // `label`/`parserName` must still count as the same expectation.
+    fail("abcdef", 2, { label: "digit", parserName: "term" });
+    fail("abcdef", 2, { label: "digit", parserName: "term" });
+    fail("abcdef", 2, { label: "digit", parserName: "term" });
+    const error = materializeParseError(false);
+    expect(error.expected).toBe("digit");
+  });
+
+  it("treats equal label with different parserName as distinct expectations", () => {
+    fail("abcdef", 2, { label: "digit", parserName: "a" });
+    fail("abcdef", 2, { label: "digit", parserName: "b" });
+    const error = materializeParseError(false);
+    // Two DIFFERENT expectations tied at the same position still merge as
+    // a list -- `expected` becoming a single deduplicated label would
+    // hide that they came from different named parsers.
+    expect(error.expected).toEqual(["digit", "digit"]);
+    expect(error.parserName).toBeUndefined();
   });
 
   it("treats a call whose input differs by value as a new parse", () => {
@@ -215,6 +244,60 @@ describe("snapshotFailureWatermark / restoreFailureWatermark", () => {
     const error = materializeParseError(false);
     expect(error.pos).toBe(-1);
     expect(error.expected).toBeUndefined();
+  });
+});
+
+describe("mergeFailureWatermark", () => {
+  // `@suzumiyaaoba/tpeg-combinator`'s `memoize` is the intended caller:
+  // a cache HIT returns a previously-computed `ParseResult` without
+  // re-running the leaf parser whose `fail()` call originally produced
+  // it, so it re-applies that call's watermark contribution (captured via
+  // `snapshotFailureWatermark()` right after the original MISS) through
+  // this function instead. These tests exercise the merge rule directly,
+  // independent of `memoize` itself.
+  it("adopts a snapshot's position/expected on a fresh watermark", () => {
+    mergeFailureWatermark("abc", 1, [{ label: "digit" }]);
+    const error = materializeParseError(false);
+    expect(error.pos).toBe(1);
+    expect(error.expected).toBe("digit");
+  });
+
+  it("is a no-op for an empty expected list, even on a fresh watermark", () => {
+    mergeFailureWatermark("abc", 5, []);
+    const error = materializeParseError(false);
+    expect(error.pos).toBe(-1);
+    expect(error.expected).toBeUndefined();
+  });
+
+  it("overwrites with a farther merged position, exactly like fail()", () => {
+    fail("abc", 1, { label: "close" });
+    mergeFailureWatermark("abc", 2, [{ label: "far" }]);
+    const error = materializeParseError(false);
+    expect(error.pos).toBe(2);
+    expect(error.expected).toBe("far");
+  });
+
+  it("ignores a merge at a nearer position than the current watermark", () => {
+    fail("abc", 2, { label: "far" });
+    mergeFailureWatermark("abc", 1, [{ label: "close" }]);
+    const error = materializeParseError(false);
+    expect(error.pos).toBe(2);
+    expect(error.expected).toBe("far");
+  });
+
+  it("unions expectations tied at the same position, de-duplicated by value", () => {
+    fail("abc", 2, { label: "a" });
+    mergeFailureWatermark("abc", 2, [{ label: "a" }, { label: "b" }]);
+    const error = materializeParseError(false);
+    expect(error.expected).toEqual(["a", "b"]);
+  });
+
+  it("treats a different input (by value) as a new parse, like fail() does", () => {
+    mergeFailureWatermark("input-one", 5, [{ label: "old" }]);
+    mergeFailureWatermark("input-two", 0, [{ label: "new" }]);
+    const error = materializeParseError(false);
+    expect(error.pos).toBe(0);
+    expect(error.expected).toBe("new");
   });
 });
 

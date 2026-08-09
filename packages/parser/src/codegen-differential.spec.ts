@@ -1,5 +1,6 @@
 /**
- * Differential fuzzing across every codegen/optimization variant.
+ * Differential fuzzing across every codegen/optimization variant, PLUS an
+ * independent reference-interpreter oracle.
  *
  * For a large, deterministic sample of randomly-generated TPEG grammars,
  * every alternative code path must agree with plain
@@ -11,14 +12,26 @@
  * - `insertAutomaticCuts` / `promoteGlobalCuts` (cut insertion/promotion --
  *   `ast-optimize-cut-insertion.ts` / `ast-optimize-cut-promotion.ts`)
  * - `generateOptimizedTypeScriptParser` with predictive dispatch (default),
- *   with regex fusion (`rule` and `subtree` scope), and with the full
- *   pipeline (every rewrite pass plus fusion) combined
+ *   with memoization, with regex fusion (`rule` and `subtree` scope), and
+ *   with the full pipeline (every rewrite pass plus fusion) combined
  *
  * A rewrite that can change a rule's VALUE SHAPE without changing which
  * inputs it accepts (`applyAstOptimizations`'s left-factoring, and any
  * pipeline that includes it) is compared on success/next only; every other
  * variant is compared on success/next/val, since it claims to be exactly
  * shape-preserving.
+ *
+ * ## Why an independent oracle, not just base-vs-variants
+ *
+ * Comparing every optimized variant against the BASE generator is blind to
+ * a bug shared by all of them: if `codegen.ts`'s own encoding of some PEG
+ * construct were wrong, every variant would agree with it and this
+ * comparison alone would report zero diffs. `reference-interpreter.ts` is a
+ * separate implementation, written directly against the grammar AST with
+ * no shared code path with any codegen module, so agreement between it and
+ * the generated code is actual evidence the semantics are right. It only
+ * checks recognition (success/next), never value -- see that module's doc
+ * comment for why value shape is left to the base-vs-variants comparison.
  *
  * This is the harness that actually found the `predictiveChoice` x `Cut`
  * bug fixed alongside this file (`first-sets.ts`'s
@@ -42,6 +55,10 @@ import { generateTypeScriptParser } from "./codegen";
 import { generateOptimizedTypeScriptParser } from "./codegen-optimized";
 import { analyzeFirstSets } from "./first-sets";
 import { grammarDefinition } from "./grammar";
+import {
+  ReferenceInterpreterLimitError,
+  referenceRecognize,
+} from "./reference-interpreter";
 import type { GrammarDefinition } from "./types";
 
 // --- Deterministic PRNG (linear congruential generator) -----------------
@@ -65,26 +82,48 @@ const LEAVES = [
   '"ab"',
   '"ba"',
   '"aa"',
+  // 3+-character literals with a shared prefix -- exercises the
+  // dispatch trie's beyond-FIRST_1 discrimination
+  // (`packages/core/src/dispatch-trie.ts`), never reached by a purely
+  // 1-2-character LEAVES set.
+  '"abc"',
+  '"abd"',
   "[a-b]",
   "[ab]",
   "[^a]",
   ".",
+  // Non-ASCII / astral leaves -- exercises `codePointAt`-based decoding
+  // (`anyChar`/`charClass`/`charClassRun` in `packages/core/src/
+  // basic.ts`/`char-class.ts`) and the predictive-dispatch non-ASCII
+  // fallback (`packages/core/src/combinators.ts`'s `predictiveChoice`).
+  // String literals only, not a character-class RANGE (e.g. `[à-ÿ]`) --
+  // the .tpeg grammar TEXT parser's own `charClassChar`
+  // (`packages/parser/src/character-class.ts`) only accepts ASCII
+  // printable characters as a class member, a pre-existing, unrelated
+  // limitation of the source SYNTAX itself (not the runtime PEG
+  // semantics this harness targets); using one here would just make
+  // every sample containing it an unparseable (skipped) grammar.
+  '"é"',
+  '"ø"',
+  '"😀"',
 ] as const;
 
 /** Generates one random Expression's SOURCE TEXT (not an AST -- fed back
  * through the real grammar parser, exactly like a human-authored .tpeg
  * file, so this exercises the full parse -> AST -> codegen pipeline, not
- * just codegen in isolation). `allowRuleRef` gates whether `sub` may
- * appear as a leaf, so `sub`'s own body never references itself. */
+ * just codegen in isolation). `allowRuleRef` gates whether a reference to
+ * `refs` may appear as a leaf, so a non-recursive rule's own body never
+ * references itself. */
 const genExpr = (
   rng: () => number,
   depth: number,
   allowRuleRef: boolean,
+  refs: readonly string[],
 ): string => {
-  const atom = () => pick(rng, allowRuleRef ? [...LEAVES, "sub"] : LEAVES);
+  const atom = () => pick(rng, allowRuleRef ? [...LEAVES, ...refs] : LEAVES);
   if (depth <= 0) return atom();
-  const next = () => genExpr(rng, depth - 1, allowRuleRef);
-  switch (Math.floor(rng() * 11)) {
+  const next = () => genExpr(rng, depth - 1, allowRuleRef, refs);
+  switch (Math.floor(rng() * 15)) {
     case 0:
       return atom();
     case 1:
@@ -105,13 +144,70 @@ const genExpr = (
       return `(${next()} / ${next()} / ${next()})`;
     case 9:
       return `${atom()}{1,3}`;
+    case 10:
+      return `${atom()}{2}`;
+    case 11:
+      // Three-element Sequence with a Cut, exercising cut-scoping past
+      // the immediately-following element (`commit`'s doc comment,
+      // `packages/core/src/combinators.ts`).
+      return `(${next()} ~ ${next()} ${next()})`;
+    case 12:
+      // A labeled element -- exercises `capture` (`packages/core/src/
+      // capture.ts`) alongside every rewrite pass; value shape is
+      // unaffected by which VARIANT compiles it (only by whether the
+      // grammar text has a label at all), so this composes safely with
+      // the existing shapePreserving comparison.
+      return `x:${atom()}`;
+    case 13:
+      return `(${next()} / ${next()})`;
     default:
       return `(${next()} ~ ${next()})`;
   }
 };
 
-const genGrammarSource = (rng: () => number): string =>
-  `grammar G {\n  start = ${genExpr(rng, 3, true)}\n  sub = ${genExpr(rng, 2, false)}\n}`;
+/** One mutually-recursive rule's body: always `<prefix> (<ref>) <suffix> /
+ * <base>` -- the prefix/suffix pair guarantees at least one character is
+ * consumed before ever recursing, so this can never be left-recursive
+ * (which neither the real runtime nor `reference-interpreter.ts` -- nor
+ * indeed any of this project's codegen -- supports), regardless of which
+ * rule `ref` names or how deep the mutual cycle goes. */
+const genRecursiveRuleBody = (
+  rng: () => number,
+  refs: readonly string[],
+): string => {
+  const brackets = [
+    ['"("', '")"'],
+    ['"["', '"]"'],
+    ['"<"', '">"'],
+  ] as const;
+  const [prefix, suffix] = pick(rng, brackets);
+  const ref = pick(rng, refs);
+  const base = pick(rng, LEAVES);
+  return `${prefix} (${ref}) ${suffix} / ${base}`;
+};
+
+/** Renders `sub`'s optional `@memoize`/`@memoize: N` rule annotation --
+ * exercises the automatic-memoization-adjacent EXPLICIT annotation path
+ * (`codegen-optimized.ts`'s `findMemoizeAnnotation`/`wrapWithMemoize`),
+ * distinct from `enableMemoization`'s reentrancy-driven automatic
+ * decision (both are covered: the latter by the "optimized + memoization"
+ * VARIANT below, applied to whichever rules `analyzeReentrancy` flags on
+ * its own). */
+const genMemoizeAnnotation = (rng: () => number): string => {
+  switch (Math.floor(rng() * 3)) {
+    case 0:
+      return "";
+    case 1:
+      return "@memoize\n  ";
+    default:
+      return "@memoize: 4\n  ";
+  }
+};
+
+const genGrammarSource = (rng: () => number): string => {
+  const memoAnnotation = genMemoizeAnnotation(rng);
+  return `grammar G {\n  start = ${genExpr(rng, 3, true, ["sub", "rec1"])}\n  sub = ${genExpr(rng, 2, false, [])}\n  ${memoAnnotation}rec1 = ${genRecursiveRuleBody(rng, ["rec1", "rec2"])}\n  rec2 = ${genRecursiveRuleBody(rng, ["rec1", "rec2"])}\n}`;
+};
 
 const TEST_INPUTS = [
   "",
@@ -127,12 +223,26 @@ const TEST_INPUTS = [
   "c",
   "ac",
   "abc",
+  "abd",
   "aba",
   "bab",
   "abba",
   "aabb",
   "aaa",
   "baa",
+  "é",
+  "aé",
+  "😀",
+  "a😀b",
+  "à",
+  "(a)",
+  "[a]",
+  "<a>",
+  "((a))",
+  "([a])",
+  "(<a>)",
+  "(",
+  "((((a",
 ];
 
 // --- Harness ---------------------------------------------------------------
@@ -143,14 +253,29 @@ const TEST_INPUTS = [
  * namespaces as the function's scope. Mirrors the `new Function(...)`
  * pattern `cut-memoize.spec.ts` uses for the same reason: these are
  * genuinely generated modules, not hand-written parsers, so there's no
- * static import target to bind them to. */
+ * static import target to bind them to.
+ *
+ * `combinator` is spread FIRST, `core` SECOND (core wins on any shared
+ * name) -- this mirrors exactly how generated code actually imports the
+ * two packages: leaf/composition parsers (`literal`, `choice`,
+ * `sequence`, `charClassRun`, `predictiveChoice`, ...) always come from
+ * `@suzumiyaaoba/tpeg-core`, while only `memoize`/`commitAtTopLevel` come
+ * from `@suzumiyaaoba/tpeg-combinator` (see `codegen.ts`'s import
+ * generation). The previous `{ ...core, ...combinator }` ordering let
+ * `tpeg-combinator`'s re-exported copies of core names silently shadow
+ * the real ones -- harmless while both packages shared one `tpeg-core`
+ * instance, but exactly the wrong composition to have caught the
+ * duplicate-bundling bug fixed alongside this file (see
+ * `packages/combinator/src/dist-instance.spec.ts`), since that shadowing
+ * masked which package's copy of `FAIL`/the watermark a generated
+ * parser's calls actually reached. */
 const compileStart = (
   code: string,
   core: Record<string, unknown>,
   combinator: Record<string, unknown>,
 ): Parser<unknown> => {
   const body = code.replace(/^export const (\w+)/gm, "const $1");
-  const scope = { ...core, ...combinator };
+  const scope = { ...combinator, ...core };
   const factory = new Function(
     ...Object.keys(scope),
     `${body}\nreturn { start };`,
@@ -213,6 +338,18 @@ const VARIANTS: readonly VariantSpec[] = [
       }).code,
   },
   {
+    name: "optimized + memoization",
+    shapePreserving: true,
+    build: (g) =>
+      generateOptimizedTypeScriptParser(g, {
+        language: "typescript",
+        includeImports: false,
+        includeTypes: false,
+        optimize: true,
+        enableMemoization: true,
+      }).code,
+  },
+  {
     name: "optimized + regex fusion (rule scope)",
     shapePreserving: true,
     build: (g) =>
@@ -238,7 +375,7 @@ const VARIANTS: readonly VariantSpec[] = [
       }).code,
   },
   {
-    name: "full pipeline (ast-optimize + auto-cut + promote-cuts + optimized + subtree fusion)",
+    name: "full pipeline (ast-optimize + auto-cut + promote-cuts + optimized + memoization + subtree fusion)",
     shapePreserving: false, // includes applyAstOptimizations
     build: (g) => {
       const astOptimized = applyAstOptimizations(g);
@@ -252,6 +389,7 @@ const VARIANTS: readonly VariantSpec[] = [
         includeImports: false,
         includeTypes: false,
         optimize: true,
+        enableMemoization: true,
         enableRegexFusion: true,
         regexFusionScope: "subtree",
       }).code;
@@ -259,7 +397,7 @@ const VARIANTS: readonly VariantSpec[] = [
   },
 ];
 
-// Sample size chosen to keep this fast (a few hundred ms) while still
+// Sample size chosen to keep this fast (a second or so) while still
 // covering every operator combination many times over -- see the module
 // doc comment for how this harness was actually used (ad hoc, with a
 // larger sample) to find the bug this file's sibling tests now pin
@@ -273,8 +411,8 @@ const VARIANTS: readonly VariantSpec[] = [
 const SAMPLE_SIZE = 600;
 const SEED = 20260809; // today's date at authorship time -- arbitrary but fixed
 
-describe("codegen differential fuzzing (base generator vs. every optimization variant)", () => {
-  test(`agrees with the base generator across ${SAMPLE_SIZE} random grammars x ${TEST_INPUTS.length} inputs, for every variant`, async () => {
+describe("codegen differential fuzzing (base generator vs. every optimization variant, plus a reference-interpreter oracle)", () => {
+  test(`agrees with the base generator (and the oracle) across ${SAMPLE_SIZE} random grammars x ${TEST_INPUTS.length} inputs, for every variant`, async () => {
     const core = (await import("@suzumiyaaoba/tpeg-core")) as unknown as Record<
       string,
       unknown
@@ -297,6 +435,7 @@ describe("codegen differential fuzzing (base generator vs. every optimization va
       }
 
       let base: Parser<unknown>;
+      let oracle: ((input: string) => string) | null;
       const variantParsers: [VariantSpec, Parser<unknown>][] = [];
       try {
         base = compileStart(
@@ -313,6 +452,15 @@ describe("codegen differential fuzzing (base generator vs. every optimization va
             compileStart(variant.build(parsed.val), core, combinator),
           ]);
         }
+        // Built once per grammar, tried against every input below -- a
+        // grammar the oracle can't handle at all (an unsupported node, or
+        // no `start` rule) is a construction-time concern handled by the
+        // same try/catch as the codegen variants above; a PER-INPUT limit
+        // (recursion depth, zero-width repetition -- expected for a
+        // pathological random input against a recursive grammar) is
+        // handled per-input below instead, so one bad input doesn't skip
+        // the oracle for every other input against the same grammar.
+        oracle = referenceRecognize(parsed.val);
       } catch {
         // A construction-time rejection (e.g. `assertNoNullableRepetition`
         // firing on a randomly-generated nullable repetition) or a
@@ -331,6 +479,27 @@ describe("codegen differential fuzzing (base generator vs. every optimization va
         } catch {
           continue;
         }
+        const baseKeySuccessOnly = keySuccessOnly(baseResult);
+
+        try {
+          const oracleKey = oracle(input);
+          if (oracleKey !== baseKeySuccessOnly) {
+            diffs.push(
+              `[reference-interpreter] DIFF on ${JSON.stringify(input)} for grammar:\n${source}\n  base=${baseKeySuccessOnly}  oracle=${oracleKey}`,
+            );
+          }
+        } catch (error) {
+          if (!(error instanceof ReferenceInterpreterLimitError)) {
+            diffs.push(
+              `[reference-interpreter] THREW unexpectedly on ${JSON.stringify(input)} for grammar:\n${source}\n  ${(error as Error).message}`,
+            );
+          }
+          // A `ReferenceInterpreterLimitError` (zero-width repetition, or
+          // recursion depth exceeded) is out of scope for this input --
+          // see that class's doc comment -- so it's silently skipped,
+          // exactly like a construction-time rejection is skipped above.
+        }
+
         for (const [variant, parser] of variantParsers) {
           let result: ReturnType<Parser<unknown>>;
           try {

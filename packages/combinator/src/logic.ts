@@ -1,9 +1,16 @@
-import type { ParseResult, Parser, Pos } from "@suzumiyaaoba/tpeg-core";
+import type {
+  Expectation,
+  ParseResult,
+  Parser,
+  Pos,
+} from "@suzumiyaaoba/tpeg-core";
 import {
   FAIL,
   FAIL_FATAL,
   isFailure,
+  mergeFailureWatermark,
   offsetToPos,
+  snapshotFailureWatermark,
 } from "@suzumiyaaoba/tpeg-core";
 import { named } from "./error";
 
@@ -169,16 +176,46 @@ export const commitAtTopLevel =
  * pruning shifts `base` forward and `splice`s the discarded prefix out,
  * so the array's length tracks `(highest offset seen) - base`, not the
  * input's total length. `undefined` (a genuine array hole, not a stored
- * value) means "not cached"; `ParseResult<T>` never legitimately
+ * value) means "not cached"; a stored {@link MemoEntry} never legitimately
  * contains `undefined` itself.
+ *
+ * ## Farthest-failure watermark: replaying what a cache hit skips
+ *
+ * `tpeg-core`'s shared farthest-failure watermark (`packages/core/src/
+ * failure.ts`) is populated as a SIDE EFFECT of a leaf parser's `fail()`
+ * call. A cache HIT returns a previously-computed `ParseResult` without
+ * re-running `parser`, so none of the `fail()` calls that originally
+ * produced it run again -- without the fields below, a rule's diagnostic
+ * contribution (its farthest internal failure, or its own outright
+ * failure) would silently disappear from `error.pos`/`.expected` the
+ * moment a second call at the same offset hits the cache. Each entry
+ * therefore also stores a snapshot of the watermark taken right after the
+ * MISS that produced it, and every later HIT re-applies that snapshot via
+ * `mergeFailureWatermark` before returning the cached result -- for a
+ * cached success as much as a cached failure, since a memoized rule can
+ * still contain the parse's overall farthest failure internally even
+ * where the rule itself went on to succeed via a later alternative. This
+ * is deliberately approximate, not exact, in one narrow way documented on
+ * `mergeFailureWatermark` itself (`packages/core/src/failure.ts`): safe
+ * per that module's own "diagnostics-only, never correctness-affecting"
+ * contract.
  */
+interface MemoEntry<T> {
+  readonly result: ParseResult<T>;
+  /** Watermark position right after the MISS call that produced `result`
+   * (`snapshotFailureWatermark().pos`) -- `-1` if `parser` never called
+   * `fail()` at all (nothing to replay on a later hit). */
+  readonly watermarkPos: number;
+  readonly watermarkExpected: readonly Expectation[];
+}
+
 export const memoize = <T>(
   parser: Parser<T>,
   options: { maxCacheSize?: number; parserName?: string } = {},
 ): Parser<T> => {
   const { maxCacheSize, parserName } = options;
   let cachedInput: string | null = null;
-  let cache: (ParseResult<T> | undefined)[] | null = null;
+  let cache: (MemoEntry<T> | undefined)[] | null = null;
   // Offset that cache[0] corresponds to; entries before this are pruned.
   let base = 0;
   // Offsets currently cached, oldest first -- only maintained when
@@ -211,11 +248,19 @@ export const memoize = <T>(
     if (index >= 0) {
       const cached = cache[index];
       if (cached) {
-        return cached;
+        // See "Farthest-failure watermark" above: replay what this hit
+        // skips re-running.
+        mergeFailureWatermark(
+          input,
+          cached.watermarkPos,
+          cached.watermarkExpected,
+        );
+        return cached.result;
       }
     }
 
     const result = parser(input, pos);
+    const watermark = snapshotFailureWatermark();
 
     // Recomputed relative to the CURRENT `base`, not the pre-call `index`
     // above: if `parser` recursively re-enters this same memoized rule (a
@@ -240,7 +285,11 @@ export const memoize = <T>(
           cache[oldest - base] = undefined;
         }
       }
-      cache[writeIndex] = result;
+      cache[writeIndex] = {
+        result,
+        watermarkPos: watermark.input === input ? watermark.pos : -1,
+        watermarkExpected: watermark.input === input ? watermark.expected : [],
+      };
       insertionOrder?.push(pos);
     }
 

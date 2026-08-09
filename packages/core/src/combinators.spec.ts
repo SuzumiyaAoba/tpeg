@@ -628,6 +628,47 @@ describe("predictiveChoice", () => {
       }
       expect(ranNonMatching).toBe(false);
     });
+
+    it("a null-filter alternative survives the dispatch trie even when it also carries a literalPrefix (regression)", () => {
+      // A `null` filter is the "unconditionally triable, never excludable"
+      // marker this suite already covers at the ASCII-bucket level above.
+      // The optional third (`literalPrefix`) tuple element
+      // (`packages/core/src/dispatch-trie.ts`'s `DispatchTrieNode`) has
+      // its OWN, deeper excludability: `buildDispatchTrie` partitions
+      // entries into per-next-character child groups by `literalPrefix`,
+      // and an entry only propagates into groups matching ITS OWN prefix
+      // -- unless its `remaining` is forced to `""`. Before the fix this
+      // test pins, a `null`-filter alternative that ALSO carried a
+      // `literalPrefix` (today's codegen never produces this combination
+      // -- `codegen-optimized.ts`'s `tryGeneratePredictiveChoice` nulls
+      // both together via the same `unsafeToSkip` check -- but nothing in
+      // `predictiveChoice`'s own contract prevented a caller from doing
+      // so) got excluded from every trie group except the one matching
+      // its own prefix's second character, silently breaking
+      // ordered-choice semantics: a LATER alternative sharing that
+      // group's character could win over an EARLIER, unconditionally-
+      // triable one it should never have been able to beat.
+      //
+      // `alt0` here always succeeds on "a" (standing in for an
+      // alternative that can reach a commit without consuming -- see the
+      // tests above -- collapsed to a plain success for a simpler,
+      // sharper repro), given a literal prefix "ac" it does NOT actually
+      // require. `alt1`/`alt2` share "ac"/"ad" prefixes so the trie
+      // actually has >=2 prefixed entries to discriminate on. On input
+      // "ad" (matching alt2's second character, NOT alt0's), ordered
+      // choice must still let alt0 -- declared first -- win.
+      const alwaysSucceedsOnA = lit("a");
+      const result = predictiveChoice<[string, string, string]>([
+        [alwaysSucceedsOnA, null, "ac"],
+        [lit("ac"), charFilter("a"), "ac"],
+        [lit("ad"), charFilter("a"), "ad"],
+      ])("ad", 0);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("a");
+      }
+    });
   });
 
   describe("ASCII dispatch table construction", () => {
