@@ -536,6 +536,11 @@ const firstSetsEqual = (a: FirstSet, b: FirstSet): boolean => {
 export interface GrammarFirstSetAnalysis {
   readonly firstSets: ReadonlyMap<string, FirstSet>;
   readonly nullableRules: ReadonlyMap<string, boolean>;
+  /** Rule name -> pattern, for callers (`canCommitWithoutConsuming` below)
+   * that need to follow an `Identifier` reference to its rule's body.
+   * Built alongside the other two maps rather than re-deriving `grammar.rules`
+   * at each call site. */
+  readonly rulePatterns: ReadonlyMap<string, Expression>;
 }
 
 /**
@@ -568,7 +573,11 @@ export const analyzeFirstSets = (
     }
   }
 
-  return { firstSets, nullableRules };
+  const rulePatterns = new Map<string, Expression>(
+    grammar.rules.map((r) => [r.name, r.pattern]),
+  );
+
+  return { firstSets, nullableRules, rulePatterns };
 };
 
 /** Convenience wrapper over {@link analyzeFirstSets} for callers that only
@@ -618,4 +627,241 @@ export const predictiveFilterForExpression = (
 export const firstSetsDisjoint = (a: FirstSet, b: FirstSet): boolean => {
   if (a.unknown || b.unknown) return false;
   return charSetsDisjoint(a.set, b.set);
+};
+
+/**
+ * `true` iff SOME execution path through `expr`'s nullable prefix can
+ * reach a `Cut` while having consumed zero characters relative to
+ * wherever `expr` itself started -- i.e., `expr`'s failure at its own
+ * starting offset can come back `fatal` (see `ParseError.fatal` /
+ * `commit` in `packages/core/src/combinators.ts`).
+ *
+ * This is `predictiveChoice`'s (`packages/core/src/combinators.ts`)
+ * missing precondition: that combinator skips a `Choice` alternative
+ * whenever its FIRST-set filter provably excludes the current character,
+ * reasoning that running the skipped alternative "would only reproduce a
+ * failure at `pos`." That reasoning is sound for an ORDINARY failure --
+ * `choice`/`tryOrderedCandidates` would just move on to the next
+ * candidate either way -- but not for a `fatal` one: a fatal failure
+ * aborts the WHOLE choice, and it is emitted at the alternative's own
+ * starting offset (zero-width), independent of what the actual input
+ * character is, whenever the alternative's nullable prefix can reach a
+ * `Cut` by taking its empty-match branch (`optional`'s "parser failed ->
+ * succeed with []" branch never even looks at the input character it
+ * failed to match). Concretely: `("a"? ~ "a") / "b"` on input `"b"` must
+ * fail the WHOLE choice (`"a"?` matches empty, the cut commits, and the
+ * following `"a"` fails fatally) -- but the alternative's FIRST set is
+ * `{a}` (computed correctly from the literal after the cut), so a naive
+ * predictive filter would skip it on `"b"` and wrongly fall through to
+ * the second alternative.
+ *
+ * `codegen-optimized.ts`'s `tryGeneratePredictiveChoice` MUST treat this
+ * function returning `true` for a `Choice` alternative the same as an
+ * unresolvable ("unknown") FIRST set: emit `null` for both that
+ * alternative's filter AND its literal-prefix trie slot (see
+ * `packages/core/src/dispatch-trie.ts` -- the trie is a second,
+ * independent skip path with the exact same hazard), so the alternative
+ * is always attempted, never skipped by a static "next character" guess.
+ *
+ * Mirrors, node type by node type, which combinators actually re-raise a
+ * child's `fatal` failure unchanged vs. absorb it at their own boundary
+ * (see each one's own doc comment):
+ * - `Sequence`/`sequence()`: relays a failing element's result unchanged
+ *   -- a `Cut` reachable through a nullable prefix propagates.
+ * - `Choice`/`tryOrderedCandidates`: absorbs `fatal` at ITS OWN boundary
+ *   (never forwards it to whatever encloses that `Choice`) -- so a `Cut`
+ *   inside one alternative can never escape through this node.
+ * - `Optional`/`Star`/`Plus`/`Quantified` (`repetition.ts`): all four
+ *   re-raise a `fatal` child failure rather than treating it as "no
+ *   match" -- so a `Cut` reachable on the wrapped expression's own first
+ *   (possibly only) attempt propagates through the repetition node too,
+ *   regardless of `min`.
+ * - `PositiveLookahead`/`NegativeLookahead` (`andPredicate`/
+ *   `notPredicate`, `lookahead.ts`): both absorb a `fatal` child failure
+ *   at their own boundary (swap it back to non-fatal before relaying) --
+ *   a `Cut` inside a lookahead can never escape through it.
+ * - `Identifier`: follows the referenced rule's pattern via
+ *   `analysis.rulePatterns` -- a `Cut` inside a referenced rule is just
+ *   as reachable as one written inline, since `predictiveChoice` filters
+ *   whichever `Choice` node actually contains the reference, and that
+ *   reference's own failure (fatal or not) is whatever the referenced
+ *   rule produces. `QualifiedIdentifier` (cross-module) and an
+ *   `Identifier` this grammar has no rule for are both unresolvable here
+ *   -- conservatively `true`, the same "cannot rule out" direction
+ *   `predictiveFilterForExpression` already takes for an unresolvable
+ *   FIRST set. A rule reference already on `visitedRules` (a cycle
+ *   reached with zero net consumption -- left recursion) is likewise
+ *   conservatively `true` rather than looping forever; ordinary
+ *   (non-left-recursive) recursion never revisits a rule at zero
+ *   consumed input, so this never fires for a well-formed grammar.
+ */
+const EMPTY_VISITED_RULES: ReadonlySet<string> = new Set();
+
+export const canCommitWithoutConsuming = (
+  expr: Expression,
+  analysis: GrammarFirstSetAnalysis,
+  visitedRules: ReadonlySet<string> = EMPTY_VISITED_RULES,
+): boolean => {
+  switch (expr.type) {
+    case "Cut":
+      return true;
+    case "Sequence": {
+      for (const element of expr.elements) {
+        if (canCommitWithoutConsuming(element, analysis, visitedRules)) {
+          return true;
+        }
+        if (!isNullable(element, analysis.nullableRules)) return false;
+      }
+      return false;
+    }
+    case "Choice":
+      // `tryOrderedCandidates` absorbs a `fatal` failure at THIS node's
+      // own boundary (see `commit`'s doc comment in
+      // `packages/core/src/combinators.ts`) -- a Cut inside one
+      // alternative never escapes through the Choice itself.
+      return false;
+    case "Group":
+    case "LabeledExpression":
+    case "ActionExpression":
+      return canCommitWithoutConsuming(expr.expression, analysis, visitedRules);
+    case "Optional":
+    case "Star":
+    case "Plus":
+    case "Quantified":
+      return canCommitWithoutConsuming(expr.expression, analysis, visitedRules);
+    case "PositiveLookahead":
+    case "NegativeLookahead":
+      // Both `andPredicate` and `notPredicate` absorb a `fatal` child
+      // failure at their own boundary -- see `lookahead.ts`.
+      return false;
+    case "Identifier": {
+      if (visitedRules.has(expr.name)) return true;
+      const pattern = analysis.rulePatterns.get(expr.name);
+      if (!pattern) return true;
+      return canCommitWithoutConsuming(
+        pattern,
+        analysis,
+        new Set([...visitedRules, expr.name]),
+      );
+    }
+    case "QualifiedIdentifier":
+      return true;
+    default:
+      return false;
+  }
+};
+
+/**
+ * `Star`/`Plus`/`Quantified{min,}` (unbounded, `max === undefined`) over a
+ * nullable body has no well-defined PEG semantics: the wrapped expression
+ * could succeed while consuming zero characters, so the repetition would
+ * never terminate by input exhaustion. `packages/core/src/repetition.ts`'s
+ * `zeroOrMore`/`oneOrMore`/`quantified` all carry a runtime
+ * zero-progress guard for this (`createInfiniteLoopError`), but that guard
+ * produces a NON-fatal failure -- which `optional`/`withDefault`/`choice`
+ * then silently swallow as "no match" rather than surfacing it, so the
+ * same underlying grammar mistake is a hard error in one context
+ * (`zeroOrMore(...)` at top level) and silently accepted as `[]` in
+ * another (`optional(zeroOrMore(...))`). Rather than generate code whose
+ * behavior depends on incidental wrapping, codegen rejects this shape
+ * outright -- see `assertNoNullableRepetition`.
+ *
+ * A *bounded* `Quantified{n,m}` (including `{n,n}`) is NOT flagged: PEG
+ * gives `e{n,m}` well-defined semantics even when `e` is nullable (each of
+ * the `n` required and up to `m` optional attempts is a legitimate
+ * possibly-zero-width match, and the `for` loop bounding them can never
+ * loop unboundedly regardless) -- see `quantified`'s own doc comment in
+ * `repetition.ts`.
+ */
+export interface NullableRepetitionIssue {
+  readonly ruleName: string;
+  readonly nodeType: "Star" | "Plus" | "Quantified";
+}
+
+const collectNullableRepetitions = (
+  expr: Expression,
+  ruleName: string,
+  analysis: GrammarFirstSetAnalysis,
+  issues: NullableRepetitionIssue[],
+): void => {
+  switch (expr.type) {
+    case "Star":
+    case "Plus":
+      if (isNullable(expr.expression, analysis.nullableRules)) {
+        issues.push({ ruleName, nodeType: expr.type });
+      }
+      collectNullableRepetitions(expr.expression, ruleName, analysis, issues);
+      return;
+    case "Quantified":
+      if (
+        expr.max === undefined &&
+        isNullable(expr.expression, analysis.nullableRules)
+      ) {
+        issues.push({ ruleName, nodeType: "Quantified" });
+      }
+      collectNullableRepetitions(expr.expression, ruleName, analysis, issues);
+      return;
+    case "Sequence":
+      for (const element of expr.elements) {
+        collectNullableRepetitions(element, ruleName, analysis, issues);
+      }
+      return;
+    case "Choice":
+      for (const alt of expr.alternatives) {
+        collectNullableRepetitions(alt, ruleName, analysis, issues);
+      }
+      return;
+    case "Group":
+    case "Optional":
+    case "PositiveLookahead":
+    case "NegativeLookahead":
+    case "LabeledExpression":
+    case "ActionExpression":
+      collectNullableRepetitions(expr.expression, ruleName, analysis, issues);
+      return;
+    default:
+      return;
+  }
+};
+
+/** Every `NullableRepetitionIssue` (see above) reachable in `grammar`,
+ * across every rule. Exported mainly so a test can assert on the
+ * structured result directly rather than parsing `assertNoNullableRepetition`'s
+ * message. */
+export const findNullableRepetitions = (
+  grammar: GrammarDefinition,
+  analysis: GrammarFirstSetAnalysis,
+): NullableRepetitionIssue[] => {
+  const issues: NullableRepetitionIssue[] = [];
+  for (const rule of grammar.rules) {
+    collectNullableRepetitions(rule.pattern, rule.name, analysis, issues);
+  }
+  return issues;
+};
+
+/**
+ * Throws if `grammar` contains any `NullableRepetitionIssue` (see
+ * `findNullableRepetitions`'s doc comment for why this shape is rejected
+ * outright rather than generated). Called by both `codegen.ts` and
+ * `codegen-optimized.ts` before generating any code, so the failure is a
+ * grammar-authoring error reported at generation time -- matching
+ * `quantified`'s own construction-time validation in
+ * `packages/core/src/repetition.ts` for an analogous "this grammar/call
+ * can never behave sensibly" case.
+ */
+export const assertNoNullableRepetition = (
+  grammar: GrammarDefinition,
+  analysis: GrammarFirstSetAnalysis,
+): void => {
+  const issues = findNullableRepetitions(grammar, analysis);
+  if (issues.length === 0) return;
+  const description = issues
+    .map(
+      (issue) =>
+        `rule '${issue.ruleName}': ${issue.nodeType} over a nullable expression`,
+    )
+    .join("; ");
+  throw new Error(
+    `Grammar contains unbounded repetition over a nullable (possibly zero-width) expression -- this has no well-defined PEG semantics, since the repetition could succeed without ever consuming input: ${description}`,
+  );
 };

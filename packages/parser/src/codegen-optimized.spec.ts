@@ -22,10 +22,13 @@ import {
   createGrammarDefinition,
   createIdentifier,
   createLabeledExpression,
+  createOptional,
   createPlus,
   createQualifiedIdentifier,
+  createQuantified,
   createRuleDefinition,
   createSequence,
+  createStar,
   createStringLiteral,
   createTransformDefinition,
   createTransformFunction,
@@ -1005,5 +1008,81 @@ describe("literalPrefixForExpression / predictiveChoice's literal-prefix trie sl
         expect(predictiveResult.next).toBe(plainResult.next);
       }
     }
+  });
+});
+
+// Same guard as `codegen.spec.ts`'s identical describe block, for the
+// optimized generator -- see `first-sets.ts`'s `assertNoNullableRepetition`.
+describe("generateOptimizedTypeScriptParser rejects unbounded repetition over a nullable body", () => {
+  it("throws for a Star wrapping an Optional", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createStar(createOptional(createStringLiteral("a", '"'))),
+        ),
+      ],
+    );
+    expect(() =>
+      generateOptimizedTypeScriptParser(grammar, { language: "typescript" }),
+    ).toThrow(/rule 'r'/);
+  });
+
+  it("does NOT throw for a bounded Quantified{n,m}, even over a nullable body", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createQuantified(createOptional(createStringLiteral("a", '"')), 2, 2),
+        ),
+      ],
+    );
+    expect(() =>
+      generateOptimizedTypeScriptParser(grammar, { language: "typescript" }),
+    ).not.toThrow();
+  });
+
+  it("does NOT throw for a clean grammar (no nullable repetition anywhere)", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "digits",
+          createPlus(createCharacterClass([createCharRange("0", "9")])),
+        ),
+      ],
+    );
+    expect(() =>
+      generateOptimizedTypeScriptParser(grammar, { language: "typescript" }),
+    ).not.toThrow();
+  });
+
+  it("throws regardless of enablePredictiveDispatch/enableRegexFusion settings (both off)", () => {
+    // Regression for the FIRST-set analysis being computed unconditionally
+    // now: before this fix, `this.firstSetAnalysis` (and therefore the
+    // nullable-repetition check) was only computed when
+    // enablePredictiveDispatch or enableRegexFusion was on.
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createStar(createOptional(createStringLiteral("a", '"'))),
+        ),
+      ],
+    );
+    expect(() =>
+      generateOptimizedTypeScriptParser(grammar, {
+        language: "typescript",
+        enablePredictiveDispatch: false,
+        enableRegexFusion: false,
+      }),
+    ).toThrow(/rule 'r'/);
   });
 });

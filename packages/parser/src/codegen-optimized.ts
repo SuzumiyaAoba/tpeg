@@ -49,7 +49,12 @@ import {
 } from "./codegen";
 import { grammarHasGlobalCut } from "./codegen";
 import type { GrammarFirstSetAnalysis } from "./first-sets";
-import { analyzeFirstSets, predictiveFilterForExpression } from "./first-sets";
+import {
+  analyzeFirstSets,
+  assertNoNullableRepetition,
+  canCommitWithoutConsuming,
+  predictiveFilterForExpression,
+} from "./first-sets";
 import {
   analyzeGrammarPerformance,
   globalPerformanceMonitor,
@@ -341,10 +346,15 @@ export class OptimizedTPEGCodeGenerator {
     this.ruleIndex.clear();
     this.templateCache.clear();
     this.fusionRoots = new Set();
-    this.firstSetAnalysis =
-      this.options.enablePredictiveDispatch || this.options.enableRegexFusion
-        ? analyzeFirstSets(grammar)
-        : null;
+    // Computed unconditionally now (not just when
+    // enablePredictiveDispatch/enableRegexFusion are on): `
+    // assertNoNullableRepetition` below needs a converged FIRST-set
+    // analysis regardless of which optional codegen features are
+    // enabled -- an unbounded repetition over a nullable body has no
+    // well-defined PEG semantics whether or not this grammar happens to
+    // also want predictive dispatch or regex fusion.
+    this.firstSetAnalysis = analyzeFirstSets(grammar);
+    assertNoNullableRepetition(grammar, this.firstSetAnalysis);
     this.reentrancyAnalysis = this.options.enableMemoization
       ? analyzeReentrancy(grammar)
       : null;
@@ -1031,8 +1041,18 @@ export class OptimizedTPEGCodeGenerator {
     expr: Choice,
     analysis: GrammarFirstSetAnalysis,
   ): string | null {
-    const filters = expr.alternatives.map((alt) =>
-      predictiveFilterForExpression(alt, analysis),
+    // An alternative that could reach a `Cut` without having consumed any
+    // input must never be skipped by a static "next character"/literal-
+    // prefix guess -- see `canCommitWithoutConsuming`'s doc comment
+    // (`first-sets.ts`) for why skipping it can change which alternative
+    // a `fatal` failure ends up aborting the choice in favor of. Both
+    // guards below are forced to `null` for such an alternative, exactly
+    // as if its FIRST set were unresolvable.
+    const unsafeToSkip = expr.alternatives.map((alt) =>
+      canCommitWithoutConsuming(alt, analysis),
+    );
+    const filters = expr.alternatives.map((alt, i) =>
+      unsafeToSkip[i] ? null : predictiveFilterForExpression(alt, analysis),
     );
     if (!filters.some((f) => f !== null)) {
       return null;
@@ -1044,7 +1064,9 @@ export class OptimizedTPEGCodeGenerator {
     // WITHOUT a qualifying alternative byte-identical to before this
     // feature existed (2-element tuples), which is what the JSON
     // regression guard in `codegen-optimized.spec.ts` checks.
-    const literalPrefixes = expr.alternatives.map(literalPrefixForExpression);
+    const literalPrefixes = expr.alternatives.map((alt, i) =>
+      unsafeToSkip[i] ? null : literalPrefixForExpression(alt),
+    );
     const anyLiteralPrefix = literalPrefixes.some((p) => p !== null);
 
     const entries = expr.alternatives.map((alt, i) => {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { lit } from "./basic";
-import { commit, seq } from "./combinators";
+import { choice, commit, seq } from "./combinators";
 import { resetFailureWatermark } from "./failure";
 import {
   assert,
@@ -86,6 +86,60 @@ describe("andPredicate", () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.context).toBeUndefined();
+    }
+  });
+});
+
+// A cut/commit (`commit`, `./combinators.ts`) written inside a lookahead
+// predicate must stay scoped to that predicate's own probe: `&e`/`!e` are
+// each a self-contained "does e match here" check, never themselves one
+// alternative of some outer `choice` -- so a `Cut` inside one can only
+// sensibly mean "commit within e's own attempt." Both `andPredicate` and
+// `notPredicate` must absorb a `fatal` failure at their own boundary
+// (swap it back to non-fatal before relaying/converting it) rather than
+// letting it escape to whatever encloses the predicate. See
+// `andPredicate`'s own doc comment for the worked counterexample this
+// closes: `(&(a ~ b)) / c` used to let a cut inside the lookahead wrongly
+// suppress `c`.
+describe("cut/commit scoping inside a lookahead predicate", () => {
+  it("andPredicate absorbs a fatal failure from inside its probe -- an enclosing choice still tries its next alternative", () => {
+    const committedProbe = seq(lit("a"), commit(lit("b")));
+    const parser = choice(
+      seq(andPredicate(committedProbe), lit("a")),
+      lit("ac"),
+    );
+    // "ac": the probe matches "a" then fails to match "b" against "c" --
+    // fatally, inside the probe. Without absorption, that fatal failure
+    // would escape andPredicate and stop the outer choice from ever
+    // trying the second alternative, even though "ac" plainly matches it.
+    const result = parser("ac", 0);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("ac");
+    }
+  });
+
+  it("andPredicate's own failure (the probe genuinely not matching) is unaffected -- still an ordinary, non-fatal failure", () => {
+    const committedProbe = seq(lit("a"), commit(lit("b")));
+    const result = andPredicate(committedProbe)("ac", 0);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.fatal).toBeFalsy();
+    }
+  });
+
+  it("notPredicate already absorbed this (turns any child failure, fatal or not, into an ordinary success) -- pinned for comparison", () => {
+    const committedProbe = seq(lit("a"), commit(lit("b")));
+    const parser = choice(
+      seq(notPredicate(committedProbe), lit("a")),
+      lit("x"),
+    );
+    // "ac": the probe fails (fatally, deep inside), so notPredicate
+    // succeeds; the outer seq then matches "a" against "ac" wholesale.
+    const result = parser("ac", 0);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toEqual([undefined, "a"]);
     }
   });
 });

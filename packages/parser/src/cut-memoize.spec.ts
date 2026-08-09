@@ -8,6 +8,7 @@ import { describe, expect, test } from "bun:test";
 import { type Parser, parse } from "@suzumiyaaoba/tpeg-core";
 import { promoteGlobalCuts } from "./ast-optimize";
 import { generateTypeScriptParser } from "./codegen";
+import { generateOptimizedTypeScriptParser } from "./codegen-optimized";
 import { analyzeFirstSets } from "./first-sets";
 import { grammarDefinition } from "./grammar";
 
@@ -293,6 +294,97 @@ describe("promoteGlobalCuts (cut promotion beyond the start rule's own top-level
     expect(after.code).toBe(before.code);
     expect(after.code).toContain("commit(");
     expect(after.code).not.toContain("commitAtTopLevel");
+  });
+});
+
+describe("predictiveChoice must not skip an alternative that can commit without consuming input (regression)", () => {
+  // Bug: `"a"? ~ "a" / "b"` on input "b". The first alternative's FIRST
+  // set is correctly computed as {a} (from the literal after the cut),
+  // but `"a"?` can take its empty-match branch regardless of the actual
+  // input character, reach the cut, and then fail FATALLY at offset 0
+  // when the trailing "a" doesn't match "b" either -- a fatal failure at
+  // offset 0 is what the un-optimized `choice` produces too (so the
+  // whole rule fails), but a predictive-dispatch build that skips this
+  // alternative because "b" isn't in {a} never sees that fatal failure
+  // and wrongly falls through to "b". See
+  // `packages/parser/src/first-sets.ts`'s `canCommitWithoutConsuming`.
+  test("optimized codegen agrees with base codegen on a cut reachable through a nullable prefix", async () => {
+    const core = await import("@suzumiyaaoba/tpeg-core");
+    const combinator = await import("@suzumiyaaoba/tpeg-combinator");
+
+    const source = `grammar G {
+      start = "a"? ~ "a" / "b"
+    }`;
+
+    const parsed = testParse(grammarDefinition, source);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const baseResult = generateTypeScriptParser(parsed.val, {
+      includeImports: false,
+      includeTypes: false,
+    });
+    const optResult = generateOptimizedTypeScriptParser(parsed.val, {
+      language: "typescript",
+      includeImports: false,
+      includeTypes: false,
+      optimize: true,
+    });
+    // Confirms this test actually exercises predictiveChoice (otherwise
+    // it would pass vacuously, testing nothing).
+    expect(optResult.code).toContain("predictiveChoice(");
+
+    const compile = (code: string, name: string) => {
+      const body = code.replace(/^export const (\w+)/gm, "const $1");
+      const scope = { ...core, ...combinator };
+      const factory = new Function(
+        ...Object.keys(scope),
+        `${body}\nreturn { ${name} };`,
+      );
+      return factory(...Object.values(scope))[name] as Parser<unknown>;
+    };
+    const base = compile(baseResult.code, "start");
+    const opt = compile(optResult.code, "start");
+
+    for (const input of ["a", "b", "x"]) {
+      expect(opt(input, 0).success).toBe(base(input, 0).success);
+    }
+    expect(base("b", 0).success).toBe(false);
+    expect(opt("b", 0).success).toBe(false);
+  });
+
+  test("the same hazard through a referenced rule (not written inline in the Choice)", async () => {
+    const core = await import("@suzumiyaaoba/tpeg-core");
+    const combinator = await import("@suzumiyaaoba/tpeg-combinator");
+
+    const source = `grammar G {
+      start = sub / "b"
+      sub = "a"? ~ "a"
+    }`;
+
+    const parsed = testParse(grammarDefinition, source);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const optResult = generateOptimizedTypeScriptParser(parsed.val, {
+      language: "typescript",
+      includeImports: false,
+      includeTypes: false,
+      optimize: true,
+    });
+    expect(optResult.code).toContain("predictiveChoice(");
+
+    const body = optResult.code.replace(/^export const (\w+)/gm, "const $1");
+    const scope = { ...core, ...combinator };
+    const factory = new Function(
+      ...Object.keys(scope),
+      `${body}\nreturn { start };`,
+    );
+    const { start } = factory(...Object.values(scope)) as {
+      start: Parser<unknown>;
+    };
+
+    expect(start("b", 0).success).toBe(false);
   });
 });
 

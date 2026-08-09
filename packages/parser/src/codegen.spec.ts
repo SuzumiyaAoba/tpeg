@@ -18,6 +18,7 @@ import {
   createPlus,
   createPositiveLookahead,
   createQualifiedIdentifier,
+  createQuantified,
   createRuleDefinition,
   createSequence,
   createStar,
@@ -943,5 +944,71 @@ describe("TPEG Code Generation", () => {
       const committed = stmt("ix", pos);
       expect(committed.success).toBe(false);
     });
+  });
+});
+
+// See `packages/parser/src/first-sets.ts`'s `assertNoNullableRepetition`
+// doc comment: an unbounded `Star`/`Plus`/`Quantified{n,}` over a nullable
+// body has no well-defined PEG semantics, so `generateGrammar` refuses to
+// generate code for it at all rather than emitting a parser whose runtime
+// behavior would depend on incidental wrapping (see
+// `packages/core/src/repetition.spec.ts`'s "unbounded repetition over a
+// nullable body" describe block for that inconsistency, pinned at the
+// combinator level).
+describe("generateTypeScriptParser rejects unbounded repetition over a nullable body", () => {
+  test("throws for a Star wrapping an Optional", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createStar(createOptional(createStringLiteral("a", '"'))),
+        ),
+      ],
+    );
+    expect(() => generateTypeScriptParser(grammar)).toThrow(/rule 'r'/);
+  });
+
+  test("throws for a Plus wrapping a Star", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createPlus(createStar(createStringLiteral("a", '"'))),
+        ),
+      ],
+    );
+    expect(() => generateTypeScriptParser(grammar)).toThrow(/rule 'r'/);
+  });
+
+  test("does NOT throw for a bounded Quantified{n,m}, even over a nullable body", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createQuantified(createOptional(createStringLiteral("a", '"')), 2, 2),
+        ),
+      ],
+    );
+    expect(() => generateTypeScriptParser(grammar)).not.toThrow();
+  });
+
+  test("does NOT throw for a clean grammar (no nullable repetition anywhere)", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "digits",
+          createPlus(createCharacterClass([createCharRange("0", "9")])),
+        ),
+      ],
+    );
+    expect(() => generateTypeScriptParser(grammar)).not.toThrow();
   });
 });

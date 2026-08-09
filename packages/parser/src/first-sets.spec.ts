@@ -11,7 +11,10 @@ import {
 import {
   type FirstSet,
   analyzeFirstSets,
+  assertNoNullableRepetition,
+  canCommitWithoutConsuming,
   computeFirstSets,
+  findNullableRepetitions,
   isNullable,
   predictiveFilterForExpression,
 } from "./first-sets";
@@ -21,11 +24,15 @@ import {
   createCharRange,
   createCharacterClass,
   createChoice,
+  createCut,
   createGrammarDefinition,
   createIdentifier,
   createNegativeLookahead,
   createOptional,
+  createPlus,
+  createPositiveLookahead,
   createQualifiedIdentifier,
+  createQuantified,
   createRuleDefinition,
   createSequence,
   createStar,
@@ -463,5 +470,262 @@ describe("predictiveFilterForExpression", () => {
       createStringLiteral("x", '"'),
     ]);
     expect(predictiveFilterForExpression(alt0, analysis)).toBeNull();
+  });
+});
+
+describe("canCommitWithoutConsuming", () => {
+  const emptyGrammar = createGrammarDefinition("T", [], []);
+  const emptyAnalysis = analyzeFirstSets(emptyGrammar);
+
+  it("a bare Cut can always commit without consuming", () => {
+    expect(canCommitWithoutConsuming(createCut(), emptyAnalysis)).toBe(true);
+  });
+
+  it("a Sequence reaches the Cut through a nullable prefix", () => {
+    const expr = createSequence([
+      createOptional(createStringLiteral("a", '"')),
+      createCut(),
+      createStringLiteral("a", '"'),
+    ]);
+    expect(canCommitWithoutConsuming(expr, emptyAnalysis)).toBe(true);
+  });
+
+  it("a Sequence whose first element is non-nullable stops before ever reaching the Cut", () => {
+    const expr = createSequence([createStringLiteral("a", '"'), createCut()]);
+    expect(canCommitWithoutConsuming(expr, emptyAnalysis)).toBe(false);
+  });
+
+  it("a Sequence with no Cut at all is false regardless of nullability", () => {
+    const expr = createSequence([
+      createOptional(createStringLiteral("a", '"')),
+      createStringLiteral("b", '"'),
+    ]);
+    expect(canCommitWithoutConsuming(expr, emptyAnalysis)).toBe(false);
+  });
+
+  it("a Choice absorbs a Cut inside it at its own boundary -- never propagates outward", () => {
+    const expr = createChoice([
+      createSequence([createCut(), createStringLiteral("a", '"')]),
+      createStringLiteral("b", '"'),
+    ]);
+    expect(canCommitWithoutConsuming(expr, emptyAnalysis)).toBe(false);
+  });
+
+  it("Optional/Star/Plus/Quantified all re-raise a Cut reachable through their wrapped expression", () => {
+    expect(
+      canCommitWithoutConsuming(createOptional(createCut()), emptyAnalysis),
+    ).toBe(true);
+    expect(
+      canCommitWithoutConsuming(createStar(createCut()), emptyAnalysis),
+    ).toBe(true);
+    expect(
+      canCommitWithoutConsuming(createPlus(createCut()), emptyAnalysis),
+    ).toBe(true);
+    expect(
+      canCommitWithoutConsuming(
+        createQuantified(createCut(), 0, 3),
+        emptyAnalysis,
+      ),
+    ).toBe(true);
+  });
+
+  it("PositiveLookahead/NegativeLookahead absorb a Cut inside them at their own boundary", () => {
+    expect(
+      canCommitWithoutConsuming(
+        createPositiveLookahead(createCut()),
+        emptyAnalysis,
+      ),
+    ).toBe(false);
+    expect(
+      canCommitWithoutConsuming(
+        createNegativeLookahead(createCut()),
+        emptyAnalysis,
+      ),
+    ).toBe(false);
+  });
+
+  it("follows an Identifier reference transitively into the referenced rule's pattern", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "a",
+          createSequence([
+            createOptional(createStringLiteral("x", '"')),
+            createIdentifier("b"),
+          ]),
+        ),
+        createRuleDefinition(
+          "b",
+          createSequence([createCut(), createStringLiteral("y", '"')]),
+        ),
+      ],
+    );
+    const analysis = analyzeFirstSets(grammar);
+    const ruleA = grammar.rules.find((r) => r.name === "a");
+    if (!ruleA) throw new Error("rule 'a' not found");
+    expect(canCommitWithoutConsuming(ruleA.pattern, analysis)).toBe(true);
+  });
+
+  it("is conservative (true) for an Identifier this grammar has no rule for", () => {
+    expect(
+      canCommitWithoutConsuming(createIdentifier("external"), emptyAnalysis),
+    ).toBe(true);
+  });
+
+  it("is conservative (true) for a cross-module QualifiedIdentifier", () => {
+    expect(
+      canCommitWithoutConsuming(
+        createQualifiedIdentifier("mod", "rule"),
+        emptyAnalysis,
+      ),
+    ).toBe(true);
+  });
+
+  it("is conservative (true, not an infinite loop) for a left-recursive reference cycle", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [createRuleDefinition("a", createIdentifier("a"))],
+    );
+    const analysis = analyzeFirstSets(grammar);
+    const ruleA = grammar.rules.find((r) => r.name === "a");
+    if (!ruleA) throw new Error("rule 'a' not found");
+    expect(canCommitWithoutConsuming(ruleA.pattern, analysis)).toBe(true);
+  });
+});
+
+describe("findNullableRepetitions / assertNoNullableRepetition", () => {
+  it("flags a Star whose wrapped expression is nullable", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createStar(createOptional(createStringLiteral("a", '"'))),
+        ),
+      ],
+    );
+    const analysis = analyzeFirstSets(grammar);
+    const issues = findNullableRepetitions(grammar, analysis);
+    expect(issues).toEqual([{ ruleName: "r", nodeType: "Star" }]);
+    expect(() => assertNoNullableRepetition(grammar, analysis)).toThrow(
+      /rule 'r'.*Star/,
+    );
+  });
+
+  it("flags a Plus whose wrapped expression is nullable", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createPlus(createStar(createStringLiteral("a", '"'))),
+        ),
+      ],
+    );
+    const analysis = analyzeFirstSets(grammar);
+    expect(findNullableRepetitions(grammar, analysis)).toEqual([
+      { ruleName: "r", nodeType: "Plus" },
+    ]);
+  });
+
+  it("flags an unbounded Quantified{n,} whose wrapped expression is nullable", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createQuantified(createOptional(createStringLiteral("a", '"')), 0),
+        ),
+      ],
+    );
+    const analysis = analyzeFirstSets(grammar);
+    expect(findNullableRepetitions(grammar, analysis)).toEqual([
+      { ruleName: "r", nodeType: "Quantified" },
+    ]);
+  });
+
+  it("does NOT flag a bounded Quantified{n,m}, even with a nullable body -- a finite loop can't diverge", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createQuantified(createOptional(createStringLiteral("a", '"')), 2, 2),
+        ),
+      ],
+    );
+    const analysis = analyzeFirstSets(grammar);
+    expect(findNullableRepetitions(grammar, analysis)).toEqual([]);
+    expect(() => assertNoNullableRepetition(grammar, analysis)).not.toThrow();
+  });
+
+  it("does NOT flag Star/Plus/Quantified{0,} over a NON-nullable body", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createSequence([
+            createStar(createStringLiteral("a", '"')),
+            createPlus(createStringLiteral("b", '"')),
+            createQuantified(createStringLiteral("c", '"'), 0),
+          ]),
+        ),
+      ],
+    );
+    const analysis = analyzeFirstSets(grammar);
+    expect(findNullableRepetitions(grammar, analysis)).toEqual([]);
+    expect(() => assertNoNullableRepetition(grammar, analysis)).not.toThrow();
+  });
+
+  it("finds a nullable repetition nested inside a Choice/Sequence/Group", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createChoice([
+            createStringLiteral("x", '"'),
+            createSequence([
+              createStringLiteral("y", '"'),
+              createStar(createOptional(createStringLiteral("a", '"'))),
+            ]),
+          ]),
+        ),
+      ],
+    );
+    const analysis = analyzeFirstSets(grammar);
+    expect(findNullableRepetitions(grammar, analysis)).toEqual([
+      { ruleName: "r", nodeType: "Star" },
+    ]);
+  });
+
+  it("a clean multi-rule grammar reports no issues at all", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "digits",
+          createPlus(createCharacterClass([createCharRange("0", "9")], false)),
+        ),
+        createRuleDefinition(
+          "sign",
+          createOptional(createStringLiteral("-", '"')),
+        ),
+      ],
+    );
+    const analysis = analyzeFirstSets(grammar);
+    expect(findNullableRepetitions(grammar, analysis)).toEqual([]);
+    expect(() => assertNoNullableRepetition(grammar, analysis)).not.toThrow();
   });
 });

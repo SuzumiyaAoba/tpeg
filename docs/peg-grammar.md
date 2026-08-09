@@ -115,12 +115,30 @@ expr{2,5}      // 2 to 5 times
 expr{3,}       // 3 or more times
 ```
 
+An *unbounded* repetition (`expr*`, `expr+`, or `expr{n,}` with no upper
+bound) whose `expr` can itself match zero characters (e.g. `("a"?)*`, or
+`sub*` where `sub` is itself nullable) has no well-defined meaning: the
+repetition could keep "succeeding" without ever consuming input, so there is
+no principled stopping point. The code generator rejects such a rule
+outright, at generation time, rather than emit a parser whose behavior would
+depend on incidental details of how the repetition happens to be wrapped. A
+*bounded* range (`expr{2,5}`, `expr{3,3}`) has well-defined semantics
+regardless of whether `expr` is nullable, since the repetition count itself
+already bounds how many times it can run, and is never rejected.
+
 ## Lookahead Operators
 
 ```tpeg
 &expr          // Positive lookahead (non-consuming)
 !expr          // Negative lookahead (non-consuming)
 ```
+
+Both forms are self-contained probes: `&expr`/`!expr` ask only "does `expr`
+match here," never consuming input or otherwise affecting anything outside
+themselves. A `~` cut written inside `expr` (see [Cut/Commit
+Operator](#cutcommit-operator) below) is scoped to `expr`'s own attempt and
+is absorbed at the lookahead's own boundary - it cannot commit whatever
+choice the `&`/`!` itself happens to sit inside.
 
 ## Cut/Commit Operator
 
@@ -152,8 +170,11 @@ It has no effect as the very last element of a sequence (there is nothing
 after it left to protect), and it does not by itself affect anything outside
 the sequence it appears in - in particular, a cut inside a group nested
 inside a larger sequence only protects the rest of *its own* group, not
-sibling elements of the outer sequence. Multiple `~` in the same sequence are
-allowed but redundant: once committed, a sequence stays committed.
+sibling elements of the outer sequence, and a cut inside `&expr`/`!expr`
+only protects the rest of `expr`'s own attempt, not whatever encloses the
+lookahead (see [Lookahead Operators](#lookahead-operators) above). Multiple
+`~` in the same sequence are allowed but redundant: once committed, a
+sequence stays committed.
 
 ## Labels and Captures
 

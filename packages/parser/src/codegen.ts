@@ -6,6 +6,7 @@
  */
 
 import { escapeStringLiteral } from "./constants";
+import { analyzeFirstSets, assertNoNullableRepetition } from "./first-sets";
 import type {
   ActionExpression,
   AnyChar,
@@ -520,6 +521,14 @@ export class TPEGCodeGenerator {
    * Generate TypeScript parser code from a TPEG grammar
    */
   generateGrammar(grammar: GrammarDefinition): GeneratedCode {
+    // Reject an unbounded repetition over a nullable body outright,
+    // before generating any code -- see `assertNoNullableRepetition`'s
+    // doc comment (`first-sets.ts`) for why this has no well-defined PEG
+    // semantics and would otherwise generate code whose behavior depends
+    // on incidental wrapping (e.g. whether the repetition happens to sit
+    // inside an `optional`).
+    assertNoNullableRepetition(grammar, analyzeFirstSets(grammar));
+
     const imports: string[] = [];
     const exports: string[] = [];
     const parts: string[] = [];

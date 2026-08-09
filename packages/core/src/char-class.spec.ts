@@ -375,3 +375,49 @@ describe("negatedCharClass", () => {
     }
   });
 });
+
+// Construction-time validation, shared by `charClass`/`negatedCharClass`/
+// `charClassRun` since all three compile their specs through the same
+// `compileSpecs` (`./char-class.ts`) -- see its doc comment for why each
+// malformed shape below is rejected eagerly instead of silently compiling
+// to a class that matches the wrong thing (or nothing at all). Mirrors
+// `quantified`'s own construction-time validation of an invalid
+// `min`/`max` (`./repetition.ts`).
+describe("construction-time validation (malformed specs)", () => {
+  it("throws for a single-char spec with more than one code point", () => {
+    expect(() => charClass("ab")).toThrow(/not exactly one character/);
+  });
+
+  it("throws for a backwards range (start after end)", () => {
+    expect(() => charClass(["z", "a"])).toThrow(/start .* is greater than end/);
+  });
+
+  it("throws for a range whose bound is more than one code point", () => {
+    expect(() => charClass(["a", "bc"])).toThrow(
+      /must be exactly one character/,
+    );
+    expect(() => charClass(["ab", "c"])).toThrow(
+      /must be exactly one character/,
+    );
+  });
+
+  it("does NOT throw for a single astral character (one code point, two UTF-16 code units)", () => {
+    expect(() => charClass("😀")).not.toThrow();
+    expect(() => charClass(["😀", "🤣"])).not.toThrow();
+  });
+
+  it("a same-character range (start === end) is valid, not backwards", () => {
+    expect(() => charClass(["a", "a"])).not.toThrow();
+  });
+
+  it("negatedCharClass and charClassRun validate identically (same compileSpecs)", () => {
+    expect(() => negatedCharClass("ab")).toThrow();
+    expect(() => negatedCharClass(["z", "a"])).toThrow();
+    expect(() => charClassRun(["ab"], 0)).toThrow();
+    expect(() => charClassRun([["z", "a"]], 0)).toThrow();
+  });
+
+  it("a malformed spec among several valid ones still throws (the whole call is rejected, not just that entry)", () => {
+    expect(() => charClass(["a", "z"], "toolong", ["0", "9"])).toThrow();
+  });
+});

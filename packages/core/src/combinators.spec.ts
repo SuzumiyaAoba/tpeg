@@ -12,7 +12,8 @@ import {
   withDefault,
 } from "./combinators";
 import type { FirstCharFilter } from "./combinators";
-import { resetFailureWatermark } from "./failure";
+import { resetFailureWatermark, snapshotFailureWatermark } from "./failure";
+import { optional } from "./repetition";
 import type { Parser } from "./types";
 import { createFailure } from "./utils";
 
@@ -570,6 +571,65 @@ describe("predictiveChoice", () => {
     });
   });
 
+  // See `predictiveChoice`'s own doc comment, "Caller contract: a non-`null`
+  // filter asserts 'skippable when excluded'", and `first-sets.ts`'s
+  // `canCommitWithoutConsuming`: an alternative that can reach a `commit`
+  // without having consumed input yet must be paired with a `null` filter,
+  // never a real one, however narrow its computed FIRST set looks --
+  // otherwise `predictiveChoice` can skip the very call that would have
+  // produced the `fatal` failure the whole choice depends on. These tests
+  // pin the CORRECT (contract-honoring) behavior at the runtime level; the
+  // codegen-level regression for the bug this contract exists to prevent
+  // lives in `packages/parser/src/cut-memoize.spec.ts`.
+  describe("caller contract: an alternative reaching a commit without consuming input must get a null filter", () => {
+    it("with the contract honored (filter: null), the whole choice fails once the cut fires -- it does not fall through to the next alternative", () => {
+      // Mirrors `"a"? ~ "a" / "b"` on input "b": the first alternative's
+      // FIRST set (if naively computed from the literal after the cut)
+      // would be {a}, but `optional("a")` can take its empty-match branch
+      // on ANY input, reach the commit, and then fail fatally when the
+      // trailing "a" doesn't match. A correct caller passes `null` here.
+      const nullablePrefixWithCommit = seq(
+        optional(lit("a")),
+        commit(lit("a")),
+      ) as unknown as Parser<unknown>;
+      const fallback = lit("b");
+      const result = predictiveChoice<[unknown, string]>([
+        [nullablePrefixWithCommit, null],
+        [fallback, charFilter("b")],
+      ])("b", 0);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        // Absorbed at this predictiveChoice's own boundary, same scoping
+        // rule as `choice`/`commit` -- not left `fatal` for a caller
+        // further out to see.
+        expect(result.error.fatal).toBeFalsy();
+      }
+    });
+
+    it("for comparison: a filter that DOES exclude the current character (no commit reachable) is safely skippable", () => {
+      // Sanity check that the fix isn't "predictiveChoice never skips
+      // anything" -- an ordinary non-nullable, commit-free alternative is
+      // still filtered exactly as before.
+      let ranNonMatching = false;
+      const nonMatching: Parser<string> = (i, p) => {
+        ranNonMatching = true;
+        return lit("a")(i, p);
+      };
+      const fallback = lit("b");
+      const result = predictiveChoice<[string, string]>([
+        [nonMatching, charFilter("a")],
+        [fallback, charFilter("b")],
+      ])("b", 0);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toBe("b");
+      }
+      expect(ranNonMatching).toBe(false);
+    });
+  });
+
   describe("ASCII dispatch table construction", () => {
     it("every ASCII code point admitted by a range filter independently reaches the same candidate (table dedup doesn't drop entries)", () => {
       // A digit class filter admits every one of '0'-'9' identically --
@@ -823,6 +883,42 @@ describe("reject", () => {
     const pos = 0;
     const result = reject(lit("a"))(input, pos);
     expect(result.success).toBe(false);
+  });
+
+  // Mirrors `notPredicate`'s watermark snapshot/restore
+  // (`./lookahead.spec.ts`, `./lookahead.ts`'s doc comment): a failure
+  // inside the probed parser is the EXPECTED, desired outcome that makes
+  // `reject` succeed -- not a genuine failure of the surrounding parse --
+  // so it must not leave the shared farthest-failure watermark (see
+  // `./failure.ts`) pointing at a position/expectation unrelated to
+  // whatever the parse actually goes on to fail at.
+  it("restores the farthest-failure watermark to its pre-probe state on success, discarding the probe's own excursion", () => {
+    const input = "ax";
+    // The probe matches "a" (one character) before failing partway
+    // through the 5-character literal "bbbbb" -- deep enough that, left
+    // unrestored, its watermark position (>= 1) would outrank a
+    // subsequent unrelated failure at position 0.
+    const probe = seq(lit("a"), lit("bbbbb"));
+    const snapshotBefore = snapshotFailureWatermark();
+    const rejectResult = reject(probe)(input, 0);
+    expect(rejectResult.success).toBe(true);
+
+    // The watermark is back to whatever it was before the probe ran --
+    // the probe's own excursion left no trace.
+    const snapshotAfterReject = snapshotFailureWatermark();
+    expect(snapshotAfterReject).toEqual(snapshotBefore);
+
+    // An unrelated, shallower failure right after: without the restore,
+    // the watermark would still hold the probe's stale (deeper) position
+    // and this failure's own `fail()` call (`pos: 0`) would lose to it
+    // (`fail` only updates the watermark when the new position is >=
+    // the existing one).
+    const unrelated = lit("z")(input, 0);
+    expect(unrelated.success).toBe(false);
+    if (!unrelated.success) {
+      expect(unrelated.error.pos).toBe(0);
+      expect(unrelated.error.found).toBe("a");
+    }
   });
 });
 

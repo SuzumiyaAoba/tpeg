@@ -30,18 +30,59 @@ interface CompiledSpec {
   readonly end: number;
 }
 
+/** Counts CODE POINTS (not UTF-16 code units) via the string iteration
+ * protocol, so an astral character (a surrogate pair) correctly counts as
+ * exactly one, matching how `compileSpecs` itself decodes a spec via
+ * `codePointAt`. */
+const codePointCount = (s: string): number => [...s].length;
+
 /**
  * Pre-compiles character class specifications into code-point ranges for
  * high performance.
+ *
+ * Validates each spec eagerly, at `charClass`/`negatedCharClass`/
+ * `charClassRun` construction time -- matching `quantified`'s own
+ * construction-time validation of an invalid `min`/`max`
+ * (`./repetition.ts`) for the same reason: a malformed spec is a grammar-
+ * authoring mistake, not a parse-time condition, and reporting it eagerly
+ * beats the two silent-wrong-answer failure modes it would otherwise have:
+ * a single-character spec string with more than one code point (e.g.
+ * `charClass("ab")` meant as a 2-character alternation, not a class) would
+ * silently match only its first code point -- `compileSpecs` only ever
+ * reads `spec.codePointAt(0)`; and a backwards range (e.g. `["z", "a"]`,
+ * `start` after `end`) would silently compile to a class that matches
+ * nothing (`matchesSpecsSlow`'s `charCode >= start && charCode <= end` is
+ * vacuously false for every code point when `start > end`), with no
+ * diagnostic anywhere pointing at the typo. `packages/parser/src/
+ * character-class.ts`'s grammar-level `charRange` parser already rejects
+ * a backwards range the same way, as a fatal parse error, for grammar
+ * TEXT written as `[z-a]` -- this closes the same gap for a hand-written
+ * caller of this runtime API directly.
  */
 const compileSpecs = (charOrRanges: readonly CharClassSpec[]): CompiledSpec[] =>
   charOrRanges.map((spec) => {
     if (typeof spec === "string") {
+      if (codePointCount(spec) !== 1) {
+        throw new Error(
+          `Invalid character class spec: "${spec}" is not exactly one character (a multi-character string would silently match only its first character) -- pass a ["start", "end"] range if a sequence of characters was intended`,
+        );
+      }
       const code = spec.codePointAt(0) ?? 0;
       return { start: code, end: code };
     }
-    const startCode = spec[0].codePointAt(0) ?? 0;
-    const endCode = spec[1].codePointAt(0) ?? 0;
+    const [rangeStart, rangeEnd] = spec;
+    if (codePointCount(rangeStart) !== 1 || codePointCount(rangeEnd) !== 1) {
+      throw new Error(
+        `Invalid character class range: ["${rangeStart}", "${rangeEnd}"] -- both bounds of a range must be exactly one character`,
+      );
+    }
+    const startCode = rangeStart.codePointAt(0) ?? 0;
+    const endCode = rangeEnd.codePointAt(0) ?? 0;
+    if (startCode > endCode) {
+      throw new Error(
+        `Invalid character class range: ["${rangeStart}", "${rangeEnd}"] -- start (U+${startCode.toString(16).toUpperCase()}) is greater than end (U+${endCode.toString(16).toUpperCase()})`,
+      );
+    }
     return { start: startCode, end: endCode };
   });
 

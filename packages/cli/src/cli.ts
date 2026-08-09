@@ -8,6 +8,7 @@ import { parseArgs } from "node:util";
 import { offsetToPos, parse } from "@suzumiyaaoba/tpeg-core";
 import {
   analyzeFirstSets,
+  analyzeGrammarPerformance,
   applyAstOptimizations,
   generateOptimizedTypeScriptParser,
   generateTypeScriptParser,
@@ -246,6 +247,25 @@ export function run(argv: string[]): number {
   const grammar = options.promoteCuts
     ? promoteGlobalCuts(cutInserted, analyzeFirstSets(cutInserted)).grammar
     : cutInserted;
+
+  // Left recursion (a rule reachable from its own leftmost position
+  // without first consuming input, e.g. `expr = expr "+" term / term`)
+  // loops forever in a PEG parser -- `packages/parser/src/
+  // performance-utils.ts`'s `analyzeGrammarPerformance` already detects
+  // it (via a dependency-cycle walk restricted to leftmost references),
+  // but until now nothing surfaced that suggestion to a CLI user; the
+  // grammar would compile cleanly and only fail at RUN time, with a bare
+  // `RangeError: Maximum call stack size exceeded` pointing nowhere near
+  // the actual mistake. Surfaced as a warning (not an error) on both
+  // generator paths, independent of `--optimize`, since the underlying
+  // grammar defect is the same either way and existing `.tpeg` files
+  // that happen to trip this heuristic should keep generating.
+  for (const suggestion of analyzeGrammarPerformance(grammar)
+    .optimizationSuggestions) {
+    if (suggestion.includes("left recursion")) {
+      process.stderr.write(`warning: ${suggestion}\n`);
+    }
+  }
 
   // Split into two explicit branches rather than picking a shared
   // `generate` function: `enableRegexFusion` only exists on

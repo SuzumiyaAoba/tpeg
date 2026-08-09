@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { literal as lit } from "./basic";
 import { charClass } from "./char-class";
-import { choice, commit, seq } from "./combinators";
+import { choice, commit, seq, withDefault } from "./combinators";
 import { resetFailureWatermark } from "./failure";
 import {
   oneOrMore,
@@ -693,6 +693,109 @@ describe("quantified", () => {
     if (isSuccess(result5) && isSuccess(result6)) {
       expect(result5.val).toEqual(result6.val);
       expect(result5.next).toBe(result6.next);
+    }
+  });
+});
+
+// An UNBOUNDED repetition (`zeroOrMore`/`oneOrMore`/`quantified` with
+// `max === undefined`) over a NULLABLE body has no well-defined PEG
+// semantics: the body can succeed while consuming zero characters, so the
+// loop could run forever. Codegen now refuses to generate this shape
+// outright (`packages/parser/src/first-sets.ts`'s `assertNoNullableRepetition`,
+// wired into `codegen.ts`/`codegen-optimized.ts`) -- these tests exist
+// only to pin the CURRENT behavior of the hand-written combinators
+// themselves (for a caller building a parser directly on `tpeg-core`,
+// bypassing codegen entirely), not to bless it as correct semantics. Note
+// in particular how the SAME underlying mistake is a hard, visible
+// failure in one context and silently accepted as `[]`/a default value in
+// another, purely because of what happens to wrap the repetition --
+// exactly the inconsistency that motivated rejecting this shape at
+// generation time instead.
+describe("unbounded repetition over a nullable body (undefined PEG semantics -- pinned combinator-level behavior)", () => {
+  it("zeroOrMore over a nullable body fails with an infinite-loop diagnostic rather than looping forever", () => {
+    const result = zeroOrMore(optional(lit("a")))("bbb", 0);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.message).toContain("Infinite loop detected");
+    }
+  });
+
+  it("oneOrMore over a nullable body likewise fails with an infinite-loop diagnostic", () => {
+    const result = oneOrMore(optional(lit("a")))("bbb", 0);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.message).toContain("Infinite loop detected");
+    }
+  });
+
+  it("quantified with max=undefined (min=0) over a nullable body fails the same way", () => {
+    const result = quantified(optional(lit("a")), 0)("bbb", 0);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.message).toContain("Infinite loop detected");
+    }
+  });
+
+  it("quantified with a BOUNDED range (min=max=2) over the same nullable body succeeds instead -- a finite loop can never diverge", () => {
+    // Not a contradiction with the cases above: a bounded `{n,m}` is
+    // governed entirely by a plain `for` counter (see `quantified`'s own
+    // doc comment in repetition.ts), so it can't loop unboundedly
+    // regardless of the body's nullability -- this is why codegen's
+    // `assertNoNullableRepetition` only flags the UNBOUNDED shape.
+    const result = quantified(optional(lit("a")), 2, 2)("bbb", 0);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toEqual([[], []]);
+      expect(result.next).toBe(0);
+    }
+  });
+
+  it("the infinite-loop failure is NON-fatal -- optional() silently swallows it as a zero-match success", () => {
+    // Same defect (`("a"?)*` over "bbb"), now wrapped in `optional`:
+    // `zeroOrMore`'s infinite-loop guard produces an ordinary (non-fatal)
+    // failure, so `optional` (repetition.ts) treats it exactly like any
+    // other backtrackable failure and reports "zero matches" instead of
+    // surfacing the underlying mistake at all.
+    const result = optional(zeroOrMore(optional(lit("a"))))("bbb", 0);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toEqual([]);
+      expect(result.next).toBe(0);
+    }
+  });
+
+  it("withDefault swallows the same failure identically, falling back to its default value", () => {
+    // Cast to `Parser<unknown>` since `withDefault`'s default value must
+    // otherwise share `zeroOrMore(optional(...))`'s own (irrelevant here)
+    // value type -- this test is about the failure/fallback behavior, not
+    // about type inference.
+    const nullableStar = zeroOrMore(
+      optional(lit("a")),
+    ) as unknown as Parser<unknown>;
+    const result = withDefault(nullableStar, "fallback")("bbb", 0);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("fallback");
+      expect(result.next).toBe(0);
+    }
+  });
+
+  it("choice() falls through to the next alternative rather than surfacing the diagnostic", () => {
+    // The infinite-loop failure being non-fatal means an enclosing
+    // `choice` treats it exactly like an ordinary "this alternative
+    // didn't match" and moves on -- the diagnostic never reaches a
+    // caller who only inspects the choice's overall result. Cast for the
+    // same reason as the `withDefault` test above.
+    const nullableStar = zeroOrMore(optional(lit("a"))) as unknown as Parser<
+      string[]
+    >;
+    const result = choice<[string[], string]>(nullableStar, lit("bbb"))(
+      "bbb",
+      0,
+    );
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("bbb");
     }
   });
 });

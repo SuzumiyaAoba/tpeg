@@ -319,4 +319,62 @@ grammar Cuttable {
     const pos = 0;
     expect(number("42", pos)).toMatchObject({ success: true, val: 42 });
   });
+
+  it("warns to stderr about left recursion, without failing generation", () => {
+    // `expr` references itself before consuming any input (the first
+    // alternative's leftmost element is `expr` itself) -- classic left
+    // recursion, which loops forever when the generated parser actually
+    // runs. `packages/parser/src/performance-utils.ts`'s
+    // `analyzeGrammarPerformance` already detects this via a
+    // leftmost-reference cycle walk; this pins that the CLI now surfaces
+    // it as a warning rather than leaving it silent until run time.
+    const inputPath = join(dir, "left-recursive.tpeg");
+    writeFileSync(
+      inputPath,
+      `
+grammar Arith {
+  expr = expr "+" term / term
+  term = [0-9]+
+}
+`,
+      "utf8",
+    );
+
+    const { exitCode, stdout, stderr } = captureOutput(() => run([inputPath]));
+    // Still generates code -- a warning, not a hard error.
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("export const expr");
+    expect(stderr).toContain("warning:");
+    expect(stderr).toContain("left recursion");
+    expect(stderr).toContain("'expr'");
+  });
+
+  it("does not warn about left recursion for an ordinary (right-recursive) grammar", () => {
+    const inputPath = join(dir, "grammar.tpeg");
+    writeFileSync(inputPath, SIMPLE_GRAMMAR, "utf8");
+
+    const { exitCode, stderr } = captureOutput(() => run([inputPath]));
+    expect(exitCode).toBe(0);
+    expect(stderr).not.toContain("left recursion");
+  });
+
+  it("warns about left recursion on the --optimize path too", () => {
+    const inputPath = join(dir, "left-recursive.tpeg");
+    writeFileSync(
+      inputPath,
+      `
+grammar Arith {
+  expr = expr "+" term / term
+  term = [0-9]+
+}
+`,
+      "utf8",
+    );
+
+    const { exitCode, stderr } = captureOutput(() =>
+      run([inputPath, "--optimize"]),
+    );
+    expect(exitCode).toBe(0);
+    expect(stderr).toContain("left recursion");
+  });
 });

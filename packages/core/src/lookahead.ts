@@ -1,6 +1,9 @@
 import type { Expectation } from "./failure";
 import {
+  FAIL,
+  FAIL_FATAL,
   fail,
+  isFatalFailure,
   restoreFailureWatermark,
   snapshotFailureWatermark,
 } from "./failure";
@@ -112,14 +115,32 @@ export const andPredicate =
   (input: string, pos) => {
     const result = parser(input, pos);
 
-    // Relay the child's failure UNCHANGED rather than re-wrapping it with
-    // an enriched message (see `sequence`'s identical reasoning in
+    // Relay the child's failure rather than re-wrapping it with an
+    // enriched message (see `sequence`'s identical reasoning in
     // combinators.ts). No watermark snapshot/restore needed here, unlike
     // `notPredicate` below: `andPredicate` failing IS a genuine failure of
     // this parser at this exact position -- the child's own `fail()` call
     // already recorded the right thing, there is nothing speculative to
     // discard.
     if (isFailure(result)) {
+      // A cut/commit (`commit` in combinators.ts) reached inside `parser`
+      // marks its failure `fatal`, meaning "an enclosing `choice` must
+      // not try a sibling alternative." A lookahead predicate is its own
+      // self-contained probe -- "does `parser` match here," never itself
+      // an alternative of some outer `choice` -- so a cut written inside
+      // `&e` can only ever mean "commit within e's own attempt," not
+      // "commit whatever this `&e` happens to be embedded in." Absorbed
+      // here at the predicate's own boundary, exactly like `choice`
+      // absorbs one at ITS boundary (see `tryOrderedCandidates`'s doc
+      // comment in combinators.ts) and exactly like `notPredicate` below
+      // already does implicitly (it turns any child failure, fatal or
+      // not, into its own ordinary success). Without this, `(&(a ~ b)) /
+      // c` would let a cut inside the lookahead wrongly suppress `c` on
+      // an input where `a` matches but `b` doesn't.
+      if (result === FAIL_FATAL) return FAIL;
+      if (isFatalFailure(result)) {
+        return { success: false, error: { ...result.error, fatal: false } };
+      }
       return result;
     }
 

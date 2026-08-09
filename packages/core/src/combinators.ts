@@ -6,7 +6,14 @@ import {
   walkDispatchTrie,
 } from "./dispatch-trie";
 import type { Expectation } from "./failure";
-import { FAIL, FAIL_FATAL, fail, isFatalFailure } from "./failure";
+import {
+  FAIL,
+  FAIL_FATAL,
+  fail,
+  isFatalFailure,
+  restoreFailureWatermark,
+  snapshotFailureWatermark,
+} from "./failure";
 import type { ParseResult, Parser } from "./types";
 import { createFailure, isFailure } from "./utils";
 
@@ -429,6 +436,29 @@ const describeFirstCharFilter = (filter: FirstCharFilter): string => {
  * succeeds or where it stops, only the completeness of an error message
  * in that one narrow case; deliberately accepted rather than paying to
  * pre-seed `expected` from every skipped alternative on every call.
+ *
+ * ## Caller contract: a non-`null` filter asserts "skippable when excluded"
+ *
+ * Skipping an alternative whose filter excludes the current character is
+ * sound ONLY when that alternative's failure there would be an ordinary
+ * (non-`fatal`) one -- `tryOrderedCandidates` would just move on to the
+ * next candidate regardless of whether this function skipped it or ran
+ * it and watched it fail. That assumption breaks for an alternative that
+ * could reach a `Cut` (see `commit`, this module) without having
+ * consumed any input yet: such an alternative can fail *fatally* at its
+ * own starting offset regardless of what the actual input character is
+ * (e.g. `optional`'s "wrapped parser failed -> succeed with `[]`" branch
+ * never inspects the character it failed to match), and a fatal failure
+ * aborts the WHOLE choice rather than falling through to the next
+ * candidate -- so skipping vs. running changes which alternative wins.
+ * A caller MUST pass `null` (never a real filter, regardless of what a
+ * FIRST-set computation would otherwise say) for any such alternative --
+ * `packages/parser/src/first-sets.ts`'s `canCommitWithoutConsuming` is
+ * the check `codegen-optimized.ts` uses to decide this; a hand-written
+ * caller takes on the same obligation directly. This combinator itself
+ * has no way to verify the contract at runtime -- a violated one
+ * produces a parse that silently accepts input the un-optimized `choice`
+ * would have rejected, not a crash.
  */
 export const predictiveChoice = <T extends unknown[]>(
   alternatives: readonly (readonly [
@@ -684,6 +714,15 @@ export const maybe = <T>(parser: Parser<T>): Parser<T | null> =>
 export const reject =
   <T>(parser: Parser<T>, parserName = "reject"): Parser<null> =>
   (input: string, pos) => {
+    // Snapshot before probing, exactly like `notPredicate`
+    // (`./lookahead.ts`) and for the identical reason: a failure inside
+    // `parser` is not evidence about the input here -- it's the EXPECTED,
+    // desired outcome that makes `reject` succeed, so if `parser` got
+    // partway through a long sub-match before failing deep inside, that
+    // excursion's watermark contribution (a position/expectation with
+    // nothing to do with `reject`'s own outcome) must be discarded rather
+    // than left to pollute a later, unrelated failure's diagnostics.
+    const snapshot = snapshotFailureWatermark();
     const result = parser(input, pos);
 
     if (result.success) {
@@ -693,6 +732,7 @@ export const reject =
       });
     }
 
+    restoreFailureWatermark(snapshot);
     return {
       success: true,
       val: null,
