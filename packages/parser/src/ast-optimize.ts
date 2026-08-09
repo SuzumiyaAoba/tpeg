@@ -102,18 +102,30 @@
  * At most one alternative may be the bare shared prefix with nothing
  * following it (remainder length 0), and it must be the *last*
  * alternative -- e.g. the trailing `/ product` above. That case is folded
- * into `Sequence(P, Optional(inner))` rather than `Sequence(P, inner)`:
- * `product "+" sum / product "-" sum / product` becomes
- * `product (("+" sum) / ("-" sum))?`. This is sound for the same reason
- * as the non-bare case (calling `P` twice at one position reproduces the
- * same result) -- if `inner` fails to match right after `P`, `optional`
+ * into `Sequence(P, Choice(inner-alternatives..., Sequence([])))` --
+ * an explicit empty-`Sequence` alternative appended to `inner`, NOT
+ * `Sequence(P, Optional(inner))` (an earlier version of this rewrite used
+ * `Optional`, and it was unsound: `choice`/`captureChoice`
+ * (`packages/core/src/combinators.ts`) absorb a `Cut`-driven fatal failure
+ * at THEIR OWN boundary before it ever reaches an enclosing `optional`
+ * (`packages/core/src/repetition.ts`), so wrapping `inner` in `Optional`
+ * let a `Cut` inside one of its branches get silently swallowed as "zero
+ * matches" instead of failing the whole rule -- see
+ * `ast-optimize-left-factor.ts`'s `tryLeftFactorChoice` for the worked
+ * counterexample this closes). `product "+" sum / product "-" sum /
+ * product` becomes `product (("+" sum) / ("-" sum) / ())`. This is sound
+ * for the same reason as the non-bare case (calling `P` twice at one
+ * position reproduces the same result) -- if no non-bare alternative
+ * matches right after `P`, the empty-`Sequence` alternative always
  * succeeds having consumed nothing, so the whole sequence still stops
  * exactly where the bare `P` alternative would have, without reparsing
- * `P` a second time to get there. Its `.val` shape becomes `[Pval,
- * [Xval]]` (`inner` matched) or `[Pval, []]` (it didn't) -- a different
- * shape from the non-bare case's `[Pval, Xval]`, on top of the difference
- * from the original grammar's unfactored shapes already described above;
- * still gated by the same `isShapeSensitiveRule` check. A bare-prefix
+ * `P` a second time to get there, AND without introducing any new
+ * `optional` boundary a `Cut` inside `inner` could be absorbed by. Its
+ * `.val` shape becomes `[Pval, [Xval]]` (`inner` matched) or `[Pval, []]`
+ * (the empty alternative matched instead) -- a different shape from the
+ * non-bare case's `[Pval, Xval]`, on top of the difference from the
+ * original grammar's unfactored shapes already described above; still
+ * gated by the same `isShapeSensitiveRule` check. A bare-prefix
  * alternative anywhere other than last, or more than one of them, is left
  * untouched (not factored) -- handling arbitrary interleaving isn't
  * needed by any grammar in this repo and isn't implemented.

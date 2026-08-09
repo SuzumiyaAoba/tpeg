@@ -82,9 +82,33 @@
  * proven that's safe for however codegen locates/merges labels within a
  * `Choice` -- the same conservative reasoning `leftFactorChoices` already
  * applies to a labeled `Choice`, reused here rather than re-derived.
+ *
+ * ## Pre-existing `Cut`s must never be regrouped either
+ *
+ * `buildCutGroups`/`computeCutCandidate` also refuse to let an alternative
+ * that ALREADY contains a `Cut` (a hand-written `~`, or one left over from
+ * an earlier pass) participate in any partial-exclusion regrouping --
+ * neither as the initiator of a new cut/group nor as a "later" sibling
+ * absorbed into someone else's run (`containsCut`, `./ast-optimize-shared.ts`).
+ * Wrapping such an alternative in a NEWLY introduced nested `Choice`
+ * renarrows that existing `Cut`'s fatal-absorption boundary from the
+ * original, flat enclosing `Choice` to the new inner one -- changing which
+ * sibling alternatives it suppresses. Concretely, `"b" ~ "c" / "d" / "e"?`:
+ * the pre-existing cut in the first alternative is meant to fatal-stop the
+ * *whole* 3-way choice once "b" has matched (so `"bx"` must fail outright,
+ * never falling through to the nullable `"e"?`). A regrouping that (based
+ * only on `"d"` being FIRST-disjoint, since `"e"?` is nullable and can
+ * never be proven excluded) nests `["b" ~ "c", "d"]` into their own
+ * `Choice` would let that inner `Choice` absorb the cut's fatal failure at
+ * ITS OWN boundary instead, letting the OUTER `Choice` wrongly fall
+ * through to `"e"?` and succeed on zero characters. `findCutPosition`'s
+ * all-or-nothing fallback (used for a labeled `Choice`, see above) needs
+ * no equivalent guard: it never restructures the `Choice`'s own shape, so
+ * it can't renarrow any existing `Cut`'s absorption boundary regardless of
+ * whether one is already present.
  */
 
-import { containsLabel } from "./ast-optimize-shared";
+import { containsCut, containsLabel } from "./ast-optimize-shared";
 import type { GrammarFirstSetAnalysis } from "./first-sets";
 import {
   analyzeFirstSets,
@@ -177,6 +201,12 @@ const findCutPosition = (
  * with, a cut inserted at this position would sit at the `Choice`'s own
  * top level (see `buildCutGroups`) and incorrectly fatal-stop every
  * alternative after it, not just the zero actually proven excluded.
+ *
+ * `alternative` itself containing a pre-existing `Cut` is the CALLER's
+ * responsibility to check (see `buildCutGroups`'s initiator guard) -- this
+ * function only guards the run against absorbing a cut-bearing LATER
+ * sibling (see the module doc comment's "Pre-existing `Cut`s must never be
+ * regrouped either" section).
  */
 const computeCutCandidate = (
   alternative: Expression,
@@ -209,9 +239,14 @@ const computeCutCandidate = (
   // excluded, stopping at the first one that isn't -- see the module doc
   // comment's associativity argument for why only a contiguous run
   // (never a run with a gap) can be grouped under this alternative's cut.
+  // A cut-bearing later alternative stops the run just like a nullable or
+  // non-disjoint one: absorbing it into this run would still wrap it in a
+  // newly nested `Choice`, renarrowing ITS OWN pre-existing `Cut`'s
+  // absorption boundary even though it isn't the one initiating this cut.
   let runLength = 0;
   for (const later of laterAlternatives) {
     if (isNullable(later, analysis.nullableRules)) break;
+    if (containsCut(later)) break;
     const laterFirst = firstSetOfExpression(
       later,
       analysis.firstSets,
@@ -250,7 +285,14 @@ const buildCutGroups = (
   while (i < alts.length) {
     const alt = alts[i] as Expression;
     const laterAlternatives = alts.slice(i + 1);
-    const candidate = computeCutCandidate(alt, laterAlternatives, analysis);
+    // An alternative that already contains a `Cut` must never become the
+    // initiator of a new grouping either -- see the module doc comment's
+    // "Pre-existing `Cut`s must never be regrouped either" section.
+    // `computeCutCandidate` itself only guards against absorbing a
+    // cut-bearing LATER sibling into someone else's run, not this case.
+    const candidate = containsCut(alt)
+      ? null
+      : computeCutCandidate(alt, laterAlternatives, analysis);
     if (candidate === null || alt.type !== "Sequence") {
       result.push(alt);
       i += 1;

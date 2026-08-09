@@ -27,7 +27,7 @@ import type {
   Sequence,
   StringLiteral,
 } from "./types";
-import { createChoice, createOptional, createSequence } from "./types";
+import { createChoice, createSequence } from "./types";
 
 /** Node types that cannot themselves embed an `ActionExpression` or
  * `LabeledExpression`, so a single-type check on the node itself
@@ -134,10 +134,30 @@ const tryLeftFactorChoice = (choice: Choice): Expression => {
   if (bareIndices.length === 0) {
     return createSequence([prefix, innerExpr]);
   }
-  // Trailing bare-prefix alternative: fold into `prefix (inner)?` rather
-  // than reparsing `prefix` a second time for a separate bare alternative
-  // -- see the module doc comment's "Alternative shapes handled" section.
-  return createSequence([prefix, createOptional(innerExpr)]);
+  // Trailing bare-prefix alternative: fold into `prefix (inner / ())`
+  // (an explicit empty-`Sequence` alternative), NOT `prefix (inner)?` --
+  // rather than reparsing `prefix` a second time for a separate bare
+  // alternative, see the module doc comment's "Alternative shapes
+  // handled" section. `Optional` was tried first and rejected: `optional`
+  // (`packages/core/src/repetition.ts`) treats a *fatal* (cut/commit)
+  // failure specially and re-raises it, but `choice`/`captureChoice`
+  // (`packages/core/src/combinators.ts`) already absorb a fatal failure
+  // at THEIR OWN boundary before it ever reaches an enclosing `optional`
+  // -- so wrapping `inner` (itself a `Choice` whenever `groupedCount > 1`)
+  // in `Optional` let a `Cut` inside one of its branches get silently
+  // swallowed as "zero matches" instead of failing the whole rule, e.g.
+  // `"a" "b" ~ "c" / "a" "d" / "a"` on `"ab"` must fail (the cut commits
+  // once "b" matches, "c" doesn't follow, and PEG must not fall through to
+  // the bare "a") but used to wrongly succeed. Keeping the bare
+  // alternative as an ordinary `Choice` member (an empty `Sequence`)
+  // instead means any `Cut` inside `inner` is absorbed by the SAME
+  // `Choice` node the bare alternative itself is a sibling of, exactly
+  // matching the original (unfactored) grammar's absorption boundary.
+  const alternativesWithBare =
+    innerAlternatives.length === 1
+      ? [innerAlternatives[0] as Expression, createSequence([])]
+      : [...innerAlternatives, createSequence([])];
+  return createSequence([prefix, createChoice(alternativesWithBare)]);
 };
 
 /** Recursively applies `tryLeftFactorChoice` to every `Choice` reachable

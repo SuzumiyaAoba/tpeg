@@ -33,6 +33,38 @@ export const containsLabel = (expr: Expression): boolean => {
   }
 };
 
+/** Does `expr` contain a `Cut` anywhere in its subtree? Used by
+ * `ast-optimize-cut-insertion.ts`'s `buildCutGroups`/`computeCutCandidate`
+ * to refuse regrouping a `Choice` alternative that already carries a
+ * `Cut` (whether hand-written `~` or from an earlier pass) into a newly
+ * nested `Choice` -- doing so would renarrow that existing `Cut`'s
+ * fatal-absorption boundary from the enclosing (flat) `Choice` to the new
+ * inner one, changing which sibling alternatives it suppresses. Same
+ * shape as `containsLabel` above, checking for a different node type. */
+export const containsCut = (expr: Expression): boolean => {
+  switch (expr.type) {
+    case "Cut":
+      return true;
+    case "Sequence":
+      return expr.elements.some(containsCut);
+    case "Choice":
+      return expr.alternatives.some(containsCut);
+    case "Group":
+    case "Star":
+    case "Plus":
+    case "Optional":
+    case "PositiveLookahead":
+    case "NegativeLookahead":
+    case "Quantified":
+      return containsCut(expr.expression);
+    case "LabeledExpression":
+    case "ActionExpression":
+      return containsCut(expr.expression);
+    default:
+      return false;
+  }
+};
+
 /** Does `expr` contain an `ActionExpression` anywhere in its subtree? */
 const containsAction = (expr: Expression): boolean => {
   switch (expr.type) {

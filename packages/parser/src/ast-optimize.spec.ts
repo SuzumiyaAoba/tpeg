@@ -105,18 +105,22 @@ describe("leftFactorChoices", () => {
     const factored = leftFactorChoices(parsed.val);
     const sumRule = factored.rules.find((r) => r.name === "sum");
     expect(sumRule).toBeDefined();
-    // Factored shape: Sequence[ product, Optional[ Choice[ Sequence["+",sum], Sequence["-",sum] ] ] ]
+    // Factored shape: Sequence[ product, Choice[ Sequence["+",sum], Sequence["-",sum], Sequence[] ] ]
     // -- the trailing bare "product" alternative is folded into an
-    // `Optional` around the inner choice rather than kept as a second
-    // top-level alternative (see doc comment on tryLeftFactorChoice).
+    // explicit empty-Sequence alternative of the inner Choice, NOT an
+    // `Optional` wrapper around it (see doc comment on
+    // tryLeftFactorChoice for why: `Optional` let a Cut inside the inner
+    // Choice get silently swallowed instead of failing the whole rule).
     expect(sumRule?.pattern.type).toBe("Sequence");
     if (sumRule?.pattern.type !== "Sequence") return;
     expect(sumRule.pattern.elements).toHaveLength(2);
-    const [prefix, optionalPart] = sumRule.pattern.elements;
+    const [prefix, innerChoice] = sumRule.pattern.elements;
     expect(prefix).toEqual(createIdentifier("product"));
-    expect(optionalPart?.type).toBe("Optional");
-    if (optionalPart?.type === "Optional") {
-      expect(optionalPart.expression.type).toBe("Choice");
+    expect(innerChoice?.type).toBe("Choice");
+    if (innerChoice?.type === "Choice") {
+      const lastAlt =
+        innerChoice.alternatives[innerChoice.alternatives.length - 1];
+      expect(lastAlt).toEqual(createSequence([]));
     }
   });
 
@@ -477,6 +481,74 @@ describe("leftFactorChoices", () => {
     expect(pattern?.type).toBe("Star");
     if (pattern?.type === "Star") {
       expect(pattern.expression.type).toBe("Sequence");
+    }
+  });
+
+  it("does not let a Cut inside a factored trailing bare-prefix alternative leak past its original Choice boundary", async () => {
+    // `"a" "b" ~ "c" / "a" "d" / "a"`: once "a" "b" has matched, the cut
+    // commits -- a failure to match "c" afterward must fail the WHOLE
+    // rule, never falling through to "a" "d" or the bare "a". An earlier
+    // version of this rewrite folded the trailing bare "a" into
+    // `Optional(inner)`, which let `optional` (packages/core/src/
+    // repetition.ts) swallow the cut's fatal failure as "zero matches"
+    // once it had already been absorbed by the inner `Choice`'s own
+    // boundary (packages/core/src/combinators.ts's `choice`) -- silently
+    // accepting "ab"/"abx" when the unfactored grammar rejects them. See
+    // `ast-optimize-left-factor.ts`'s `tryLeftFactorChoice` for the fix
+    // (an explicit empty-Sequence alternative instead of `Optional`).
+    const grammar = createGrammarDefinition(
+      "CutBareTail",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createChoice([
+            createSequence([
+              createStringLiteral("a", '"'),
+              createStringLiteral("b", '"'),
+              createCut(),
+              createStringLiteral("c", '"'),
+            ]),
+            createSequence([
+              createStringLiteral("a", '"'),
+              createStringLiteral("d", '"'),
+            ]),
+            createStringLiteral("a", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const factored = leftFactorChoices(grammar);
+    // Sanity: this grammar's shape (Identifier/StringLiteral-headed
+    // Sequences with a trailing bare StringLiteral) is exactly what
+    // `tryLeftFactorChoice` factors -- confirm it actually ran, not that
+    // it silently declined.
+    expect(factored.rules[0]?.pattern).not.toEqual(grammar.rules[0]?.pattern);
+
+    const original = await compileRuleFor(grammar, "r");
+    const factoredParser = await compileRuleFor(factored, "r");
+
+    const cases: [string, boolean, number | undefined][] = [
+      ["abc", true, 3],
+      ["ab", false, undefined],
+      ["abx", false, undefined],
+      ["ad", true, 2],
+      ["a", true, 1],
+      ["ax", true, 1],
+    ];
+    for (const [input, expectSuccess, expectNext] of cases) {
+      const originalResult = original(input, ORIGIN);
+      expect(originalResult.success).toBe(expectSuccess);
+      if (originalResult.success && expectNext !== undefined) {
+        expect(originalResult.next).toBe(expectNext);
+      }
+
+      const factoredResult = factoredParser(input, ORIGIN);
+      expect(factoredResult.success).toBe(expectSuccess);
+      if (factoredResult.success && expectNext !== undefined) {
+        expect(factoredResult.next).toBe(expectNext);
+      }
     }
   });
 });
@@ -1988,6 +2060,151 @@ describe("insertAutomaticCuts", () => {
           "Cut",
           "StringLiteral",
         ]);
+      }
+    });
+  });
+
+  describe("pre-existing Cut must never be regrouped", () => {
+    // `computeCutCandidate`/`buildCutGroups` used to decide whether to
+    // nest an alternative purely from ITS OWN prefix's FIRST set vs. later
+    // siblings, without checking whether that alternative (or a later one
+    // it would absorb into its run) already contains a hand-written `~`.
+    // Nesting such an alternative inside a NEW `Choice` renarrows its
+    // existing Cut's fatal-absorption boundary from the original flat
+    // Choice to the new inner one -- see `ast-optimize-cut-insertion.ts`'s
+    // module doc comment, "Pre-existing Cut`s must never be regrouped
+    // either".
+
+    it("does not regroup an alternative with a pre-existing Cut when a later sibling is nullable and can't be proven excluded", async () => {
+      // `"b" ~ "c" / "d" / "e"?`: the pre-existing cut must fatal-stop the
+      // WHOLE 3-way choice once "b" matches -- "bx"/"b" must fail
+      // outright, never falling through to the nullable "e"?. "d" alone is
+      // FIRST-disjoint from "b", but "e"? is nullable and can never be
+      // proven excluded, so a naive implementation nests [alt0, "d"] into
+      // their own Choice, leaving "e"? reachable from OUTSIDE that
+      // boundary -- letting it wrongly absorb the cut's fatal failure.
+      const grammar = createGrammarDefinition(
+        "PreexistingCutNullableTail",
+        [],
+        [
+          createRuleDefinition(
+            "r",
+            createChoice([
+              createSequence([
+                createStringLiteral("b", '"'),
+                createCut(),
+                createStringLiteral("c", '"'),
+              ]),
+              createStringLiteral("d", '"'),
+              createOptional(createStringLiteral("e", '"')),
+            ]),
+          ),
+        ],
+      );
+
+      const withCuts = insertAutomaticCuts(grammar);
+      const original = await compileRuleFor(grammar, "r");
+      const cut = await compileRuleFor(withCuts, "r");
+
+      const cases: [string, boolean, number | undefined][] = [
+        ["bc", true, 2],
+        ["bx", false, undefined],
+        ["b", false, undefined],
+        ["d", true, 1],
+        ["e", true, 1],
+        ["", true, 0],
+      ];
+      for (const [input, expectSuccess, expectNext] of cases) {
+        const originalResult = original(input, ORIGIN);
+        expect(originalResult.success).toBe(expectSuccess);
+        const cutResult = cut(input, ORIGIN);
+        expect(cutResult.success).toBe(expectSuccess);
+        if (expectNext !== undefined) {
+          expect(originalResult.success && originalResult.next).toBe(
+            expectNext,
+          );
+          expect(cutResult.success && cutResult.next).toBe(expectNext);
+        }
+      }
+    });
+
+    it("does not regroup an alternative with a pre-existing Cut when a later sibling shares its prefix and can't be proven excluded", async () => {
+      // `"b" ~ "c" / "d" / "bz"`: "d" is excludable (disjoint from "b"),
+      // but "bz" shares alt0's own "b" prefix and can never be proven
+      // excluded -- a naive implementation nests [alt0, "d"], leaving "bz"
+      // reachable from outside the cut's original boundary.
+      const grammar = createGrammarDefinition(
+        "PreexistingCutSharedPrefixTail",
+        [],
+        [
+          createRuleDefinition(
+            "r",
+            createChoice([
+              createSequence([
+                createStringLiteral("b", '"'),
+                createCut(),
+                createStringLiteral("c", '"'),
+              ]),
+              createStringLiteral("d", '"'),
+              createStringLiteral("bz", '"'),
+            ]),
+          ),
+        ],
+      );
+
+      const withCuts = insertAutomaticCuts(grammar);
+      const original = await compileRuleFor(grammar, "r");
+      const cut = await compileRuleFor(withCuts, "r");
+
+      for (const input of ["bc", "bx", "b", "d", "bz", ""]) {
+        const originalResult = original(input, ORIGIN);
+        const cutResult = cut(input, ORIGIN);
+        expect(cutResult.success).toBe(originalResult.success);
+        if (originalResult.success && cutResult.success) {
+          expect(cutResult.next).toBe(originalResult.next);
+        }
+      }
+    });
+
+    it("still inserts a cut for a pre-existing-Cut-free alternative whose run covers every remaining alternative (no regression from the new guard)", () => {
+      // `"b" ~ "c" / "d" / "e"` (no nullable/shared-prefix tail): every
+      // later alternative IS provably excluded, so the run covers the
+      // whole remainder and the result stays flat (no new Choice
+      // boundary is introduced either way, matching the pre-existing
+      // "covers everything" flattening `buildCutGroups` already did) --
+      // the new pre-existing-Cut guard must not suppress this case, since
+      // NOTHING in this grammar has a `~` of its own: the cut inserted
+      // here is entirely new, so there is no existing absorption boundary
+      // for the guard to protect.
+      const grammar = createGrammarDefinition(
+        "NoRegressionFullyExcludedRun",
+        [],
+        [
+          createRuleDefinition(
+            "r",
+            createChoice([
+              createSequence([
+                createStringLiteral("b", '"'),
+                createStringLiteral("c", '"'),
+              ]),
+              createStringLiteral("d", '"'),
+              createStringLiteral("e", '"'),
+            ]),
+          ),
+        ],
+      );
+
+      const withCuts = insertAutomaticCuts(grammar);
+      const pattern = withCuts.rules[0]?.pattern;
+      expect(pattern?.type).toBe("Choice");
+      if (pattern?.type !== "Choice") return;
+      // Flat, 3 alternatives -- the fully-excluded run covers everything
+      // after the first alternative, so it stays unnested.
+      expect(pattern.alternatives.length).toBe(3);
+      const firstAlt = pattern.alternatives[0];
+      expect(firstAlt?.type).toBe("Sequence");
+      if (firstAlt?.type === "Sequence") {
+        expect(firstAlt.elements.map((e) => e.type)).toContain("Cut");
       }
     });
   });
