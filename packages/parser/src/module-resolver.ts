@@ -12,7 +12,7 @@
  * - Version constraint validation
  */
 
-import { resolve as resolvePath } from "node:path";
+import { dirname, resolve as resolvePath } from "node:path";
 import type {
   ImportStatement,
   ModuleFile,
@@ -255,14 +255,17 @@ export class ModuleResolver {
   /**
    * Normalize module path
    */
-  private normalizePath(modulePath: string): string {
+  private normalizePath(
+    modulePath: string,
+    baseDir = this.context.baseDir,
+  ): string {
     // If it's an absolute path, return as-is
     if (modulePath.startsWith("/")) {
       return modulePath;
     }
 
     // Resolve relative paths
-    return this.context.fileSystem.resolve(this.context.baseDir, modulePath);
+    return this.context.fileSystem.resolve(baseDir, modulePath);
   }
 
   /**
@@ -327,9 +330,12 @@ export class ModuleResolver {
    */
   private extractDependencies(moduleFile: ModuleFile): string[] {
     const dependencies: string[] = [];
+    const importingDirectory = dirname(moduleFile.filePath);
 
     for (const importStmt of moduleFile.imports) {
-      dependencies.push(this.normalizePath(importStmt.modulePath));
+      dependencies.push(
+        this.normalizePath(importStmt.modulePath, importingDirectory),
+      );
     }
 
     return dependencies;
@@ -425,9 +431,13 @@ export async function resolveQualifiedIdentifier(
             context.fileSystem,
           );
           resolver.context = context;
-          const importedModule = await resolver.resolveModule(
-            importStmt.modulePath,
-          );
+          const importedPath = importStmt.modulePath.startsWith("/")
+            ? importStmt.modulePath
+            : context.fileSystem.resolve(
+                dirname(module.filePath),
+                importStmt.modulePath,
+              );
+          const importedModule = await resolver.resolveModule(importedPath);
 
           return {
             module: importedModule,

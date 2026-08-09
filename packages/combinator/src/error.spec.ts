@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parse } from "@suzumiyaaoba/tpeg-core";
-import { choice, commit, literal } from "@suzumiyaaoba/tpeg-core";
+import { choice, commit, literal, parse, seq } from "@suzumiyaaoba/tpeg-core";
 import { labeled, labeledWithContext, named, withDetailedError } from "./error";
 
 describe("error combinators", () => {
@@ -138,5 +137,18 @@ describe("error combinators", () => {
         expect(direct.error.fatal).toBe(true);
       }
     });
+  });
+
+  it("should preserve committed failures through error labels", () => {
+    const committed = seq(literal("i"), commit(literal("f")));
+    const wrappedParsers = [
+      labeled(committed, "Expected if"),
+      labeledWithContext(committed, "Expected if", "statement"),
+    ];
+
+    for (const wrapped of wrappedParsers) {
+      const result = choice(wrapped, literal("i"))("ix", 0);
+      expect(result.success).toBe(false);
+    }
   });
 });
