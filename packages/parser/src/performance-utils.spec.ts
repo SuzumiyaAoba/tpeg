@@ -170,58 +170,41 @@ describe("analyzeGrammarPerformance recursion detection", () => {
   });
 });
 
-describe("left recursion: current end-to-end behavior (documented, not hardened)", () => {
+describe("left recursion: end-to-end behavior", () => {
   // `analyzeGrammarPerformance`'s left-recursion check (above) is advisory
-  // only -- a plain string in `optimizationSuggestions`, never consulted by
-  // `codegen.ts`/`codegen-optimized.ts` to reject a grammar the way
-  // `first-sets.ts`'s `assertNoNullableRepetition` hard-rejects an
-  // unbounded-repetition-over-nullable grammar at construction time. A
-  // left-recursive grammar therefore compiles successfully and only fails
-  // once actually PARSED against input.
+  // only -- a plain string in `optimizationSuggestions`. The actual gate is
+  // `./grammar-validation.ts`'s `validateGrammar`, which both
+  // `codegen.ts`/`codegen-optimized.ts` now call before doing anything
+  // else: a left-recursive grammar is rejected with a synchronous `Error`
+  // at GENERATION time, not compiled successfully only to overflow the
+  // call stack once actually parsed against input (the previous behavior --
+  // see git history for the version of this test that pinned that).
   //
-  // This test pins today's actual failure mode -- deliberately, not as an
-  // endorsement: neither this project's PEG combinators (`packages/core/
-  // src/combinators.ts`) nor `reference-interpreter.ts` (the differential-
+  // Neither this project's PEG combinators (`packages/core/src/
+  // combinators.ts`) nor `reference-interpreter.ts` (the differential-
   // fuzzing oracle, which guards against left recursion with its own
   // recursion-depth ceiling -- see `ReferenceInterpreterLimitError`)
-  // implement Warth et al.'s bounded-growth left-recursion support. A
-  // future change adding that support should update or remove this test,
-  // not silently break it.
-  it("a compiled left-recursive rule throws a stack-overflow RangeError on parse, rather than looping forever or hanging", async () => {
+  // implement Warth et al.'s bounded-growth left-recursion support, so
+  // rejection (rather than silently accepting and mis-handling it) is the
+  // correct behavior here.
+  it("a left-recursive rule is rejected at generation time, before any code is produced", async () => {
     const { parse } = await import("@suzumiyaaoba/tpeg-core");
     const { grammarDefinition } = await import("./grammar");
     const { generateTypeScriptParser } = await import("./codegen");
 
     // Expr = Expr "+" [0-9]+ / [0-9]+ -- classic left recursion, flagged by
-    // `analyzeGrammarPerformance` above but not rejected by codegen.
+    // `analyzeGrammarPerformance` above AND hard-rejected by codegen.
     const source =
       'grammar G {\n  start = expr\n  expr = expr "+" [0-9]+ / [0-9]+\n}';
     const parsed = parse(grammarDefinition)(source);
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
 
-    // Compiles without error -- codegen has no left-recursion gate.
-    const { code } = generateTypeScriptParser(parsed.val, {
-      includeImports: false,
-      includeTypes: false,
-    });
-
-    const core = await import("@suzumiyaaoba/tpeg-core");
-    const combinator = await import("@suzumiyaaoba/tpeg-combinator");
-    const body = code.replace(/^export const (\w+)/gm, "const $1");
-    const scope = { ...combinator, ...core };
-    const factory = new Function(
-      ...Object.keys(scope),
-      `${body}\nreturn { start };`,
-    );
-    const { start } = factory(...Object.values(scope)) as {
-      start: (input: string, pos: number) => unknown;
-    };
-
-    // Fails FAST with a synchronous RangeError (JS call-stack exhaustion
-    // from the unbounded `expr` -> `expr` descent before any input is
-    // consumed) -- not an infinite loop that would hang this test, and
-    // not a graceful `{ success: false }` PEG failure either.
-    expect(() => start("1+2", 0)).toThrow(RangeError);
+    expect(() =>
+      generateTypeScriptParser(parsed.val, {
+        includeImports: false,
+        includeTypes: false,
+      }),
+    ).toThrow(/left-recursive/i);
   });
 });

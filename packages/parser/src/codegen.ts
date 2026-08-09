@@ -7,6 +7,7 @@
 
 import { escapeStringLiteral } from "./constants";
 import { analyzeFirstSets, assertNoNullableRepetition } from "./first-sets";
+import { validateGrammar } from "./grammar-validation";
 import type {
   ActionExpression,
   AnyChar,
@@ -521,6 +522,12 @@ export class TPEGCodeGenerator {
    * Generate TypeScript parser code from a TPEG grammar
    */
   generateGrammar(grammar: GrammarDefinition): GeneratedCode {
+    // Reject a duplicate rule name or a left-recursive rule outright,
+    // before anything else -- see `grammar-validation.ts`'s doc comment
+    // for why this MUST run before `analyzeFirstSets` (a duplicate name
+    // can make that fixpoint oscillate forever instead of converging).
+    validateGrammar(grammar);
+
     // Reject an unbounded repetition over a nullable body outright,
     // before generating any code -- see `assertNoNullableRepetition`'s
     // doc comment (`first-sets.ts`) for why this has no well-defined PEG

@@ -6,11 +6,17 @@
  *
  * Operator precedence (highest to lowest):
  * 1. Primary: Basic syntax and Groups (expr)
- * 2. Prefix operators: Lookahead (&expr, !expr)
- * 3. Postfix operators: Repetition (expr*, expr+, expr?, expr{n,m})
+ * 2. Postfix operators: Repetition (expr*, expr+, expr?, expr{n,m})
+ * 3. Prefix operators: Lookahead (&expr, !expr)
  * 4. Labels: Label expressions (name:expr)
  * 5. Sequence: expr1 expr2 expr3
  * 6. Choice: expr1 / expr2 / expr3
+ *
+ * Repetition binds TIGHTER than lookahead -- `!e*` parses as `!(e*)`, not
+ * `(!e)*` -- matching standard PEG (Ford, POPL 2004: `Prefix <- (AND /
+ * NOT)? Suffix`) and every mainstream PEG implementation (PEG.js, LPeg,
+ * Pest). An explicit group is always available for the other reading
+ * (`(!e)*`) when that's actually intended.
  */
 
 import { recursive } from "@suzumiyaaoba/tpeg-combinator";
@@ -84,27 +90,29 @@ const primary = (): Parser<Expression> => {
 };
 
 /**
- * Parses a prefix expression (primary with optional lookahead operators).
- * Lookahead operators have higher precedence than repetition operators.
- */
-const prefix = (): Parser<Expression> => {
-  return withLookahead(primary());
-};
-
-/**
- * Parses a postfix expression (prefix with optional repetition operators).
- * Repetition operators have higher precedence than labels.
+ * Parses a postfix expression (primary with optional repetition
+ * operators). Repetition operators have higher precedence than lookahead
+ * -- `!e*` parses as `!(e*)`, matching standard PEG (see this module's
+ * doc comment).
  */
 const postfix = (): Parser<Expression> => {
-  return withRepetition(prefix());
+  return withRepetition(primary());
 };
 
 /**
- * Parses a labeled expression (postfix with optional labels).
- * Labels have lower precedence than repetition operators.
+ * Parses a prefix expression (postfix with optional lookahead operators).
+ * Lookahead operators have lower precedence than repetition operators.
+ */
+const prefix = (): Parser<Expression> => {
+  return withLookahead(postfix());
+};
+
+/**
+ * Parses a labeled expression (prefix with optional labels).
+ * Labels have lower precedence than lookahead/repetition operators.
  */
 const labeled = (): Parser<Expression> => {
-  return withOptionalLabel(postfix());
+  return withOptionalLabel(prefix());
 };
 
 /**
@@ -280,7 +288,10 @@ export const expression = (): Parser<Expression> => {
 };
 
 /**
- * Parses a postfix expression specifically.
+ * Parses a postfix expression specifically: a primary expression with
+ * optional repetition operators (`expr*`, `expr+`, `expr?`, `expr{n,m}`),
+ * but WITHOUT a leading lookahead operator -- `&`/`!` bind at the `prefix`
+ * level, one level up (see this module's doc comment on precedence).
  * Exported for direct use when postfix parsing is needed.
  */
 export const postfixOperator = (): Parser<Expression> => {
@@ -288,7 +299,8 @@ export const postfixOperator = (): Parser<Expression> => {
 };
 
 /**
- * Parses a labeled expression specifically.
+ * Parses a labeled expression specifically: a prefix expression (postfix
+ * plus optional lookahead) with an optional leading `name:` label.
  * Exported for direct use when labeled parsing is needed.
  */
 export const labeledOperator = (): Parser<Expression> => {

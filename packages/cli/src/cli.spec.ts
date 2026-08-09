@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "./cli";
@@ -320,15 +326,18 @@ grammar Cuttable {
     expect(number("42", pos)).toMatchObject({ success: true, val: 42 });
   });
 
-  it("warns to stderr about left recursion, without failing generation", () => {
+  it("rejects a left-recursive grammar with a clean error, writing no output", () => {
     // `expr` references itself before consuming any input (the first
     // alternative's leftmost element is `expr` itself) -- classic left
-    // recursion, which loops forever when the generated parser actually
-    // runs. `packages/parser/src/performance-utils.ts`'s
-    // `analyzeGrammarPerformance` already detects this via a
-    // leftmost-reference cycle walk; this pins that the CLI now surfaces
-    // it as a warning rather than leaving it silent until run time.
+    // recursion, which loops forever (a stack-overflow `RangeError`) when
+    // a compiled parser actually runs. `packages/parser/src/
+    // grammar-validation.ts`'s `validateGrammar` rejects this at
+    // GENERATION time now, so the CLI must surface that as a clean,
+    // non-zero-exit error rather than crashing on an uncaught exception
+    // or writing a parser that would blow the stack the first time it's
+    // used.
     const inputPath = join(dir, "left-recursive.tpeg");
+    const outputPath = join(dir, "parser.ts");
     writeFileSync(
       inputPath,
       `
@@ -340,16 +349,18 @@ grammar Arith {
       "utf8",
     );
 
-    const { exitCode, stdout, stderr } = captureOutput(() => run([inputPath]));
-    // Still generates code -- a warning, not a hard error.
-    expect(exitCode).toBe(0);
-    expect(stdout).toContain("export const expr");
-    expect(stderr).toContain("warning:");
-    expect(stderr).toContain("left recursion");
-    expect(stderr).toContain("'expr'");
+    const { exitCode, stdout, stderr } = captureOutput(() =>
+      run([inputPath, "-o", outputPath]),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toBe("");
+    expect(stderr).toContain("error:");
+    expect(stderr).toMatch(/left-recursive/i);
+    expect(stderr).toContain("rule(s): expr");
+    expect(existsSync(outputPath)).toBe(false);
   });
 
-  it("does not warn about left recursion for an ordinary (right-recursive) grammar", () => {
+  it("does not reject an ordinary (right-recursive) grammar", () => {
     const inputPath = join(dir, "grammar.tpeg");
     writeFileSync(inputPath, SIMPLE_GRAMMAR, "utf8");
 
@@ -358,7 +369,7 @@ grammar Arith {
     expect(stderr).not.toContain("left recursion");
   });
 
-  it("warns about left recursion on the --optimize path too", () => {
+  it("rejects a left-recursive grammar on the --optimize path too", () => {
     const inputPath = join(dir, "left-recursive.tpeg");
     writeFileSync(
       inputPath,
@@ -374,7 +385,59 @@ grammar Arith {
     const { exitCode, stderr } = captureOutput(() =>
       run([inputPath, "--optimize"]),
     );
-    expect(exitCode).toBe(0);
-    expect(stderr).toContain("left recursion");
+    expect(exitCode).toBe(1);
+    expect(stderr).toMatch(/left-recursive/i);
+  });
+
+  it("rejects a grammar with a duplicate rule name instead of hanging", () => {
+    // `first-sets.ts`'s FIRST-set fixpoint is keyed by rule name -- two
+    // rules sharing a name used to make it oscillate forever instead of
+    // converging (see `grammar-validation.ts`'s doc comment). This pins
+    // that the CLI now reports it as a clean error instead of hanging.
+    const inputPath = join(dir, "duplicate-rule.tpeg");
+    const outputPath = join(dir, "parser.ts");
+    writeFileSync(
+      inputPath,
+      `
+grammar G {
+  start = "a"
+  start = "b"
+}
+`,
+      "utf8",
+    );
+
+    const { exitCode, stdout, stderr } = captureOutput(() =>
+      run([inputPath, "-o", outputPath]),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toBe("");
+    expect(stderr).toContain("error:");
+    expect(stderr).toMatch(/duplicate rule/i);
+    expect(stderr).toContain("start");
+    expect(existsSync(outputPath)).toBe(false);
+  });
+
+  it("rejects a rule left-recursive only behind a nullable prefix", () => {
+    // Hidden left recursion: the leading `"a"?` can match zero
+    // characters, so `e` can reach itself without consuming anything --
+    // invisible to a check that only looks at a sequence's literal first
+    // element (see `grammar-validation.ts`'s doc comment).
+    const inputPath = join(dir, "hidden-left-recursive.tpeg");
+    writeFileSync(
+      inputPath,
+      `
+grammar G {
+  start = e
+  e = "a"? e "b" / "c"
+}
+`,
+      "utf8",
+    );
+
+    const { exitCode, stderr } = captureOutput(() => run([inputPath]));
+    expect(exitCode).toBe(1);
+    expect(stderr).toMatch(/left-recursive/i);
+    expect(stderr).toContain("rule(s): e");
   });
 });

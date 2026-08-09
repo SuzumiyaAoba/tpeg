@@ -506,7 +506,14 @@ export const firstSetOfExpression = (
   }
 };
 
-const computeNullableRules = (
+/** Exported for `grammar-validation.ts`'s left-recursion check, which
+ * needs nullability but not full FIRST sets. Safe to call directly on a
+ * grammar with duplicate rule names (unlike `analyzeFirstSets`'s FIRST-set
+ * fixpoint below): `nullable` is Boolean and only ever moves `false ->
+ * true`, never back, so two `RuleDefinition`s sharing a name can't make
+ * this oscillate the way two different FIRST sets can -- whichever one
+ * sets the shared entry `true` first, it stays `true`. */
+export const computeNullableRules = (
   grammar: GrammarDefinition,
 ): Map<string, boolean> => {
   const nullable = new Map<string, boolean>(
@@ -560,10 +567,26 @@ export const analyzeFirstSets = (
     grammar.rules.map((r) => [r.name, EMPTY_FIRST_SET]),
   );
 
+  // De-duplicated by name (last declaration wins, an arbitrary but stable
+  // tie-break -- a duplicate name has no well-defined grammar meaning to
+  // begin with). `grammar-validation.ts`'s `validateGrammar` is the
+  // primary defense against a duplicate rule name (rejected with a clear
+  // diagnostic before this function is ever reached from codegen), but
+  // this fixpoint must not hang even if some other caller passes one
+  // directly: iterating `grammar.rules` as-is would have two
+  // `RuleDefinition`s overwrite the SAME `firstSets` entry from two
+  // different patterns every pass, which can oscillate between their two
+  // computed FIRST sets forever instead of converging (rule A's result,
+  // then rule B's overwrites it, then re-deriving A's differs from what's
+  // now stored so `changed` flips again, ad infinitum).
+  const uniqueRules = [
+    ...new Map(grammar.rules.map((r) => [r.name, r])).values(),
+  ];
+
   let changed = true;
   while (changed) {
     changed = false;
-    for (const rule of grammar.rules) {
+    for (const rule of uniqueRules) {
       const next = firstSetOfExpression(rule.pattern, firstSets, nullableRules);
       const prev = firstSets.get(rule.name) as FirstSet;
       if (!firstSetsEqual(prev, next)) {

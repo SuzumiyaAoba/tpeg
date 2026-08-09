@@ -8,7 +8,6 @@ import { parseArgs } from "node:util";
 import { offsetToPos, parse } from "@suzumiyaaoba/tpeg-core";
 import {
   analyzeFirstSets,
-  analyzeGrammarPerformance,
   applyAstOptimizations,
   generateOptimizedTypeScriptParser,
   generateTypeScriptParser,
@@ -248,25 +247,6 @@ export function run(argv: string[]): number {
     ? promoteGlobalCuts(cutInserted, analyzeFirstSets(cutInserted)).grammar
     : cutInserted;
 
-  // Left recursion (a rule reachable from its own leftmost position
-  // without first consuming input, e.g. `expr = expr "+" term / term`)
-  // loops forever in a PEG parser -- `packages/parser/src/
-  // performance-utils.ts`'s `analyzeGrammarPerformance` already detects
-  // it (via a dependency-cycle walk restricted to leftmost references),
-  // but until now nothing surfaced that suggestion to a CLI user; the
-  // grammar would compile cleanly and only fail at RUN time, with a bare
-  // `RangeError: Maximum call stack size exceeded` pointing nowhere near
-  // the actual mistake. Surfaced as a warning (not an error) on both
-  // generator paths, independent of `--optimize`, since the underlying
-  // grammar defect is the same either way and existing `.tpeg` files
-  // that happen to trip this heuristic should keep generating.
-  for (const suggestion of analyzeGrammarPerformance(grammar)
-    .optimizationSuggestions) {
-    if (suggestion.includes("left recursion")) {
-      process.stderr.write(`warning: ${suggestion}\n`);
-    }
-  }
-
   // Split into two explicit branches rather than picking a shared
   // `generate` function: `enableRegexFusion` only exists on
   // `OptimizedCodeGenOptions`, and with `exactOptionalPropertyTypes` on,
@@ -278,19 +258,38 @@ export function run(argv: string[]): number {
       ? { namePrefix: options.namePrefix }
       : {}),
   };
-  const generated = options.optimize
-    ? generateOptimizedTypeScriptParser(grammar, {
-        ...sharedOptions,
-        ...(options.regexFusion ? { enableRegexFusion: true } : {}),
-        // `regexFusionScope` defaults to `"rule"` in the codegen itself
-        // (matches output from before subtree-scoped fusion existed) --
-        // only pass `"subtree"` explicitly when `--regex-fusion-subtree`
-        // was given.
-        ...(options.regexFusionSubtree
-          ? { regexFusionScope: "subtree" as const }
-          : {}),
-      })
-    : generateTypeScriptParser(grammar, sharedOptions);
+  // Both generators call `validateGrammar` (`packages/parser/src/
+  // grammar-validation.ts`) before producing any code, rejecting a
+  // duplicate rule name or a left-recursive rule (direct, indirect, or
+  // "hidden" behind a nullable prefix -- e.g. `expr = expr "+" term /
+  // term`) with a thrown `Error`. Without input this small either grammar
+  // defect would otherwise compile successfully and only fail once
+  // actually PARSED against input, with a bare `RangeError: Maximum call
+  // stack size exceeded` (left recursion) or a silent infinite hang
+  // (duplicate rule name, inside `analyzeFirstSets`'s FIRST-set fixpoint)
+  // pointing nowhere near the actual mistake. Caught here and reported
+  // the same way every other grammar-authoring mistake in this file is:
+  // a clean `error:` line on stderr and a non-zero exit, no output
+  // written.
+  let generated: ReturnType<typeof generateTypeScriptParser>;
+  try {
+    generated = options.optimize
+      ? generateOptimizedTypeScriptParser(grammar, {
+          ...sharedOptions,
+          ...(options.regexFusion ? { enableRegexFusion: true } : {}),
+          // `regexFusionScope` defaults to `"rule"` in the codegen itself
+          // (matches output from before subtree-scoped fusion existed) --
+          // only pass `"subtree"` explicitly when `--regex-fusion-subtree`
+          // was given.
+          ...(options.regexFusionSubtree
+            ? { regexFusionScope: "subtree" as const }
+            : {}),
+        })
+      : generateTypeScriptParser(grammar, sharedOptions);
+  } catch (error) {
+    process.stderr.write(`error: ${(error as Error).message}\n`);
+    return 1;
+  }
 
   if (options.output) {
     writeFileSync(options.output, generated.code, "utf8");

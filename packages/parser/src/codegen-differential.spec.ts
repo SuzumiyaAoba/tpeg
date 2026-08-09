@@ -123,7 +123,7 @@ const genExpr = (
   const atom = () => pick(rng, allowRuleRef ? [...LEAVES, ...refs] : LEAVES);
   if (depth <= 0) return atom();
   const next = () => genExpr(rng, depth - 1, allowRuleRef, refs);
-  switch (Math.floor(rng() * 15)) {
+  switch (Math.floor(rng() * 22)) {
     case 0:
       return atom();
     case 1:
@@ -160,6 +160,52 @@ const genExpr = (
       return `x:${atom()}`;
     case 13:
       return `(${next()} / ${next()})`;
+    case 14:
+      // Star over a CUT-bearing group, not just a bare atom (unlike case
+      // 3) -- exercises `zeroOrMore` re-raising a fatal failure from a
+      // committed sub-sequence rather than treating it as "stop
+      // repeating" (`repetition.ts`'s doc comment, `packages/core/src/`).
+      // The leading `atom()` guarantees the group is non-nullable
+      // regardless of what `next()` draws, so this never trips
+      // `assertNoNullableRepetition`.
+      return `(${atom()} ~ ${next()})*`;
+    case 15:
+      // Same, but `oneOrMore` -- a fatal failure on the SECOND+ attempt
+      // (not just the first) must also propagate.
+      return `(${atom()} ~ ${next()})+`;
+    case 16:
+      // A Cut inside a NegativeLookahead's own probe: must commit only
+      // WITHIN that probe's attempt, absorbed at the lookahead's own
+      // boundary rather than escaping to whatever encloses `!(...)`
+      // (`notPredicate`'s doc comment, `packages/core/src/lookahead.ts`).
+      return `!(${next()} ~ ${next()}) ${next()}`;
+    case 17:
+      // Same for PositiveLookahead (`andPredicate`'s doc comment).
+      return `&(${next()} ~ ${next()}) ${next()}`;
+    case 18:
+      // A bounded Quantified over a COMPOSITE (possibly-nullable)
+      // expression -- unlike cases 9/10 (`atom(){1,3}`/`atom(){2}`,
+      // always non-nullable), this exercises `quantified`'s explicit
+      // carve-out: a bounded range has well-defined PEG semantics
+      // regardless of whether the repeated expression is nullable, since
+      // the `for` loop bounding it can never loop unboundedly either way
+      // (`first-sets.ts`'s `assertNoNullableRepetition` doc comment).
+      return `(${next()} / ${next()}){0,2}`;
+    case 19:
+      // An OPEN-ENDED Quantified (`{2,}`, no upper bound) over a
+      // composite two-element sequence -- the leading `atom()` keeps it
+      // non-nullable, so this is safe, but it's a shape cases 9/10/18
+      // don't reach (no fixed upper bound, non-atomic body).
+      return `(${atom()} ${next()}){2,}`;
+    case 20:
+      // Star over a plain (non-cut) group, not just an atom -- may
+      // legitimately draw a nullable `next()` (e.g. one that itself
+      // recursed into case 3's `atom()*` or case 5's `(...)?`), in which
+      // case the harness's existing construction-time-rejection handling
+      // (`assertNoNullableRepetition` firing, caught and counted as
+      // skipped -- see the main test loop below) applies exactly like it
+      // already does for a hand-written `("a"?)*`.
+      return `(${next()} ${next()})*`;
     default:
       return `(${next()} ~ ${next()})`;
   }

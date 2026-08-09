@@ -297,14 +297,16 @@ describe("Label Integration Tests", () => {
 
       expect(result.success).toBe(true);
       if (result.success) {
-        // Should parse as: check:((&"hello")*)
+        // Repetition binds tighter than lookahead (standard PEG -- see
+        // composition.ts's module doc comment), so this parses as:
+        // check:(&("hello"*))
         const labeled = result.val as LabeledExpression;
         expect(labeled.type).toBe("LabeledExpression");
         expect(labeled.label).toBe("check");
 
-        const star = labeled.expression as Star;
-        expect(star.type).toBe("Star");
-        expect(star.expression.type).toBe("PositiveLookahead");
+        const lookahead = labeled.expression as PositiveLookahead;
+        expect(lookahead.type).toBe("PositiveLookahead");
+        expect(lookahead.expression.type).toBe("Star");
       }
     });
 

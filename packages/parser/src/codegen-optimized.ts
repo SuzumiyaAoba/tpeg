@@ -55,6 +55,7 @@ import {
   canCommitWithoutConsuming,
   predictiveFilterForExpression,
 } from "./first-sets";
+import { validateGrammar } from "./grammar-validation";
 import {
   analyzeGrammarPerformance,
   globalPerformanceMonitor,
@@ -339,6 +340,13 @@ export class OptimizedTPEGCodeGenerator {
    */
   generateGrammar(grammar: GrammarDefinition): OptimizedGeneratedCode {
     globalPerformanceMonitor.start("grammar-generation");
+
+    // Reject a duplicate rule name or a left-recursive rule outright,
+    // before anything else -- see `grammar-validation.ts`'s doc comment
+    // for why this MUST run before `analyzeFirstSets` below (a duplicate
+    // name can make that fixpoint oscillate forever instead of
+    // converging).
+    validateGrammar(grammar);
 
     // Reset per-instance state so a reused generator doesn't leak rule
     // names or cached expression templates from a previous grammar.

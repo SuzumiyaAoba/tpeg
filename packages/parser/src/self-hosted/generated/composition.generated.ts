@@ -1,5 +1,5 @@
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
-import { anyChar, capture, captureSequence, charClass, choice, lazy, literal, negatedCharClass, notPredicate, oneOrMore, optional, sequence, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
+import { anyChar, capture, captureSequence, charClass, charClassRun, choice, lazy, literal, negatedCharClass, notPredicate, oneOrMore, optional, sequence, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
 
 export const escapeChar: Parser<any> = sequence(literal("\\"), charClass("n", "r", "t", "\\", "\"", "'"));
 
@@ -177,7 +177,7 @@ export const characterClassNode: Parser<any> = choice(characterClassBrackets, an
 
 export const identStart: Parser<any> = charClass(["a", "z"], ["A", "Z"], "_");
 
-export const identCont: Parser<any> = zeroOrMore(charClass(["a", "z"], ["A", "Z"], ["0", "9"], "_"));
+export const identCont: Parser<any> = charClassRun([["a", "z"], ["A", "Z"], ["0", "9"], "_"], 0);
 
 export const identifierName: Parser<any> = (input, pos) => {
   const __base = (captureSequence(capture("start", identStart), capture("rest", identCont)));
@@ -422,9 +422,9 @@ export const actionBlock: Parser<any> = (input, pos) => {
   };
 };
 
-export const interWs: Parser<any> = zeroOrMore(charClass(" ", "\t", "\n", "\r"));
+export const interWs: Parser<any> = charClassRun([" ", "\t", "\n", "\r"], 0);
 
-export const sameLineWs: Parser<any> = zeroOrMore(charClass(" ", "\t"));
+export const sameLineWs: Parser<any> = charClassRun([" ", "\t"], 0);
 
 export const group: Parser<any> = (input, pos) => {
   const __base = (captureSequence(literal("("), interWs, capture("expr", lazy(() => choiceExpr)), interWs, literal(")")));
@@ -445,44 +445,8 @@ export const group: Parser<any> = (input, pos) => {
 
 export const primary: Parser<any> = choice(group, basicSyntax);
 
-export const positiveLookahead: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(literal("&"), capture("expr", lazy(() => prefix))));
-  const __result = __base(input, pos);
-  if (!__result.success) return __result;
-  const __val = (() => {
-    const $$: any = __result.val;
-    const { expr } = $$;
- return { type: "PositiveLookahead", expression: expr }; 
-  })();
-  return {
-    success: true,
-    val: __val,
-    current: __result.current,
-    next: __result.next,
-  };
-};
-
-export const negativeLookahead: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(literal("!"), capture("expr", lazy(() => prefix))));
-  const __result = __base(input, pos);
-  if (!__result.success) return __result;
-  const __val = (() => {
-    const $$: any = __result.val;
-    const { expr } = $$;
- return { type: "NegativeLookahead", expression: expr }; 
-  })();
-  return {
-    success: true,
-    val: __val,
-    current: __result.current,
-    next: __result.next,
-  };
-};
-
-export const prefix: Parser<any> = choice(positiveLookahead, negativeLookahead, primary);
-
 export const integer: Parser<any> = (input, pos) => {
-  const __base = (capture("digits", oneOrMore(charClass(["0", "9"]))));
+  const __base = (capture("digits", charClassRun([["0", "9"]], 1)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -552,7 +516,7 @@ export const quantifiedExact: Parser<any> = (input, pos) => {
 export const quantifiedOp: Parser<any> = choice(quantifiedRange, quantifiedMin, quantifiedExact);
 
 export const starOp: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(capture("expr", prefix), literal("*")));
+  const __base = (captureSequence(capture("expr", primary), literal("*")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -569,7 +533,7 @@ export const starOp: Parser<any> = (input, pos) => {
 };
 
 export const plusOp: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(capture("expr", prefix), literal("+")));
+  const __base = (captureSequence(capture("expr", primary), literal("+")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -586,7 +550,7 @@ export const plusOp: Parser<any> = (input, pos) => {
 };
 
 export const optionalOp: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(capture("expr", prefix), literal("?")));
+  const __base = (captureSequence(capture("expr", primary), literal("?")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -603,7 +567,7 @@ export const optionalOp: Parser<any> = (input, pos) => {
 };
 
 export const quantOp: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(capture("expr", prefix), capture("q", quantifiedOp)));
+  const __base = (captureSequence(capture("expr", primary), capture("q", quantifiedOp)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -619,10 +583,46 @@ export const quantOp: Parser<any> = (input, pos) => {
   };
 };
 
-export const postfix: Parser<any> = choice(starOp, plusOp, optionalOp, quantOp, prefix);
+export const postfix: Parser<any> = choice(starOp, plusOp, optionalOp, quantOp, primary);
+
+export const positiveLookahead: Parser<any> = (input, pos) => {
+  const __base = (captureSequence(literal("&"), capture("expr", postfix)));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { expr } = $$;
+ return { type: "PositiveLookahead", expression: expr }; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+};
+
+export const negativeLookahead: Parser<any> = (input, pos) => {
+  const __base = (captureSequence(literal("!"), capture("expr", postfix)));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { expr } = $$;
+ return { type: "NegativeLookahead", expression: expr }; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+};
+
+export const prefix: Parser<any> = choice(positiveLookahead, negativeLookahead, postfix);
 
 export const labeled: Parser<any> = choice((input, pos) => {
-  const __base = (captureSequence(capture("label", identifierName), literal(":"), capture("expr", postfix)));
+  const __base = (captureSequence(capture("label", identifierName), literal(":"), capture("expr", prefix)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -636,7 +636,7 @@ export const labeled: Parser<any> = choice((input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-}, postfix);
+}, prefix);
 
 export const notNextRuleStart: Parser<any> = notPredicate(sequence(identifierName, sameLineWs, literal("=")));
 

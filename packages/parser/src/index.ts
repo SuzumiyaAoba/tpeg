@@ -74,6 +74,14 @@ export {
 
 export { analyzeReentrancy, type ReentrancyAnalysis } from "./reentrancy";
 
+// Export grammar-level structural validation (duplicate rule names, left
+// recursion) -- run automatically by both `generateTypeScriptParser` and
+// `generateOptimizedTypeScriptParser` before any analysis or code
+// generation, but also exported standalone for a caller that wants to
+// validate a grammar ahead of time (e.g. a linter, or before applying an
+// AST rewrite pass). See `grammar-validation.ts`'s doc comment.
+export { validateGrammar } from "./grammar-validation";
+
 // Export the reference PEG interpreter -- a differential-testing oracle,
 // independent of codegen, used by `codegen-differential.spec.ts`. See
 // that module's doc comment for why an independent implementation (not

@@ -140,6 +140,35 @@ Operator](#cutcommit-operator) below) is scoped to `expr`'s own attempt and
 is absorbed at the lookahead's own boundary - it cannot commit whatever
 choice the `&`/`!` itself happens to sit inside.
 
+## Operator Precedence
+
+From highest to lowest precedence, TPEG's own syntax operators bind as
+follows:
+
+1. **Primary** - a literal, character class, identifier, or a parenthesized
+   `(expr)` group (highest precedence)
+2. **Repetition** (postfix) - `expr*`, `expr+`, `expr?`, `expr{n}`,
+   `expr{n,m}`, `expr{n,}`
+3. **Lookahead** (prefix) - `&expr`, `!expr`
+4. **Label** - `name:expr`
+5. **Sequence** - `expr1 expr2 expr3` (juxtaposition)
+6. **Choice** - `expr1 / expr2 / expr3` (lowest precedence)
+
+Repetition binds *tighter* than lookahead - `!expr*` parses as `!(expr*)`,
+not `(!expr)*` - matching standard PEG (Ford, POPL 2004: `Prefix <- (AND /
+NOT)? Suffix`) and every mainstream PEG implementation (PEG.js, LPeg, Pest).
+An explicit group spells out the other reading when that's what's actually
+intended:
+
+```tpeg
+!"a"*      // Not(Star("a")) -- "not a run of `a`s"
+(!"a")*    // Star(Not("a")) -- "zero or more positions where `a` doesn't match"
+```
+
+A label wraps everything up through lookahead, so `x:&"a"` and `x:!"a"*`
+are `x:(&"a")` and `x:(!("a"*))` respectively - there is no separate
+"labeled lookahead" precedence level.
+
 ## Cut/Commit Operator
 
 `~` may appear as one of a sequence's elements. Once everything before it has

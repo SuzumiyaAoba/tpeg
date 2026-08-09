@@ -196,6 +196,16 @@ export function analyzeGrammarPerformance(grammar: GrammarDefinition): {
     }
   }
 
+  // Best-effort, advisory only: `collectLeftmostRuleDependencies`'s
+  // `Sequence` case only looks at the literal first element, so a
+  // left-recursive reference "hidden" behind a nullable prefix (e.g.
+  // `e = "a"? e "b" / "c"`, where the leading `Optional` isn't itself a
+  // reference) is invisible here. `./grammar-validation.ts`'s
+  // `validateGrammar` is the AUTHORITATIVE check -- it accounts for
+  // nullability and runs as a hard error before either code generator
+  // does anything else, so it catches every case this suggestion list
+  // might miss. This loop is kept only for the human-readable suggestion
+  // text in whatever cases it DOES catch.
   for (const ruleName of leftRecursiveRuleNames) {
     optimizationSuggestions.push(
       `Rule '${ruleName}' has left recursion - this will cause infinite loops in a PEG parser`,

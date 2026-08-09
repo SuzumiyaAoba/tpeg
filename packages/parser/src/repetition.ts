@@ -24,6 +24,7 @@ import {
   optional,
   seq,
 } from "@suzumiyaaoba/tpeg-core";
+import { scanBalancedBraces } from "./brace-scanner";
 import type { Expression, Optional, Plus, Quantified, Star } from "./types";
 import {
   createOptional,
@@ -151,6 +152,13 @@ export const repetitionOperator: Parser<
  */
 const optionalRepetitionOperator = optional(repetitionOperator);
 
+/** Content that looks like a BOTCHED attempt at `{n}`/`{n,}`/`{n,m}`
+ * rather than genuine semantic-action code -- see the doc comment on the
+ * check in {@link withRepetition} that uses this. Real action bodies
+ * essentially always contain a keyword, an operator, a string, or at
+ * least a semicolon; none of those are digits, commas, or whitespace. */
+const LOOKS_LIKE_MALFORMED_QUANTIFIER = /^[\d,\s]*$/;
+
 /**
  * Creates a parser that handles repetition for any base expression parser.
  * This is a higher-order function that wraps any expression parser with repetition support.
@@ -198,6 +206,42 @@ export const withRepetition = <T extends Expression>(
         opResult.next,
         { parserName: "withRepetition" },
       );
+    }
+
+    // A `{` here that ISN'T a valid repetition operator (whether or not
+    // one was already consumed above -- e.g. `"a"{,3}` matches zero
+    // operators, `"a"*{,3}` matches one valid `*` first) is otherwise
+    // silently reinterpreted by `withOptionalAction`
+    // (`composition.ts`) as the START of a semantic action block:
+    // `scanBalancedBraces` (`brace-scanner.ts`) only checks brace
+    // balance, not whether the content is meaningful code, so e.g.
+    // `"a"{,3}` (a typo'd quantifier missing its minimum) would silently
+    // compile to an action whose body is the bare text `,3` -- a
+    // `SyntaxError` only once the generated module is actually loaded,
+    // with no diagnostic anywhere pointing at the real mistake (a
+    // missing digit before the comma). Reject it HERE instead, but only
+    // when the braced content looks like an attempted-but-malformed
+    // quantifier (see `LOOKS_LIKE_MALFORMED_QUANTIFIER`'s doc comment)
+    // rather than genuine action code, so a real `{ return 1; }` (or
+    // even a pointless-but-valid `{ someIdentifier }`) is never misread
+    // as a botched quantifier. Deliberately only checked when `{` is
+    // IMMEDIATELY adjacent (no whitespace) to the base expression --
+    // real quantifier syntax never has whitespace before `{` either (see
+    // `quantifiedOperator` above, which has no whitespace-skip built in),
+    // so adjacency is itself part of what marks this as a quantifier
+    // attempt rather than an action; `"a" {,3}` (WITH a leading space)
+    // still falls through to `withOptionalAction` unchanged, since a
+    // leading space reads far more like "this really was meant as an
+    // action" than "this was meant as `{n,m}`.
+    if (input[opResult.next] === "{") {
+      const brace = scanBalancedBraces(input, opResult.next);
+      if (brace.success && LOOKS_LIKE_MALFORMED_QUANTIFIER.test(brace.val)) {
+        return createFailure(
+          `Invalid quantifier syntax: "{${brace.val}}" is not a valid repetition operator (expected "{n}", "{n,}", or "{n,m}" with no whitespace)`,
+          opResult.next,
+          { parserName: "withRepetition" },
+        );
+      }
     }
 
     return {

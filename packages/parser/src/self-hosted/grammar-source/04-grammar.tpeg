@@ -82,12 +82,6 @@ grammar SelfHostGrammar {
 
   primary = group / basicSyntax
 
-  positiveLookahead = "&" expr:prefix { return { type: "PositiveLookahead", expression: expr }; }
-
-  negativeLookahead = "!" expr:prefix { return { type: "NegativeLookahead", expression: expr }; }
-
-  prefix = positiveLookahead / negativeLookahead / primary
-
   integer = digits:[0-9]+ { return parseInt(digits.join(""), 10); }
 
   quantifiedRange = "{" min:integer "," max:integer "}" { return { min, max }; }
@@ -98,18 +92,28 @@ grammar SelfHostGrammar {
 
   quantifiedOp = quantifiedRange / quantifiedMin / quantifiedExact
 
-  starOp = expr:prefix "*" { return { type: "Star", expression: expr }; }
+  // Repetition binds TIGHTER than lookahead: `!e*` parses as `!(e*)`, not
+  // `(!e)*` (standard PEG -- see `packages/parser/src/composition.ts`'s
+  // module doc comment). `postfix` therefore wraps `primary` directly, and
+  // `prefix` (lookahead) wraps `postfix`, not the other way around.
+  starOp = expr:primary "*" { return { type: "Star", expression: expr }; }
 
-  plusOp = expr:prefix "+" { return { type: "Plus", expression: expr }; }
+  plusOp = expr:primary "+" { return { type: "Plus", expression: expr }; }
 
-  optionalOp = expr:prefix "?" { return { type: "Optional", expression: expr }; }
+  optionalOp = expr:primary "?" { return { type: "Optional", expression: expr }; }
 
-  quantOp = expr:prefix q:quantifiedOp { return { type: "Quantified", expression: expr, min: q.min, max: q.max }; }
+  quantOp = expr:primary q:quantifiedOp { return { type: "Quantified", expression: expr, min: q.min, max: q.max }; }
 
-  postfix = starOp / plusOp / optionalOp / quantOp / prefix
+  postfix = starOp / plusOp / optionalOp / quantOp / primary
 
-  labeled = label:identifierName ":" expr:postfix { return { type: "LabeledExpression", label, expression: expr }; }
-          / postfix
+  positiveLookahead = "&" expr:postfix { return { type: "PositiveLookahead", expression: expr }; }
+
+  negativeLookahead = "!" expr:postfix { return { type: "NegativeLookahead", expression: expr }; }
+
+  prefix = positiveLookahead / negativeLookahead / postfix
+
+  labeled = label:identifierName ":" expr:prefix { return { type: "LabeledExpression", label, expression: expr }; }
+          / prefix
 
   notNextRuleStart = !(identifierName sameLineWs "=")
 

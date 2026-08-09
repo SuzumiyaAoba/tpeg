@@ -97,15 +97,17 @@ describe("lookahead-composition integration", () => {
 
   describe("lookahead with repetition operators", () => {
     it("should parse lookahead followed by repetition with correct precedence", () => {
-      // &"hello"* should be parsed as (&"hello")*, not &("hello"*)
-      // Lookahead has higher precedence than repetition
+      // &"hello"* is parsed as &("hello"*), not (&"hello")* -- repetition
+      // binds TIGHTER than lookahead, matching standard PEG (Ford, POPL
+      // 2004) and every mainstream implementation (PEG.js, LPeg, Pest).
+      // See composition.ts's module doc comment.
       const result = expression()('&"hello"*', pos);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.val.type).toBe("Star");
-        if (result.val.type === "Star") {
-          expect(result.val.expression.type).toBe("PositiveLookahead");
-          if (result.val.expression.type === "PositiveLookahead") {
+        expect(result.val.type).toBe("PositiveLookahead");
+        if (result.val.type === "PositiveLookahead") {
+          expect(result.val.expression.type).toBe("Star");
+          if (result.val.expression.type === "Star") {
             expect(result.val.expression.expression.type).toBe("StringLiteral");
           }
         }
@@ -116,10 +118,10 @@ describe("lookahead-composition integration", () => {
       const result = expression()('!"hello"+', pos);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.val.type).toBe("Plus");
-        if (result.val.type === "Plus") {
-          expect(result.val.expression.type).toBe("NegativeLookahead");
-          if (result.val.expression.type === "NegativeLookahead") {
+        expect(result.val.type).toBe("NegativeLookahead");
+        if (result.val.type === "NegativeLookahead") {
+          expect(result.val.expression.type).toBe("Plus");
+          if (result.val.expression.type === "Plus") {
             expect(result.val.expression.expression.type).toBe("StringLiteral");
           }
         }
@@ -130,10 +132,10 @@ describe("lookahead-composition integration", () => {
       const result = expression()('&"hello"?', pos);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.val.type).toBe("Optional");
-        if (result.val.type === "Optional") {
-          expect(result.val.expression.type).toBe("PositiveLookahead");
-          if (result.val.expression.type === "PositiveLookahead") {
+        expect(result.val.type).toBe("PositiveLookahead");
+        if (result.val.type === "PositiveLookahead") {
+          expect(result.val.expression.type).toBe("Optional");
+          if (result.val.expression.type === "Optional") {
             expect(result.val.expression.expression.type).toBe("StringLiteral");
           }
         }
@@ -144,14 +146,14 @@ describe("lookahead-composition integration", () => {
       const result = expression()('!"hello"{3}', pos);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.val.type).toBe("Quantified");
-        if (result.val.type === "Quantified") {
-          expect(result.val.expression.type).toBe("NegativeLookahead");
-          if (result.val.expression.type === "NegativeLookahead") {
+        expect(result.val.type).toBe("NegativeLookahead");
+        if (result.val.type === "NegativeLookahead") {
+          expect(result.val.expression.type).toBe("Quantified");
+          if (result.val.expression.type === "Quantified") {
             expect(result.val.expression.expression.type).toBe("StringLiteral");
+            expect(result.val.expression.min).toBe(3);
+            expect(result.val.expression.max).toBe(3);
           }
-          expect(result.val.min).toBe(3);
-          expect(result.val.max).toBe(3);
         }
       }
     });
@@ -208,9 +210,9 @@ describe("lookahead-composition integration", () => {
         expect(result.val.type).toBe("Choice");
         if (result.val.type === "Choice") {
           expect(result.val.alternatives).toHaveLength(3);
-          expect(result.val.alternatives[0]?.type).toBe("Star"); // (&"test")*
+          expect(result.val.alternatives[0]?.type).toBe("PositiveLookahead"); // &("test"*)
           expect(result.val.alternatives[1]?.type).toBe("StringLiteral");
-          expect(result.val.alternatives[2]?.type).toBe("Plus"); // (!"avoid")+
+          expect(result.val.alternatives[2]?.type).toBe("NegativeLookahead"); // !("avoid"+)
         }
       }
     });
@@ -244,13 +246,14 @@ describe("lookahead-composition integration", () => {
     });
 
     it("should integrate lookahead with repetition correctly", () => {
-      // This tests that &"hello"* is parsed as (&"hello")*, not &("hello"*)
+      // &"hello"* is parsed as &("hello"*), not (&"hello")* -- repetition
+      // binds tighter than lookahead (standard PEG).
       const result = expression()('&"hello"*', pos);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.val.type).toBe("Star");
-        if (result.val.type === "Star") {
-          expect(result.val.expression.type).toBe("PositiveLookahead");
+        expect(result.val.type).toBe("PositiveLookahead");
+        if (result.val.type === "PositiveLookahead") {
+          expect(result.val.expression.type).toBe("Star");
         }
       }
     });
