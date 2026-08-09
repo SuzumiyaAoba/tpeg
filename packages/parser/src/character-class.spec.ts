@@ -94,5 +94,24 @@ describe("characterClass", () => {
       const result = parser("abc", pos);
       expect(result.success).toBe(false);
     });
+
+    it('allows a literal comma inside a character class (regression: "," has no special meaning in TPEG character class syntax, but a gap in the "regular characters" range previously made it impossible to write one, escaped or not)', () => {
+      const result = parser("[a,b]", pos);
+      expect(result.success).toBe(true);
+      if (result.success && result.val.type === "CharacterClass") {
+        expect(result.val.ranges).toEqual([
+          { start: "a" },
+          { start: "," },
+          { start: "b" },
+        ]);
+      }
+    });
+
+    it("rejects a reversed character-class range instead of silently reinterpreting it as unrelated single characters (regression: `[z-a]` used to parse successfully -- either as a CharRange whose start code point is greater than end, matching nothing with no diagnostic, or by falling back to reparsing z, -, and a as three separate single-character alternatives)", () => {
+      for (const input of ["[z-a]", "[Z-A]", "[9-0]"]) {
+        const result = parser(input, pos);
+        expect(result.success).toBe(false);
+      }
+    });
   });
 });

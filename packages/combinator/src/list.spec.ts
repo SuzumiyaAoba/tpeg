@@ -1,6 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { parse } from "@suzumiyaaoba/tpeg-core";
-import { choice, commit, literal } from "@suzumiyaaoba/tpeg-core";
+import {
+  choice,
+  commit,
+  literal,
+  map,
+  optional,
+} from "@suzumiyaaoba/tpeg-core";
 import { commaSeparated, commaSeparated1, sepBy, sepBy1 } from "./list";
 
 describe("list combinators", () => {
@@ -34,6 +40,19 @@ describe("list combinators", () => {
       const committedA = commit(literal("a"));
       const parser = choice(sepBy(committedA, literal(",")), literal("b"));
       const result = parse(parser)("b");
+      expect(result.success).toBe(false);
+    });
+
+    it("propagates zeroOrMore's own infinite-loop guard instead of silently discarding already-matched elements when both value and separator are nullable (regression: the old `optional(sepByOne)` implementation swallowed that guard's ordinary, non-fatal failure as \"no match\", returning `[]` at zero consumption even though two elements had already matched)", () => {
+      const nullableValue = map(optional(literal("a")), (xs) => xs[0] ?? "");
+      const nullableSep = map(optional(literal(",")), (xs) => xs[0] ?? "");
+      const parser = sepBy(nullableValue, nullableSep);
+      const result = parse(parser)("a,a,zzz");
+      // Before the fix, this silently succeeded with `val: []` and
+      // `next: 0` -- discarding the two "a"s it had already matched, with
+      // no indication anything went wrong. It must now fail loudly
+      // instead (matching `sepBy1`'s existing, already-correct behavior
+      // on the same input).
       expect(result.success).toBe(false);
     });
   });

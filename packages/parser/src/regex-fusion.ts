@@ -242,6 +242,21 @@ const checkFusionSafe = (
       // and `tail` are disjoint, `tail` can never be what a backtracked
       // empty branch was "supposed to" match, so the engine's greedy
       // choice and PEG's possessive one always agree.
+      // Independent of the disjointness check above: when the wrapped
+      // expression is itself nullable (can match zero-width -- e.g. a
+      // nested `Optional`, an `Optional(Star(...))`, or a nullable
+      // `Choice`/`Sequence`), `emit`'s `(?:(X))?` hits an ECMA-262
+      // `RepeatMatcher` quirk. A `?`/`{0,1}` quantifier's continuation
+      // rejects a zero-width match of its own body (the same rule that
+      // stops `(a*)*` from looping forever), so when `X` matches only by
+      // consuming nothing, the outer `?` backtracks to "didn't match" --
+      // the marker group comes back `undefined` even though `X` legitimately
+      // matched with zero width. Reconstruction then wrongly reports `[]`
+      // instead of `[value]` (e.g. `("-"?)?` on "" reconstructs to `[]`
+      // instead of the correct `[[]]`). No regex rewrite closes this, so
+      // fusion is simply declined here; the rule falls back to the
+      // (correct) unfused combinator path.
+      if (isNullable(expr.expression, analysis.nullableRules)) return false;
       const innerFirst = firstSetOfExpression(
         expr.expression,
         analysis.firstSets,

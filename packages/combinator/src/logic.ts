@@ -217,7 +217,19 @@ export const memoize = <T>(
 
     const result = parser(input, pos);
 
-    if (index >= 0) {
+    // Recomputed relative to the CURRENT `base`, not the pre-call `index`
+    // above: if `parser` recursively re-enters this same memoized rule (a
+    // self-/mutually-recursive rule calling itself at a later offset) and a
+    // `commitAtTopLevel` cut fires in between, the nested call's own
+    // watermark-pruning step (above) can have already spliced `cache` and
+    // advanced `base` out from under this still-in-flight outer call.
+    // `pos` itself never changes, so re-deriving the index from it is
+    // always correct; reusing the stale `index` would write into a
+    // since-shifted slot -- silently corrupting whatever entry now lives
+    // there, and later being read back as this result for a position it
+    // doesn't belong to.
+    const writeIndex = pos - base;
+    if (writeIndex >= 0) {
       if (
         maxCacheSize !== undefined &&
         insertionOrder &&
@@ -228,7 +240,7 @@ export const memoize = <T>(
           cache[oldest - base] = undefined;
         }
       }
-      cache[index] = result;
+      cache[writeIndex] = result;
       insertionOrder?.push(pos);
     }
 

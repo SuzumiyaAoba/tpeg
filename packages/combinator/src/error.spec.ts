@@ -26,6 +26,16 @@ describe("error combinators", () => {
         expect(result.error.found).toBe("EOF");
       }
     });
+
+    it("reports a whole astral character as `found`, not a lone surrogate (regression: `input[failurePos]` indexed by raw UTF-16 code unit, so a failure positioned on an emoji reported one unpaired surrogate half instead of the actual character)", () => {
+      const parser = withDetailedError(literal("wrong"), "MyParser");
+      const result = parse(parser)("\u{1F600}wrong");
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.found).toBe("\u{1F600}");
+      }
+    });
   });
 
   describe("labeled", () => {

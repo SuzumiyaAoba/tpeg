@@ -1,6 +1,7 @@
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   anyChar,
+  charClass,
   choice,
   getCharAt,
   literal,
@@ -11,6 +12,29 @@ import {
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
 import { labeled, named } from "./error";
+
+/** A single hex digit, for `\uXXXX` escapes below. */
+const hexDigit = charClass(["0", "9"], ["a", "f"], ["A", "F"]);
+
+/**
+ * `\uXXXX` Unicode escape (same shape JSON/JS string literals use): four
+ * hex digits decoded as one UTF-16 code unit via `String.fromCharCode`.
+ * An astral character is written as a surrogate PAIR of two consecutive
+ * `\uXXXX` escapes (e.g. `😀`), same as JSON -- each decodes to
+ * its own lone surrogate code unit here, and joining them back-to-back
+ * (`makeQuotedString`'s final `chars.join("")`) reconstitutes the correct
+ * astral character, since a JS string is itself just a UTF-16 code unit
+ * sequence. Tried before the generic single-character `escapeSeq` fallback
+ * below, so `A` decodes to `"A"` instead of silently passing through
+ * as the literal text `"u0041"` (`escapeSeq`'s `default` branch, meant for
+ * an escape it doesn't otherwise recognize, previously had no `u` case at
+ * all and passed `\u` through the same way).
+ */
+const unicodeEscape = map(
+  seq(literal("\\u"), hexDigit, hexDigit, hexDigit, hexDigit),
+  ([, h1, h2, h3, h4]) =>
+    String.fromCharCode(Number.parseInt(`${h1}${h2}${h3}${h4}`, 16)),
+);
 
 /**
  * Parser that consumes characters until a condition is met.
@@ -97,6 +121,7 @@ const makeQuotedString = (quoteChar: string, label: string): Parser<string> => {
   });
 
   const stringChar = choice(
+    unicodeEscape,
     escapeSeq,
     map(
       seq(notPredicate(choice(literal(quoteChar), literal("\\"))), anyChar()),

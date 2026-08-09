@@ -25,24 +25,42 @@ export const sepBy = <T, S>(
   separator: Parser<S>,
   parserName?: string,
 ): Parser<T[]> => {
-  const sepByOne = map(
-    seq(value, zeroOrMore(dropSeparator(separator, value))),
-    ([first, rest]) => [first, ...rest],
-  );
+  const rest = zeroOrMore(dropSeparator(separator, value));
 
-  // `optional`, not `choice(sepByOne, ...)`: `sepBy` is meant to be
-  // transparent sugar for "optionally present, one-or-more" -- exactly
-  // what a grammar author would write by hand as `sepBy1(...)?`. A
-  // `choice` absorbs a `fatal` (cut/commit) failure at ITS OWN boundary
-  // (see `commit`'s doc comment, `@suzumiyaaoba/tpeg-core`), which would
-  // silently swallow a cut inside `value` instead of letting it propagate
-  // to whatever encloses `sepBy(...)` itself -- `optional` (unlike a
-  // hand-rolled `choice`-based "or empty" fallback) already re-raises a
-  // fatal failure instead of treating it as "no match", exactly the
-  // behavior this needs.
-  const parser = map(optional(sepByOne), (results) =>
-    results.length === 0 ? [] : results[0],
-  );
+  // Deliberately NOT `map(optional(sepByOne), ...)` (a `choice`-shaped "or
+  // empty" fallback via `optional`): `optional` can only distinguish
+  // "fatal" from "not fatal" (see its doc comment, `@suzumiyaaoba/tpeg-
+  // core`'s `repetition.ts`), but `rest` failing with an ORDINARY
+  // (non-fatal) failure doesn't always mean "no list here" -- when `value`
+  // and `separator` are both nullable, `rest` (`zeroOrMore`) can itself
+  // fail with its own infinite-loop guard (the parser matched but
+  // consumed nothing -- see `createInfiniteLoopError`, `@suzumiyaaoba/
+  // tpeg-core`'s `repetition.ts`), which is NOT marked fatal. Wrapping the
+  // whole thing in `optional` would silently swallow that as "zero
+  // matches", discarding `value`'s already-successful first match (and
+  // every element `rest` had already parsed before tripping the guard)
+  // and reporting zero consumption -- a genuine data-loss bug, not a
+  // backtrack. Trying `value` manually first fixes this: once it has
+  // succeeded, this position is provably the start of a real list, so ANY
+  // failure from `rest` past that point (fatal or not) must propagate
+  // rather than be reinterpreted as "empty".
+  const parser: Parser<T[]> = (input, pos) => {
+    const first = value(input, pos);
+    if (!first.success) {
+      if (isFatalFailure(first)) return first;
+      return { success: true, val: [], current: pos, next: pos };
+    }
+
+    const restResult = rest(input, first.next);
+    if (!restResult.success) return restResult;
+
+    return {
+      success: true,
+      val: [first.val, ...restResult.val],
+      current: pos,
+      next: restResult.next,
+    };
+  };
 
   return named(parser, parserName);
 };

@@ -292,6 +292,76 @@ describe("isRuleFusable: structural + determinism gates", () => {
     }
   });
 
+  it('rejects Optional when its wrapped expression is itself nullable, even at the trailing edge of the fused region (regression: `("-"?)?` on "" reconstructed `[]` instead of `[[]]` -- ECMA-262\'s RepeatMatcher rejects a zero-width match of a `?`\'s own body, so the emitted `(?:(X))?` marker group comes back `undefined` even though X legitimately matched with zero width)', () => {
+    for (const src of [
+      `grammar G { r = ("-"?)? }`,
+      "grammar G { r = ([a-z]*)? }",
+      `grammar G { r = ("a" / "-"?)? }`,
+    ]) {
+      const fusable = fusabilityByRule(src);
+      expect(fusable["r"]).toBe(false);
+    }
+  });
+
+  it("produces output identical to the unfused combinator tree for a nested-Optional rule on a zero-width match (regression for the nullable-Optional-reconstruction bug above)", async () => {
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createOptional(createOptional(createStringLiteral("-", '"'))),
+        ),
+      ],
+    );
+    const analysis = analyzeFirstSets(grammar);
+    const rule = grammar.rules[0];
+    if (!rule) throw new Error("expected rule");
+    expect(isRuleFusable(rule, analysis)).toBe(false);
+
+    const core = await import("@suzumiyaaoba/tpeg-core");
+    const unfused = core.optional(core.optional(core.literal("-")));
+
+    const compile = (enableRegexFusion: boolean) => {
+      const generated = generateOptimizedTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+        optimize: true,
+        enableRegexFusion,
+      });
+      const body = generated.code.replace(/^export const (\w+)/gm, "const $1");
+      const ruleNames = [
+        ...generated.code.matchAll(/^export const (\w+)/gm),
+      ].map((m) => m[1] as string);
+      const factory = new Function(
+        ...Object.keys(core),
+        `${body}\nreturn { ${ruleNames.join(", ")} };`,
+      );
+      const built = factory(...Object.values(core)) as Record<
+        string,
+        (
+          input: string,
+          pos: number,
+        ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>
+      >;
+      return built["r"] as (
+        input: string,
+        pos: number,
+      ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
+    };
+
+    const fused = compile(true);
+    for (const input of ["", "-", "x"]) {
+      const expected = unfused(input, ORIGIN);
+      const actual = fused(input, ORIGIN);
+      expect(actual.success).toBe(expected.success);
+      if (expected.success && actual.success) {
+        expect(actual.val).toEqual(expected.val);
+        expect(actual.next).toEqual(expected.next);
+      }
+    }
+  });
+
   it('produces output identical to the unfused combinator tree for "a"? "ab" across inputs that distinguish possessive (PEG) from backtracking (naive regex) optional semantics -- before the fix, "ab" and "aba" wrongly succeeded when fused', async () => {
     const core = await import("@suzumiyaaoba/tpeg-core");
     const grammar = createGrammarDefinition(

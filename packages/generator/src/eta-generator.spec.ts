@@ -426,6 +426,65 @@ describe("EtaTPEGCodeGenerator", () => {
       );
     });
 
+    it("emits captureSequence (not sequence) for a Sequence with labeled elements, so labels merge into a named-field object instead of an unmerged positional tuple", async () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "pair",
+            createSequence([
+              createLabeledExpression("key", createStringLiteral("k")),
+              createStringLiteral("="),
+              createLabeledExpression("value", createStringLiteral("v")),
+            ]),
+          ),
+        ],
+      );
+
+      const result = await generateEtaTypeScriptParser(grammar);
+
+      expect(result.code).toContain(
+        'captureSequence(capture("key", literal("k")), literal("="), capture("value", literal("v")))',
+      );
+      expect(result.code).not.toContain("sequence(capture(");
+    });
+
+    it("resolves a multi-label sequence's captures to a named-field object at runtime (regression: previously produced a positional tuple of still-tagged capture() objects instead of {key, value})", async () => {
+      const core = await import("@suzumiyaaoba/tpeg-core");
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "pair",
+            createSequence([
+              createLabeledExpression("key", createStringLiteral("k")),
+              createStringLiteral("="),
+              createLabeledExpression("value", createStringLiteral("v")),
+            ]),
+          ),
+        ],
+      );
+
+      const result = await generateEtaTypeScriptParser(grammar, {
+        includeTypes: false,
+        includeImports: false,
+      });
+      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+      const moduleFactory = new Function(
+        ...Object.keys(core),
+        `${body}\nreturn { pair };`,
+      );
+      const { pair } = moduleFactory(...Object.values(core));
+
+      const parsed = pair("k=v", 0);
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        expect(parsed.val).toEqual({ key: "k", value: "v" });
+      }
+    });
+
     it("should generate choice expressions", async () => {
       const grammar = createGrammarDefinition(
         "TestGrammar",

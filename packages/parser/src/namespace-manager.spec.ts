@@ -412,6 +412,38 @@ describe("NamespaceManager", () => {
         manager.checkNamespaceConflicts("main");
       }).not.toThrow();
     });
+
+    it("does not flag a conflict when the SAME module is imported twice under two different aliases (regression: conflicts used to be grouped by alias instead of by the resolved target module, so `u1.foo`/`u2.foo` -- both unambiguously the same rule -- looked like a collision between two modules)", () => {
+      const rule = createRule("foo");
+      const grammar = createModularGrammar("Utils", [rule], {
+        type: "ExportDeclaration",
+        rules: ["foo"],
+      });
+      const utilsModule = createModuleFile("utils.tpeg", [grammar]);
+      manager.registerModule(utilsModule);
+
+      const mainGrammar = createGrammar("MainGrammar", []);
+      const mainModule = createModuleFile(
+        "main.tpeg",
+        [mainGrammar],
+        [
+          { type: "ImportStatement", modulePath: "utils.tpeg", alias: "u1" },
+          { type: "ImportStatement", modulePath: "utils.tpeg", alias: "u2" },
+        ],
+      );
+      manager.registerModule(mainModule);
+
+      expect(() => {
+        manager.checkNamespaceConflicts("main");
+      }).not.toThrow();
+
+      // Both aliases must still resolve to the exact same rule.
+      expect(
+        manager.resolveQualifiedName(createQualifiedId("u1", "foo"), "main"),
+      ).toEqual(
+        manager.resolveQualifiedName(createQualifiedId("u2", "foo"), "main"),
+      );
+    });
   });
 
   describe("getAvailableRules", () => {

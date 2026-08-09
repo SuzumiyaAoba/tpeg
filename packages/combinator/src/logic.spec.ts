@@ -243,6 +243,59 @@ describe("logic combinators", () => {
     });
   });
 
+  describe("memoize + commitAtTopLevel interaction (self-recursive rules)", () => {
+    it('does not corrupt another offset\'s cache entry when a recursive re-entry of the same memoized rule advances the watermark mid-call (regression: a self-recursive @memoize\'d rule with a promoted cut, e.g. `item = "(" ~ item / "x"`, wrote its result into a stale, since-reindexed cache slot)', () => {
+      // Mirrors exactly what codegen produces for `item = "(" ~ item / "x"`
+      // under both `@memoize` and cut promotion: the recursive reference to
+      // `item` inside its own body goes through the SAME memoized closure
+      // (`memoizedItem`, not the raw unmemoized one), and the cut after "("
+      // compiles to `commitAtTopLevel` (safe here: "x", the only sibling in
+      // the enclosing choice, is FIRST-disjoint from "("). Built via
+      // `recursive` (below) rather than a hand-rolled forward-declared
+      // `let`, so `memoizedItem` can still reference `rawItem`'s body
+      // before that body is finalized.
+      const [rawItem, setRawItem] = recursive<unknown>();
+      const memoizedItem = memoize(rawItem);
+      setRawItem((input, itemPos) => {
+        const open = literal("(")(input, itemPos);
+        if (open.success) {
+          const rest = commitAtTopLevel(memoizedItem)(input, open.next);
+          if (!rest.success) return rest;
+          return {
+            success: true,
+            val: [open.val, rest.val],
+            current: itemPos,
+            next: rest.next,
+          } as const;
+        }
+        return literal("x")(input, itemPos);
+      });
+
+      const input = "((x#8";
+      // Priming this parse recurses through offsets 0 -> 1 -> 2, firing
+      // `commitAtTopLevel` (and so reindexing this shared cache) at each
+      // level while the shallower calls are still on the stack waiting to
+      // write their own (still-unwritten) cache entries.
+      const primed = memoizedItem(input, pos(0));
+      expect(primed.success).toBe(true);
+      if (primed.success) {
+        expect(primed.val).toEqual(["(", ["(", "x"]]);
+        expect(primed.next).toBe(3);
+      }
+
+      // An unrelated, later query at offset 2 must get offset 2's own
+      // result ("x"), never offset 0's result wrongly written into offset
+      // 2's cache slot by the priming call above.
+      const atOffset2 = memoizedItem(input, pos(2));
+      expect(atOffset2.success).toBe(true);
+      if (atOffset2.success) {
+        expect(atOffset2.val).toBe("x");
+        expect(atOffset2.current).toBe(2);
+        expect(atOffset2.next).toBe(3);
+      }
+    });
+  });
+
   describe("recursive", () => {
     it("should allow self-reference", () => {
       const [parser, setParser] = recursive<string>();

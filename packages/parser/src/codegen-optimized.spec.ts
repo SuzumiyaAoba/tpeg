@@ -421,6 +421,61 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
     );
   });
 
+  it("does not leak a cut-reduced single-element rule's label into an ancestor's merged capture object (regression: `inner = ~x:\"v\"` unwrapped to the bare, still-tagged `commit(capture(...))` instead of an untagged `captureSequence(...)`, so an unlabeled reference to `inner` from `outer`'s captureSequence wrongly picked up `x`)", async () => {
+    const core = await import("@suzumiyaaoba/tpeg-core");
+
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition("stmt", createIdentifier("outer")),
+        createRuleDefinition(
+          "outer",
+          createSequence([
+            createLabeledExpression("y", createStringLiteral("before", '"')),
+            createIdentifier("inner"),
+          ]),
+        ),
+        createRuleDefinition(
+          "inner",
+          createSequence([
+            { type: "Cut" },
+            createLabeledExpression("x", createStringLiteral("v", '"')),
+          ]),
+        ),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      includeImports: false,
+      includeTypes: false,
+      enableMemoization: false,
+    });
+    // `inner` reduces to one part after the cut is stripped -- it must
+    // still go through captureSequence (untagged) rather than being
+    // returned as the bare, tagged `commit(capture(...))`.
+    expect(result.code).toContain(
+      'export const inner = captureSequence(commit(capture("x", literal("v"))));',
+    );
+
+    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+    const factory = new Function(
+      ...Object.keys(core),
+      `${body}\nreturn { outer };`,
+    );
+    const built = factory(...Object.values(core));
+    const outer = built.outer as (
+      input: string,
+      pos: number,
+    ) => import("@suzumiyaaoba/tpeg-core").ParseResult<unknown>;
+
+    const parsed = outer("beforev", 0);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.val).toEqual({ y: "before" });
+    }
+  });
+
   it("compiles a top-level `~` cut in the start rule's own pattern into commitAtTopLevel(...)-wrapped elements", () => {
     const grammar = createGrammarDefinition(
       "Test",

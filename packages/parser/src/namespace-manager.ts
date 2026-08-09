@@ -264,26 +264,34 @@ export class NamespaceManager {
       return;
     }
 
-    // Check for rule-name collisions across imported modules
-    const ruleToModules = new Map<string, string[]>();
+    // Check for rule-name collisions across imported modules. Grouped by
+    // the imports' RESOLVED target module, not by alias: importing the
+    // same module twice under two different aliases (`import "utils.tpeg"
+    // as u1; import "utils.tpeg" as u2;`) must not be flagged as a
+    // conflict -- `u1.foo` and `u2.foo` both resolve to the exact same
+    // rule, unambiguously, regardless of how many local names point at
+    // it. A `Set`, not an array, so a rule name reached via more than one
+    // alias of the SAME module collapses to one entry instead of
+    // (incorrectly) looking like multiple modules.
+    const ruleToModules = new Map<string, Set<string>>();
 
-    for (const [alias, modulePath] of scope.imports) {
+    for (const [, modulePath] of scope.imports) {
       const targetModuleName = this.extractModuleName(modulePath);
       const targetScope = this.scopes.get(targetModuleName);
       if (!targetScope) continue;
 
       for (const ruleName of targetScope.exports) {
         if (!ruleToModules.has(ruleName)) {
-          ruleToModules.set(ruleName, []);
+          ruleToModules.set(ruleName, new Set());
         }
-        ruleToModules.get(ruleName)?.push(alias);
+        ruleToModules.get(ruleName)?.add(targetModuleName);
       }
     }
 
     // Check for collisions
     for (const [ruleName, modules] of ruleToModules) {
-      if (modules.length > 1) {
-        throw new NamespaceConflictError(ruleName, modules, currentModule);
+      if (modules.size > 1) {
+        throw new NamespaceConflictError(ruleName, [...modules], currentModule);
       }
     }
   }

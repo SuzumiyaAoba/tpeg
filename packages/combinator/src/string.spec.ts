@@ -66,6 +66,19 @@ describe("string combinators", () => {
       expect(result.success).toBe(true);
       if (result.success) expect(result.val).toBe('quote: "');
     });
+
+    it('decodes a \\uXXXX escape (regression: previously fell through escapeSeq\'s default case and passed through as the literal text "u0041" instead of decoding to "A")', () => {
+      const result = parse(quotedString)('"\\u0041BC"');
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.val).toBe("ABC");
+    });
+
+    it("decodes a \\uXXXX surrogate pair into the correct astral character", () => {
+      // U+1F600 (😀) as a JS/JSON-style UTF-16 surrogate pair.
+      const result = parse(quotedString)('"\\ud83d\\ude00"');
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.val).toBe("\u{1F600}");
+    });
   });
 
   describe("singleQuotedString", () => {

@@ -906,13 +906,26 @@ export class OptimizedTPEGCodeGenerator {
     isStartRuleTopLevel = false,
   ): string {
     const hasCut = expr.elements.some((el) => el.type === "Cut");
+    // Computed once, up front: both single-part shortcuts below must agree
+    // with the final `captureSequence`/`sequence` choice on whether THIS
+    // sequence carries a label -- bypassing straight to the bare element's
+    // own code when it does would return a still-CAPTURE_TAG-tagged value
+    // (see `@suzumiyaaoba/tpeg-core`'s capture.ts) instead of the
+    // untagged, merged one `captureSequence` produces, silently leaking an
+    // inner label into any ancestor `captureSequence` that references this
+    // rule unlabeled (regression: `rule = ~x:"v"` reduced to a single
+    // `commit(capture("x", ...))` part and returned it bare). codegen.ts
+    // has no such shortcut at all -- it always wraps -- so `hasLabel` is
+    // exactly the condition under which skipping the wrap here would
+    // diverge from it.
+    const hasLabel = collectTopLevelLabels(expr).length > 0;
 
     if (!hasCut) {
       if (expr.elements.length === 0) {
         return "sequence()";
       }
 
-      if (expr.elements.length === 1) {
+      if (expr.elements.length === 1 && !hasLabel) {
         const element = expr.elements[0];
         if (element) {
           return this.generateOptimizedExpression(element);
@@ -955,7 +968,7 @@ export class OptimizedTPEGCodeGenerator {
     if (parts.length === 0) {
       return "sequence()";
     }
-    if (parts.length === 1) {
+    if (parts.length === 1 && !hasLabel) {
       const [only] = parts;
       if (only) return only;
     }
@@ -963,7 +976,7 @@ export class OptimizedTPEGCodeGenerator {
     // A sequence with labeled elements needs its per-element captured
     // objects merged into one - `sequence()` returns a positional tuple
     // instead, which would leave labels unreachable by name.
-    return collectTopLevelLabels(expr).length > 0
+    return hasLabel
       ? `captureSequence(${parts.join(", ")})`
       : `sequence(${parts.join(", ")})`;
   }

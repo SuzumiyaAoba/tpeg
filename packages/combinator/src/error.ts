@@ -1,4 +1,5 @@
 import type { ParseFailure, Parser } from "@suzumiyaaoba/tpeg-core";
+import { getCharAt } from "@suzumiyaaoba/tpeg-core";
 
 /**
  * Creates a parser with detailed error reporting that includes context and position information.
@@ -24,8 +25,14 @@ export const withDetailedError = <T>(
       enhancedError.parserName = parserName;
 
       const failurePos = failure.error.pos ?? pos;
+      // `getCharAt`, not `input[failurePos]`: the latter indexes by raw
+      // UTF-16 code unit, so a failure positioned on an astral character
+      // (e.g. an emoji) would return a lone, unpaired surrogate instead of
+      // the actual character.
       const found =
-        failurePos < input.length ? (input[failurePos] ?? "EOF") : "EOF";
+        failurePos < input.length
+          ? getCharAt(input, failurePos) || "EOF"
+          : "EOF";
 
       enhancedError.found = found;
 

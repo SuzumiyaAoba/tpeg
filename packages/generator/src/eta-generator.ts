@@ -110,6 +110,52 @@ ${transformFn.body}
 };
 
 /**
+ * Returns the label a single expression is bound to, unwrapping a `Group`
+ * (transparent at codegen time) -- or `undefined` if the expression isn't a
+ * (possibly grouped) `LabeledExpression`. Mirrors `packages/parser/src/
+ * codegen.ts`'s identical helper; duplicated rather than imported because
+ * this package depends only on `@suzumiyaaoba/tpeg-core` for its AST types,
+ * not on `tpeg-parser` (see CLAUDE.md's package dependency graph).
+ */
+const labelOf = (expr: Expression): string | undefined => {
+  if (expr.type === "LabeledExpression") {
+    return (expr as LabeledExpression).label;
+  }
+  if (expr.type === "Group") {
+    return labelOf((expr as Group).expression);
+  }
+  return undefined;
+};
+
+/**
+ * Collects the label names directly visible on an expression -- see
+ * `packages/parser/src/codegen.ts`'s identical `collectTopLevelLabels` for
+ * the full rationale. Needed here so `generateSequence` (below) can decide
+ * between `sequence()` (positional tuple) and `captureSequence()` (merged,
+ * named-field object) exactly the way that generator does -- without it,
+ * every label in a multi-element `Sequence` is emitted as an unmerged,
+ * still-`capture()`-tagged value nested inside a positional tuple instead
+ * of resolving to its named field.
+ */
+const collectTopLevelLabels = (expr: Expression): string[] => {
+  const unwrapped = expr.type === "Group" ? (expr as Group).expression : expr;
+  if (unwrapped.type === "Sequence") {
+    return (unwrapped as Sequence).elements
+      .map(labelOf)
+      .filter((label): label is string => label !== undefined);
+  }
+  if (unwrapped.type === "Choice") {
+    const seen = new Set<string>();
+    for (const alt of (unwrapped as Choice).alternatives) {
+      for (const label of collectTopLevelLabels(alt)) seen.add(label);
+    }
+    return [...seen];
+  }
+  const single = labelOf(unwrapped);
+  return single !== undefined ? [single] : [];
+};
+
+/**
  * Eta-based TPEG code generator
  */
 export class EtaTPEGCodeGenerator {
@@ -330,6 +376,14 @@ export class EtaTPEGCodeGenerator {
         break;
       case "Sequence":
         combinators.add("sequence");
+        // Mirrors `generateSequence`'s own choice between `sequence()` and
+        // `captureSequence()`: without this, a labeled multi-element
+        // Sequence would emit a call to `captureSequence` with no matching
+        // import, a ReferenceError at runtime whenever `includeImports` is
+        // left at its default of `true`.
+        if (collectTopLevelLabels(expr).length > 0) {
+          combinators.add("captureSequence");
+        }
         for (const element of (expr as Sequence).elements) {
           if (element.type === "Cut") {
             // Dropped from the emitted sequence() call itself (see
@@ -529,7 +583,14 @@ export class EtaTPEGCodeGenerator {
       const code = this.generateExpressionCode(el);
       parts.push(committed ? `commit(${code})` : code);
     }
-    return `sequence(${parts.join(", ")})`;
+    // A sequence with labeled elements needs its per-element captured
+    // objects merged into one named-field object -- plain `sequence()`
+    // returns a positional tuple instead (each label's value left nested
+    // inside it, still `capture()`-tagged), which would leave every label
+    // unreachable by name. Mirrors `codegen.ts`'s identical check.
+    return collectTopLevelLabels(expr).length > 0
+      ? `captureSequence(${parts.join(", ")})`
+      : `sequence(${parts.join(", ")})`;
   }
 
   private generateChoice(expr: Choice): string {

@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   applyRepetition,
   optionalExpression,
@@ -16,6 +17,7 @@ import {
   repetitionOperator,
   starExpression,
   starOperator,
+  withRepetition,
 } from "./repetition";
 import type { Expression } from "./types";
 
@@ -298,13 +300,10 @@ describe("repetition operators", () => {
         }
       });
 
-      it("should fail on invalid range (min > max)", () => {
-        // Note: This test checks parser syntax, not semantic validation
-        // Semantic validation would happen at a higher level
-        const result = quantifiedOperator("{5,3}", pos);
-        expect(result.success).toBe(true); // Parser succeeds, semantic check would catch this
-        if (result.success) {
-          expect(result.val).toEqual({ min: 5, max: 3 });
+      it("rejects an invalid range (min > max) at parse time (regression: this used to succeed with `{ min: 5, max: 3 }`, an AST no downstream pass validated either -- `tpeg-core`'s `quantified()` only throws once the GENERATED module loads, far removed from the source grammar that caused it)", () => {
+        for (const test of ["{5,3}", "{10,2}", "{1,0}"]) {
+          const result = quantifiedOperator(test, pos);
+          expect(result.success).toBe(false);
         }
       });
     });
@@ -312,7 +311,9 @@ describe("repetition operators", () => {
     describe("operator combination", () => {
       it("should handle multiple repetition operators gracefully", () => {
         // Note: This tests the individual operators, not chaining
-        // Chaining like expr*+ would be handled at the expression level
+        // Chaining like expr*+ is rejected at the expression level -- see
+        // `withRepetition`'s "rejects a second repetition operator..." test
+        // below.
         const result1 = repetitionOperator("*+", pos);
         expect(result1.success).toBe(true);
         if (result1.success) {
@@ -320,6 +321,56 @@ describe("repetition operators", () => {
           expect(result1.next).toBe(1); // Should stop after first operator
         }
       });
+    });
+  });
+
+  describe("withRepetition", () => {
+    // A minimal base-expression parser standing in for the
+    // identifier/characterClass/group/... parsers this combinator actually
+    // wraps in composition.ts: matches the bare literal text "item" and
+    // nothing else.
+    const itemParser: Parser<Expression> = (input, p) => {
+      if (input.startsWith("item", p)) {
+        return {
+          success: true,
+          val: { type: "Identifier", name: "item" } as Expression,
+          current: p,
+          next: p + 4,
+        };
+      }
+      return { success: false, error: { message: "expected 'item'", pos: p } };
+    };
+
+    it("applies a single repetition operator", () => {
+      const parser = withRepetition(itemParser);
+      const result = parser("item{2,3}", pos);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual({
+          type: "Quantified",
+          expression: { type: "Identifier", name: "item" },
+          min: 2,
+          max: 3,
+        });
+        expect(result.next).toBe(9);
+      }
+    });
+
+    it("leaves a trailing non-operator suffix (e.g. a semantic action block) unconsumed for the caller to parse separately", () => {
+      const parser = withRepetition(itemParser);
+      const result = parser("item{2} { return 1; }", pos);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.next).toBe(7); // stops right after "{2}"
+      }
+    });
+
+    it('rejects a second repetition operator immediately chained onto the first (regression: "item{2}{4}" used to silently parse as Quantified(item,2,2) with action code "4", producing a generated parser that always returns undefined, with no error anywhere)', () => {
+      const parser = withRepetition(itemParser);
+      for (const input of ["item{2}{4}", "item**", "item?+", "item*{3}"]) {
+        const result = parser(input, pos);
+        expect(result.success).toBe(false);
+      }
     });
   });
 });

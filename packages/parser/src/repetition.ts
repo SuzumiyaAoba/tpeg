@@ -17,6 +17,7 @@ import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   charClass,
   choice,
+  createFailure,
   literal,
   map,
   oneOrMore,
@@ -73,11 +74,41 @@ export const quantifiedOperator: Parser<{ min: number; max?: number }> =
       ([_, min, __, ___]) => ({ min }),
     );
 
-    // Parse {n,m} - n to m times
-    const rangeCount: Parser<{ min: number; max?: number }> = map(
-      seq(literal("{"), positiveInt, literal(","), positiveInt, literal("}")),
-      ([_, min, __, max, ___]) => ({ min, max }),
-    );
+    // Parse {n,m} - n to m times. Not a plain `map` (which can't turn a
+    // success into a failure): a reversed range like `{5,2}` must be
+    // rejected here -- `tpeg-core`'s own `quantified()` (repetition.ts)
+    // throws eagerly for `max < min`, but that only fires once the
+    // GENERATED parser module loads, disconnected from the source
+    // grammar's file/line; nothing upstream of that validates it at parse
+    // time, so a typo like this previously compiled successfully and only
+    // surfaced as a crash far removed from its cause.
+    const rangeCount: Parser<{ min: number; max?: number }> = (
+      input: string,
+      pos: number,
+    ) => {
+      const result = seq(
+        literal("{"),
+        positiveInt,
+        literal(","),
+        positiveInt,
+        literal("}"),
+      )(input, pos);
+      if (!result.success) return result;
+      const [, min, , max] = result.val;
+      if (min > max) {
+        return createFailure(
+          `Invalid quantifier range: {${min},${max}} (minimum must not be greater than maximum)`,
+          pos,
+          { parserName: "quantifiedOperator" },
+        );
+      }
+      return {
+        success: true,
+        val: { min, max },
+        current: result.current,
+        next: result.next,
+      };
+    };
 
     return choice(rangeCount, minCount, exactCount);
   })();
@@ -144,6 +175,30 @@ export const withRepetition = <T extends Expression>(
       return opResult;
     }
     const [repetitionOp] = opResult.val;
+
+    if (
+      repetitionOp !== undefined &&
+      repetitionOperator(input, opResult.next).success
+    ) {
+      // A second repetition operator immediately chained onto the first
+      // (`item{2}{4}`, `item**`, `item?+`, ...) is not a valid TPEG
+      // construct -- `repetitionOperator` only ever consumes ONE operator
+      // per call, by design (see this module's own doc comment: postfix
+      // operators, not a loop). Left unchecked, a numeric-only second
+      // `{n}`-shaped suffix is syntactically indistinguishable at this
+      // point from the start of a semantic action block (`{ code }`, see
+      // `docs/peg-grammar.md`'s "Semantic Actions" section) --
+      // `composition.ts`'s `withOptionalAction` would silently accept it
+      // as one, with the digits inside evaluated as the action's
+      // (return-less, so always-`undefined`) body -- a silently-wrong
+      // generated parser with no diagnostic anywhere. Failing here instead
+      // surfaces the mistake as a real parse error.
+      return createFailure(
+        "A repetition operator cannot be immediately followed by another repetition operator",
+        opResult.next,
+        { parserName: "withRepetition" },
+      );
+    }
 
     return {
       success: true,
