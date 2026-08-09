@@ -89,6 +89,12 @@ export const labeled =
         message: errorMessage,
         pos,
         ...(parserName && { parserName }),
+        // A `fatal` (cut/commit) failure must stay `fatal` after
+        // relabeling -- otherwise wrapping a committed parser in
+        // `labeled(...)` would silently let an enclosing `choice` fall
+        // back to a sibling alternative it should have been barred from
+        // trying (see `commit`'s doc comment, `@suzumiyaaoba/tpeg-core`).
+        ...(result.error.fatal && { fatal: true }),
       };
       const labeledResult: ParseFailure = {
         success: false,
@@ -129,6 +135,9 @@ export const labeledWithContext =
         pos,
         context: contextArray,
         ...(parserName && { parserName }),
+        // See `labeled`'s identical guard above: a `fatal` (cut/commit)
+        // failure must survive relabeling.
+        ...(result.error.fatal && { fatal: true }),
       };
       const labeledResult: ParseFailure = {
         success: false,

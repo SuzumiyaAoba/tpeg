@@ -6,6 +6,23 @@ import type {
 import type { RuleDefinition } from "./types.js";
 
 /**
+ * Module-name collision error: two different source files derived the
+ * same module name (no explicit `@namespace` given to either).
+ */
+export class ModuleNameCollisionError extends Error {
+  constructor(
+    public readonly moduleName: string,
+    public readonly existingFilePath: string,
+    public readonly newFilePath: string,
+  ) {
+    super(
+      `Module name '${moduleName}' is ambiguous: both '${existingFilePath}' and '${newFilePath}' extract to it (registerModule derives a name from the basename when no explicit @namespace is given). Add an explicit @namespace to one of them to disambiguate.`,
+    );
+    this.name = "ModuleNameCollisionError";
+  }
+}
+
+/**
  * Namespace conflict error.
  */
 export class NamespaceConflictError extends Error {
@@ -66,14 +83,39 @@ export interface NamespaceScope {
 export class NamespaceManager {
   private scopes = new Map<string, NamespaceScope>();
   private moduleRules = new Map<string, Map<string, RuleDefinition>>();
+  /** The `filePath` each registered module name was derived from --
+   * lets `registerModule` detect two DIFFERENT files silently colliding
+   * on the same basename-derived name (see `extractModuleName`'s doc
+   * comment) instead of the second registration silently overwriting
+   * the first's `scopes`/`moduleRules` entry. */
+  private moduleFilePaths = new Map<string, string>();
 
   /**
    * Registers a module.
+   *
+   * @throws {ModuleNameCollisionError} if a DIFFERENT `filePath` was
+   *   already registered under the same derived module name (no explicit
+   *   `@namespace` on one or both) -- re-registering the SAME `filePath`
+   *   (e.g. re-resolving an already-registered module) is not a
+   *   collision and simply refreshes its entry.
    */
   registerModule(moduleFile: ModuleFile): void {
     const moduleName =
       moduleFile.moduleInfo?.namespace ||
       this.extractModuleName(moduleFile.filePath);
+
+    const existingFilePath = this.moduleFilePaths.get(moduleName);
+    if (
+      existingFilePath !== undefined &&
+      existingFilePath !== moduleFile.filePath
+    ) {
+      throw new ModuleNameCollisionError(
+        moduleName,
+        existingFilePath,
+        moduleFile.filePath,
+      );
+    }
+    this.moduleFilePaths.set(moduleName, moduleFile.filePath);
 
     const scope: NamespaceScope = {
       currentModule: moduleName,
@@ -274,6 +316,18 @@ export class NamespaceManager {
 
   /**
    * Extracts the module name from a path.
+   *
+   * This is deliberately basename-only (`libA/utils.tpeg` and
+   * `libB/utils.tpeg` both extract to `"utils"`) -- the rest of this
+   * class's public API (`resolveQualifiedName`/`resolveLocalRule` etc.)
+   * takes `currentModule` as a short, caller-supplied string, matching an
+   * import alias or an explicit `@namespace`, not a full resolved path;
+   * switching this to a full-path-derived key would make every caller
+   * (including real `ModuleResolver`-fed modules, whose `filePath` is an
+   * absolute path) unable to look modules back up by the short name they
+   * already use everywhere else in this API. See `registerModule`'s
+   * collision guard for how the resulting ambiguity is instead made loud
+   * (a thrown error) rather than a silent state-corrupting overwrite.
    */
   private extractModuleName(modulePath: string): string {
     const parts = modulePath.split("/");

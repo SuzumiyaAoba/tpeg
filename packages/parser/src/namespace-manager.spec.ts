@@ -171,6 +171,48 @@ describe("NamespaceManager", () => {
       expect(scope?.exports.has("rule2")).toBe(false);
       expect(scope?.imports.get("other")).toBe("other.tpeg");
     });
+
+    it("throws instead of silently overwriting when two different files derive the same module name", () => {
+      // Regression test: without an explicit @namespace, the module name
+      // is derived from the basename alone (see extractModuleName's doc
+      // comment), so two DIFFERENT files with the same filename in
+      // different directories (`libA/utils.tpeg`, `libB/utils.tpeg`) used
+      // to collide on the same key -- the second `registerModule` call
+      // silently overwrote the first's scope/rules, so a qualified
+      // reference into the first module could silently resolve into the
+      // second module's (same-named, or simply absent) rules instead of
+      // failing loudly or resolving correctly.
+      const ruleA = createRule("greeting");
+      const moduleA = createModuleFile("libA/utils.tpeg", [
+        createModularGrammar("A", [ruleA], {
+          type: "ExportDeclaration",
+          rules: ["greeting"],
+        }),
+      ]);
+      manager.registerModule(moduleA);
+
+      const ruleB = createRule("farewell");
+      const moduleB = createModuleFile("libB/utils.tpeg", [
+        createModularGrammar("B", [ruleB], {
+          type: "ExportDeclaration",
+          rules: ["farewell"],
+        }),
+      ]);
+      expect(() => manager.registerModule(moduleB)).toThrow(/ambiguous/);
+
+      // The first module's own scope is untouched by the failed second
+      // registration.
+      expect(manager.getScope("utils")?.exports.has("greeting")).toBe(true);
+    });
+
+    it("re-registering the SAME filePath is not treated as a collision", () => {
+      const rule1 = createRule("rule1");
+      const grammar = createGrammar("TestGrammar", [rule1]);
+      const moduleFile = createModuleFile("test.tpeg", [grammar]);
+
+      manager.registerModule(moduleFile);
+      expect(() => manager.registerModule(moduleFile)).not.toThrow();
+    });
   });
 
   describe("resolveQualifiedName", () => {

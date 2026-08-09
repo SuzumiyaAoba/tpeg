@@ -4,6 +4,47 @@ const VERSION_PREFIX_RE = /^v/;
 const SEMVER_RE =
   /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 const CONSTRAINT_OPERATOR_RE = /^(>=|<=|>|<|\^|~|=)?(.+)$/;
+const NUMERIC_IDENTIFIER_RE = /^\d+$/;
+
+/**
+ * Compares two dot-separated prerelease identifier strings (e.g.
+ * `"alpha.2"` vs `"alpha.10"`) per semver's precedence rules: identifiers
+ * are compared pairwise left to right, a purely-numeric identifier is
+ * compared numerically (not lexically -- `"2"` < `"10"`, unlike
+ * `String.prototype.localeCompare`, under which `"2" > "10"` since it
+ * compares character by character), a numeric identifier always has
+ * lower precedence than an alphanumeric one, and a shorter identifier
+ * list with the rest matching has lower precedence than a longer one.
+ * `SEMVER_RE` only ever lets `[0-9A-Za-z-]+` reach here, so every
+ * identifier is either all-digits or genuinely alphanumeric -- no other
+ * shape to handle.
+ */
+const comparePrereleaseIdentifiers = (a: string, b: string): number => {
+  const aParts = a.split(".");
+  const bParts = b.split(".");
+  const len = Math.max(aParts.length, bParts.length);
+
+  for (let i = 0; i < len; i++) {
+    const aPart = aParts[i];
+    const bPart = bParts[i];
+    if (aPart === undefined) return -1;
+    if (bPart === undefined) return 1;
+
+    const aIsNumeric = NUMERIC_IDENTIFIER_RE.test(aPart);
+    const bIsNumeric = NUMERIC_IDENTIFIER_RE.test(bPart);
+    if (aIsNumeric && bIsNumeric) {
+      const diff = Number(aPart) - Number(bPart);
+      if (diff !== 0) return diff;
+      continue;
+    }
+    if (aIsNumeric !== bIsNumeric) return aIsNumeric ? -1 : 1;
+
+    const cmp = aPart.localeCompare(bPart);
+    if (cmp !== 0) return cmp;
+  }
+
+  return 0;
+};
 
 /**
  * Version compatibility error.
@@ -155,7 +196,7 @@ export class VersionManager {
 
     // Compare prerelease versions
     if (a.prerelease && b.prerelease) {
-      return a.prerelease.localeCompare(b.prerelease);
+      return comparePrereleaseIdentifiers(a.prerelease, b.prerelease);
     }
 
     if (a.prerelease && !b.prerelease) {

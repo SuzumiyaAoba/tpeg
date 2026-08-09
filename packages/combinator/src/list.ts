@@ -1,6 +1,6 @@
 import type { NonEmptyArray, Parser } from "@suzumiyaaoba/tpeg-core";
 import {
-  choice,
+  isFatalFailure,
   literal,
   map,
   notPredicate,
@@ -30,9 +30,18 @@ export const sepBy = <T, S>(
     ([first, rest]) => [first, ...rest],
   );
 
-  const parser = choice(
-    sepByOne,
-    map(notPredicate(value), () => []),
+  // `optional`, not `choice(sepByOne, ...)`: `sepBy` is meant to be
+  // transparent sugar for "optionally present, one-or-more" -- exactly
+  // what a grammar author would write by hand as `sepBy1(...)?`. A
+  // `choice` absorbs a `fatal` (cut/commit) failure at ITS OWN boundary
+  // (see `commit`'s doc comment, `@suzumiyaaoba/tpeg-core`), which would
+  // silently swallow a cut inside `value` instead of letting it propagate
+  // to whatever encloses `sepBy(...)` itself -- `optional` (unlike a
+  // hand-rolled `choice`-based "or empty" fallback) already re-raises a
+  // fatal failure instead of treating it as "no match", exactly the
+  // behavior this needs.
+  const parser = map(optional(sepByOne), (results) =>
+    results.length === 0 ? [] : results[0],
   );
 
   return named(parser, parserName);
@@ -77,7 +86,25 @@ export const commaSeparated = <T>(
     ([first, rest]) => [first, ...rest],
   );
 
-  const parser = choice(nonEmpty, empty);
+  // Not `choice(nonEmpty, empty)`: unlike `sepBy` above, `empty`'s
+  // `notPredicate(valueParser)` check deliberately distinguishes "nothing
+  // here at all" (fall back to `[]`) from "something's here but malformed"
+  // (e.g. a disallowed trailing comma, which makes `nonEmpty` fail even
+  // though a value WAS present -- `empty`'s own check then also fails,
+  // correctly rejecting the whole thing) -- `optional(nonEmpty)` would
+  // collapse that second case into a silent `[]` too. This still needs the
+  // same fix `sepBy` needed, though: a `fatal` (cut/commit) failure from
+  // inside `nonEmpty` must propagate to whatever encloses
+  // `commaSeparated(...)`, not be laundered into "try `empty` instead" by
+  // `choice`'s boundary-absorption (see `commit`'s doc comment,
+  // `@suzumiyaaoba/tpeg-core`). Replicating `choice`'s two-alternative
+  // trial by hand, but returning a fatal failure as-is instead of
+  // absorbing it, keeps both properties.
+  const parser: Parser<T[]> = (input, pos) => {
+    const result = nonEmpty(input, pos);
+    if (result.success || isFatalFailure(result)) return result;
+    return empty(input, pos);
+  };
 
   return named(parser, parserName);
 };

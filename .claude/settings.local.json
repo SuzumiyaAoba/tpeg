@@ -37,7 +37,8 @@
       "Bash(npx tsc:*)",
       "Bash(gh pr comment:*)",
       "Bash(tsc)",
-      "Bash(gh pr edit:*)"
+      "Bash(gh pr edit:*)",
+      "Bash(git status *)"
     ],
     "deny": []
   }

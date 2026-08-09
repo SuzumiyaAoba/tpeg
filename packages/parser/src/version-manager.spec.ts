@@ -224,6 +224,68 @@ describe("VersionManager", () => {
       expect(manager.compareVersions(v3, v1)).toBeGreaterThan(0); // release > prerelease
     });
 
+    it("compares multi-digit dot-separated prerelease identifiers numerically, not lexically", () => {
+      // Regression test: semver precedence compares each dot-separated
+      // prerelease identifier on its own, comparing purely-numeric
+      // identifiers as numbers -- `"2"` < `"10"`. A plain
+      // `String.prototype.localeCompare` on the whole prerelease string
+      // instead compares character by character, so `"alpha.2"` would
+      // incorrectly sort AFTER `"alpha.10"` (`"2" > "1"` as characters).
+      const alpha2: SemanticVersion = {
+        major: 1,
+        minor: 0,
+        patch: 0,
+        prerelease: "alpha.2",
+      };
+      const alpha10: SemanticVersion = {
+        major: 1,
+        minor: 0,
+        patch: 0,
+        prerelease: "alpha.10",
+      };
+
+      expect(manager.compareVersions(alpha2, alpha10)).toBeLessThan(0);
+      expect(manager.compareVersions(alpha10, alpha2)).toBeGreaterThan(0);
+    });
+
+    it("gives a shorter prerelease identifier list lower precedence when the shared prefix matches", () => {
+      const alpha: SemanticVersion = {
+        major: 1,
+        minor: 0,
+        patch: 0,
+        prerelease: "alpha",
+      };
+      const alpha1: SemanticVersion = {
+        major: 1,
+        minor: 0,
+        patch: 0,
+        prerelease: "alpha.1",
+      };
+
+      expect(manager.compareVersions(alpha, alpha1)).toBeLessThan(0);
+      expect(manager.compareVersions(alpha1, alpha)).toBeGreaterThan(0);
+    });
+
+    it("gives a numeric prerelease identifier lower precedence than an alphanumeric one at the same position", () => {
+      // Per semver: identifiers with letters/hyphens always outrank
+      // purely-numeric identifiers, regardless of the numeric value.
+      const numeric: SemanticVersion = {
+        major: 1,
+        minor: 0,
+        patch: 0,
+        prerelease: "alpha.10",
+      };
+      const alnum: SemanticVersion = {
+        major: 1,
+        minor: 0,
+        patch: 0,
+        prerelease: "alpha.beta",
+      };
+
+      expect(manager.compareVersions(numeric, alnum)).toBeLessThan(0);
+      expect(manager.compareVersions(alnum, numeric)).toBeGreaterThan(0);
+    });
+
     it("should return 0 for equal versions", () => {
       const v1: SemanticVersion = { major: 1, minor: 2, patch: 3 };
       const v2: SemanticVersion = { major: 1, minor: 2, patch: 3 };

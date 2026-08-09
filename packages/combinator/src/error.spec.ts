@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parse } from "@suzumiyaaoba/tpeg-core";
-import { literal } from "@suzumiyaaoba/tpeg-core";
+import { choice, commit, literal } from "@suzumiyaaoba/tpeg-core";
 import { labeled, labeledWithContext, withDetailedError } from "./error";
 
 describe("error combinators", () => {
@@ -38,6 +38,21 @@ describe("error combinators", () => {
         expect(result.error.message).toBe("Custom Message");
       }
     });
+
+    it("preserves a fatal (cut/commit) failure instead of building a fresh, non-fatal error object", () => {
+      // Regression test: `labeled` used to build `errorObj` entirely from
+      // scratch (never spreading `result.error`), silently dropping
+      // `fatal` -- unlike `withDetailedError` above, which spreads the
+      // original error. That let an enclosing `choice` fall back to a
+      // sibling alternative it should have been barred from trying.
+      const committedAbc = commit(literal("abc"));
+      const parser = choice(
+        labeled(committedAbc, "Custom Message"),
+        literal("def"),
+      );
+      const result = parse(parser)("def");
+      expect(result.success).toBe(false);
+    });
   });
 
   describe("labeledWithContext", () => {
@@ -55,6 +70,16 @@ describe("error combinators", () => {
         expect(result.error.message).toContain("Top > Sub");
         expect(result.error.context).toEqual(["Top", "Sub"]);
       }
+    });
+
+    it("preserves a fatal (cut/commit) failure instead of building a fresh, non-fatal error object", () => {
+      const committedAbc = commit(literal("abc"));
+      const parser = choice(
+        labeledWithContext(committedAbc, "Fail", "Top"),
+        literal("def"),
+      );
+      const result = parse(parser)("def");
+      expect(result.success).toBe(false);
     });
   });
 });
