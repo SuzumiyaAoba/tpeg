@@ -12,6 +12,7 @@ import {
   ModuleResolver,
   NodeFileSystem,
   createModuleResolver,
+  resolveQualifiedIdentifier,
 } from "./module-resolver";
 
 // ============================================================================
@@ -163,6 +164,39 @@ describe("Module Resolution Engine", () => {
       expect(resolved.allDependencies).toContain("/test/base.tpeg");
       expect(resolved.allDependencies).toContain("/test/operators.tpeg");
       expect(resolved.allDependencies).toContain("/test/utils.tpeg");
+    });
+
+    it("should resolve each relative dependency from its importing module", async () => {
+      mockFs.addFile(
+        "/test/main.tpeg",
+        `
+          import "nested/child.tpeg" as child
+          grammar Main { start = child.rule }
+        `,
+      );
+      mockFs.addFile(
+        "/test/nested/child.tpeg",
+        `
+          import "./leaf.tpeg" as leaf
+          grammar Child { rule = leaf.value }
+        `,
+      );
+      mockFs.addFile(
+        "/test/nested/leaf.tpeg",
+        `grammar Leaf { value = "leaf" }`,
+      );
+
+      const resolved = await resolver.resolveModule("main.tpeg");
+
+      expect(resolved.allDependencies).toEqual(
+        new Set(["/test/nested/child.tpeg", "/test/nested/leaf.tpeg"]),
+      );
+
+      const qualified = await resolveQualifiedIdentifier(
+        { type: "QualifiedIdentifier", module: "leaf", name: "value" },
+        resolver.context,
+      );
+      expect(qualified.module.filePath).toBe("/test/nested/leaf.tpeg");
     });
 
     it("should cache resolved modules", async () => {

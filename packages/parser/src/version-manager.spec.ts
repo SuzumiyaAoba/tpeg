@@ -111,10 +111,36 @@ describe("VersionManager", () => {
       });
     });
 
+    it("should normalize documented partial versions", () => {
+      expect(manager.parseVersion("1")).toEqual({
+        major: 1,
+        minor: 0,
+        patch: 0,
+      });
+      expect(manager.parseVersion("1.2")).toEqual({
+        major: 1,
+        minor: 2,
+        patch: 0,
+      });
+    });
+
     it("should throw error for invalid version", () => {
       expect(() => {
         manager.parseVersion("invalid");
       }).toThrow(VersionParseError);
+    });
+
+    it("should reject leading zeroes in numeric identifiers", () => {
+      for (const invalidVersion of [
+        "01.2.3",
+        "1.02.3",
+        "1.2.03",
+        "1.2.3-alpha.01",
+      ]) {
+        expect(() => manager.parseVersion(invalidVersion)).toThrow(
+          VersionParseError,
+        );
+      }
     });
 
     it("should cache parsed versions", () => {
@@ -145,6 +171,13 @@ describe("VersionManager", () => {
       });
     });
 
+    it("should parse documented partial version constraints", () => {
+      expect(manager.parseVersionConstraint("^1.0")).toEqual({
+        operator: "^",
+        version: { major: 1, minor: 0, patch: 0 },
+      });
+    });
+
     it("should parse tilde constraint", () => {
       const constraint = manager.parseVersionConstraint("~1.2.3");
       expect(constraint.operator).toBe("~");
@@ -169,6 +202,30 @@ describe("VersionManager", () => {
         ">",
         "<",
       ]);
+    });
+
+    it("should parse documented comma-separated constraint sets", () => {
+      const constraint = manager.parseVersionConstraint(">=2.0, <3.0");
+
+      expect(
+        manager.satisfiesConstraint(
+          { major: 2, minor: 5, patch: 0 },
+          constraint,
+        ),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 1, minor: 9, patch: 9 },
+          constraint,
+        ),
+      ).toBe(false);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 3, minor: 0, patch: 0 },
+          constraint,
+        ),
+      ).toBe(false);
+      expect(manager.formatConstraint(constraint)).toBe(">=2.0.0, <3.0.0");
     });
 
     it("should parse wildcard constraint", () => {
@@ -224,6 +281,41 @@ describe("VersionManager", () => {
       expect(manager.compareVersions(v3, v1)).toBeGreaterThan(0); // release > prerelease
     });
 
+    it("should compare prerelease identifiers according to SemVer precedence", () => {
+      const versions = [
+        "1.0.0-alpha",
+        "1.0.0-alpha.1",
+        "1.0.0-alpha.beta",
+        "1.0.0-beta",
+        "1.0.0-beta.2",
+        "1.0.0-beta.11",
+        "1.0.0-rc.1",
+        "1.0.0",
+      ].map((version) => manager.parseVersion(version));
+
+      for (let i = 0; i < versions.length - 1; i++) {
+        expect(
+          manager.compareVersions(
+            versions[i] as SemanticVersion,
+            versions[i + 1] as SemanticVersion,
+          ),
+        ).toBeLessThan(0);
+      }
+
+      expect(
+        manager.compareVersions(
+          manager.parseVersion("1.0.0-1"),
+          manager.parseVersion("1.0.0-alpha"),
+        ),
+      ).toBeLessThan(0);
+      expect(
+        manager.compareVersions(
+          manager.parseVersion("1.0.0-ALPHA"),
+          manager.parseVersion("1.0.0-alpha"),
+        ),
+      ).toBeLessThan(0);
+    });
+
     it("should return 0 for equal versions", () => {
       const v1: SemanticVersion = { major: 1, minor: 2, patch: 3 };
       const v2: SemanticVersion = { major: 1, minor: 2, patch: 3 };
@@ -276,6 +368,42 @@ describe("VersionManager", () => {
         manager.satisfiesConstraint(
           { major: 1, minor: 2, patch: 2 },
           constraint,
+        ),
+      ).toBe(false);
+    });
+
+    it("should restrict caret compatibility to the left-most non-zero component", () => {
+      const minorConstraint: VersionConstraint = {
+        operator: "^",
+        version: { major: 0, minor: 2, patch: 3 },
+      };
+      expect(
+        manager.satisfiesConstraint(
+          { major: 0, minor: 2, patch: 9 },
+          minorConstraint,
+        ),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 0, minor: 3, patch: 0 },
+          minorConstraint,
+        ),
+      ).toBe(false);
+
+      const patchConstraint: VersionConstraint = {
+        operator: "^",
+        version: { major: 0, minor: 0, patch: 3 },
+      };
+      expect(
+        manager.satisfiesConstraint(
+          { major: 0, minor: 0, patch: 3 },
+          patchConstraint,
+        ),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 0, minor: 0, patch: 4 },
+          patchConstraint,
         ),
       ).toBe(false);
     });
@@ -564,6 +692,22 @@ describe("VersionManager", () => {
         manager.validateDependencies("main");
       }).toThrow(VersionCompatibilityError);
     });
+
+    it("should detect conflicts written as module file paths", () => {
+      manager.registerModule(
+        createModuleFile("legacy.tpeg", [createGrammar("Legacy")]),
+      );
+      manager.registerModule(
+        createModuleFile("main.tpeg", [createGrammar("Main")], [], {
+          type: "ModuleInfo",
+          conflicts: ["legacy.tpeg"],
+        }),
+      );
+
+      expect(() => manager.validateDependencies("main")).toThrow(
+        VersionCompatibilityError,
+      );
+    });
   });
 
   describe("utility methods", () => {
@@ -603,6 +747,33 @@ describe("VersionManager", () => {
       const matrix = manager.getCompatibilityMatrix();
       expect(matrix.get("module1")?.get("module1")).toBe(true); // self-compatible
       expect(matrix.get("module1")?.get("module2")).toBe(true); // compatible dependency
+    });
+
+    it("should apply file-path dependency constraints in compatibility matrix", () => {
+      manager.clear();
+      manager.registerModule(
+        createModuleFile("base.tpeg", [createGrammar("Base")], [], {
+          type: "ModuleInfo",
+          version: "2.0.0",
+        }),
+      );
+      manager.registerModule(
+        createModuleFile(
+          "main.tpeg",
+          [createGrammar("Main")],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "base.tpeg",
+              version: "^1.0.0",
+            },
+          ],
+        ),
+      );
+
+      expect(manager.getCompatibilityMatrix().get("main")?.get("base")).toBe(
+        false,
+      );
     });
 
     it("should format versions and constraints", () => {

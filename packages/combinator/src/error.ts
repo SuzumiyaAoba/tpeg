@@ -89,6 +89,7 @@ export const labeled =
         message: errorMessage,
         pos,
         ...(parserName && { parserName }),
+        ...(result.error.fatal === true ? { fatal: true } : {}),
       };
       const labeledResult: ParseFailure = {
         success: false,
@@ -129,6 +130,7 @@ export const labeledWithContext =
         pos,
         context: contextArray,
         ...(parserName && { parserName }),
+        ...(result.error.fatal === true ? { fatal: true } : {}),
       };
       const labeledResult: ParseFailure = {
         success: false,

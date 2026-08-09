@@ -752,6 +752,10 @@ export const withDefault =
       return result;
     }
 
+    if (isFatalFailure(result)) {
+      return result;
+    }
+
     return {
       success: true,
       val: defaultValue,

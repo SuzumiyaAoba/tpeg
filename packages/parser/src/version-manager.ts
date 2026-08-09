@@ -2,8 +2,46 @@ import type { ModuleFile } from "@suzumiyaaoba/tpeg-core";
 
 const VERSION_PREFIX_RE = /^v/;
 const SEMVER_RE =
-  /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+  /^(0|[1-9]\d*)(?:\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?)?(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 const CONSTRAINT_OPERATOR_RE = /^(>=|<=|>|<|\^|~|=)?(.+)$/;
+const NUMERIC_IDENTIFIER_RE = /^\d+$/;
+
+const comparePrereleaseIdentifiers = (a: string, b: string): number => {
+  const aIdentifiers = a.split(".");
+  const bIdentifiers = b.split(".");
+  const count = Math.max(aIdentifiers.length, bIdentifiers.length);
+
+  for (let i = 0; i < count; i++) {
+    const aIdentifier = aIdentifiers[i];
+    const bIdentifier = bIdentifiers[i];
+
+    if (aIdentifier === undefined) return -1;
+    if (bIdentifier === undefined) return 1;
+    if (aIdentifier === bIdentifier) continue;
+
+    const aIsNumeric = NUMERIC_IDENTIFIER_RE.test(aIdentifier);
+    const bIsNumeric = NUMERIC_IDENTIFIER_RE.test(bIdentifier);
+
+    if (aIsNumeric && bIsNumeric) {
+      // Numeric identifiers may exceed Number.MAX_SAFE_INTEGER. Leading
+      // zeroes are rejected by SEMVER_RE, so length and then lexical order
+      // are equivalent to an arbitrary-precision numeric comparison.
+      if (aIdentifier.length !== bIdentifier.length) {
+        return aIdentifier.length - bIdentifier.length;
+      }
+      return aIdentifier < bIdentifier ? -1 : 1;
+    }
+
+    if (aIsNumeric) return -1;
+    if (bIsNumeric) return 1;
+
+    // SemVer requires ASCII lexical order. The grammar above restricts
+    // identifiers to ASCII, so JavaScript's code-unit comparison is exact.
+    return aIdentifier < bIdentifier ? -1 : 1;
+  }
+
+  return 0;
+};
 
 /**
  * バージョン互換性エラー
@@ -52,6 +90,7 @@ export interface SemanticVersion {
 export interface VersionConstraint {
   operator: "=" | ">=" | "<=" | ">" | "<" | "^" | "~" | "*";
   version: SemanticVersion;
+  additional?: VersionConstraint[];
 }
 
 /**
@@ -59,6 +98,7 @@ export interface VersionConstraint {
  */
 export interface ModuleVersion {
   moduleName: string;
+  filePath: string;
   version: SemanticVersion;
   dependencies: Map<string, VersionConstraint>;
   conflicts: Set<string>;
@@ -102,6 +142,38 @@ export class VersionManager {
    * バージョン制約を解析
    */
   parseVersionConstraint(constraintString: string): VersionConstraint {
+    const parts = constraintString.split(",").map((part) => part.trim());
+    if (parts.some((part) => part.length === 0)) {
+      throw new VersionParseError(
+        constraintString,
+        "Invalid constraint format",
+      );
+    }
+
+    const [firstPart, ...remainingParts] = parts;
+    if (!firstPart) {
+      throw new VersionParseError(
+        constraintString,
+        "Invalid constraint format",
+      );
+    }
+
+    const constraint = this.parseSingleVersionConstraint(firstPart);
+    if (remainingParts.length === 0) {
+      return constraint;
+    }
+
+    return {
+      ...constraint,
+      additional: remainingParts.map((part) =>
+        this.parseSingleVersionConstraint(part),
+      ),
+    };
+  }
+
+  private parseSingleVersionConstraint(
+    constraintString: string,
+  ): VersionConstraint {
     const trimmed = constraintString.trim();
 
     // 特殊ケース: * (any version)
@@ -155,7 +227,7 @@ export class VersionManager {
 
     // プレリリースバージョンを比較
     if (a.prerelease && b.prerelease) {
-      return a.prerelease.localeCompare(b.prerelease);
+      return comparePrereleaseIdentifiers(a.prerelease, b.prerelease);
     }
 
     if (a.prerelease && !b.prerelease) {
@@ -176,6 +248,14 @@ export class VersionManager {
     version: SemanticVersion,
     constraint: VersionConstraint,
   ): boolean {
+    if (
+      constraint.additional?.some(
+        (additional) => !this.satisfiesConstraint(version, additional),
+      )
+    ) {
+      return false;
+    }
+
     const comparison = this.compareVersions(version, constraint.version);
 
     switch (constraint.operator) {
@@ -189,9 +269,20 @@ export class VersionManager {
         return comparison < 0;
       case "<=":
         return comparison <= 0;
-      case "^":
-        // Compatible within major version
-        return version.major === constraint.version.major && comparison >= 0;
+      case "^": {
+        if (comparison < 0 || version.major !== constraint.version.major) {
+          return false;
+        }
+        if (constraint.version.major > 0) {
+          return true;
+        }
+        if (constraint.version.minor > 0) {
+          return version.minor === constraint.version.minor;
+        }
+        return (
+          version.minor === 0 && version.patch === constraint.version.patch
+        );
+      }
       case "~":
         // Compatible within minor version
         return (
@@ -249,6 +340,7 @@ export class VersionManager {
 
     const moduleVersion: ModuleVersion = {
       moduleName,
+      filePath: moduleFile.filePath,
       version,
       dependencies,
       conflicts,
@@ -289,8 +381,7 @@ export class VersionManager {
     }
 
     for (const [dependencyModule, constraint] of moduleVersion.dependencies) {
-      const dependencyModuleName = this.extractModuleName(dependencyModule);
-      const dependencyVersion = this.moduleVersions.get(dependencyModuleName);
+      const dependencyVersion = this.findRegisteredModule(dependencyModule);
       if (!dependencyVersion) {
         throw new VersionCompatibilityError(
           dependencyModule,
@@ -312,16 +403,14 @@ export class VersionManager {
 
     // 競合をチェック
     for (const conflictModule of moduleVersion.conflicts) {
-      if (this.moduleVersions.has(conflictModule)) {
-        const conflictingModule = this.moduleVersions.get(conflictModule);
-        if (conflictingModule) {
-          throw new VersionCompatibilityError(
-            conflictModule,
-            "none",
-            this.formatVersion(conflictingModule.version),
-            "Conflicting module detected",
-          );
-        }
+      const conflictingModule = this.findRegisteredModule(conflictModule);
+      if (conflictingModule) {
+        throw new VersionCompatibilityError(
+          conflictModule,
+          "none",
+          this.formatVersion(conflictingModule.version),
+          "Conflicting module detected",
+        );
       }
     }
   }
@@ -339,10 +428,16 @@ export class VersionManager {
    * バージョン制約を文字列にフォーマット
    */
   formatConstraint(constraint: VersionConstraint): string {
-    if (constraint.operator === "*") {
-      return "*";
-    }
-    return `${constraint.operator}${this.formatVersion(constraint.version)}`;
+    const primary =
+      constraint.operator === "*"
+        ? "*"
+        : `${constraint.operator}${this.formatVersion(constraint.version)}`;
+    return constraint.additional?.length
+      ? [
+          primary,
+          ...constraint.additional.map((item) => this.formatConstraint(item)),
+        ].join(", ")
+      : primary;
   }
 
   /**
@@ -366,6 +461,29 @@ export class VersionManager {
     const parts = modulePath.split("/");
     const filename = parts[parts.length - 1];
     return filename ? filename.replace(/\.tpeg$/, "") : "unknown";
+  }
+
+  private referenceTargetsModule(
+    reference: string,
+    moduleName: string,
+    moduleVersion: ModuleVersion,
+  ): boolean {
+    return (
+      reference === moduleName ||
+      reference === moduleVersion.filePath ||
+      this.extractModuleName(reference) === moduleName ||
+      this.extractModuleName(reference) ===
+        this.extractModuleName(moduleVersion.filePath)
+    );
+  }
+
+  private findRegisteredModule(reference: string): ModuleVersion | undefined {
+    for (const [moduleName, moduleVersion] of this.moduleVersions) {
+      if (this.referenceTargetsModule(reference, moduleName, moduleVersion)) {
+        return moduleVersion;
+      }
+    }
+    return undefined;
   }
 
   /**
@@ -412,13 +530,27 @@ export class VersionManager {
         }
 
         // 競合チェック
-        if (moduleVersion.conflicts.has(otherModuleName)) {
+        if (
+          [...moduleVersion.conflicts].some((reference) =>
+            this.referenceTargetsModule(
+              reference,
+              otherModuleName,
+              otherModuleVersion,
+            ),
+          )
+        ) {
           compatibilityRow.set(otherModuleName, false);
           continue;
         }
 
         // 依存関係チェック
-        const constraint = moduleVersion.dependencies.get(otherModuleName);
+        const constraint = [...moduleVersion.dependencies].find(([reference]) =>
+          this.referenceTargetsModule(
+            reference,
+            otherModuleName,
+            otherModuleVersion,
+          ),
+        )?.[1];
         if (constraint) {
           const isCompatible = this.satisfiesConstraint(
             otherModuleVersion.version,

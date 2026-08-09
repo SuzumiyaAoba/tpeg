@@ -767,6 +767,17 @@ describe("withDefault", () => {
       expect(result.next).toEqual(pos); // Position should not advance
     }
   });
+
+  it("should not swallow a committed failure", () => {
+    const committed = seq(lit("i"), commit(lit("f")));
+
+    const result = withDefault(committed, ["default"])("ix", 0);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.fatal).toBe(true);
+    }
+  });
 });
 
 describe("reject", () => {
