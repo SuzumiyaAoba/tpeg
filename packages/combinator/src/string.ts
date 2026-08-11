@@ -46,6 +46,15 @@ const unicodeEscape = map(
  * to their parent string's buffer, a small token extracted from a very large
  * document may keep that whole document alive in memory for as long as the
  * token is reachable.
+ *
+ * This ALWAYS succeeds (it is a scan, never itself an assertion that
+ * `condition` is ever met): only `condResult.success` is checked below, so
+ * a FATAL (cut/commit) failure inside `condition` is swallowed exactly
+ * like an ordinary one -- "condition didn't match here, keep scanning" --
+ * never propagated as this parser's own failure. This mirrors
+ * `notPredicate`'s identical treatment of its own probe
+ * (`@suzumiyaaoba/tpeg-core`'s `lookahead.ts`), which makes sense given
+ * this function's own scan is equivalent to `(!condition anyChar)*`.
  */
 export const takeUntil =
   <T>(condition: Parser<T>, _parserName?: string): Parser<string> =>

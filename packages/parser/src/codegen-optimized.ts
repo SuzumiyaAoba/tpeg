@@ -234,6 +234,14 @@ const unwrapTransparentPrefix = (expr: Expression): Expression => {
  * whose element 0 isn't (or doesn't unwrap to) a `StringLiteral`, or a
  * `StringLiteral` of length < 2 (no useful second character to trie on),
  * all return `null`.
+ *
+ * This narrow scope is also what keeps `predictiveChoice`'s own
+ * "`literalPrefix` must agree with `filter`" caller contract
+ * (`packages/core/src/combinators.ts`'s doc comment on that function)
+ * satisfied by construction: the ONLY expression shapes this returns a
+ * prefix for are ones whose FIRST set -- and therefore the `filter`
+ * computed alongside this by `predictiveFilterForExpression`, below -- is
+ * always exactly that literal's first character, never broader.
  */
 const literalPrefixForExpression = (alt: Expression): string | null => {
   if (alt.type === "StringLiteral") {

@@ -9,6 +9,7 @@ import {
   endOfLine,
   identifier,
   int,
+  letter,
   number,
   spaces,
   startOfLine,
@@ -132,6 +133,22 @@ describe("primitive combinators", () => {
 
     it("should fail on digit", () => {
       expect(parse(alpha)("1").success).toBe(false);
+    });
+  });
+
+  describe("letter", () => {
+    // Alias for `alpha` -- had zero spec references at all before this.
+    it("is the exact same parser instance as alpha", () => {
+      expect(letter).toBe(alpha);
+    });
+
+    it("should match letter", () => {
+      expect(parse(letter)("a").success).toBe(true);
+      expect(parse(letter)("Z").success).toBe(true);
+    });
+
+    it("should fail on digit", () => {
+      expect(parse(letter)("1").success).toBe(false);
     });
   });
 

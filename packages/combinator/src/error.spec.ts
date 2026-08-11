@@ -1,9 +1,29 @@
 import { describe, expect, it } from "bun:test";
 import { parse } from "@suzumiyaaoba/tpeg-core";
 import { choice, commit, literal } from "@suzumiyaaoba/tpeg-core";
-import { labeled, labeledWithContext, withDetailedError } from "./error";
+import { labeled, labeledWithContext, named, withDetailedError } from "./error";
 
 describe("error combinators", () => {
+  describe("named", () => {
+    // Every other combinator module's own `parserName` argument delegates
+    // here (`token`, `between`, `sepBy`, `memoize`, `recursive`,
+    // `withPosition`, ...) -- exercised indirectly through all of them,
+    // but never directly until now.
+    it("wraps with withDetailedError when parserName is given", () => {
+      const parser = named(literal("abc"), "MyParser");
+      const result = parse(parser)("def");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.parserName).toBe("MyParser");
+      }
+    });
+
+    it("returns the parser UNCHANGED (no wrapping) when parserName is omitted", () => {
+      const inner = literal("abc");
+      expect(named(inner)).toBe(inner);
+    });
+  });
+
   describe("withDetailedError", () => {
     it("should enhance error with context and found char", () => {
       const parser = withDetailedError(literal("expected"), "MyParser");
@@ -36,6 +56,23 @@ describe("error combinators", () => {
         expect(result.error.found).toBe("\u{1F600}");
       }
     });
+
+    it("preserves a fatal (cut/commit) failure -- spreads the original error, unlike labeled's pre-fix behavior", () => {
+      // The baseline `labeled`'s regression test below contrasts against:
+      // `enhancedError` is built via `{ ...failure.error }`, so `fatal`
+      // (if present) is carried over automatically, never dropped the way
+      // `labeled` used to drop it before its own fix.
+      const committedAbc = commit(literal("abc"));
+      const parser = withDetailedError(committedAbc, "MyParser");
+      const direct = parser("def", 0);
+      expect(direct.success).toBe(false);
+      if (!direct.success) {
+        expect(direct.error.fatal).toBe(true);
+      }
+
+      const withFallback = choice(parser, literal("def"));
+      expect(parse(withFallback)("def").success).toBe(false);
+    });
   });
 
   describe("labeled", () => {
@@ -62,6 +99,11 @@ describe("error combinators", () => {
       );
       const result = parse(parser)("def");
       expect(result.success).toBe(false);
+      const direct = labeled(committedAbc, "Custom Message")("def", 0);
+      expect(direct.success).toBe(false);
+      if (!direct.success) {
+        expect(direct.error.fatal).toBe(true);
+      }
     });
   });
 
@@ -90,6 +132,11 @@ describe("error combinators", () => {
       );
       const result = parse(parser)("def");
       expect(result.success).toBe(false);
+      const direct = labeledWithContext(committedAbc, "Fail", "Top")("def", 0);
+      expect(direct.success).toBe(false);
+      if (!direct.success) {
+        expect(direct.error.fatal).toBe(true);
+      }
     });
   });
 });

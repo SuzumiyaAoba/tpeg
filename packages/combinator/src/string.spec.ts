@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { parse } from "@suzumiyaaoba/tpeg-core";
 import { literal } from "@suzumiyaaoba/tpeg-core";
+import { commit, sequence } from "@suzumiyaaoba/tpeg-core";
 import {
   anyQuotedString,
   between,
@@ -27,6 +28,29 @@ describe("string combinators", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.val).toBe("no-semicolon");
+      }
+    });
+
+    it("swallows a FATAL (cut/commit) failure from `condition` at a given position exactly like an ordinary one -- it only ever checks condition(...).success, never isFatalFailure", () => {
+      // `condition` here fires a cut once it sees "x", so `x` NOT followed
+      // by "y" fails FATALLY, not just ordinarily -- `takeUntil` must
+      // still treat that failure as "condition didn't match here, keep
+      // scanning," identical to the ordinary-failure case above, since it
+      // ALWAYS succeeds by design (it is not itself an assertion that the
+      // condition is ever met). This is the same semantics `!condition`
+      // (`notPredicate`) has on its own probe, and matches this
+      // combinator's own "(!close .)*"-shaped behavior inside `between`.
+      const condition = sequence(literal("x"), commit(literal("y")));
+      const parser = takeUntil(condition);
+      const result = parse(parser)("aaxzb");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        // Consumed the WHOLE input -- condition never actually succeeded
+        // (its one attempt at "xz" failed fatally), so takeUntil kept
+        // scanning straight through rather than stopping or propagating
+        // that fatal failure as its own.
+        expect(result.val).toBe("aaxzb");
+        expect(result.next).toBe(5);
       }
     });
   });

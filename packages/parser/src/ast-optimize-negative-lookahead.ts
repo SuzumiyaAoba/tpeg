@@ -25,8 +25,9 @@
  * 2. **FIRST-disjoint deletion**: when clause 1 doesn't apply (`b` isn't
  *    representable as a single-code-point `CharSet` -- a multi-character
  *    literal, an `Identifier`, a `Sequence`, ...), `!a` is dropped
- *    entirely (`!a b -> b`) whenever `a` and `b` are BOTH non-nullable
- *    and `FIRST(a) ∩ FIRST(b) = ∅`.
+ *    entirely (`!a b -> b`) whenever `a` and `b` are BOTH non-nullable,
+ *    `FIRST(a) ∩ FIRST(b) = ∅`, and `b` cannot commit (reach a `Cut`)
+ *    without consuming input.
  *
  *    Proof: at the current position, if `a` fails, `!a` succeeds
  *    consuming nothing, so `!a b` behaves exactly like `b` there. If `a`
@@ -36,8 +37,30 @@
  *    `FIRST(b)`. Since `b` is also non-nullable, a successful `b` at
  *    this position would need to consume >= 1 character starting with
  *    something in `FIRST(b)` -- which the current character isn't -- so
- *    `b` fails too. Either way, `!a b` and `b` agree: both fail, or `!a`
- *    trivially succeeds and only `b`'s own outcome matters.
+ *    `b` fails too. Either way, `!a b` and `b` agree ON RECOGNITION: both
+ *    fail, or `!a` trivially succeeds and only `b`'s own outcome matters.
+ *
+ *    That proof alone is NOT enough, though -- it only shows both sides
+ *    FAIL, not that they fail the SAME WAY. In the original, whenever `a`
+ *    succeeds, `!a` fails immediately as an ORDINARY (non-`fatal`)
+ *    leaf-level lookahead failure -- `b` is never even invoked. In the
+ *    rewritten `b` alone, `b` for real runs, and if it has some nullable
+ *    prefix followed by a `Cut` (e.g. `("x"? ~ "y")`, or a rule reference
+ *    to such a pattern), that `Cut` fires regardless of what the current
+ *    character actually is (a nullable prefix matches zero-width on ANY
+ *    input), and `b`'s subsequent failure -- on exactly this
+ *    outside-`FIRST(b)` character -- becomes FATAL instead. A fatal
+ *    failure and an ordinary one are NOT interchangeable to whatever
+ *    encloses `!a b`/`b` (an enclosing `Choice`/`Optional`/`Star`/`Plus`
+ *    treats them differently -- see `commit`'s doc comment,
+ *    `packages/core/src/combinators.ts`), so this pass additionally
+ *    requires `!canCommitWithoutConsuming(b, analysis)` (`./first-sets.ts`
+ *    -- the same check `codegen-optimized.ts`'s `predictiveChoice`
+ *    null-filter safety already relies on for an analogous reason) before
+ *    firing. This was found and fixed via
+ *    `packages/parser/src/codegen-differential.spec.ts`'s fuzzing harness,
+ *    once its generator started producing negated multi-range character
+ *    classes and cut-bearing rule bodies in the same random grammar.
  *
  *    Lower value on its own than clause 1: it only fires where the
  *    grammar already wrote a provably-redundant `!a`, and
@@ -71,6 +94,7 @@ import {
 import {
   type GrammarFirstSetAnalysis,
   analyzeFirstSets,
+  canCommitWithoutConsuming,
   firstSetOfExpression,
   firstSetsDisjoint,
   isNullable,
@@ -133,9 +157,11 @@ const charSetToCharacterClass = (set: CharSet): CharacterClass => {
     : { type: "CharacterClass", ranges, negated: false };
 };
 
-/** Clause 2's precondition: `a` and `b` are both non-nullable and share
- * no possible starting character. See this module's doc comment for the
- * proof that `!a b` and `b` then agree on every input. */
+/** Clause 2's precondition: `a` and `b` are both non-nullable, share no
+ * possible starting character, AND `b` cannot commit (reach a `Cut`)
+ * without consuming input -- see this module's doc comment for the proof
+ * that `!a b` and `b` then agree on every input, including the fatal/
+ * ordinary distinction the FIRST-set-only argument alone misses. */
 const isFirstDisjointDeletable = (
   a: Expression,
   b: Expression,
@@ -146,7 +172,8 @@ const isFirstDisjointDeletable = (
   firstSetsDisjoint(
     firstSetOfExpression(a, analysis.firstSets, analysis.nullableRules),
     firstSetOfExpression(b, analysis.firstSets, analysis.nullableRules),
-  );
+  ) &&
+  !canCommitWithoutConsuming(b, analysis);
 
 const degenerateSequenceElements = (
   elements: Expression[],

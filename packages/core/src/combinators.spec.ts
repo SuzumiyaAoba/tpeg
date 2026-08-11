@@ -9,10 +9,15 @@ import {
   reject,
   seq,
   sequence,
+  tryOrderedCandidates,
   withDefault,
 } from "./combinators";
 import type { FirstCharFilter } from "./combinators";
-import { resetFailureWatermark, snapshotFailureWatermark } from "./failure";
+import {
+  materializeParseError,
+  resetFailureWatermark,
+  snapshotFailureWatermark,
+} from "./failure";
 import { optional } from "./repetition";
 import type { Parser } from "./types";
 import { createFailure } from "./utils";
@@ -24,6 +29,75 @@ import { createFailure } from "./utils";
 // `failure.spec.ts`'s identical `beforeEach` for the full rationale.
 beforeEach(() => {
   resetFailureWatermark();
+});
+
+describe("tryOrderedCandidates", () => {
+  // The shared ordered-choice trial loop `choice`/`predictiveChoice`/
+  // `captureChoice` all delegate to -- previously exercised only
+  // INDIRECTLY through those callers (see the comments at
+  // `combinators.spec.ts:205,445` before this block existed). Direct
+  // tests here target the loop itself, independent of which caller wraps
+  // it.
+  it("returns the first candidate that succeeds, in declaration order", () => {
+    const result = tryOrderedCandidates(
+      [lit("a"), lit("b"), lit("c")],
+      "b",
+      0,
+      "test",
+    );
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.val).toBe("b");
+  });
+
+  it("returns FAIL when every candidate fails ordinarily", () => {
+    const result = tryOrderedCandidates([lit("a"), lit("b")], "c", 0, "test");
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.fatal).toBeFalsy();
+  });
+
+  it("absorbs a fatal failure at its own boundary: stops trying later candidates and reports an ORDINARY (non-fatal) failure", () => {
+    let ranThirdCandidate = false;
+    const thirdCandidate: Parser<unknown> = (input, pos) => {
+      ranThirdCandidate = true;
+      return lit("c")(input, pos);
+    };
+    const candidates: Parser<unknown>[] = [
+      seq(lit("a"), commit(lit("b"))),
+      thirdCandidate,
+    ];
+    const result = tryOrderedCandidates(candidates, "ac", 0, "test");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      // Absorbed here, not left fatal for whatever encloses this call.
+      expect(result.error.fatal).toBeFalsy();
+    }
+    expect(ranThirdCandidate).toBe(false);
+  });
+
+  it("forwards a CONCRETE (non-singleton) failure's expectation into the shared farthest-failure watermark", () => {
+    // A hand-written parser that builds its own `ParseError` via the
+    // public `createFailure` (`./utils.ts`) instead of the internal
+    // `fail`/`FAIL` singleton path -- see this function's own doc comment
+    // on why its `.error` still needs forwarding for farthest-failure
+    // diagnostics to see it.
+    const concreteFailure: Parser<string> = (input, pos) =>
+      createFailure("custom failure", pos, { expected: "custom-thing" });
+    // A single candidate, so nothing else's own `fail()` call can also
+    // contribute to the watermark at this position -- isolates exactly
+    // this forwarding step.
+    tryOrderedCandidates([concreteFailure], "y", 0, "test");
+    const error = materializeParseError(false);
+    expect(error.expected).toBe("custom-thing");
+  });
+
+  it("returns a concrete construction-error failure for a hole in the candidate array", () => {
+    const parsers = [undefined, lit("c")] as unknown as Parser<string>[];
+    const result = tryOrderedCandidates(parsers, "x", 0, "test");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.message).toContain("index 0");
+    }
+  });
 });
 
 describe("seq", () => {
@@ -815,6 +889,91 @@ describe("predictiveChoice", () => {
       if (!result.success) {
         expect(result.error.expected).toEqual(['"if"', '"import"']);
       }
+    });
+
+    it("caller contract: literalPrefix must be a prefix EVERY match shares, and filter must match exactly literalPrefix's first character", () => {
+      // See predictiveChoice's own doc comment, "Caller contract:
+      // `literalPrefix` must be a prefix EVERY match shares, and `filter`
+      // must match exactly that first character" -- this pins both the
+      // honored case (matches plain `choice`) and the violated case (does
+      // NOT match plain `choice`, silently returning a different
+      // alternative's result rather than crashing) as a concrete,
+      // standalone regression, distinct from the `null`-filter contract
+      // tests above.
+      //
+      // `alt0` can match starting with EITHER 'a' or 'z' -- its true FIRST
+      // set is {a, z} -- but is given `literalPrefix: "zbc"`, a prefix
+      // that only describes its 'z' branch. `alt1`/`alt2` share the "ab"
+      // prefix so the 'a' bucket's trie actually has >=2 prefixed entries
+      // to discriminate on, which is what triggers the deeper,
+      // prefix-partitioned lookup this contract governs (a single
+      // prefixed entry per bucket never builds a trie at all -- see
+      // `buildDispatchTrie`'s doc comment, `./dispatch-trie.ts`).
+      const alt0 = choice(lit("abdEF"), lit("zbc"));
+      const alt1 = lit("abc");
+      const alt2 = lit("abd");
+
+      // Honored: filter restricted to exactly `literalPrefix`'s first
+      // character ('a', matching alt0's "abdEF" branch this time, not its
+      // "zbc" one) -- matches plain `choice` on every input that reaches
+      // the 'a' bucket.
+      const honored = predictiveChoice<[string, string, string]>([
+        [alt0, charFilter("a"), "abd"],
+        [alt1, charFilter("a"), "abc"],
+        [alt2, charFilter("a"), "abd"],
+      ]);
+      const plain = choice(alt0, alt1, alt2);
+      for (const input of ["abdEF", "abc", "abd"]) {
+        const honoredResult = honored(input, 0);
+        const plainResult = plain(input, 0);
+        expect(honoredResult.success).toBe(plainResult.success);
+        if (honoredResult.success && plainResult.success) {
+          expect(honoredResult.val).toBe(plainResult.val);
+          expect(honoredResult.next).toBe(plainResult.next);
+        }
+      }
+
+      // Violated: filter broadened to {a, z} (a sound over-approximation
+      // of alt0's TRUE first-character set on its own) but literalPrefix
+      // still "zbc" -- describing only alt0's 'z' branch. On "abdEF",
+      // plain `choice` tries alt0 first and matches its "abdEF" branch;
+      // predictiveChoice instead partitions the 'a' bucket's trie by
+      // "zbc"'s second character ('b'), which alt0's entry propagates
+      // into via `literalPrefix.slice(1)` regardless of which branch will
+      // actually match -- so at depth 2 it competes on 'b' against
+      // alt1/alt2's own "ab" prefixes and loses to declaration order
+      // there, rather than being tried (and winning) at the top level.
+      const violated = predictiveChoice<[string, string, string]>([
+        [
+          alt0,
+          {
+            ranges: [
+              { lo: 97, hi: 97 },
+              { lo: 122, hi: 122 },
+            ],
+          },
+          "zbc",
+        ],
+        [alt1, charFilter("a"), "abc"],
+        [alt2, charFilter("a"), "abd"],
+      ]);
+      const plainOnAbdEF = plain("abdEF", 0);
+      const violatedOnAbdEF = violated("abdEF", 0);
+      expect(plainOnAbdEF).toEqual({
+        success: true,
+        val: "abdEF",
+        current: 0,
+        next: 5,
+      });
+      // Demonstrably NOT what plain `choice` returns -- alt0 was silently
+      // dropped from the 'a' bucket's trie, and alt2 ("abd") won instead.
+      expect(violatedOnAbdEF).not.toEqual(plainOnAbdEF);
+      expect(violatedOnAbdEF).toEqual({
+        success: true,
+        val: "abd",
+        current: 0,
+        next: 3,
+      });
     });
   });
 });

@@ -25,6 +25,7 @@ import { anyChar, literal } from "./basic";
 import { captureChoice, captureSequence } from "./capture";
 import { charClass, charClassRun, negatedCharClass } from "./char-class";
 import {
+  type FirstCharFilter,
   choice,
   commit,
   predictiveChoice,
@@ -197,6 +198,60 @@ describe("combinator laws: memoize-free core parsers vs. their reference shape",
         genParser(rngRight, 2),
         genParser(rngRight, 2),
       );
+      for (const input of INPUTS) {
+        expect(key(predictive, input)).toBe(key(plain, input));
+      }
+    }
+  });
+
+  it("predictiveChoice with a REAL (non-null) filter per alternative === choice, in the same relative order", () => {
+    // Complements the all-null-filter law above: `combinator-oracle.spec.ts`
+    // already fuzzes `predictiveChoice` with filters derived from
+    // arbitrary composite trees, so this stays intentionally simpler --
+    // one exactly-correct filter per LEAF (not a composite), covering the
+    // hot path (dispatch-table construction actually narrowing candidates
+    // by ASCII code, plus the non-ASCII fallback for the emoji leaf) at
+    // proportionate effort.
+    const leafFilters: readonly [Parser<unknown>, FirstCharFilter | null][] = [
+      [literal("a"), { ranges: [{ lo: 0x61, hi: 0x61 }] }],
+      [literal("b"), { ranges: [{ lo: 0x62, hi: 0x62 }] }],
+      [literal("ab"), { ranges: [{ lo: 0x61, hi: 0x61 }] }],
+      [
+        charClass("a", "b"),
+        {
+          ranges: [
+            { lo: 0x61, hi: 0x61 },
+            { lo: 0x62, hi: 0x62 },
+          ],
+        },
+      ],
+      [negatedCharClass("a"), null],
+      [anyChar(), null],
+      [
+        literal(EMOJI),
+        {
+          ranges: [
+            {
+              lo: EMOJI.codePointAt(0) as number,
+              hi: EMOJI.codePointAt(0) as number,
+            },
+          ],
+        },
+      ],
+      [charClass(["a", "c"]), { ranges: [{ lo: 0x61, hi: 0x63 }] }],
+    ];
+
+    for (let seed = 1; seed <= SEEDS; seed++) {
+      const rng = makeRng(seed);
+      const chosen = [
+        pick(rng, leafFilters),
+        pick(rng, leafFilters),
+        pick(rng, leafFilters),
+      ];
+      const predictive = predictiveChoice(
+        chosen.map(([p, f]) => [p, f] as const),
+      );
+      const plain = choice(...chosen.map(([p]) => p));
       for (const input of INPUTS) {
         expect(key(predictive, input)).toBe(key(plain, input));
       }

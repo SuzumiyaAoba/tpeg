@@ -1019,6 +1019,112 @@ describe("degenerateNegativeLookaheads", () => {
     );
   });
 
+  it("clause 2 does not fire when b can commit (reach a Cut) without consuming input, even though a/b are non-nullable and FIRST-disjoint (regression: found via codegen-differential.spec.ts's fuzzer once it started generating negated multi-range classes alongside cut-bearing rule bodies)", () => {
+    // `!a sub` where `a` = `[^a-bd-e]` and `sub = [a-b]* ~ "abc" [^a-bd-e]`:
+    // FIRST(a) (everything except a,b,d,e) and FIRST(sub) ({a,b}, from
+    // `[a-b]*`'s own first-set unioned with "abc"'s 'a' for its
+    // zero-match branch) ARE disjoint, so the FIRST-set half of clause
+    // 2's precondition holds -- but `sub` can reach its own Cut having
+    // consumed ZERO characters (`[a-b]*` matching empty, then hitting
+    // `~`), so `!a sub` and `sub` do NOT agree: on a character outside
+    // FIRST(a)/FIRST(sub) like "c", the original's `!a` fails ORDINARILY
+    // without ever invoking `sub`, but `sub` alone would fail FATALLY
+    // (via its own Cut) -- see this module's doc comment.
+    const negatedClass = createCharacterClass(
+      [createCharRange("a", "b"), createCharRange("d", "e")],
+      true,
+    );
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createSequence([
+            createNegativeLookahead(negatedClass),
+            createIdentifier("sub"),
+          ]),
+        ),
+        createRuleDefinition(
+          "sub",
+          createSequence([
+            createStar(
+              createCharacterClass([createCharRange("a", "b")], false),
+            ),
+            createCut(),
+            createStringLiteral("abc", '"'),
+            negatedClass,
+          ]),
+        ),
+      ],
+    );
+
+    const result = degenerateNegativeLookaheads(grammar);
+    // Must be left UNCHANGED: the pre-fix version rewrote `r`'s pattern
+    // to bare `Identifier("sub")`, dropping the (load-bearing) lookahead.
+    expect(result.rules[0]?.pattern).toEqual(
+      grammar.rules[0]?.pattern as Expression,
+    );
+  });
+
+  it("does not silently accept an input the un-degenerated grammar rejects, when b contains a reachable Cut (regression, end-to-end through codegen)", async () => {
+    // Same shape as the structural test above, wrapped in `Optional` so
+    // the fatal/ordinary distinction is directly OBSERVABLE (`optional`
+    // swallows an ordinary failure into "matched empty" but re-raises a
+    // fatal one) -- pins the actual runtime behavior, not just that the
+    // AST was left alone.
+    const negatedClass = createCharacterClass(
+      [createCharRange("a", "b"), createCharRange("d", "e")],
+      true,
+    );
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createOptional(
+            createSequence([
+              createNegativeLookahead(negatedClass),
+              createIdentifier("sub"),
+            ]),
+          ),
+        ),
+        createRuleDefinition(
+          "sub",
+          createSequence([
+            createStar(
+              createCharacterClass([createCharRange("a", "b")], false),
+            ),
+            createCut(),
+            createStringLiteral("abc", '"'),
+            negatedClass,
+          ]),
+        ),
+      ],
+    );
+    const degenerated = degenerateNegativeLookaheads(grammar);
+
+    const original = await compileRuleFor(grammar, "r");
+    const rewritten = await compileRuleFor(degenerated, "r");
+
+    for (const input of ["c", "b", "abcz", "", "d"]) {
+      const originalResult = original(input, ORIGIN);
+      const rewrittenResult = rewritten(input, ORIGIN);
+      expect(rewrittenResult.success).toBe(originalResult.success);
+      if (originalResult.success && rewrittenResult.success) {
+        expect(rewrittenResult.next).toEqual(originalResult.next);
+      }
+    }
+    // The specific case this regression is about: "c" is outside
+    // FIRST(a)/FIRST(sub), so the ORIGINAL's `!a` fails ordinarily
+    // (never invoking `sub`) and `optional` swallows it -- must SUCCEED
+    // with an empty (zero-width) match, not fail.
+    const onC = original("c", ORIGIN);
+    expect(onC.success).toBe(true);
+    if (onC.success) expect(onC.next).toBe(ORIGIN);
+  });
+
   it("produces code that parses identically to the un-degenerated grammar for the overlapping-sets case, across inputs that discriminate a wrong implementation", async () => {
     const grammar = createGrammarDefinition(
       "Test",

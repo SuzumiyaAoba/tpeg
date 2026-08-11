@@ -41,6 +41,17 @@ describe("list combinators", () => {
       const parser = choice(sepBy(committedA, literal(",")), literal("b"));
       const result = parse(parser)("b");
       expect(result.success).toBe(false);
+      // Directly assert `sepBy` itself failed FATALLY, not just that the
+      // overall `choice` failed for some other reason (`choice`'s own
+      // fatal-absorption already makes `success: false` here strong
+      // evidence on its own -- the fallback `literal("b")` WOULD have
+      // matched input "b" had `choice` tried it -- but asserting the flag
+      // directly makes that reasoning explicit rather than implicit).
+      const direct = sepBy(committedA, literal(","))("b", 0);
+      expect(direct.success).toBe(false);
+      if (!direct.success) {
+        expect(direct.error.fatal).toBe(true);
+      }
     });
 
     it("propagates zeroOrMore's own infinite-loop guard instead of silently discarding already-matched elements when both value and separator are nullable (regression: the old `optional(sepByOne)` implementation swallowed that guard's ordinary, non-fatal failure as \"no match\", returning `[]` at zero consumption even though two elements had already matched)", () => {
@@ -71,6 +82,19 @@ describe("list combinators", () => {
       const parser = sepBy1(literal("a"), literal(","));
       const result = parse(parser)("b");
       expect(result.success).toBe(false);
+    });
+
+    it("propagates a fatal (cut/commit) failure from value -- unlike sepBy, no hand-rolled short-circuit is needed here since sepBy1 is built directly from seq/zeroOrMore, both of which already relay a fatal failure unchanged", () => {
+      const committedA = commit(literal("a"));
+      const direct = sepBy1(committedA, literal(","))("b", 0);
+      expect(direct.success).toBe(false);
+      if (!direct.success) {
+        expect(direct.error.fatal).toBe(true);
+      }
+      // Same enclosing-choice check as sepBy's/commaSeparated's fatal
+      // tests: the fallback would otherwise match "b" outright.
+      const parser = choice(sepBy1(committedA, literal(",")), literal("b"));
+      expect(parse(parser)("b").success).toBe(false);
     });
   });
 
@@ -115,6 +139,14 @@ describe("list combinators", () => {
       const parser = choice(commaSeparated(committedA), literal("b"));
       const result = parse(parser)("b");
       expect(result.success).toBe(false);
+      // Directly assert `commaSeparated` itself failed FATALLY -- see the
+      // identical `sepBy` test above for why `success: false` alone is
+      // already strong (if indirect) evidence of this.
+      const direct = commaSeparated(committedA)("b", 0);
+      expect(direct.success).toBe(false);
+      if (!direct.success) {
+        expect(direct.error.fatal).toBe(true);
+      }
     });
   });
 
@@ -132,6 +164,17 @@ describe("list combinators", () => {
       if (result.success) {
         expect(result.val).toEqual(["a", "a"]);
       }
+    });
+
+    it("propagates a fatal (cut/commit) failure from valueParser -- built directly from seq/zeroOrMore, both of which already relay it unchanged", () => {
+      const committedA = commit(literal("a"));
+      const direct = commaSeparated1(committedA)("b", 0);
+      expect(direct.success).toBe(false);
+      if (!direct.success) {
+        expect(direct.error.fatal).toBe(true);
+      }
+      const parser = choice(commaSeparated1(committedA), literal("b"));
+      expect(parse(parser)("b").success).toBe(false);
     });
   });
 });

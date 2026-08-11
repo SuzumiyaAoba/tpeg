@@ -459,6 +459,47 @@ const describeFirstCharFilter = (filter: FirstCharFilter): string => {
  * has no way to verify the contract at runtime -- a violated one
  * produces a parse that silently accepts input the un-optimized `choice`
  * would have rejected, not a crash.
+ *
+ * ## Caller contract: `literalPrefix` must be a prefix EVERY match shares,
+ * and `filter` must match exactly that first character
+ *
+ * The optional third tuple element feeds {@link DispatchTrieNode}'s
+ * beyond-FIRST_1 discrimination (see "Past FIRST_1" above): once two or
+ * more alternatives in the same ASCII bucket carry one, the trie narrows
+ * on their SECOND character onward without re-checking the first (that
+ * check already happened via `filter` when the bucket itself was chosen).
+ * This is sound only if `filter` and `literalPrefix` agree on the first
+ * character in the first place -- `literalPrefix` asserts "every possible
+ * match of this alternative starts with these exact characters," which
+ * is strictly narrower than "starts with a character `filter` admits."
+ * If `filter` admits more than `literalPrefix`'s first character (e.g. a
+ * filter of `{a, z}` paired with `literalPrefix: "zbc"`, for an
+ * alternative that can also match starting with `a`), the alternative
+ * still gets bucketed under `'a'` (correctly, since `filter` decides ASCII
+ * bucket membership), but the trie built from THAT bucket's entries
+ * discriminates starting from `literalPrefix`'s *second* character --
+ * `'b'` -- because `remaining` is `literalPrefix.slice(1)` regardless of
+ * which bucket the entry landed in (see the `remaining:` computation in
+ * this function's body). An actual match beginning `a...` at that
+ * alternative's real (non-`literalPrefix`) branch then has no way to
+ * reach its own candidate slot in the `'a'` bucket's trie, since every
+ * child there was partitioned by `literalPrefix[1]` (`'b'`) -- so the
+ * alternative is silently dropped from that bucket instead of being tried
+ * in its correct ordered-choice position. This produces a WRONG RESULT
+ * (a different alternative's match, not a crash) exactly like violating
+ * the `null`-filter contract above does, and for the same underlying
+ * reason: something this function assumed was excludable/narrowable
+ * turned out not to be. A caller MUST only pass a non-`null`
+ * `literalPrefix` when `filter` itself is restricted to exactly
+ * `{literalPrefix.codePointAt(0)}` -- never a broader filter paired with a
+ * narrower prefix. `packages/parser/src/codegen-optimized.ts`'s
+ * `literalPrefixForExpression` satisfies this today by construction: it
+ * only ever returns non-`null` for a bare `StringLiteral` (or a
+ * `Sequence` whose first element, after unwrapping `Group`/
+ * `ActionExpression`/`LabeledExpression`, is one), so the alternative's
+ * FIRST set -- and therefore `filter` -- is always exactly that literal's
+ * first character. A hand-written caller takes on the same obligation
+ * directly; this combinator has no way to verify it at runtime.
  */
 export const predictiveChoice = <T extends unknown[]>(
   alternatives: readonly (readonly [

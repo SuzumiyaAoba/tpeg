@@ -91,6 +91,16 @@ const LEAVES = [
   "[a-b]",
   "[ab]",
   "[^a]",
+  // Multi-range and negated multi-range classes -- distinct from the
+  // single-range/single-negated-char forms above, exercising
+  // `ast-optimize-char-class.ts`'s character-class-merging pass over more
+  // than one range/member, plus the negated-multi-range codegen path,
+  // neither reached by `[a-b]`/`[ab]`/`[^a]` alone.
+  "[^a-b]",
+  "[^ab]",
+  "[a-bd-e]",
+  "[^a-bd-e]",
+  "[abc]",
   ".",
   // Non-ASCII / astral leaves -- exercises `codePointAt`-based decoding
   // (`anyChar`/`charClass`/`charClassRun` in `packages/core/src/
@@ -123,7 +133,7 @@ const genExpr = (
   const atom = () => pick(rng, allowRuleRef ? [...LEAVES, ...refs] : LEAVES);
   if (depth <= 0) return atom();
   const next = () => genExpr(rng, depth - 1, allowRuleRef, refs);
-  switch (Math.floor(rng() * 22)) {
+  switch (Math.floor(rng() * 28)) {
     case 0:
       return atom();
     case 1:
@@ -206,6 +216,46 @@ const genExpr = (
       // skipped -- see the main test loop below) applies exactly like it
       // already does for a hand-written `("a"?)*`.
       return `(${next()} ${next()})*`;
+    case 21:
+      // A Cut as the FIRST element of a Sequence (zero preceding
+      // elements) -- every existing cut-bearing case above (11/14/15/16/
+      // 17) always has at least an `atom()` or lookahead ahead of the
+      // `~`, so this is the only shape exercising that a cut still marks
+      // every SUBSEQUENT element's failure fatal even with nothing before
+      // it to have already matched.
+      return `(~ ${next()} ${next()})`;
+    case 22:
+      // `optional` wrapping a group that ends in a committed
+      // sub-sequence -- distinct from case 5's `(next())?` (never
+      // contains a cut) and cases 14/15's `star`/`plus` (not `optional`):
+      // exercises `optional`'s own fatal re-raise (`repetition.ts`'s doc
+      // comment) rather than swallowing the cut's failure as "no match".
+      return `(${next()} ~ ${next()})?`;
+    case 23:
+      // A labeled element wrapping a Cut-bearing group -- `capture`
+      // alongside fatal-failure propagation through a `LabeledExpression`,
+      // which `reference-interpreter.ts`'s own doc comment says is
+      // "transparent" for recognition; this pins that codegen agrees.
+      return `x:(${next()} ~ ${next()})`;
+    case 24:
+      // `{0,1}` -- the degenerate Quantified bound equivalent to `?`,
+      // distinct from case 9's `{1,3}`/case 10's `{2}` (both force at
+      // least one match) and case 18's `{0,2}` (wraps a composite, not a
+      // bare atom).
+      return `${atom()}{0,1}`;
+    case 25:
+      // A Cut-bearing group as one alternative of a Choice, directly at
+      // the grammar-text level -- complements case 16/17's lookahead-
+      // scoped absorption tests with `choice`'s own fatal-absorption
+      // boundary (`commit`'s doc comment, `packages/core/src/
+      // combinators.ts`): the committed alternative failing past its cut
+      // must not fall through to the sibling.
+      return `((${next()} ~ ${next()}) / ${next()})`;
+    case 26:
+      // Negative lookahead over a GROUP, not just a bare `atom()` (unlike
+      // case 6) -- exercises `ast-optimize-negative-lookahead.ts`'s
+      // degeneration pass over a composite probe.
+      return `!(${next()}) ${next()}`;
     default:
       return `(${next()} ~ ${next()})`;
   }
@@ -289,6 +339,55 @@ const TEST_INPUTS = [
   "(<a>)",
   "(",
   "((((a",
+];
+
+/** Random strings appended to the fixed `TEST_INPUTS` list above, drawn
+ * from a small alphabet covering every leaf/bracket character `LEAVES`/
+ * `genRecursiveRuleBody` can produce, plus astral/non-ASCII characters --
+ * a fixed hand-picked list alone repeatedly exercises the same handful of
+ * (grammar, input) combinations across 600 random grammars; this widens
+ * the input side too, at effectively zero extra runtime cost (still one
+ * `new Function`-compiled parser call per input). Generated ONCE at module
+ * load with its own fixed LCG seed (not `SEED` below, so changing the
+ * grammar-generation seed doesn't also reshuffle inputs), so this list is
+ * itself deterministic and reproducible across runs, exactly like every
+ * other random sequence in this file. */
+const RANDOM_TEST_INPUTS: readonly string[] = (() => {
+  let state = 424242 >>> 0;
+  const rng = (): number => {
+    state = (Math.imul(state, 1103515245) + 12345) & 0x7fffffff;
+    return state / 0x7fffffff;
+  };
+  const alphabet = [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "(",
+    ")",
+    "[",
+    "]",
+    "<",
+    ">",
+    "é",
+    "😀",
+  ] as const;
+  const inputs: string[] = [];
+  for (let i = 0; i < 20; i++) {
+    const len = Math.floor(rng() * 7);
+    let s = "";
+    for (let j = 0; j < len; j++) {
+      s += alphabet[Math.floor(rng() * alphabet.length)];
+    }
+    inputs.push(s);
+  }
+  return inputs;
+})();
+
+const ALL_TEST_INPUTS: readonly string[] = [
+  ...TEST_INPUTS,
+  ...RANDOM_TEST_INPUTS,
 ];
 
 // --- Harness ---------------------------------------------------------------
@@ -458,7 +557,7 @@ const SAMPLE_SIZE = 600;
 const SEED = 20260809; // today's date at authorship time -- arbitrary but fixed
 
 describe("codegen differential fuzzing (base generator vs. every optimization variant, plus a reference-interpreter oracle)", () => {
-  test(`agrees with the base generator (and the oracle) across ${SAMPLE_SIZE} random grammars x ${TEST_INPUTS.length} inputs, for every variant`, async () => {
+  test(`agrees with the base generator (and the oracle) across ${SAMPLE_SIZE} random grammars x ${ALL_TEST_INPUTS.length} inputs, for every variant`, async () => {
     const core = (await import("@suzumiyaaoba/tpeg-core")) as unknown as Record<
       string,
       unknown
@@ -518,7 +617,7 @@ describe("codegen differential fuzzing (base generator vs. every optimization va
       }
 
       testedCount++;
-      for (const input of TEST_INPUTS) {
+      for (const input of ALL_TEST_INPUTS) {
         let baseResult: ReturnType<Parser<unknown>>;
         try {
           baseResult = base(input, 0);

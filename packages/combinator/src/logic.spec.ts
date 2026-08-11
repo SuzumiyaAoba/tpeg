@@ -4,6 +4,7 @@ import { literal } from "@suzumiyaaoba/tpeg-core";
 import {
   charClassRun,
   choice,
+  commit,
   notPredicate,
   sequence,
 } from "@suzumiyaaoba/tpeg-core";
@@ -145,6 +146,50 @@ describe("logic combinators", () => {
       memoized("a", 0);
 
       expect(callCount).toBe(1);
+    });
+
+    describe("caching a fatal (cut/commit) failure", () => {
+      // A cache HIT replays a previously-computed `ParseResult` verbatim
+      // (see `memoize`'s own doc comment, "Farthest-failure watermark:
+      // replaying what a cache hit skips") -- that result can just as
+      // easily be a FATAL failure (`commit`, `@suzumiyaaoba/tpeg-core`) as
+      // an ordinary one, and nothing in the cache-hit path re-derives or
+      // strips `.error.fatal`, so a HIT must reproduce it exactly like the
+      // original MISS did.
+      it("preserves error.fatal === true on a cache hit, identical to the original miss", () => {
+        const inner = sequence(literal("a"), commit(literal("b")));
+        const memoized = memoize(inner);
+
+        const miss = memoized("ac", pos(0));
+        const hit = memoized("ac", pos(0));
+
+        expect(miss.success).toBe(false);
+        expect(hit.success).toBe(false);
+        if (!miss.success && !hit.success) {
+          expect(miss.error.fatal).toBe(true);
+          expect(hit.error.fatal).toBe(true);
+        }
+      });
+
+      it("a cache-hit fatal failure still aborts an enclosing choice rather than falling through to a sibling", () => {
+        // The real-world consequence of the property above: `choice`
+        // absorbs a fatal failure at its own boundary and does NOT try
+        // the next alternative (see `commit`'s doc comment,
+        // `@suzumiyaaoba/tpeg-core`) -- if a cache hit silently lost the
+        // `fatal` flag, this would wrongly succeed via `fallback` instead.
+        const inner = sequence(literal("a"), commit(literal("b")));
+        const memoized = memoize(inner);
+        const fallback = literal("a");
+        const grammar = choice(memoized, fallback);
+
+        // First call: cache MISS.
+        const first = grammar("ac", pos(0));
+        expect(first.success).toBe(false);
+        // Second call: `memoized` itself now hits the cache internally,
+        // but `choice` around it must behave identically either way.
+        const second = grammar("ac", pos(0));
+        expect(second.success).toBe(false);
+      });
     });
 
     describe("farthest-failure watermark on a cache hit", () => {
@@ -428,6 +473,20 @@ describe("logic combinators", () => {
       const parser = withPosition(literal("abc"));
       const result = parse(parser)("def");
       expect(result.success).toBe(false);
+    });
+
+    it("propagates a fatal (cut/commit) failure unchanged, including the fatal flag", () => {
+      // `withPosition` returns the wrapped parser's failure verbatim on
+      // failure (see its own implementation) -- worth pinning explicitly
+      // since a fatal failure's flag surviving that pass-through is what
+      // lets an enclosing `choice` correctly abort rather than try a
+      // sibling alternative.
+      const parser = withPosition(commit(literal("abc")));
+      const result = parser("def", 0);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.fatal).toBe(true);
+      }
     });
 
     it("should tag failures with parserName when provided", () => {

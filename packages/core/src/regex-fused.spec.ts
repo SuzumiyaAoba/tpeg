@@ -38,6 +38,66 @@ describe("regexFused", () => {
     expect(onB.success).toBe(true);
     if (onB.success) expect(onB.val.groups).toEqual([undefined, "b"]);
   });
+
+  describe("Unicode (`u` flag) behavior", () => {
+    // The module doc comment says the `u` flag is set so "`\u{...}` escapes
+    // and per-code-point character classes behave as `char-set.ts`'s
+    // code-point-based `CharSet` assumes" -- these pin exactly that claim,
+    // which had no test at all before this file.
+    const EMOJI = "\u{1F600}"; // 😀 -- a surrogate pair, outside the BMP
+
+    it("matches a `\\u{...}` code-point escape against an astral character", () => {
+      const parser = regexFused("\\u{1F600}", "emoji");
+      const result = parser(EMOJI, 0);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.text).toBe(EMOJI);
+        // Advances by the FULL surrogate pair (2 UTF-16 code units), not 1
+        // -- `advancePos` counting the match's own length correctly.
+        expect(result.next).toBe(2);
+      }
+    });
+
+    it("a per-code-point character class range matches an astral character inside it and rejects one outside it", () => {
+      // [\u{1F600}-\u{1F64F}] -- the "emoticons" astral block. Without the
+      // `u` flag this range would be interpreted over UTF-16 CODE UNITS
+      // instead, silently matching/rejecting the wrong things for any
+      // character outside the BMP.
+      const parser = regexFused("[\\u{1F600}-\\u{1F64F}]", "emoji-range");
+      const inRange = parser("\u{1F60A}", 0); // 😊 -- inside the range
+      expect(inRange.success).toBe(true);
+      if (inRange.success) {
+        expect(inRange.val.text).toBe("\u{1F60A}");
+        expect(inRange.next).toBe(2);
+      }
+
+      const outOfRange = parser("\u{1F389}", 0); // 🎉 -- outside the range
+      expect(outOfRange.success).toBe(false);
+    });
+
+    it("`.` matches one whole astral character (one code point), not a lone surrogate", () => {
+      // Without `u`, `.` matches a single UTF-16 code unit -- i.e. only
+      // the LEAD surrogate half of an astral character, leaving a
+      // dangling unpaired trail surrogate behind. With `u`, `.` matches
+      // the full code point in one step.
+      const parser = regexFused(".", "any-char");
+      const result = parser(`${EMOJI}x`, 0);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.text).toBe(EMOJI);
+        expect(result.next).toBe(2);
+      }
+    });
+
+    it("captures an astral character inside a group correctly, groups[i] holds the full code point", () => {
+      const parser = regexFused("(.)", "captured-any");
+      const result = parser(EMOJI, 0);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.groups).toEqual([EMOJI]);
+      }
+    });
+  });
 });
 
 describe("regexFusedMap", () => {

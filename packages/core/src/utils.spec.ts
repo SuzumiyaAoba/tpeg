@@ -6,6 +6,7 @@ import {
   createPos,
   extractValue,
   getCharAndLength,
+  getCharAt,
   isEmptyArray,
   isFailure,
   isNewline,
@@ -13,7 +14,9 @@ import {
   isSuccess,
   isWhitespace,
   nextPos,
+  offsetToPos,
   parse,
+  prependContext,
   safeExtractValue,
   unicodeLength,
 } from "./utils";
@@ -77,6 +80,31 @@ describe("Utils", () => {
 
       it("should handle empty string", () => {
         expect(getCharAndLength("", 0)).toEqual(["", 0]);
+      });
+    });
+
+    describe("getCharAt", () => {
+      it("returns the character at offset, unlike getCharAndLength no tuple allocated", () => {
+        expect(getCharAt("Hello", 0)).toBe("H");
+        expect(getCharAt("Hello", 1)).toBe("e");
+      });
+
+      it("returns a full astral character (surrogate pair) as one string", () => {
+        expect(getCharAt("🌍", 0)).toBe("🌍");
+        expect(getCharAt("a🌍b", 1)).toBe("🌍");
+      });
+
+      it("returns empty string when out of bounds", () => {
+        expect(getCharAt("Hello", 10)).toBe("");
+        expect(getCharAt("Hello", -1)).toBe("");
+        expect(getCharAt("", 0)).toBe("");
+      });
+
+      it("agrees with getCharAndLength's first tuple element for every offset", () => {
+        const input = "a🌍b世界";
+        for (let i = 0; i <= input.length; i++) {
+          expect(getCharAt(input, i)).toBe(getCharAndLength(input, i)[0]);
+        }
       });
     });
 
@@ -347,6 +375,112 @@ describe("Utils", () => {
         expect(failure.error.found).toBe("test");
         expect(failure.error.parserName).toBe("testParser");
       });
+    });
+  });
+
+  describe("offsetToPos", () => {
+    it("returns line 1, column 0 at the very start of a single-line input", () => {
+      expect(offsetToPos("abc", 0)).toEqual({ offset: 0, line: 1, column: 0 });
+    });
+
+    it("counts columns within the first line before any newline", () => {
+      expect(offsetToPos("abc", 2)).toEqual({ offset: 2, line: 1, column: 2 });
+    });
+
+    it("advances the line number past each newline and resets the column", () => {
+      expect(offsetToPos("ab\ncd", 0)).toEqual({
+        offset: 0,
+        line: 1,
+        column: 0,
+      });
+      // Offset 3 is right after the newline, at the start of line 2.
+      expect(offsetToPos("ab\ncd", 3)).toEqual({
+        offset: 3,
+        line: 2,
+        column: 0,
+      });
+      expect(offsetToPos("ab\ncd", 4)).toEqual({
+        offset: 4,
+        line: 2,
+        column: 1,
+      });
+    });
+
+    it("counts multiple lines correctly", () => {
+      const input = "line1\nline2\nline3";
+      expect(offsetToPos(input, 0).line).toBe(1);
+      expect(offsetToPos(input, 6).line).toBe(2); // right after first \n
+      expect(offsetToPos(input, 12).line).toBe(3); // right after second \n
+    });
+
+    it("counts a column in CODE POINTS, not UTF-16 code units, on a line containing an astral character", () => {
+      // "a🌍b" -- the emoji is 2 UTF-16 code units but must count as ONE
+      // column, matching what per-character `nextPos` used to produce
+      // (see the function's own doc comment).
+      const input = "a🌍b";
+      expect(offsetToPos(input, 0).column).toBe(0); // "a"
+      expect(offsetToPos(input, 1).column).toBe(1); // "🌍" starts here
+      expect(offsetToPos(input, 3).column).toBe(2); // "b" -- 1 column past the emoji, not 2
+    });
+
+    it("is consistent with a manual walk via getCharAndLength across a mixed-content multi-line input", () => {
+      const input = "ab\ncd🌍\nef";
+      let offset = 0;
+      let line = 1;
+      let column = 0;
+      for (const ch of ["a", "b", "\n", "c", "d", "🌍", "\n", "e", "f"]) {
+        expect(offsetToPos(input, offset)).toEqual({ offset, line, column });
+        offset += ch.length;
+        if (ch === "\n") {
+          line++;
+          column = 0;
+        } else {
+          column++;
+        }
+      }
+    });
+  });
+
+  describe("prependContext", () => {
+    it("wraps a single label into a one-element array when context is undefined", () => {
+      expect(prependContext("in sequence", undefined)).toEqual(["in sequence"]);
+    });
+
+    it("prepends a single label to a single-string context", () => {
+      expect(prependContext("in sequence", "inner")).toEqual([
+        "in sequence",
+        "inner",
+      ]);
+    });
+
+    it("prepends a single label to an array context, preserving order", () => {
+      expect(prependContext("in sequence", ["a", "b"])).toEqual([
+        "in sequence",
+        "a",
+        "b",
+      ]);
+    });
+
+    it("prepends an array of labels, outermost first, ahead of the existing context", () => {
+      expect(prependContext(["outer", "inner"], ["a", "b"])).toEqual([
+        "outer",
+        "inner",
+        "a",
+        "b",
+      ]);
+    });
+
+    it("returns just the labels, flattened, when both labels and context are arrays and context is empty", () => {
+      expect(prependContext(["a", "b"], [])).toEqual(["a", "b"]);
+    });
+
+    it("never mutates its inputs", () => {
+      const labels = ["a", "b"];
+      const context = ["c", "d"];
+      const result = prependContext(labels, context);
+      expect(result).toEqual(["a", "b", "c", "d"]);
+      expect(labels).toEqual(["a", "b"]);
+      expect(context).toEqual(["c", "d"]);
     });
   });
 
