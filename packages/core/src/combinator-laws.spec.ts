@@ -154,7 +154,12 @@ const keyRecognitionOnly = (parser: Parser<unknown>, input: string): Key => {
   }
 };
 
-const SEEDS = 400;
+// See `codegen-differential.spec.ts`'s identical `FUZZ_SCALE` comment:
+// multiplies the seed count for a deep audit run, e.g.
+// `TPEG_FUZZ_SCALE=30 bun test src/combinator-laws.spec.ts`. A no-op at
+// the default of 1.
+const FUZZ_SCALE = Math.max(1, Number(process.env["TPEG_FUZZ_SCALE"]) || 1);
+const SEEDS = 400 * FUZZ_SCALE;
 
 describe("combinator laws: memoize-free core parsers vs. their reference shape", () => {
   it("charClassRun(specs, 0) === zeroOrMore(charClass(...specs)) (recognition + value)", () => {

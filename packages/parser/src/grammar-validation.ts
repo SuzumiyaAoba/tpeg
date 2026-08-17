@@ -170,6 +170,86 @@ const findDuplicateRuleNames = (grammar: GrammarDefinition): string[] => {
 };
 
 /**
+ * True where `expr` is a `~` that matches nothing on its own: either a
+ * bare `Cut` node, or a `Sequence` whose elements are all `Cut`. Both
+ * shapes are reachable from ordinary `.tpeg` surface syntax (`start = ~`,
+ * `start = ~ ~`, `(~) "b"`, `(~ ~) "b"`, `~ / "a"`, ...) because
+ * `composition.ts` unwraps a single-element `Sequence` down to its bare
+ * element -- a rule (or group, or choice alternative, or quantifier body,
+ * ...) whose only content is one `~` reduces to a standalone `Cut` node
+ * with no enclosing `Sequence` at all.
+ *
+ * `~` only has meaning as one of SEVERAL elements of a `Sequence`
+ * (`codegen.ts`/`codegen-optimized.ts`'s `generateSequence` is the only
+ * place that understands it): everywhere else, a `Cut` node makes code
+ * generation throw `Unsupported expression type: Cut` outright, and an
+ * all-`Cut` `Sequence` would (after `generateSequence` drops every `Cut`)
+ * silently generate an always-succeeding empty match -- neither is a
+ * useful reading of what the grammar author wrote, so both are rejected
+ * here as a grammar-authoring error rather than left to surface as an
+ * exception or a silently wrong parser.
+ */
+const isCutOnlyPattern = (expr: Expression): boolean =>
+  expr.type === "Cut" ||
+  (expr.type === "Sequence" &&
+    expr.elements.length > 0 &&
+    expr.elements.every((el) => el.type === "Cut"));
+
+/**
+ * Recursively walks `expr` looking for a cut-only pattern (see
+ * `isCutOnlyPattern`) in any sub-expression position. `context` tracks
+ * whether `expr` itself is being visited AS one element of its immediate
+ * parent `Sequence` -- the one position where a bare `Cut` is legitimate
+ * -- so a normal `"a" ~ "b"` is never flagged for the very `Cut` it's
+ * built from, while `(~) "b"` (a `Cut` reached through a `Group`, which
+ * does NOT understand `Cut`) still is.
+ */
+const containsCutOnlyPattern = (
+  expr: Expression,
+  context: "sequenceElement" | "other",
+): boolean => {
+  if (expr.type === "Cut") {
+    return context !== "sequenceElement";
+  }
+  if (expr.type === "Sequence") {
+    if (isCutOnlyPattern(expr)) return true;
+    return expr.elements.some((el) =>
+      containsCutOnlyPattern(el, "sequenceElement"),
+    );
+  }
+  if (expr.type === "Choice") {
+    return expr.alternatives.some((alt) =>
+      containsCutOnlyPattern(alt, "other"),
+    );
+  }
+  if (
+    expr.type === "Group" ||
+    expr.type === "Star" ||
+    expr.type === "Plus" ||
+    expr.type === "Optional" ||
+    expr.type === "Quantified" ||
+    expr.type === "PositiveLookahead" ||
+    expr.type === "NegativeLookahead" ||
+    expr.type === "LabeledExpression" ||
+    expr.type === "ActionExpression"
+  ) {
+    return containsCutOnlyPattern(expr.expression, "other");
+  }
+  return false;
+};
+
+/** Rule names whose pattern contains a cut-only sub-expression anywhere. */
+const findCutOnlyRules = (grammar: GrammarDefinition): string[] => {
+  const flagged: string[] = [];
+  for (const rule of grammar.rules) {
+    if (containsCutOnlyPattern(rule.pattern, "other")) {
+      flagged.push(rule.name);
+    }
+  }
+  return flagged;
+};
+
+/**
  * Validates `grammar` for structural problems that have no well-defined
  * PEG semantics at all, throwing on the first category found. Must run
  * before `analyzeFirstSets`/`assertNoNullableRepetition` -- see this
@@ -183,8 +263,13 @@ const findDuplicateRuleNames = (grammar: GrammarDefinition): string[] => {
  * refer to" is itself ambiguous, so a left-recursion report built on top
  * of that would be unreliable.
  *
+ * The cut-only-pattern check (see `isCutOnlyPattern`/`findCutOnlyRules`)
+ * runs last: it doesn't interact with duplicate-name or left-recursion
+ * analysis, so its ordering relative to them is not load-bearing.
+ *
  * @throws {Error} if any rule name is declared more than once, or (once
- *   no duplicates remain) if any rule is left-recursive.
+ *   no duplicates remain) if any rule is left-recursive, or if any rule's
+ *   pattern reduces to `~` matching nothing on its own.
  */
 export const validateGrammar = (grammar: GrammarDefinition): void => {
   const duplicates = findDuplicateRuleNames(grammar);
@@ -198,6 +283,13 @@ export const validateGrammar = (grammar: GrammarDefinition): void => {
   if (leftRecursive.length > 0) {
     throw new Error(
       `Left-recursive rule(s): ${leftRecursive.join(", ")} -- a PEG parser cannot recognize left recursion at runtime; it re-invokes the same rule at the same position without consuming any input first, until the call stack overflows. Rewrite using repetition instead of left-recursive self-reference (e.g. "expr = expr op term / term" becomes "expr = term (op term)*").`,
+    );
+  }
+
+  const cutOnly = findCutOnlyRules(grammar);
+  if (cutOnly.length > 0) {
+    throw new Error(
+      `${ERROR_MESSAGES.CUT_ONLY_PATTERN} (rule(s): ${cutOnly.join(", ")}) -- \`~\` only has meaning as one of several elements of a sequence (e.g. "a" ~ "b"); a rule, group, choice alternative, or repetition/lookahead body made up of nothing but \`~\` doesn't match anything.`,
     );
   }
 };

@@ -350,15 +350,21 @@ export const evalSpec = (spec: Spec, input: string, pos: number): Result => {
 
 /**
  * Convenience wrapper around {@link evalSpec} that collapses a `Result`
- * into the same `"S:<next>" | "F"` key shape
+ * into the same `"S:<next>" | "F" | "FATAL"` key shape
  * `codegen-differential.spec.ts`'s `keySuccessOnly` and
  * `reference-interpreter.ts`'s `referenceRecognize` use, so an oracle diff
  * here reads the same way as every other diff in this codebase's
- * differential-testing harnesses.
+ * differential-testing harnesses. `"FATAL"` is a failure that reached this
+ * point still marked fatal -- i.e. no enclosing `"alt"`/`"and"`/`"not"`
+ * absorbed it first (see the module doc comment's absorption rules) --
+ * distinguishing it from an ordinary `"F"` catches a cut-propagation bug
+ * that agrees on success/failure but disagrees on WHY it failed, which the
+ * previous 2-value key could never see.
  */
 export const specRecognize =
   (spec: Spec) =>
   (input: string): string => {
     const r = evalSpec(spec, input, 0);
-    return r.ok ? `S:${r.next}` : "F";
+    if (r.ok) return `S:${r.next}`;
+    return r.fatal ? "FATAL" : "F";
   };

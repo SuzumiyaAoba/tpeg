@@ -113,5 +113,66 @@ describe("characterClass", () => {
         expect(result.success).toBe(false);
       }
     });
+
+    // Regression: `charClassChar` only ever accepted ASCII printable
+    // characters as a class member, so `[é]`, `[あ-ん]`, `[😀-🙏]`, and a
+    // mixed `[a-zあ]` were all syntax errors even though the RUNTIME
+    // (`char-set.ts`, `core/char-class.ts`) has always been code-point
+    // based and already differentially tested against astral ranges
+    // (`core/combinator-oracle.spec.ts`). See `character-class.ts`'s
+    // non-ASCII `charClassChar` alternative.
+    describe("non-ASCII characters", () => {
+      it("parses a single non-ASCII character", () => {
+        const result = parser("[é]", pos);
+        expect(result.success).toBe(true);
+        if (result.success && result.val.type === "CharacterClass") {
+          expect(result.val.ranges).toEqual([{ start: "é" }]);
+        }
+      });
+
+      it("parses a non-ASCII character range", () => {
+        const result = parser("[あ-ん]", pos);
+        expect(result.success).toBe(true);
+        if (result.success && result.val.type === "CharacterClass") {
+          expect(result.val.ranges).toEqual([{ start: "あ", end: "ん" }]);
+        }
+      });
+
+      it("parses an astral (outside the BMP) character range as one code point per bound, not a UTF-16 surrogate half", () => {
+        const result = parser("[😀-🙏]", pos);
+        expect(result.success).toBe(true);
+        if (result.success && result.val.type === "CharacterClass") {
+          expect(result.val.ranges).toEqual([{ start: "😀", end: "🙏" }]);
+        }
+        // Consumed the whole 4-code-unit-each range, not just its
+        // leading surrogates.
+        expect(result.success && result.next).toBe("[😀-🙏]".length);
+      });
+
+      it("mixes an ASCII range with a non-ASCII single character in the same class", () => {
+        const result = parser("[a-zあ]", pos);
+        expect(result.success).toBe(true);
+        if (result.success && result.val.type === "CharacterClass") {
+          expect(result.val.ranges).toEqual([
+            { start: "a", end: "z" },
+            { start: "あ" },
+          ]);
+        }
+      });
+
+      it("negates a non-ASCII character class", () => {
+        const result = parser("[^あ]", pos);
+        expect(result.success).toBe(true);
+        if (result.success && result.val.type === "CharacterClass") {
+          expect(result.val.negated).toBe(true);
+          expect(result.val.ranges).toEqual([{ start: "あ" }]);
+        }
+      });
+
+      it("still rejects a reversed non-ASCII range", () => {
+        const result = parser("[ん-あ]", pos);
+        expect(result.success).toBe(false);
+      });
+    });
   });
 });

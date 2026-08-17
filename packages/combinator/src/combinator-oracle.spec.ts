@@ -62,6 +62,7 @@ import {
   choice,
   commit,
   evalSpec,
+  isFatalFailure,
   literal,
   negatedCharClass,
   notPredicate,
@@ -671,96 +672,120 @@ const genInputs = (rng: () => number, count: number): string[] => {
 
 // --- Harness ---------------------------------------------------------------
 
+// "FATAL" (distinct from ordinary "F") is a failure that's still fatal
+// once it reaches the caller. Notably exercised here by `topcut` (see
+// below): `commitAtTopLevel`'s whole point is to expose a fatal failure
+// all the way to the top of the parse, so this is the one file among the
+// oracle suites where a "FATAL" key is expected to be common, not rare.
 const keySuccessOnly = (r: ReturnType<Parser<unknown>>): string =>
-  r.success ? `S:${r.next}` : "F";
+  r.success ? `S:${r.next}` : isFatalFailure(r) ? "FATAL" : "F";
 
-const SEEDS = 400;
+// See `codegen-differential.spec.ts`'s identical `FUZZ_SCALE` comment:
+// multiplies the seed count for a deep audit run, e.g.
+// `TPEG_FUZZ_SCALE=30 bun test src/combinator-oracle.spec.ts`. A no-op at
+// the default of 1.
+const FUZZ_SCALE = Math.max(1, Number(process.env["TPEG_FUZZ_SCALE"]) || 1);
+const SEEDS = 400 * FUZZ_SCALE;
 
 describe("combinator-package oracle: this package's own combinators vs. tpeg-core's reference-eval.ts", () => {
-  it(`agrees with reference-eval across ${SEEDS} random specs x ~${FIXED_INPUTS.length + 12} inputs, for both choice-mode and predictiveChoice-mode builds`, () => {
-    const diffs: string[] = [];
-    let tested = 0;
-    let skipped = 0;
+  it(
+    `agrees with reference-eval across ${SEEDS} random specs x ~${FIXED_INPUTS.length + 12} inputs, for both choice-mode and predictiveChoice-mode builds`,
+    () => {
+      const diffs: string[] = [];
+      let tested = 0;
+      let skipped = 0;
+      // Guards against the "FATAL" key silently never being produced --
+      // see `packages/parser/src/codegen-differential.spec.ts`'s
+      // identical `fatalKeyCount`. `topcut` (below) exists specifically
+      // to expose this at the top of the parse, so this file's count
+      // should be substantial, not just nonzero.
+      let fatalKeyCount = 0;
 
-    for (let seed = 1; seed <= SEEDS; seed++) {
-      const rng = makeRng(seed);
-      let root = genCSpec(rng, 4);
-      // Every ~5th seed, additionally wrap with a top-level
-      // `commitAtTopLevel` as the LAST element of the outermost sequence
-      // -- the only placement `commitAtTopLevel`'s own soundness
-      // restriction allows (see `./logic.ts`'s doc comment: no live
-      // backtrack point may exist above it). Never generated as a nested
-      // case inside `genCSpecInner` for exactly that reason.
-      if (seed % 5 === 0) {
-        root = {
-          kind: "seq",
-          elements: [root, { kind: "topcut", expression: genCSpec(rng, 1) }],
-        };
-      }
+      for (let seed = 1; seed <= SEEDS; seed++) {
+        const rng = makeRng(seed);
+        let root = genCSpec(rng, 4);
+        // Every ~5th seed, additionally wrap with a top-level
+        // `commitAtTopLevel` as the LAST element of the outermost sequence
+        // -- the only placement `commitAtTopLevel`'s own soundness
+        // restriction allows (see `./logic.ts`'s doc comment: no live
+        // backtrack point may exist above it). Never generated as a nested
+        // case inside `genCSpecInner` for exactly that reason.
+        if (seed % 5 === 0) {
+          root = {
+            kind: "seq",
+            elements: [root, { kind: "topcut", expression: genCSpec(rng, 1) }],
+          };
+        }
 
-      let choiceParser: Parser<unknown>;
-      let predictiveParser: Parser<unknown>;
-      try {
-        choiceParser = build(root, "choice");
-        predictiveParser = build(root, "predictive");
-      } catch {
-        skipped++;
-        continue;
-      }
-
-      tested++;
-      const coreSpec = toCoreSpec(root);
-      const inputRng = makeRng(seed * 7919 + 1);
-      for (const input of genInputs(inputRng, 12)) {
-        let oracleKey: string;
+        let choiceParser: Parser<unknown>;
+        let predictiveParser: Parser<unknown>;
         try {
-          const r = evalSpec(coreSpec, input, 0);
-          oracleKey = r.ok ? `S:${r.next}` : "F";
-        } catch (error) {
-          if (!(error instanceof ReferenceEvalLimitError)) {
-            diffs.push(
-              `[reference-eval THREW] seed=${seed} input=${JSON.stringify(input)}\n  ${(error as Error).message}\n  spec=${JSON.stringify(root)}`,
-            );
-          }
+          choiceParser = build(root, "choice");
+          predictiveParser = build(root, "predictive");
+        } catch {
+          skipped++;
           continue;
         }
 
-        for (const [label, parser] of [
-          ["choice", choiceParser],
-          ["predictiveChoice", predictiveParser],
-        ] as const) {
-          let result: ReturnType<Parser<unknown>>;
+        tested++;
+        const coreSpec = toCoreSpec(root);
+        const inputRng = makeRng(seed * 7919 + 1);
+        for (const input of genInputs(inputRng, 12)) {
+          let oracleKey: string;
           try {
-            result = parser(input, 0);
+            const r = evalSpec(coreSpec, input, 0);
+            oracleKey = r.ok ? `S:${r.next}` : r.fatal ? "FATAL" : "F";
+            if (oracleKey === "FATAL") fatalKeyCount++;
           } catch (error) {
-            diffs.push(
-              `[${label} THREW] seed=${seed} input=${JSON.stringify(input)}\n  ${(error as Error).message}\n  spec=${JSON.stringify(root)}`,
-            );
+            if (!(error instanceof ReferenceEvalLimitError)) {
+              diffs.push(
+                `[reference-eval THREW] seed=${seed} input=${JSON.stringify(input)}\n  ${(error as Error).message}\n  spec=${JSON.stringify(root)}`,
+              );
+            }
             continue;
           }
-          const key = keySuccessOnly(result);
-          if (key !== oracleKey) {
-            diffs.push(
-              `[${label}] seed=${seed} input=${JSON.stringify(input)}\n  oracle=${oracleKey} ${label}=${key}\n  spec=${JSON.stringify(root)}`,
-            );
+
+          for (const [label, parser] of [
+            ["choice", choiceParser],
+            ["predictiveChoice", predictiveParser],
+          ] as const) {
+            let result: ReturnType<Parser<unknown>>;
+            try {
+              result = parser(input, 0);
+            } catch (error) {
+              diffs.push(
+                `[${label} THREW] seed=${seed} input=${JSON.stringify(input)}\n  ${(error as Error).message}\n  spec=${JSON.stringify(root)}`,
+              );
+              continue;
+            }
+            const key = keySuccessOnly(result);
+            if (key !== oracleKey) {
+              diffs.push(
+                `[${label}] seed=${seed} input=${JSON.stringify(input)}\n  oracle=${oracleKey} ${label}=${key}\n  spec=${JSON.stringify(root)}`,
+              );
+            }
           }
         }
       }
-    }
 
-    expect(tested).toBeGreaterThan(SEEDS / 2);
-    expect(predictiveChoiceFilterCount).toBeGreaterThan(0);
-    // Guards against this file's own extra node kinds silently never
-    // being generated (a generator regression that would leave
-    // `memoize`/`commitAtTopLevel`/`sepBy`/`sepBy1`/`between`/`takeUntil`
-    // completely untested here while the test still reports green).
-    expect(extraKindCount).toBeGreaterThan(0);
+      expect(tested).toBeGreaterThan(SEEDS / 2);
+      expect(predictiveChoiceFilterCount).toBeGreaterThan(0);
+      expect(fatalKeyCount).toBeGreaterThan(0);
+      // Guards against this file's own extra node kinds silently never
+      // being generated (a generator regression that would leave
+      // `memoize`/`commitAtTopLevel`/`sepBy`/`sepBy1`/`between`/`takeUntil`
+      // completely untested here while the test still reports green).
+      expect(extraKindCount).toBeGreaterThan(0);
 
-    if (diffs.length > 0) {
-      const preview = diffs.slice(0, 10).join("\n\n");
-      throw new Error(
-        `${diffs.length} differential-fuzzing failure(s) out of ${tested} specs tested (${skipped} skipped). First ${Math.min(10, diffs.length)}:\n\n${preview}`,
-      );
-    }
-  });
+      if (diffs.length > 0) {
+        const preview = diffs.slice(0, 10).join("\n\n");
+        throw new Error(
+          `${diffs.length} differential-fuzzing failure(s) out of ${tested} specs tested (${skipped} skipped). First ${Math.min(10, diffs.length)}:\n\n${preview}`,
+        );
+      }
+      // Scaled by FUZZ_SCALE for the same reason as
+      // `codegen-differential.spec.ts`'s test timeout.
+    },
+    10000 * FUZZ_SCALE,
+  );
 });

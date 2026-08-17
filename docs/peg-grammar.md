@@ -67,6 +67,10 @@ Character set matching
 .              // Any character
 ```
 
+A class member (single character or range endpoint) may be any Unicode code
+point, not just ASCII - `[あ-ん]`, `[é]`, and `[😀-🙏]` (an astral, outside-the-BMP
+range) are all valid, matched exactly like any other range.
+
 ### Identifiers
 References to defined rules
 
@@ -205,6 +209,19 @@ lookahead (see [Lookahead Operators](#lookahead-operators) above). Multiple
 `~` in the same sequence are allowed but redundant: once committed, a
 sequence stays committed.
 
+`~` only has meaning as one of *several* elements of a sequence - on its
+own it matches nothing. A rule, group, or choice alternative whose entire
+content is `~` (optionally repeated, e.g. `~ ~`) is rejected as a
+grammar-authoring error at generation time rather than silently compiled
+into a parser that matches nothing:
+
+```tpeg
+start = ~          // rejected: a rule body can't be just `~`
+start = (~) "b"     // rejected: same problem, one level deeper
+start = ~ / "a"     // rejected: a choice alternative can't be just `~` either
+start = "a" ~ "b"   // fine: `~` shares its sequence with real matches
+```
+
 ## Labels and Captures
 
 ### Basic Labels
@@ -298,6 +315,7 @@ export const greeting = captureSequence(
 | `&pattern` | `null` | Positive lookahead doesn't capture |
 | `!pattern` | `null` | Negative lookahead doesn't capture |
 | `a ~ b` | `[T_a, T_b]` | `~` itself contributes nothing and no tuple slot - the sequence's element count (and captures, if labeled) is exactly as if `~` weren't there |
+| `a ~` | `T_a` | Same rule taken to its single-element conclusion: with `~` gone, only `a` is left - a bare pattern, not a sequence - so it captures as `a`'s own (unlabeled) type, not a 1-tuple `[T_a]` |
 
 ## Semantic Actions
 

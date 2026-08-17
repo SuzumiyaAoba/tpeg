@@ -349,10 +349,18 @@ export const makeReferenceInterpreter = (
 
 /**
  * Convenience wrapper around {@link makeReferenceInterpreter} that
- * collapses a `Result` into the same `"S:<next>" | "F"` key shape
- * `codegen-differential.spec.ts`'s `keySuccessOnly` uses for the
+ * collapses a `Result` into the same `"S:<next>" | "F" | "FATAL"` key
+ * shape `codegen-differential.spec.ts`'s `keySuccessOnly` uses for the
  * generated-code side of a comparison -- so an oracle diff reads the
- * same way as every other diff in that harness.
+ * same way as every other diff in that harness. `"FATAL"` is distinct
+ * from plain `"F"`: this interpreter models `fatal`/cut absorption
+ * exactly like the real runtime (see this module's doc comment), so a
+ * failure that's still fatal once it reaches the very top -- i.e. no
+ * enclosing `Choice`/`PositiveLookahead`/`NegativeLookahead` absorbed it
+ * first -- is exactly what the generated code's own top-level
+ * `commit`/`commitAtTopLevel` failure looks like, and a mismatch here (a
+ * "did it fail" agreement that's still a "why it failed" disagreement)
+ * is a real cut-propagation bug this key was previously blind to.
  */
 export const referenceRecognize = (
   grammar: GrammarDefinition,
@@ -361,6 +369,7 @@ export const referenceRecognize = (
   const interp = makeReferenceInterpreter(grammar, maxDepth);
   return (input: string): string => {
     const r = interp(input);
-    return r.ok ? `S:${r.next}` : "F";
+    if (r.ok) return `S:${r.next}`;
+    return r.fatal ? "FATAL" : "F";
   };
 };

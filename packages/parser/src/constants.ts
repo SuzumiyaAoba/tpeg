@@ -251,6 +251,7 @@ export const ERROR_MESSAGES = {
   DUPLICATE_RULE: "Duplicate rule definition",
   MISSING_RULE_ASSIGNMENT: "Missing '=' in rule definition",
   INVALID_ANNOTATION: "Invalid annotation syntax",
+  CUT_ONLY_PATTERN: "`~` cannot be a rule body (or sub-expression) on its own",
 } as const;
 
 /**

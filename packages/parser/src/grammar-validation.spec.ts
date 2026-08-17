@@ -333,3 +333,70 @@ describe("validateGrammar: left recursion", () => {
     ).not.toThrow();
   });
 });
+
+// `~` cannot be a rule body (or sub-expression) on its own: it only has
+// meaning as one of several elements of a sequence. See
+// `grammar-validation.ts`'s `isCutOnlyPattern`/`containsCutOnlyPattern` doc
+// comments for why both a bare `Cut` node and an all-`Cut` `Sequence` are
+// reachable from ordinary `.tpeg` source text once `composition.ts`
+// unwraps a single-element sequence.
+describe("validateGrammar: cut-only patterns", () => {
+  it("rejects a rule body that is nothing but `~`", () => {
+    const grammar = grammarFromSource("start = ~");
+    expect(() => validateGrammar(grammar)).toThrow(/cannot be a rule body/i);
+    expect(() => validateGrammar(grammar)).toThrow(/start/);
+  });
+
+  it("rejects a rule body that is nothing but repeated `~`", () => {
+    const grammar = grammarFromSource("start = ~ ~");
+    expect(() => validateGrammar(grammar)).toThrow(/cannot be a rule body/i);
+  });
+
+  it("rejects a group whose entire content is `~`", () => {
+    const grammar = grammarFromSource('start = (~) "b"');
+    expect(() => validateGrammar(grammar)).toThrow(/cannot be a rule body/i);
+  });
+
+  it("rejects a group whose entire content is repeated `~`", () => {
+    const grammar = grammarFromSource('start = (~ ~) "b"');
+    expect(() => validateGrammar(grammar)).toThrow(/cannot be a rule body/i);
+  });
+
+  it("rejects a choice alternative that is nothing but `~`", () => {
+    const grammar = grammarFromSource('start = ~ / "a"');
+    expect(() => validateGrammar(grammar)).toThrow(/cannot be a rule body/i);
+  });
+
+  it("does NOT reject `~` used as one of several sequence elements", () => {
+    const grammar = grammarFromSource('start = "a" ~ "b"');
+    expect(() => validateGrammar(grammar)).not.toThrow();
+  });
+
+  it("does NOT reject `~` nested inside a group alongside a real match", () => {
+    const grammar = grammarFromSource('start = ("a" ~ "b") "c"');
+    expect(() => validateGrammar(grammar)).not.toThrow();
+  });
+
+  it("does NOT reject a leading or trailing `~` that still shares its sequence with a real match", () => {
+    const grammar = grammarFromSource('start = "a" "b" ~');
+    expect(() => validateGrammar(grammar)).not.toThrow();
+  });
+
+  it("end-to-end: both generators reject a cut-only rule instead of throwing an internal codegen error", () => {
+    const grammar = grammarFromSource("start = ~");
+    expect(() =>
+      generateTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+      }),
+    ).toThrow(/cannot be a rule body/i);
+    expect(() =>
+      generateOptimizedTypeScriptParser(grammar, {
+        language: "typescript",
+        includeImports: false,
+        includeTypes: false,
+        optimize: true,
+      }),
+    ).toThrow(/cannot be a rule body/i);
+  });
+});

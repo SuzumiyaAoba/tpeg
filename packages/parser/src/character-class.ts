@@ -79,6 +79,19 @@ const charClassChar: Parser<string> = choice(
   // escaped `[a\,b]` both failed to parse -- no escape sequence covered it
   // either, see the escape charClass above).
   charClass([" ", ","], [".", "["], ["_", "~"]),
+  // Any non-ASCII character (U+0080 and up, including astral code points
+  // outside the BMP), covered as one range so `charClass` (tpeg-core)
+  // matches it as a single code point rather than a UTF-16 surrogate
+  // half. None of ASCII's special characters (`] ^ \ -`) exist above
+  // U+007F, so no further exclusion is needed here. The RUNTIME has
+  // always supported this -- `char-set.ts`, `core/char-class.ts`, and
+  // `charRange` below are all code-point-based already -- this was
+  // previously just unreachable from `.tpeg` SOURCE TEXT, making `[é]`,
+  // `[あ-ん]`, and `[😀-🙏]` syntax errors even though the exact same
+  // character classes are already differentially tested at the
+  // combinator layer (`core/combinator-oracle.spec.ts`'s astral
+  // char-class ranges).
+  charClass(["", "\u{10ffff}"]),
 );
 
 /**

@@ -9,6 +9,8 @@
  *
  * - `applyAstOptimizations` (left-factoring, character-class merging,
  *   negative-lookahead degeneration -- `ast-optimize.ts`)
+ * - `mergeCharacterClasses` alone (isolates the one pass of the three
+ *   above that never changes value shape -- see its own VariantSpec entry)
  * - `insertAutomaticCuts` / `promoteGlobalCuts` (cut insertion/promotion --
  *   `ast-optimize-cut-insertion.ts` / `ast-optimize-cut-promotion.ts`)
  * - `generateOptimizedTypeScriptParser` with predictive dispatch (default),
@@ -16,10 +18,11 @@
  *   with the full pipeline (every rewrite pass plus fusion) combined
  *
  * A rewrite that can change a rule's VALUE SHAPE without changing which
- * inputs it accepts (`applyAstOptimizations`'s left-factoring, and any
- * pipeline that includes it) is compared on success/next only; every other
- * variant is compared on success/next/val, since it claims to be exactly
- * shape-preserving.
+ * inputs it accepts (`applyAstOptimizations`'s left-factoring and
+ * negative-lookahead degeneration, and any pipeline that includes them) is
+ * compared on success/next only; every other variant -- including
+ * `mergeCharacterClasses` alone -- is compared on success/next/val, since
+ * it claims to be exactly shape-preserving.
  *
  * ## Why an independent oracle, not just base-vs-variants
  *
@@ -45,10 +48,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { type Parser, parse } from "@suzumiyaaoba/tpeg-core";
+import { type Parser, isFatalFailure, parse } from "@suzumiyaaoba/tpeg-core";
 import {
   applyAstOptimizations,
   insertAutomaticCuts,
+  mergeCharacterClasses,
   promoteGlobalCuts,
 } from "./ast-optimize";
 import { generateTypeScriptParser } from "./codegen";
@@ -106,16 +110,22 @@ const LEAVES = [
   // (`anyChar`/`charClass`/`charClassRun` in `packages/core/src/
   // basic.ts`/`char-class.ts`) and the predictive-dispatch non-ASCII
   // fallback (`packages/core/src/combinators.ts`'s `predictiveChoice`).
-  // String literals only, not a character-class RANGE (e.g. `[à-ÿ]`) --
-  // the .tpeg grammar TEXT parser's own `charClassChar`
-  // (`packages/parser/src/character-class.ts`) only accepts ASCII
-  // printable characters as a class member, a pre-existing, unrelated
-  // limitation of the source SYNTAX itself (not the runtime PEG
-  // semantics this harness targets); using one here would just make
-  // every sample containing it an unparseable (skipped) grammar.
   '"é"',
   '"ø"',
   '"😀"',
+  // Non-ASCII character-class RANGES (`[à-ÿ]`-shaped, not just a single
+  // non-ASCII string literal above) -- until `character-class.ts`'s
+  // `charClassChar` grew a non-ASCII alternative, the .tpeg grammar TEXT
+  // parser could only accept ASCII printable characters as a class
+  // member, so this shape was structurally unreachable from any
+  // grammar-TEXT fuzzer no matter the sample size; the equivalent astral
+  // range was previously only exercised at the combinator layer
+  // (`core/combinator-oracle.spec.ts`), never through the actual .tpeg
+  // parse -> AST -> codegen pipeline this file drives.
+  "[あ-ん]",
+  "[^あ-ん]",
+  "[a-zあ]",
+  "[😀-🙏]",
 ] as const;
 
 /** Generates one random Expression's SOURCE TEXT (not an AST -- fed back
@@ -133,7 +143,7 @@ const genExpr = (
   const atom = () => pick(rng, allowRuleRef ? [...LEAVES, ...refs] : LEAVES);
   if (depth <= 0) return atom();
   const next = () => genExpr(rng, depth - 1, allowRuleRef, refs);
-  switch (Math.floor(rng() * 28)) {
+  switch (Math.floor(rng() * 29)) {
     case 0:
       return atom();
     case 1:
@@ -169,7 +179,17 @@ const genExpr = (
       // the existing shapePreserving comparison.
       return `x:${atom()}`;
     case 13:
-      return `(${next()} / ${next()})`;
+      // A trailing cut leaving exactly ONE non-Cut element behind --
+      // every other cut-bearing case below has at least two remaining
+      // elements, so this is the shape that slipped past every prior
+      // audit round: dropping the `~` must leave the sequence's capture
+      // "exactly as if `~` weren't there" (docs/peg-grammar.md's Capture
+      // Structure Reference Table), which for a single survivor means a
+      // BARE value, not a 1-tuple -- `codegen.ts`'s `generateSequence`
+      // used to always wrap in `sequence(...)` regardless, disagreeing
+      // with `codegen-optimized.ts` on every grammar shaped like this
+      // (fixed alongside this comment).
+      return `(${next()} ~)`;
     case 14:
       // Star over a CUT-bearing group, not just a bare atom (unlike case
       // 3) -- exercises `zeroOrMore` re-raising a fatal failure from a
@@ -256,6 +276,12 @@ const genExpr = (
       // case 6) -- exercises `ast-optimize-negative-lookahead.ts`'s
       // degeneration pass over a composite probe.
       return `!(${next()}) ${next()}`;
+    case 27:
+      // A leading cut leaving exactly ONE non-Cut element behind --
+      // case 21 already covers a leading cut with TWO elements after it;
+      // this is the single-survivor counterpart to case 13 above, for
+      // the same "as if `~` weren't there" reason.
+      return `(~ ${next()})`;
     default:
       return `(${next()} ~ ${next()})`;
   }
@@ -430,10 +456,24 @@ const compileStart = (
 
 type ResultKey = string;
 
+// "FATAL" is a failure that's still fatal once it reaches the caller --
+// i.e. nothing between here and the top (`choice`/`predictiveChoice`/
+// `andPredicate`/`notPredicate`) absorbed the cut first. Previously both
+// keys collapsed this into the same "F" as an ordinary failure, so a
+// cut-propagation bug that gets recognition right but fatality wrong
+// (e.g. a fatal failure escaping a boundary that should have absorbed
+// it, or one that got absorbed too early) produced zero diffs. Pinned
+// against `reference-interpreter.ts`'s and `combinators.ts`'s own
+// absorption rules by hand first (see the commit introducing this) before
+// being turned on here.
 const keySuccessOnly = (r: ReturnType<Parser<unknown>>): ResultKey =>
-  r.success ? `S:${r.next}` : "F";
+  r.success ? `S:${r.next}` : isFatalFailure(r) ? "FATAL" : "F";
 const keyWithValue = (r: ReturnType<Parser<unknown>>): ResultKey =>
-  r.success ? `S:${r.next}:${JSON.stringify(r.val)}` : "F";
+  r.success
+    ? `S:${r.next}:${JSON.stringify(r.val)}`
+    : isFatalFailure(r)
+      ? "FATAL"
+      : "F";
 
 interface VariantSpec {
   readonly name: string;
@@ -449,6 +489,25 @@ const VARIANTS: readonly VariantSpec[] = [
     shapePreserving: false,
     build: (g) =>
       generateTypeScriptParser(applyAstOptimizations(g), {
+        includeImports: false,
+        includeTypes: false,
+      }).code,
+  },
+  {
+    // Isolates `applyAstOptimizations`'s three passes down to just
+    // `mergeCharacterClasses`, which -- unlike its two siblings
+    // (`degenerateNegativeLookaheads` can collapse a 2-element sequence
+    // to 1, changing its capture shape; `leftFactorChoices` documents its
+    // own `[P,X1,X2] -> [P,[X1,X2]]` reshaping) -- never changes value
+    // shape at all: a matching `CharacterClass` always returns the one
+    // matched character, whichever alternative of the original `Choice`
+    // it came from (see `ast-optimize-char-class.ts`'s module doc
+    // comment). Compared on value, unlike the combined
+    // `applyAstOptimizations` variant above.
+    name: "mergeCharacterClasses",
+    shapePreserving: true,
+    build: (g) =>
+      generateTypeScriptParser(mergeCharacterClasses(g), {
         includeImports: false,
         includeTypes: false,
       }).code,
@@ -553,129 +612,157 @@ const VARIANTS: readonly VariantSpec[] = [
 // asserted to stay well above zero so a systemic regression in grammar
 // generation/parsing can't silently shrink coverage to nothing while this
 // test still reports green.
-const SAMPLE_SIZE = 600;
+// Multiplies the sample size below when the fuzzer needs to run far
+// beyond its CI-friendly default -- e.g. the negative-lookahead bug fixed
+// in 9d2e9c3 only reproduced at 20000 random grammars, well past what
+// this file runs on every `bun test`. Usage:
+// `TPEG_FUZZ_SCALE=30 bun test src/codegen-differential.spec.ts`. Left at
+// 1 (a no-op) for ordinary CI/local runs.
+const FUZZ_SCALE = Math.max(1, Number(process.env["TPEG_FUZZ_SCALE"]) || 1);
+const SAMPLE_SIZE = 600 * FUZZ_SCALE;
 const SEED = 20260809; // today's date at authorship time -- arbitrary but fixed
 
 describe("codegen differential fuzzing (base generator vs. every optimization variant, plus a reference-interpreter oracle)", () => {
-  test(`agrees with the base generator (and the oracle) across ${SAMPLE_SIZE} random grammars x ${ALL_TEST_INPUTS.length} inputs, for every variant`, async () => {
-    const core = (await import("@suzumiyaaoba/tpeg-core")) as unknown as Record<
-      string,
-      unknown
-    >;
-    const combinator = (await import(
-      "@suzumiyaaoba/tpeg-combinator"
-    )) as unknown as Record<string, unknown>;
+  test(
+    `agrees with the base generator (and the oracle) across ${SAMPLE_SIZE} random grammars x ${ALL_TEST_INPUTS.length} inputs, for every variant`,
+    async () => {
+      const core = (await import(
+        "@suzumiyaaoba/tpeg-core"
+      )) as unknown as Record<string, unknown>;
+      const combinator = (await import(
+        "@suzumiyaaoba/tpeg-combinator"
+      )) as unknown as Record<string, unknown>;
 
-    const rng = makeRng(SEED);
-    const diffs: string[] = [];
-    let testedCount = 0;
-    let skippedCount = 0;
+      const rng = makeRng(SEED);
+      const diffs: string[] = [];
+      let testedCount = 0;
+      let skippedCount = 0;
+      // Guards against the "FATAL" key (see `keySuccessOnly`'s comment)
+      // silently never being produced by any generated grammar/input pair
+      // -- if it never fires, the 3-value key degenerates back to the old
+      // 2-value one and this file would report zero diffs whether or not
+      // fatal propagation actually agrees, without anyone noticing.
+      let fatalKeyCount = 0;
 
-    for (let i = 0; i < SAMPLE_SIZE; i++) {
-      const source = genGrammarSource(rng);
-      const parsed = parse(grammarDefinition)(source);
-      if (!parsed.success) {
-        skippedCount++;
-        continue;
-      }
-
-      let base: Parser<unknown>;
-      let oracle: ((input: string) => string) | null;
-      const variantParsers: [VariantSpec, Parser<unknown>][] = [];
-      try {
-        base = compileStart(
-          generateTypeScriptParser(parsed.val, {
-            includeImports: false,
-            includeTypes: false,
-          }).code,
-          core,
-          combinator,
-        );
-        for (const variant of VARIANTS) {
-          variantParsers.push([
-            variant,
-            compileStart(variant.build(parsed.val), core, combinator),
-          ]);
-        }
-        // Built once per grammar, tried against every input below -- a
-        // grammar the oracle can't handle at all (an unsupported node, or
-        // no `start` rule) is a construction-time concern handled by the
-        // same try/catch as the codegen variants above; a PER-INPUT limit
-        // (recursion depth, zero-width repetition -- expected for a
-        // pathological random input against a recursive grammar) is
-        // handled per-input below instead, so one bad input doesn't skip
-        // the oracle for every other input against the same grammar.
-        oracle = referenceRecognize(parsed.val);
-      } catch {
-        // A construction-time rejection (e.g. `assertNoNullableRepetition`
-        // firing on a randomly-generated nullable repetition) or a
-        // `new Function` compile error -- not a differential-fuzzing
-        // concern, since the base generator would have hit the same
-        // rejection for the same grammar.
-        skippedCount++;
-        continue;
-      }
-
-      testedCount++;
-      for (const input of ALL_TEST_INPUTS) {
-        let baseResult: ReturnType<Parser<unknown>>;
-        try {
-          baseResult = base(input, 0);
-        } catch {
+      for (let i = 0; i < SAMPLE_SIZE; i++) {
+        const source = genGrammarSource(rng);
+        const parsed = parse(grammarDefinition)(source);
+        if (!parsed.success) {
+          skippedCount++;
           continue;
         }
-        const baseKeySuccessOnly = keySuccessOnly(baseResult);
 
+        let base: Parser<unknown>;
+        let oracle: ((input: string) => string) | null;
+        const variantParsers: [VariantSpec, Parser<unknown>][] = [];
         try {
-          const oracleKey = oracle(input);
-          if (oracleKey !== baseKeySuccessOnly) {
-            diffs.push(
-              `[reference-interpreter] DIFF on ${JSON.stringify(input)} for grammar:\n${source}\n  base=${baseKeySuccessOnly}  oracle=${oracleKey}`,
-            );
+          base = compileStart(
+            generateTypeScriptParser(parsed.val, {
+              includeImports: false,
+              includeTypes: false,
+            }).code,
+            core,
+            combinator,
+          );
+          for (const variant of VARIANTS) {
+            variantParsers.push([
+              variant,
+              compileStart(variant.build(parsed.val), core, combinator),
+            ]);
           }
-        } catch (error) {
-          if (!(error instanceof ReferenceInterpreterLimitError)) {
-            diffs.push(
-              `[reference-interpreter] THREW unexpectedly on ${JSON.stringify(input)} for grammar:\n${source}\n  ${(error as Error).message}`,
-            );
-          }
-          // A `ReferenceInterpreterLimitError` (zero-width repetition, or
-          // recursion depth exceeded) is out of scope for this input --
-          // see that class's doc comment -- so it's silently skipped,
-          // exactly like a construction-time rejection is skipped above.
+          // Built once per grammar, tried against every input below -- a
+          // grammar the oracle can't handle at all (an unsupported node, or
+          // no `start` rule) is a construction-time concern handled by the
+          // same try/catch as the codegen variants above; a PER-INPUT limit
+          // (recursion depth, zero-width repetition -- expected for a
+          // pathological random input against a recursive grammar) is
+          // handled per-input below instead, so one bad input doesn't skip
+          // the oracle for every other input against the same grammar.
+          oracle = referenceRecognize(parsed.val);
+        } catch {
+          // A construction-time rejection (e.g. `assertNoNullableRepetition`
+          // firing on a randomly-generated nullable repetition) or a
+          // `new Function` compile error -- not a differential-fuzzing
+          // concern, since the base generator would have hit the same
+          // rejection for the same grammar.
+          skippedCount++;
+          continue;
         }
 
-        for (const [variant, parser] of variantParsers) {
-          let result: ReturnType<Parser<unknown>>;
+        testedCount++;
+        for (const input of ALL_TEST_INPUTS) {
+          let baseResult: ReturnType<Parser<unknown>>;
           try {
-            result = parser(input, 0);
-          } catch (error) {
-            diffs.push(
-              `[${variant.name}] THREW at runtime on ${JSON.stringify(input)} for grammar:\n${source}\n  ${(error as Error).message}`,
-            );
+            baseResult = base(input, 0);
+          } catch {
             continue;
           }
-          const key = variant.shapePreserving ? keyWithValue : keySuccessOnly;
-          const baseKey = key(baseResult);
-          const variantKey = key(result);
-          if (baseKey !== variantKey) {
-            diffs.push(
-              `[${variant.name}] DIFF on ${JSON.stringify(input)} for grammar:\n${source}\n  base=${baseKey}  variant=${variantKey}`,
-            );
+          const baseKeySuccessOnly = keySuccessOnly(baseResult);
+          if (baseKeySuccessOnly === "FATAL") fatalKeyCount++;
+
+          try {
+            const oracleKey = oracle(input);
+            if (oracleKey !== baseKeySuccessOnly) {
+              diffs.push(
+                `[reference-interpreter] DIFF on ${JSON.stringify(input)} for grammar:\n${source}\n  base=${baseKeySuccessOnly}  oracle=${oracleKey}`,
+              );
+            }
+          } catch (error) {
+            if (!(error instanceof ReferenceInterpreterLimitError)) {
+              diffs.push(
+                `[reference-interpreter] THREW unexpectedly on ${JSON.stringify(input)} for grammar:\n${source}\n  ${(error as Error).message}`,
+              );
+            }
+            // A `ReferenceInterpreterLimitError` (zero-width repetition, or
+            // recursion depth exceeded) is out of scope for this input --
+            // see that class's doc comment -- so it's silently skipped,
+            // exactly like a construction-time rejection is skipped above.
+          }
+
+          for (const [variant, parser] of variantParsers) {
+            let result: ReturnType<Parser<unknown>>;
+            try {
+              result = parser(input, 0);
+            } catch (error) {
+              diffs.push(
+                `[${variant.name}] THREW at runtime on ${JSON.stringify(input)} for grammar:\n${source}\n  ${(error as Error).message}`,
+              );
+              continue;
+            }
+            const key = variant.shapePreserving ? keyWithValue : keySuccessOnly;
+            const baseKey = key(baseResult);
+            const variantKey = key(result);
+            if (baseKey !== variantKey) {
+              diffs.push(
+                `[${variant.name}] DIFF on ${JSON.stringify(input)} for grammar:\n${source}\n  base=${baseKey}  variant=${variantKey}`,
+              );
+            }
           }
         }
       }
-    }
 
-    // A meaningful sample actually ran -- guards against this test
-    // silently testing nothing if grammar generation/parsing regresses.
-    expect(testedCount).toBeGreaterThan(SAMPLE_SIZE / 2);
+      // A meaningful sample actually ran -- guards against this test
+      // silently testing nothing if grammar generation/parsing regresses.
+      expect(testedCount).toBeGreaterThan(SAMPLE_SIZE / 2);
+      // See `fatalKeyCount`'s declaration above.
+      expect(fatalKeyCount).toBeGreaterThan(0);
 
-    if (diffs.length > 0) {
-      const preview = diffs.slice(0, 10).join("\n\n");
-      throw new Error(
-        `${diffs.length} differential-fuzzing failure(s) out of ${testedCount} grammars tested (${skippedCount} skipped -- parse failure or a correct construction-time rejection). First ${Math.min(10, diffs.length)}:\n\n${preview}`,
-      );
-    }
-  });
+      if (diffs.length > 0) {
+        const preview = diffs.slice(0, 10).join("\n\n");
+        throw new Error(
+          `${diffs.length} differential-fuzzing failure(s) out of ${testedCount} grammars tested (${skippedCount} skipped -- parse failure or a correct construction-time rejection). First ${Math.min(10, diffs.length)}:\n\n${preview}`,
+        );
+      }
+      // ${SAMPLE_SIZE} grammars x ${ALL_TEST_INPUTS.length} inputs x 9
+      // (base + variants + oracle) takes ~9-10s on a typical dev machine at
+      // FUZZ_SCALE=1 -- well past bun's 5000ms default test timeout, which
+      // made this test fail intermittently in CI with no actual diff (just
+      // "timed out after 5000ms"), indistinguishable at a glance from a
+      // real regression. 60s leaves comfortable headroom without masking a
+      // genuine hang; scaled by FUZZ_SCALE so a deliberately large
+      // `TPEG_FUZZ_SCALE` run (see its own comment above) gets a
+      // proportionally longer budget instead of always timing out.
+    },
+    60000 * FUZZ_SCALE,
+  );
 });

@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Eta } from "eta";
+import { validateGrammarForEtaGenerator } from "./grammar-validation";
 import {
   analyzeGrammarPerformance,
   globalPerformanceMonitor,
@@ -195,6 +196,13 @@ export class EtaTPEGCodeGenerator {
    * Generate TypeScript parser code from TPEG grammar
    */
   async generateGrammar(grammar: GrammarDefinition): Promise<GeneratedCode> {
+    // Rejects duplicate rule names, left recursion, a cut-only pattern,
+    // and unbounded repetition over a nullable body BEFORE any code is
+    // generated -- see `grammar-validation.ts`'s module doc comment for
+    // why this package carries its own copy of these checks rather than
+    // importing `tpeg-parser`'s.
+    validateGrammarForEtaGenerator(grammar);
+
     globalPerformanceMonitor.start("eta-grammar-generation");
 
     const performanceAnalysis = analyzeGrammarPerformance(grammar);

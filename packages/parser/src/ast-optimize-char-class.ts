@@ -23,7 +23,16 @@ import { createChoice, createSequence } from "./types";
  * isn't safely mergeable (negated classes excluded -- see doc above). */
 const charClassView = (expr: Expression): CharacterClass | null => {
   if (expr.type === "CharacterClass" && !expr.negated) return expr;
-  if (expr.type === "StringLiteral" && expr.value.length === 1) {
+  // `[...expr.value].length` (a code-point count, via the string
+  // iterator) rather than `expr.value.length` (a UTF-16 code-unit
+  // count): a `StringLiteral` outside the BMP (e.g. "😀") is exactly one
+  // character but two UTF-16 units, so the naive `.length === 1` check
+  // would reject it as "not a single character" and leave it unmerged --
+  // safe (a missed optimization, not a wrong one) but needlessly
+  // conservative now that `.tpeg` source can write such literals at all
+  // (see `character-class.ts`'s non-ASCII `charClassChar` alternative).
+  // Matches `regex-fusion.ts`'s identical `isSimpleRepeatable` check.
+  if (expr.type === "StringLiteral" && [...expr.value].length === 1) {
     return {
       type: "CharacterClass",
       ranges: [{ start: expr.value }],

@@ -762,6 +762,19 @@ export class TPEGCodeGenerator {
     // gets the same treatment regardless of `isStartRuleTopLevel` -- that
     // function only sets the flag where the broader promotion argument
     // holds (see its module doc comment).
+    //
+    // Per the Capture Structure Reference Table (docs/peg-grammar.md),
+    // dropping `~` must leave the sequence's capture exactly as if `~`
+    // weren't there at all. If exactly one non-Cut element remains, "as if
+    // `~` weren't there" means a single bare pattern -- which captures as
+    // that element's own value, not a 1-tuple. So a single remaining part
+    // (with no label on this sequence) is returned bare rather than passed
+    // through `sequence(...)`, mirroring `codegen-optimized.ts`'s
+    // `generateOptimizedSequence`, which already does this. The `!hasLabel`
+    // guard matters: a labeled sole survivor (e.g. `~x:"v"`) must still go
+    // through `captureSequence` below, or its still-CAPTURE_TAG-tagged
+    // value would leak out bare instead of merged.
+    const hasLabel = collectTopLevelLabels(expr).length > 0;
     const parts: string[] = [];
     let committed = false;
     let committingCutIsGlobal = false;
@@ -782,13 +795,18 @@ export class TPEGCodeGenerator {
         );
       }
     }
+    if (parts.length === 0) {
+      return "sequence()";
+    }
+    if (parts.length === 1 && !hasLabel) {
+      const [only] = parts;
+      if (only) return only;
+    }
     const elements = parts.join(", ");
     // A sequence with labeled elements needs its per-element captured
     // objects merged into one - `sequence()` returns a positional tuple
     // instead, which would leave labels unreachable by name.
-    return collectTopLevelLabels(expr).length > 0
-      ? `captureSequence(${elements})`
-      : `sequence(${elements})`;
+    return hasLabel ? `captureSequence(${elements})` : `sequence(${elements})`;
   }
 
   private generateChoice(expr: Choice): string {

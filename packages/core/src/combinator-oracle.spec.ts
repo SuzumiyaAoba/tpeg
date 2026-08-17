@@ -58,7 +58,7 @@ import {
   sequence,
   withDefault,
 } from "./combinators";
-import { resetFailureWatermark } from "./failure";
+import { isFatalFailure, resetFailureWatermark } from "./failure";
 import { andPredicate, notPredicate } from "./lookahead";
 import {
   type CharSpecItem,
@@ -500,89 +500,112 @@ const genInputs = (rng: () => number, count: number): string[] => {
 
 // --- Harness ---------------------------------------------------------------
 
+// "FATAL" (distinct from ordinary "F") is a failure that's still fatal
+// once it reaches the caller -- see `codegen-differential.spec.ts`'s
+// `keySuccessOnly` doc comment for why collapsing this into plain "F"
+// hides cut-propagation bugs that this generator's own `cut`-bearing spec
+// shapes (cases 14-16 in `genSpec`, plus `commitAtTopLevel` shapes in the
+// sibling `combinator/combinator-oracle.spec.ts`) are specifically built
+// to exercise.
 const keySuccessOnly = (r: ReturnType<Parser<unknown>>): string =>
-  r.success ? `S:${r.next}` : "F";
+  r.success ? `S:${r.next}` : isFatalFailure(r) ? "FATAL" : "F";
 
-const SEEDS = 500;
+// See `codegen-differential.spec.ts`'s identical `FUZZ_SCALE` comment:
+// multiplies the seed count for a deep audit run, e.g.
+// `TPEG_FUZZ_SCALE=30 bun test src/combinator-oracle.spec.ts`. A no-op at
+// the default of 1.
+const FUZZ_SCALE = Math.max(1, Number(process.env["TPEG_FUZZ_SCALE"]) || 1);
+const SEEDS = 500 * FUZZ_SCALE;
 
 describe("combinator oracle: choice/predictiveChoice builds vs. reference-eval.ts", () => {
-  it(`agrees with reference-eval across ${SEEDS} random specs x ~${FIXED_INPUTS.length + 10} inputs, for both choice-mode and predictiveChoice-mode builds`, () => {
-    const diffs: string[] = [];
-    let tested = 0;
-    let skipped = 0;
+  it(
+    `agrees with reference-eval across ${SEEDS} random specs x ~${FIXED_INPUTS.length + 10} inputs, for both choice-mode and predictiveChoice-mode builds`,
+    () => {
+      const diffs: string[] = [];
+      let tested = 0;
+      let skipped = 0;
+      // Guards against the "FATAL" key silently never being produced --
+      // see `codegen-differential.spec.ts`'s identical `fatalKeyCount`.
+      let fatalKeyCount = 0;
 
-    for (let seed = 1; seed <= SEEDS; seed++) {
-      const rng = makeRng(seed);
-      const spec = genSpec(rng, 4);
+      for (let seed = 1; seed <= SEEDS; seed++) {
+        const rng = makeRng(seed);
+        const spec = genSpec(rng, 4);
 
-      let choiceParser: Parser<unknown>;
-      let predictiveParser: Parser<unknown>;
-      try {
-        choiceParser = build(spec, "choice");
-        predictiveParser = build(spec, "predictive");
-      } catch {
-        // A construction-time rejection (e.g. `quantified`'s min/max
-        // validation) -- not expected given this generator's own
-        // discipline, but handled defensively exactly like the sibling
-        // grammar-text fuzzers do.
-        skipped++;
-        continue;
-      }
-
-      tested++;
-      const inputRng = makeRng(seed * 7919 + 1); // distinct stream from spec generation
-      for (const input of genInputs(inputRng, 10)) {
-        let oracleKey: string;
+        let choiceParser: Parser<unknown>;
+        let predictiveParser: Parser<unknown>;
         try {
-          const r = evalSpec(spec, input, 0);
-          oracleKey = r.ok ? `S:${r.next}` : "F";
-        } catch (error) {
-          if (!(error instanceof ReferenceEvalLimitError)) {
-            diffs.push(
-              `[reference-eval THREW] seed=${seed} input=${JSON.stringify(input)}\n  ${(error as Error).message}\n  spec=${JSON.stringify(spec)}`,
-            );
-          }
+          choiceParser = build(spec, "choice");
+          predictiveParser = build(spec, "predictive");
+        } catch {
+          // A construction-time rejection (e.g. `quantified`'s min/max
+          // validation) -- not expected given this generator's own
+          // discipline, but handled defensively exactly like the sibling
+          // grammar-text fuzzers do.
+          skipped++;
           continue;
         }
 
-        for (const [label, parser] of [
-          ["choice", choiceParser],
-          ["predictiveChoice", predictiveParser],
-        ] as const) {
-          let result: ReturnType<Parser<unknown>>;
+        tested++;
+        const inputRng = makeRng(seed * 7919 + 1); // distinct stream from spec generation
+        for (const input of genInputs(inputRng, 10)) {
+          let oracleKey: string;
           try {
-            result = parser(input, 0);
+            const r = evalSpec(spec, input, 0);
+            oracleKey = r.ok ? `S:${r.next}` : r.fatal ? "FATAL" : "F";
+            if (oracleKey === "FATAL") fatalKeyCount++;
           } catch (error) {
-            diffs.push(
-              `[${label} THREW] seed=${seed} input=${JSON.stringify(input)}\n  ${(error as Error).message}\n  spec=${JSON.stringify(spec)}`,
-            );
+            if (!(error instanceof ReferenceEvalLimitError)) {
+              diffs.push(
+                `[reference-eval THREW] seed=${seed} input=${JSON.stringify(input)}\n  ${(error as Error).message}\n  spec=${JSON.stringify(spec)}`,
+              );
+            }
             continue;
           }
-          const key = keySuccessOnly(result);
-          if (key !== oracleKey) {
-            diffs.push(
-              `[${label}] seed=${seed} input=${JSON.stringify(input)}\n  oracle=${oracleKey} ${label}=${key}\n  spec=${JSON.stringify(spec)}`,
-            );
+
+          for (const [label, parser] of [
+            ["choice", choiceParser],
+            ["predictiveChoice", predictiveParser],
+          ] as const) {
+            let result: ReturnType<Parser<unknown>>;
+            try {
+              result = parser(input, 0);
+            } catch (error) {
+              diffs.push(
+                `[${label} THREW] seed=${seed} input=${JSON.stringify(input)}\n  ${(error as Error).message}\n  spec=${JSON.stringify(spec)}`,
+              );
+              continue;
+            }
+            const key = keySuccessOnly(result);
+            if (key !== oracleKey) {
+              diffs.push(
+                `[${label}] seed=${seed} input=${JSON.stringify(input)}\n  oracle=${oracleKey} ${label}=${key}\n  spec=${JSON.stringify(spec)}`,
+              );
+            }
           }
         }
       }
-    }
 
-    // Guards against this test silently testing nothing if generation
-    // regresses (same convention as `codegen-differential.spec.ts`).
-    expect(tested).toBeGreaterThan(SEEDS / 2);
-    // Guards against the predictiveChoice-mode build silently degenerating
-    // to "every filter is null" -- the whole point of building a SECOND,
-    // predictive-mode parser per spec is to exercise real (non-null)
-    // filters and the dispatch trie, not just re-prove `choice` works.
-    expect(predictiveChoiceFilterCount).toBeGreaterThan(0);
-    expect(predictiveChoiceLiteralPrefixCount).toBeGreaterThan(0);
+      // Guards against this test silently testing nothing if generation
+      // regresses (same convention as `codegen-differential.spec.ts`).
+      expect(tested).toBeGreaterThan(SEEDS / 2);
+      // Guards against the predictiveChoice-mode build silently degenerating
+      // to "every filter is null" -- the whole point of building a SECOND,
+      // predictive-mode parser per spec is to exercise real (non-null)
+      // filters and the dispatch trie, not just re-prove `choice` works.
+      expect(predictiveChoiceFilterCount).toBeGreaterThan(0);
+      expect(predictiveChoiceLiteralPrefixCount).toBeGreaterThan(0);
+      expect(fatalKeyCount).toBeGreaterThan(0);
 
-    if (diffs.length > 0) {
-      const preview = diffs.slice(0, 10).join("\n\n");
-      throw new Error(
-        `${diffs.length} differential-fuzzing failure(s) out of ${tested} specs tested (${skipped} skipped). First ${Math.min(10, diffs.length)}:\n\n${preview}`,
-      );
-    }
-  });
+      if (diffs.length > 0) {
+        const preview = diffs.slice(0, 10).join("\n\n");
+        throw new Error(
+          `${diffs.length} differential-fuzzing failure(s) out of ${tested} specs tested (${skipped} skipped). First ${Math.min(10, diffs.length)}:\n\n${preview}`,
+        );
+      }
+      // Scaled by FUZZ_SCALE for the same reason as
+      // `codegen-differential.spec.ts`'s test timeout.
+    },
+    10000 * FUZZ_SCALE,
+  );
 });

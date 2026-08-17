@@ -944,6 +944,168 @@ describe("TPEG Code Generation", () => {
       const committed = stmt("ix", pos);
       expect(committed.success).toBe(false);
     });
+
+    // Capture Structure Reference Table (docs/peg-grammar.md): "~ itself
+    // contributes nothing and no tuple slot -- the sequence's element
+    // count (and captures) is exactly as if `~` weren't there". If `~`
+    // weren't there, `"a" ~` reduces to the single pattern `"a"`, which
+    // (per the same table's first row, and per how a bare unwrapped
+    // single-element rule body already behaves -- see `createStringLiteral`
+    // producing a bare value, not a 1-tuple) captures as `"a"`, not `["a"]`.
+    // A cut leaving exactly one non-Cut element behind must therefore emit
+    // that element bare, exactly like `codegen-optimized.ts`'s
+    // `generateOptimizedSequence` already does -- this pins `codegen.ts`'s
+    // plain (non-optimized) generator to the same rule.
+    test("a cut leaving a single element behind captures that element bare, not as a 1-tuple", async () => {
+      const core = await import("@suzumiyaaoba/tpeg-core");
+
+      const cases: Array<[string, ReturnType<typeof createSequence>]> = [
+        [
+          "trailing cut",
+          createSequence([createStringLiteral("a"), { type: "Cut" }]),
+        ],
+        [
+          "leading cut",
+          createSequence([{ type: "Cut" }, createStringLiteral("a")]),
+        ],
+      ];
+
+      for (const [_label, pattern] of cases) {
+        // `stmt` (deliberately not the start rule, same trick as the
+        // "cut into commit(...)" test above) keeps this on the ordinary
+        // `commit` path so the test only needs tpeg-core, not
+        // tpeg-combinator's `commitAtTopLevel`.
+        const grammar = createGrammarDefinition(
+          "TestGrammar",
+          [],
+          [
+            createRuleDefinition("start", createIdentifier("stmt")),
+            createRuleDefinition("stmt", pattern),
+          ],
+          [],
+        );
+
+        const result = generateTypeScriptParser(grammar, {
+          includeImports: false,
+          includeTypes: false,
+        });
+
+        const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+        const moduleFactory = new Function(
+          ...Object.keys(core),
+          `${body}\nreturn { stmt };`,
+        );
+        const { stmt } = moduleFactory(...Object.values(core));
+
+        const res = stmt("a", 0);
+        expect(res.success).toBe(true);
+        if (res.success) {
+          expect(res.val).toBe("a"); // NOT ["a"]
+        }
+      }
+    });
+
+    test("a LABELED single element left behind by a cut still merges through captureSequence, not bare (regression guard for the `!hasLabel` condition on the single-part shortcut above)", async () => {
+      const core = await import("@suzumiyaaoba/tpeg-core");
+
+      // `~x:"v"` -- a rule reduced to one labeled part after cut removal
+      // must NOT hit the bare-return shortcut (that shortcut is gated on
+      // `!hasLabel` specifically to avoid this): skipping it here would
+      // leak the still-CAPTURE_TAG-tagged value `capture(...)` produced
+      // out as `stmt`'s own raw internal representation, rather than the
+      // untagged `{ x: "v" }` `captureSequence`'s own merge step
+      // produces. `toEqual` alone can't tell these apart -- CAPTURE_TAG
+      // is a non-enumerable symbol, invisible to deep-equality -- so this
+      // observes the tag's actual PURPOSE instead: an OUTER rule that
+      // references `stmt` UNLABELED, alongside a genuine label of its
+      // own. Per `CAPTURE_TAG`'s doc comment (`@suzumiyaaoba/tpeg-core`'s
+      // `capture.ts`), only a tagged value gets merged/flattened into an
+      // enclosing `captureSequence`; if `stmt`'s bare-shortcut bug
+      // resurfaces, `x` leaks into `outer`'s result even though `stmt`
+      // was referenced without a label of its own.
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "outer",
+            createSequence([
+              createLabeledExpression("other", createStringLiteral("o")),
+              createIdentifier("stmt"),
+            ]),
+          ),
+          createRuleDefinition(
+            "stmt",
+            createSequence([
+              { type: "Cut" },
+              createLabeledExpression("x", createStringLiteral("v")),
+            ]),
+          ),
+        ],
+        [],
+      );
+
+      const result = generateTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+      });
+
+      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+      const moduleFactory = new Function(
+        ...Object.keys(core),
+        `${body}\nreturn { outer };`,
+      );
+      const { outer } = moduleFactory(...Object.values(core));
+
+      const res = outer("ov", 0);
+      expect(res.success).toBe(true);
+      if (res.success) {
+        // `x` must NOT appear here: `stmt` was referenced unlabeled.
+        expect(res.val).toEqual({ other: "o" });
+      }
+    });
+
+    test("a cut leaving a single GROUPED element behind still nests correctly inside a larger sequence", async () => {
+      const core = await import("@suzumiyaaoba/tpeg-core");
+
+      // ("a" ~) "b" -- the group's own sequence reduces to one element
+      // after the cut, so the group itself must capture as "a" (bare),
+      // making the outer sequence ["a", "b"], not [["a"], "b"].
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "stmt",
+            createSequence([
+              createGroup(
+                createSequence([createStringLiteral("a"), { type: "Cut" }]),
+              ),
+              createStringLiteral("b"),
+            ]),
+          ),
+        ],
+        [],
+      );
+
+      const result = generateTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+      });
+
+      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+      const moduleFactory = new Function(
+        ...Object.keys(core),
+        `${body}\nreturn { stmt };`,
+      );
+      const { stmt } = moduleFactory(...Object.values(core));
+
+      const res = stmt("ab", 0);
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.val).toEqual(["a", "b"]); // NOT [["a"], "b"]
+      }
+    });
   });
 });
 
