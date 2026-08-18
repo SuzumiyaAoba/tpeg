@@ -295,14 +295,23 @@ const genExpr = (
       // Same, but trailing PositiveLookahead.
       return `(${next()} &${atom()})`;
     case 30:
-      // Nested/doubled lookahead -- `!!a` (negate a negation) and `!&a`/
-      // `&!a` (negate an affirmation / affirm a negation), none of which
-      // any prior case produces (6/16/17/26 always wrap a single `!`/`&`
-      // around a bare atom or group, never around ANOTHER lookahead).
+      // Nested/doubled lookahead -- `!(!a)` (negate a negation) and
+      // `!(&a)`/`&(!a)` (negate an affirmation / affirm a negation), none
+      // of which any prior case produces (6/16/17/26 always wrap a single
+      // `!`/`&` around a bare atom or group, never around ANOTHER
+      // lookahead). Unlike an earlier version of this case, the outer
+      // operator's operand is wrapped in an explicit `(...)` group: `prefix
+      // = (AND/NOT)? Suffix` (`composition.ts`'s `withLookahead`) consumes
+      // exactly ONE leading `!`/`&`, so a bare `!!a`/`!&a`/`&!a` -- lacking
+      // the group -- fails to parse `grammarDefinition` at all. That made
+      // this branch's every draw land in the fuzzing loop's `skippedCount`
+      // rather than actually exercising nested lookahead, for as long as
+      // this file existed; confirmed by testing all three shapes directly
+      // against `parse(grammarDefinition)`.
       return pick(rng, [
-        `!!${atom()} ${next()}`,
-        `!&${atom()} ${next()}`,
-        `&!${atom()} ${next()}`,
+        `!(!${atom()}) ${next()}`,
+        `!(&${atom()}) ${next()}`,
+        `&(!${atom()}) ${next()}`,
       ]);
     case 31:
       // A greedy `*` immediately followed by a trailing negative
@@ -672,6 +681,22 @@ describe("codegen differential fuzzing (base generator vs. every optimization va
       // 2-value one and this file would report zero diffs whether or not
       // fatal propagation actually agrees, without anyone noticing.
       let fatalKeyCount = 0;
+      // Guards against "this file is green" being a vacuous claim for the
+      // two optimizations with the LARGEST semantic divergence surface and
+      // the LEAST oracle coverage. Neither `regexFused`/`regexFusedMap`
+      // (`packages/core/src/regex-fused.ts` -- "this module trusts its
+      // caller completely and does no validation of `source` itself") nor
+      // the dispatch-trie's beyond-FIRST_1 discrimination
+      // (`packages/core/src/dispatch-trie.ts`) has any independent oracle;
+      // the only signal that either was ever actually exercised by this
+      // fuzzer is whether the generated code for the relevant variant
+      // actually contains a call to it. `STRUCTURALLY_DISQUALIFYING`
+      // (`regex-fusion.ts`) excludes any rule containing an `Identifier`,
+      // `Cut`, a label, or either lookahead -- `genExpr`'s 33 branches
+      // produce all four constantly, so it is not obvious a priori that
+      // fusion fires on more than a sliver of generated grammars.
+      let regexFusionFiredCount = 0;
+      let predictiveTrieEmittedCount = 0;
 
       for (let i = 0; i < SAMPLE_SIZE; i++) {
         const source = genGrammarSource(rng);
@@ -694,9 +719,22 @@ describe("codegen differential fuzzing (base generator vs. every optimization va
             combinator,
           );
           for (const variant of VARIANTS) {
+            const code = variant.build(parsed.val);
+            if (
+              variant.name.startsWith("optimized + regex fusion") &&
+              (code.includes("regexFused(") || code.includes("regexFusedMap("))
+            ) {
+              regexFusionFiredCount++;
+            }
+            if (
+              variant.name === "optimized (predictive dispatch, default)" &&
+              /},\s*"[^"]*"\s*\]/.test(code)
+            ) {
+              predictiveTrieEmittedCount++;
+            }
             variantParsers.push([
               variant,
-              compileStart(variant.build(parsed.val), core, combinator),
+              compileStart(code, core, combinator),
             ]);
           }
           // Built once per grammar, tried against every input below -- a
@@ -742,10 +780,13 @@ describe("codegen differential fuzzing (base generator vs. every optimization va
                 `[reference-interpreter] THREW unexpectedly on ${JSON.stringify(input)} for grammar:\n${source}\n  ${(error as Error).message}`,
               );
             }
-            // A `ReferenceInterpreterLimitError` (zero-width repetition, or
-            // recursion depth exceeded) is out of scope for this input --
-            // see that class's doc comment -- so it's silently skipped,
-            // exactly like a construction-time rejection is skipped above.
+            // A `ReferenceInterpreterLimitError` (recursion depth
+            // exceeded, e.g. deep mutual recursion) is out of scope for
+            // this input -- see that class's doc comment -- so it's
+            // silently skipped, exactly like a construction-time rejection
+            // is skipped above. A zero-width repetition no longer throws
+            // this (see the class's doc comment); it's now a FATAL
+            // `Result`, compared above like any other outcome.
           }
 
           for (const [variant, parser] of variantParsers) {
@@ -775,6 +816,26 @@ describe("codegen differential fuzzing (base generator vs. every optimization va
       expect(testedCount).toBeGreaterThan(SAMPLE_SIZE / 2);
       // See `fatalKeyCount`'s declaration above.
       expect(fatalKeyCount).toBeGreaterThan(0);
+      // See `regexFusionFiredCount`/`predictiveTrieEmittedCount`'s
+      // declaration above. Measured at `TPEG_FUZZ_SCALE=30` (18000
+      // grammars, this file's fixed SEED): fusion fires on ~75% of tested
+      // grammars, the trie on ~54% -- both floored at a fraction far below
+      // that measurement (not just `> 0`) so an unrelated shift in
+      // `genExpr`'s branch mix has headroom, while a regression that
+      // silently guts either one (e.g. `STRUCTURALLY_DISQUALIFYING`
+      // becoming overbroad, or dispatch-trie construction breaking) still
+      // fails loudly instead of leaving this file green on zero real
+      // coverage of its largest, least-oracled optimizations.
+      expect(regexFusionFiredCount).toBeGreaterThan(testedCount * 0.1);
+      expect(predictiveTrieEmittedCount).toBeGreaterThan(testedCount * 0.1);
+      // Guards against `parse(grammarDefinition)`/construction-time
+      // rejections silently eating this fuzzer's real coverage while
+      // `testedCount &gt; SAMPLE_SIZE / 2` above still passes -- measured
+      // skip rate is ~1.6% (294/18000) at scale 30; floored generously
+      // above that so a legitimate future rejection (a new, correctly
+      // stricter validation) has room, while a validator turning
+      // over-eager and silently skipping most of the sample still fails.
+      expect(skippedCount).toBeLessThan(SAMPLE_SIZE * 0.15);
 
       if (diffs.length > 0) {
         const preview = diffs.slice(0, 10).join("\n\n");

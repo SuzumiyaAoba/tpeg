@@ -5,6 +5,36 @@ import { createFailure, offsetToPos } from "./utils";
 /**
  * Creates a standardized infinite loop error for repetition parsers.
  * This helper reduces code duplication and ensures consistent error messaging.
+ *
+ * Marked `fatal: true` (the same flag `commit`, `combinators.ts`, sets on a
+ * cut-driven failure) -- NOT an ordinary failure. A zero-width match inside
+ * an unbounded repetition means "this grammar/input pair has no well-defined
+ * PEG meaning" (see `docs/peg-grammar.md`'s note on unbounded repetition
+ * over a nullable expression), which is a property of the SUBTREE, not of
+ * whatever happens to enclose it. Before this was fatal, the very same
+ * `zeroOrMore(optional(e))` diverged three ways depending purely on context:
+ * a bare call surfaced the failure, wrapping it in `optional(...)` silently
+ * swallowed it back down to a quiet `[]` success (`optional`'s "no match ->
+ * empty" branch, just below), and putting it as a `choice` alternative let
+ * backtracking silently fall through to try the next alternative instead.
+ * Marking it fatal closes all three: `optional`/`zeroOrMore`/`oneOrMore`/
+ * `quantified`/`withDefault` re-raise a fatal failure rather than treating
+ * it as "no match" (their own doc comments, this file and combinators.ts),
+ * and `choice`/`predictiveChoice` stop at their own boundary and fail
+ * outright rather than trying a sibling -- so every enclosing shape now
+ * either surfaces the failure or the whole construct fails, matching an
+ * undefined construct actually being undefined rather than silently
+ * meaning three different things depending on how it's embedded. `!e`/
+ * `reject` still turn it into an ordinary success, same as any other fatal
+ * failure reached inside a negative-lookahead probe (`notPredicate`'s doc
+ * comment, `lookahead.ts`) -- that absorption is correct here too: "the
+ * zero-width construct didn't match e" is exactly what `!e` asks.
+ *
+ * `.tpeg`-sourced grammars never observe this: `assertNoNullableRepetition`
+ * (`packages/parser/src/first-sets.ts`) rejects a nullable-bodied unbounded
+ * repetition at generation time, so this can only fire against a
+ * hand-written combinator tree built directly against this package (e.g.
+ * `packages/samples`), never against anything the `tpeg` CLI generates.
  */
 const createInfiniteLoopError = (
   input: string,
@@ -21,6 +51,7 @@ const createInfiniteLoopError = (
     position,
     {
       parserName,
+      fatal: true,
       context: [
         "Parser matched but did not consume any input",
         `Input: "${inputPreview}${truncated}"`,

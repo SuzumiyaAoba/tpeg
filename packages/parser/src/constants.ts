@@ -252,6 +252,7 @@ export const ERROR_MESSAGES = {
   MISSING_RULE_ASSIGNMENT: "Missing '=' in rule definition",
   INVALID_ANNOTATION: "Invalid annotation syntax",
   CUT_ONLY_PATTERN: "`~` cannot be a rule body (or sub-expression) on its own",
+  UNDEFINED_RULE_REFERENCE: "Reference to an undefined rule",
 } as const;
 
 /**

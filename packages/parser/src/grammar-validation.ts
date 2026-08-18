@@ -1,10 +1,17 @@
 /**
  * Grammar-level structural validation, run before any FIRST-set analysis
- * or code generation: two classes of malformed grammar that have no PEG
- * semantics at all, as opposed to `assertNoNullableRepetition`
+ * or code generation: several classes of malformed grammar that have no
+ * PEG semantics at all (duplicate rule names, a `QualifiedIdentifier`
+ * whose `module` part collides with a locally-declared rule name, left
+ * recursion, a cut-only pattern), as opposed to `assertNoNullableRepetition`
  * (`first-sets.ts`), which rejects a narrower shape (an unbounded
  * repetition over a nullable body) that only becomes well-defined or not
  * once FIRST-set analysis has already run.
+ *
+ * Deliberately does NOT reject a bare `Identifier` referencing something
+ * outside this grammar's own rules -- see
+ * `collectQualifiedIdentifierCollisions`'s doc comment for why that's an
+ * intentional escape hatch, not a defect.
  *
  * ## Why this must run BEFORE `analyzeFirstSets`
  *
@@ -250,6 +257,109 @@ const findCutOnlyRules = (grammar: GrammarDefinition): string[] => {
 };
 
 /**
+ * One `QualifiedIdentifier` (e.g. `word.suffix`) found by
+ * {@link findQualifiedIdentifierCollisions} whose `module` part collides
+ * with a rule name actually declared in THIS grammar.
+ */
+interface QualifiedIdentifierCollision {
+  readonly ruleName: string;
+  readonly refersTo: string;
+}
+
+/**
+ * Walks every sub-expression of `expr` looking for a `QualifiedIdentifier`
+ * whose `module` part happens to name a rule declared in THIS SAME
+ * grammar -- not any `Identifier` (a bare, unresolved `Identifier` is a
+ * DELIBERATE escape hatch for binding a hand-written parser into
+ * generated code, e.g. `packages/parser/src/codegen.ts`'s
+ * `generateIdentifierCode`: `if (!ctx.ruleNames.has(name)) return name;`
+ * -- see that function's own tests, and this module's "does not reject a
+ * rule referencing an externally-supplied parser" test, for why an
+ * unresolved bare `Identifier` must never be flagged here), and not every
+ * `QualifiedIdentifier` either, since a genuine cross-module reference (a
+ * namespace this single-grammar validator has no visibility into --
+ * `module-resolver.ts`'s import resolution is a separate, later step) is
+ * legitimate and this function has no way to tell the two apart in
+ * general.
+ *
+ * The narrower check below still catches the concrete, unambiguous
+ * mistake: `start = word.suffix` with both `word` and `suffix` declared
+ * as ordinary LOCAL rules can never have been intended as a cross-module
+ * reference to a module named `word`, since `word` already means
+ * something else in this exact grammar -- unlike a bare `Identifier`,
+ * `QualifiedIdentifier` is never used for the external-parser-binding
+ * escape hatch (see its own doc comment, `codegen.ts`), so there is no
+ * legitimate use this check could break.
+ */
+const collectQualifiedIdentifierCollisions = (
+  expr: Expression,
+  ruleName: string,
+  ruleNames: ReadonlySet<string>,
+  out: QualifiedIdentifierCollision[],
+): void => {
+  switch (expr.type) {
+    case "QualifiedIdentifier":
+      if (ruleNames.has(expr.module)) {
+        out.push({
+          ruleName,
+          refersTo: `${expr.module}.${expr.name}`,
+        });
+      }
+      return;
+    case "Sequence":
+      for (const el of expr.elements) {
+        collectQualifiedIdentifierCollisions(el, ruleName, ruleNames, out);
+      }
+      return;
+    case "Choice":
+      for (const alt of expr.alternatives) {
+        collectQualifiedIdentifierCollisions(alt, ruleName, ruleNames, out);
+      }
+      return;
+    case "Group":
+    case "LabeledExpression":
+    case "ActionExpression":
+    case "Star":
+    case "Plus":
+    case "Optional":
+    case "Quantified":
+    case "PositiveLookahead":
+    case "NegativeLookahead":
+      collectQualifiedIdentifierCollisions(
+        expr.expression,
+        ruleName,
+        ruleNames,
+        out,
+      );
+      return;
+    default:
+      // StringLiteral, CharacterClass, AnyChar, Cut, Identifier -- no
+      // `QualifiedIdentifier` to check (a bare `Identifier` is
+      // deliberately never checked -- see this function's own doc
+      // comment).
+      return;
+  }
+};
+
+/** Every `QualifiedIdentifier`/local-rule-name collision across all of
+ * `grammar`'s rules -- see {@link collectQualifiedIdentifierCollisions}. */
+const findQualifiedIdentifierCollisions = (
+  grammar: GrammarDefinition,
+): QualifiedIdentifierCollision[] => {
+  const ruleNames = new Set(grammar.rules.map((rule) => rule.name));
+  const found: QualifiedIdentifierCollision[] = [];
+  for (const rule of grammar.rules) {
+    collectQualifiedIdentifierCollisions(
+      rule.pattern,
+      rule.name,
+      ruleNames,
+      found,
+    );
+  }
+  return found;
+};
+
+/**
  * Validates `grammar` for structural problems that have no well-defined
  * PEG semantics at all, throwing on the first category found. Must run
  * before `analyzeFirstSets`/`assertNoNullableRepetition` -- see this
@@ -258,18 +368,35 @@ const findCutOnlyRules = (grammar: GrammarDefinition): string[] => {
  * `assertNoNullableRepetition`'s existing "grammar-authoring error,
  * reported at generation time" contract.
  *
- * Duplicate rule names are checked (and thrown on) BEFORE left recursion:
- * with a duplicate name present, "which rule's pattern does this name
- * refer to" is itself ambiguous, so a left-recursion report built on top
- * of that would be unreliable.
+ * Duplicate rule names are checked (and thrown on) BEFORE left recursion
+ * and the `QualifiedIdentifier` collision check: with a duplicate name
+ * present, "which rule's pattern does this name refer to" is itself
+ * ambiguous, so a report built on top of that would be unreliable.
+ *
+ * The `QualifiedIdentifier` collision check (see
+ * `collectQualifiedIdentifierCollisions`/`findQualifiedIdentifierCollisions`
+ * -- deliberately NOT a general undefined-reference check; see that
+ * function's own doc comment for why a bare `Identifier` is never flagged)
+ * runs right after duplicates, before left recursion: a rule name that's
+ * also used as a `QualifiedIdentifier`'s `module` part is treated by
+ * `zeroOffsetRuleRefs` as an opaque leaf either way, so left-recursion
+ * analysis doesn't depend on this check having already run -- but
+ * reporting the collision before a left-recursion report keeps the more
+ * directly actionable message first.
  *
  * The cut-only-pattern check (see `isCutOnlyPattern`/`findCutOnlyRules`)
- * runs last: it doesn't interact with duplicate-name or left-recursion
- * analysis, so its ordering relative to them is not load-bearing.
+ * runs last: it doesn't interact with any of the checks above, so its
+ * ordering relative to them is not load-bearing.
  *
  * @throws {Error} if any rule name is declared more than once, or (once
- *   no duplicates remain) if any rule is left-recursive, or if any rule's
- *   pattern reduces to `~` matching nothing on its own.
+ *   no duplicates remain) if any rule contains a `QualifiedIdentifier`
+ *   whose `module` part collides with a locally-declared rule name, or if
+ *   any rule is left-recursive, or if any rule's pattern reduces to `~`
+ *   matching nothing on its own. Deliberately does NOT reject a bare
+ *   `Identifier` naming something outside this grammar's own rules --
+ *   that's an intentional escape hatch for binding a hand-written parser
+ *   into generated code (`codegen.ts`'s `generateIdentifierCode`), not a
+ *   grammar-authoring mistake.
  */
 export const validateGrammar = (grammar: GrammarDefinition): void => {
   const duplicates = findDuplicateRuleNames(grammar);
@@ -277,6 +404,17 @@ export const validateGrammar = (grammar: GrammarDefinition): void => {
     throw new Error(
       `${ERROR_MESSAGES.DUPLICATE_RULE}: ${duplicates.join(", ")} -- each rule name must be declared exactly once.`,
     );
+  }
+
+  const collisions = findQualifiedIdentifierCollisions(grammar);
+  if (collisions.length > 0) {
+    const details = collisions
+      .map(
+        ({ ruleName, refersTo }) =>
+          `${ruleName} -> ${refersTo} (the part before "." is itself a local rule name in this grammar -- likely two separate tokens mis-parsed as one qualified reference, not an intentional cross-module reference)`,
+      )
+      .join("; ");
+    throw new Error(`${ERROR_MESSAGES.UNDEFINED_RULE_REFERENCE}: ${details}`);
   }
 
   const leftRecursive = findLeftRecursiveRules(grammar);

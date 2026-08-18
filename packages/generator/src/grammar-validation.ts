@@ -128,6 +128,89 @@ const findDuplicateRuleNames = (grammar: GrammarDefinition): string[] => {
   return [...duplicates].sort();
 };
 
+// --- QualifiedIdentifier / local-rule-name collisions (ported from
+// `grammar-validation.ts`'s
+// `collectQualifiedIdentifierCollisions`/`findQualifiedIdentifierCollisions`)
+// -------------------------------------------------------------------------
+//
+// Deliberately does NOT flag a bare `Identifier` referencing something
+// outside this grammar's own rules -- `generateIdentifier` below (mirroring
+// `packages/parser/src/codegen.ts`'s `generateIdentifierCode`) treats an
+// unresolved `Identifier` as an intentional escape hatch for binding a
+// hand-written parser into generated code, falling through to `return
+// name;` rather than an error. Only a `QualifiedIdentifier` whose `module`
+// part collides with a rule actually declared in this grammar is checked
+// -- that node type is never used for the external-binding escape hatch
+// (see its own doc comment in `packages/parser/src/types.ts`), so this
+// narrower check has no legitimate use to break.
+
+interface QualifiedIdentifierCollision {
+  readonly ruleName: string;
+  readonly refersTo: string;
+}
+
+const collectQualifiedIdentifierCollisions = (
+  expr: Expression,
+  ruleName: string,
+  ruleNames: ReadonlySet<string>,
+  out: QualifiedIdentifierCollision[],
+): void => {
+  switch (expr.type) {
+    case "QualifiedIdentifier":
+      if (ruleNames.has(expr.module)) {
+        out.push({
+          ruleName,
+          refersTo: `${expr.module}.${expr.name}`,
+        });
+      }
+      return;
+    case "Sequence":
+      for (const el of expr.elements) {
+        collectQualifiedIdentifierCollisions(el, ruleName, ruleNames, out);
+      }
+      return;
+    case "Choice":
+      for (const alt of expr.alternatives) {
+        collectQualifiedIdentifierCollisions(alt, ruleName, ruleNames, out);
+      }
+      return;
+    case "Group":
+    case "LabeledExpression":
+    case "ActionExpression":
+    case "Star":
+    case "Plus":
+    case "Optional":
+    case "Quantified":
+    case "PositiveLookahead":
+    case "NegativeLookahead":
+      collectQualifiedIdentifierCollisions(
+        expr.expression,
+        ruleName,
+        ruleNames,
+        out,
+      );
+      return;
+    default:
+      return;
+  }
+};
+
+const findQualifiedIdentifierCollisions = (
+  grammar: GrammarDefinition,
+): QualifiedIdentifierCollision[] => {
+  const ruleNames = new Set(grammar.rules.map((rule) => rule.name));
+  const found: QualifiedIdentifierCollision[] = [];
+  for (const rule of grammar.rules) {
+    collectQualifiedIdentifierCollisions(
+      rule.pattern,
+      rule.name,
+      ruleNames,
+      found,
+    );
+  }
+  return found;
+};
+
 // --- Left recursion (ported from `grammar-validation.ts`'s
 // `zeroOffsetRuleRefs`/`findLeftRecursiveRules`) --------------------------
 
@@ -336,11 +419,15 @@ const findNullableRepetitions = (
  * Validates `grammar` for the same structural problems
  * `packages/parser/src/grammar-validation.ts`'s `validateGrammar` and
  * `packages/parser/src/first-sets.ts`'s `assertNoNullableRepetition`
- * reject, throwing on the first category found: duplicate rule names,
- * left recursion (direct, indirect, or hidden behind a nullable prefix),
- * a cut-only pattern (`~` on its own, matching nothing), or an unbounded
- * repetition over a nullable body. Called by `generateGrammar`
- * (`eta-generator.ts`) before generating any code.
+ * reject, throwing on the first category found: duplicate rule names, a
+ * `QualifiedIdentifier` whose `module` part collides with a
+ * locally-declared rule name, left recursion (direct, indirect, or
+ * hidden behind a nullable prefix), a cut-only pattern (`~` on its own,
+ * matching nothing), or an unbounded repetition over a nullable body.
+ * Called by `generateGrammar` (`eta-generator.ts`) before generating any
+ * code. Deliberately does NOT reject a bare `Identifier` referencing
+ * something outside this grammar's own rules -- see
+ * `collectQualifiedIdentifierCollisions`'s doc comment for why.
  *
  * @throws {Error} on the first validation failure found, in the order
  *   listed above.
@@ -353,6 +440,17 @@ export const validateGrammarForEtaGenerator = (
     throw new Error(
       `Duplicate rule definition: ${duplicates.join(", ")} -- each rule name must be declared exactly once.`,
     );
+  }
+
+  const collisions = findQualifiedIdentifierCollisions(grammar);
+  if (collisions.length > 0) {
+    const details = collisions
+      .map(
+        ({ ruleName, refersTo }) =>
+          `${ruleName} -> ${refersTo} (the part before "." is itself a local rule name in this grammar -- likely two separate tokens mis-parsed as one qualified reference, not an intentional cross-module reference)`,
+      )
+      .join("; ");
+    throw new Error(`Reference to an undefined rule: ${details}`);
   }
 
   const leftRecursive = findLeftRecursiveRules(grammar);

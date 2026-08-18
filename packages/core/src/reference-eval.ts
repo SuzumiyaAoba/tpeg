@@ -75,14 +75,28 @@
  * ## Termination
  *
  * A zero-width match inside `"star"`/`"plus"`/an unbounded `"quant"`
- * throws {@link ReferenceEvalLimitError} (mirroring
- * `createInfiniteLoopError` in `./repetition.ts`) rather than looping
- * forever -- callers should treat this as "skip this spec/input pair,"
- * exactly like `reference-interpreter.ts`'s identically-named error class.
- * Unlike that module, there is no recursion-depth guard here: `Spec` is a
- * finite tree with no rule-reference node (nothing analogous to
- * `Identifier`), so evaluation depth is bounded by the tree's own depth --
- * there is no way to construct a `Spec` that recurses without also
+ * returns a FATAL failure (`NG(true)`), mirroring `createInfiniteLoopError`
+ * in `./repetition.ts` -- which itself returns `fatal: true` for exactly
+ * this condition, so that the same divergence can't be silently absorbed
+ * by whatever happens to enclose the repetition (`optional` swallowing it
+ * to `[]`, `choice` falling through to a sibling alternative, etc. -- see
+ * `createInfiniteLoopError`'s own doc comment for the worked-out
+ * inconsistency this closes). This oracle previously THREW
+ * {@link ReferenceEvalLimitError} here instead, on the theory that the
+ * caller should treat the whole spec/input pair as out of scope -- but
+ * that made this exact divergence structurally invisible to differential
+ * fuzzing: a thrown exception was caught and skipped rather than compared
+ * against the real combinators' (also-buggy, at the time) non-fatal
+ * failure. Returning a fatal `Result` instead means a caller comparing
+ * this oracle's `specRecognize` key against the real combinators' now
+ * genuinely exercises this path instead of skipping around it.
+ * {@link ReferenceEvalLimitError} remains exported for callers that still
+ * want to distinguish "this spec/input pair hit a known limit" from an
+ * ordinary failure, but nothing in this module throws it anymore. Unlike
+ * `reference-interpreter.ts`, there is no recursion-depth guard here:
+ * `Spec` is a finite tree with no rule-reference node (nothing analogous
+ * to `Identifier`), so evaluation depth is bounded by the tree's own depth
+ * -- there is no way to construct a `Spec` that recurses without also
  * growing without bound, the way a left-recursive grammar rule can.
  */
 
@@ -129,10 +143,11 @@ export type Spec =
   | { readonly kind: "default"; readonly expression: Spec }
   | { readonly kind: "reject"; readonly expression: Spec };
 
-/** Thrown (not returned) for a condition that means "this spec/input pair
- * is out of scope for this evaluator" -- a zero-width match inside an
- * unbounded repetition. See the module doc comment's "Termination"
- * section. */
+/** No longer thrown by this module -- a zero-width match inside an
+ * unbounded repetition is now a FATAL {@link Result}, not an exception (see
+ * the module doc comment's "Termination" section). Kept exported so an
+ * existing `instanceof` check against it stays valid (it now simply never
+ * matches), rather than breaking every caller that imports it. */
 export class ReferenceEvalLimitError extends Error {}
 
 interface Ok {
@@ -247,7 +262,7 @@ export const evalSpec = (spec: Spec, input: string, pos: number): Result => {
           break;
         }
         if (r.next === p) {
-          throw new ReferenceEvalLimitError("zero-width match inside star");
+          return NG(true);
         }
         p = r.next;
       }
@@ -258,7 +273,7 @@ export const evalSpec = (spec: Spec, input: string, pos: number): Result => {
       const first = evalSpec(spec.expression, input, pos);
       if (!first.ok) return first;
       if (first.next === pos) {
-        throw new ReferenceEvalLimitError("zero-width match inside plus");
+        return NG(true);
       }
       let p = first.next;
       while (true) {
@@ -268,7 +283,7 @@ export const evalSpec = (spec: Spec, input: string, pos: number): Result => {
           break;
         }
         if (r.next === p) {
-          throw new ReferenceEvalLimitError("zero-width match inside plus");
+          return NG(true);
         }
         p = r.next;
       }
@@ -301,9 +316,7 @@ export const evalSpec = (spec: Spec, input: string, pos: number): Result => {
         // bounds this loop via `limit`, matching `quantified`'s own
         // guard in `./repetition.ts`.
         if (spec.max === undefined && r.next === p) {
-          throw new ReferenceEvalLimitError(
-            "zero-width match inside unbounded quant",
-          );
+          return NG(true);
         }
         p = r.next;
       }

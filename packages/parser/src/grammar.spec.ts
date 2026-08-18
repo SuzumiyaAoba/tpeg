@@ -387,6 +387,77 @@ describe("Grammar Definition Block Tests", () => {
       }
     });
 
+    test("should not mistake a same-line grammar-block-closing '}' for part of the rule (regression: used to only recognize a '}' reached by crossing a line break)", () => {
+      // `grammarRuleExpression` used to require `crossedLineBreak` before
+      // treating a bare "}" as the enclosing grammar block's own close --
+      // a same-line "grammar G { r = ... }" never crosses a line break
+      // before reaching its "}", so it fell through to the generic
+      // one-char-at-a-time path and got silently absorbed into `r`'s own
+      // slice. Harmless before the full-consumption check below existed
+      // (only `expression()`'s own `next` mattered), but would otherwise
+      // make that check reject this legitimate, single-line shape.
+      const result = testParse(grammarDefinition, 'grammar G { r = "x" }');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules).toHaveLength(1);
+        expect(result.val.rules[0]?.name).toBe("r");
+      }
+    });
+
+    test("should treat a trailing '@annotation' right after a rule as a separate grammar item, not part of the rule's own body", () => {
+      // Regression: without an explicit "@" boundary case, an annotation
+      // separated from the preceding rule by only whitespace/a comment
+      // (no intervening rule) got silently absorbed into that rule's own
+      // slice instead of starting a new grammarItem -- exactly the shape
+      // docs/peg-grammar.md's own examples use (a `@skip: whitespace`
+      // annotation placed directly above the rule it documents).
+      const input = `grammar G {
+        mul_op = "*" / "/"
+        // comment
+        @skip: whitespace
+        whitespace = [ ]+
+      }`;
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules.map((r) => r.name)).toEqual([
+          "mul_op",
+          "whitespace",
+        ]);
+        expect(result.val.annotations).toContainEqual(
+          expect.objectContaining({ key: "skip", value: "whitespace" }),
+        );
+      }
+    });
+
+    test("rejects a rule followed by unrecognizable trailing content instead of silently truncating the rule (regression: grammarRuleExpression didn't check it consumed its whole slice)", () => {
+      // A digit, unlike an identifier or "@", can never legitimately
+      // start a new grammarItem or continue `expression()`'s own
+      // grammar -- it must be a mistake, not silently accepted as
+      // `start = "x"` with "42" dropped on the floor.
+      const result = testParse(ruleDefinition, 'start = "x" 42\n  other = "y"');
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toContain(
+          "Unexpected content after rule expression",
+        );
+      }
+    });
+
+    test("does not reject a rule followed only by trailing whitespace/comments (regression guard for the check above)", () => {
+      const withLineComment = testParse(
+        grammarDefinition,
+        'grammar G {\n  start = "x" // note\n  other = "y"\n}',
+      );
+      expect(withLineComment.success).toBe(true);
+
+      const withOwnLineComment = testParse(
+        grammarDefinition,
+        'grammar G {\n  start = "x"\n  // note\n  other = "y"\n}',
+      );
+      expect(withOwnLineComment.success).toBe(true);
+    });
+
     test("should correctly bound a rule whose body spans multiple lines and contains a `~` cut marker", () => {
       // grammarRuleExpression's boundary scanner has explicit cases for
       // string/char-class/comment/brace content but otherwise just advances

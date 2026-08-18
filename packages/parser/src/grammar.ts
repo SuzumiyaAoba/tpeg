@@ -70,6 +70,41 @@ const isLineBreakOrSpaceOrTab = (char: string | undefined): boolean =>
   isSpaceOrTab(char) || char === "\n" || char === "\r";
 
 /**
+ * Scans forward from `start` through any run of whitespace and/or
+ * comments (reusing `skipLineComment`/`skipBlockComment` -- the same
+ * comment-skipping rules `grammarRuleExpression`'s own boundary scan
+ * uses below), returning the position of the first character that is
+ * neither. Used to check that `expression()` consumed the ENTIRE slice
+ * `grammarRuleExpression` cut out for it, not just a leading prefix --
+ * see that function's own doc comment for why a naive `result.next ===
+ * ruleContent.length` check would wrongly reject a rule followed only by
+ * a trailing comment (a legitimate, currently-working shape).
+ */
+const skipTrailingWhitespaceAndComments = (
+  text: string,
+  start: number,
+): number => {
+  let i = start;
+  while (i < text.length) {
+    const char = text[i];
+    if (isLineBreakOrSpaceOrTab(char)) {
+      i++;
+      continue;
+    }
+    if (char === "/" && text[i + 1] === "/") {
+      i = skipLineComment(text, i);
+      continue;
+    }
+    if (char === "/" && text[i + 1] === "*") {
+      i = skipBlockComment(text, i);
+      continue;
+    }
+    break;
+  }
+  return i;
+};
+
+/**
  * Bounded expression parser for grammar rules.
  *
  * This parser stops at the next rule definition or the enclosing grammar
@@ -148,32 +183,57 @@ const grammarRuleExpression: Parser<Expression> = (
       // next rule definition ("identifier whitespace* =") or the grammar
       // block's closing brace.
       let checkPos = endPos;
-      let crossedLineBreak = false;
       while (
         checkPos < input.length &&
         isLineBreakOrSpaceOrTab(input[checkPos])
       ) {
-        if (input[checkPos] === "\n" || input[checkPos] === "\r") {
-          crossedLineBreak = true;
-        }
         checkPos++;
       }
 
       if (checkPos < input.length) {
         const boundaryChar = input[checkPos];
 
-        // Only treat "}" as the block's closing brace when it's preceded by
-        // a line break: every real grammar block closes on its own line, so
-        // this can't confuse a "}" that appears same-line inside a string
-        // literal or character class (e.g. `sep = " }"`), which has no
-        // line break to cross before reaching it. Also require brace depth
-        // zero, so a multi-line action's own closing "}" (still "inside" an
-        // unclosed `{` from earlier in this same rule) is never mistaken for
-        // the grammar block's end.
+        // A bare "}" reached here can ONLY be the enclosing grammar
+        // block's own closing brace: a "}" inside a string literal or
+        // character class (e.g. `sep = " }"`, `chars = [ }]`) is never
+        // independently visible at this point at all -- the main scan
+        // loop above skips a string/character-class body atomically
+        // (the `"`/`'`/"[" cases), landing past its closing delimiter in
+        // one step, long before this whitespace-triggered lookahead ever
+        // runs on what's inside it. And `activeBraceDepth === 0` already
+        // rules out an action/quantifier block's own "}" (their `{`/`}`
+        // are depth-tracked by the main loop's own "{"/"}" cases,
+        // independent of this lookahead). So no additional
+        // `crossedLineBreak` requirement is needed -- and dropping it
+        // fixes a real gap: `grammar G { r = "x" }` (a same-line grammar
+        // block, `}` reached without ever crossing a line break) used to
+        // fall through this check entirely, silently absorbing the
+        // block's own closing brace into `r`'s slice instead of
+        // recognizing it as the boundary it is.
+        if (boundaryChar === "}" && activeBraceDepth === 0) {
+          foundEnd = true;
+          break;
+        }
+
+        // An annotation ("@key" or "@key: value") is never part of
+        // `expression()`'s own grammar -- unlike an identifier (which
+        // could legitimately continue a multi-line sequence, hence the
+        // "= " lookahead just below), a leading "@" can ONLY start a new
+        // grammarItem (a grammar-block-level annotation, or a rule-level
+        // one immediately preceding the next rule definition). Without
+        // this, a trailing annotation right after a rule -- e.g.
+        // `mul_op = "*" / "/"` followed on the next line by `@skip:
+        // whitespace` -- gets silently absorbed into `mul_op`'s own
+        // slice (nothing else in this scan recognizes "@" as a
+        // boundary), relying entirely on `expression()` stopping short
+        // and the caller re-parsing the leftover as its own grammarItem
+        // -- exactly the "did this rule consume its whole slice"
+        // ambiguity this function's full-consumption check (below) exists
+        // to catch, so a genuine annotation must be excluded from it by
+        // being recognized as a boundary here instead.
         if (
-          boundaryChar === "}" &&
-          crossedLineBreak &&
-          activeBraceDepth === 0
+          activeBraceDepth === 0 &&
+          boundaryChar === GRAMMAR_SYMBOLS.ANNOTATION_PREFIX
         ) {
           foundEnd = true;
           break;
@@ -228,6 +288,29 @@ const grammarRuleExpression: Parser<Expression> = (
   const result = expression()(ruleContent, 0);
 
   if (result.success) {
+    // `expression()` succeeding does not by itself mean it consumed the
+    // WHOLE slice this function cut out -- a syntactically-impossible
+    // trailing fragment (e.g. a stray `@foo` after a complete
+    // expression) would otherwise be silently left for the caller's
+    // outer grammarItem loop to reinterpret as something else entirely
+    // (a block-level annotation), rather than surfacing as the parse
+    // error it actually is. Trailing whitespace/comments are explicitly
+    // allowed here (see `skipTrailingWhitespaceAndComments`) so this
+    // doesn't regress the legitimate "rule followed by a comment" shape.
+    const trailingEnd = skipTrailingWhitespaceAndComments(
+      ruleContent,
+      result.next,
+    );
+    if (trailingEnd !== ruleContent.length) {
+      const unexpected = ruleContent.slice(trailingEnd, trailingEnd + 20);
+      return {
+        success: false,
+        error: {
+          message: `Unexpected content after rule expression: ${JSON.stringify(unexpected)}`,
+          pos: pos + trailingEnd,
+        },
+      };
+    }
     return {
       success: true,
       val: result.val,

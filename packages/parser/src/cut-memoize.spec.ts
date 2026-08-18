@@ -186,6 +186,103 @@ describe("commitAtTopLevel (Phase 3: cut-driven memo table truncation), parsed f
   });
 });
 
+// `isRuleReferencedAnywhere` (codegen.ts): "direct element of the start
+// rule's own top-level Sequence" alone is NOT sufficient for
+// `commitAtTopLevel` -- see that function's doc comment for the
+// soundness gap this narrows. Two pins, both load-bearing: the
+// differential fuzzer (`codegen-differential.spec.ts`) can't exercise
+// either branch on its own -- `genGrammarSource` always emits `start`
+// first and never references it back from `sub`/`rec1`/`rec2`, so this
+// exact condition is untested by 20000-grammar-scale fuzzing without
+// these hand-written cases.
+describe("commitAtTopLevel is narrowed to grammars where the start rule is never referenced elsewhere (regression)", () => {
+  test("a start rule referenced from another rule's Choice falls back to plain commit, not commitAtTopLevel", () => {
+    // `helper` is `rules[0]` (the start rule) AND is referenced by `real`
+    // as one alternative of a Choice -- a live backtrack point
+    // (`real`'s `"hz"` alternative) sits above `helper`'s own cut
+    // whenever it's invoked through that reference, so `commitAtTopLevel`
+    // there would violate its own documented precondition (no live
+    // backtrack point anywhere above).
+    const source = `grammar G {
+      helper = "a" ~ "b"
+      real = helper "x" / "hz"
+    }`;
+    const parsed = testParse(grammarDefinition, source);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    for (const result of [
+      generateTypeScriptParser(parsed.val, {
+        includeImports: false,
+        includeTypes: false,
+      }),
+      generateOptimizedTypeScriptParser(parsed.val, {
+        language: "typescript",
+        includeImports: false,
+        includeTypes: false,
+        optimize: true,
+      }),
+    ]) {
+      expect(result.code).toContain("commit(");
+      expect(result.code).not.toContain("commitAtTopLevel(");
+    }
+  });
+
+  test("an UNreferenced start rule still gets commitAtTopLevel (the optimization isn't lost when it's actually safe)", () => {
+    // Same cut shape as the test above, but `start` is never referenced
+    // by any other rule -- the narrow, structurally-verifiable condition
+    // this codebase relies on still holds, so the optimization must
+    // still fire.
+    const source = `grammar G {
+      start = "r" ~ "x"
+    }`;
+    const parsed = testParse(grammarDefinition, source);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    for (const result of [
+      generateTypeScriptParser(parsed.val, {
+        includeImports: false,
+        includeTypes: false,
+      }),
+      generateOptimizedTypeScriptParser(parsed.val, {
+        language: "typescript",
+        includeImports: false,
+        includeTypes: false,
+        optimize: true,
+      }),
+    ]) {
+      expect(result.code).toContain("commitAtTopLevel(");
+    }
+  });
+
+  test("@start naming a referenced rule no longer lets that rule's cut wrongly reach commitAtTopLevel", () => {
+    // `@start` is parsed but not otherwise consulted by codegen (the
+    // entry rule is always `rules[0]`) -- this pins that regardless of
+    // which rule `@start` names, a rule actually referenced elsewhere
+    // (here, `real`, declaration-order rules[1]) never gets
+    // commitAtTopLevel for a cut that isn't in rules[0]'s own top-level
+    // sequence, and rules[0] (`helper`, unreferenced) still gets it for
+    // its own cut.
+    const source = `grammar G {
+      @start: real
+      helper = "h" ~ "e"
+      real = "r"
+    }`;
+    const parsed = testParse(grammarDefinition, source);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const result = generateTypeScriptParser(parsed.val, {
+      includeImports: false,
+      includeTypes: false,
+    });
+    expect(result.code).toContain(
+      'export const helper = sequence(literal("h"), commitAtTopLevel(literal("e")));',
+    );
+  });
+});
+
 describe("promoteGlobalCuts (cut promotion beyond the start rule's own top-level sequence)", () => {
   test("a cut in a rule referenced only through a Plus from the start rule promotes to commitAtTopLevel and reproduces the same space claim as the Phase 3 case", async () => {
     const core = await import("@suzumiyaaoba/tpeg-core");

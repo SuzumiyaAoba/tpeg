@@ -169,6 +169,82 @@ const containsGlobalCut = (expr: Expression): boolean => {
 export const grammarHasGlobalCut = (grammar: GrammarDefinition): boolean =>
   grammar.rules.some((rule) => containsGlobalCut(rule.pattern));
 
+/** Does `expr` contain an `Identifier`/`QualifiedIdentifier` naming
+ * `ruleName` anywhere in its subtree? Used by
+ * {@link isRuleReferencedAnywhere}. */
+const containsReferenceTo = (expr: Expression, ruleName: string): boolean => {
+  switch (expr.type) {
+    case "Identifier":
+      return expr.name === ruleName;
+    case "QualifiedIdentifier":
+      // A cross-module reference can never name a LOCAL rule -- see
+      // `grammar-validation.ts`'s `collectQualifiedIdentifierCollisions`,
+      // which rejects the one shape where it plausibly could (a
+      // `module` part colliding with a local rule name) before codegen
+      // ever runs.
+      return false;
+    case "Sequence":
+      return expr.elements.some((el) => containsReferenceTo(el, ruleName));
+    case "Choice":
+      return expr.alternatives.some((alt) =>
+        containsReferenceTo(alt, ruleName),
+      );
+    case "Group":
+    case "Star":
+    case "Plus":
+    case "Optional":
+    case "Quantified":
+    case "PositiveLookahead":
+    case "NegativeLookahead":
+    case "LabeledExpression":
+    case "ActionExpression":
+      return containsReferenceTo(expr.expression, ruleName);
+    default:
+      return false;
+  }
+};
+
+/**
+ * Is `ruleName` referenced (by a bare `Identifier`) from ANYWHERE in
+ * `grammar` -- including from within the named rule's own pattern (a
+ * self- or mutually-recursive reference)?
+ *
+ * Used to decide whether `commitAtTopLevel` is safe to emit for a `Cut`
+ * that is a direct element of the grammar's start rule's (`rules[0]`)
+ * own top-level `Sequence`. That shape alone is NOT sufficient: the
+ * soundness argument (`commitAtTopLevel`'s doc comment,
+ * `packages/combinator/src/logic.ts`) requires no live backtrack point
+ * *anywhere above* the cut, which "direct element of `rules[0]`'s
+ * top-level `Sequence`" only guarantees if `rules[0]` is EXCLUSIVELY
+ * entered as the grammar's own external entry point -- never invoked as
+ * an ordinary rule reference from elsewhere in the same grammar, since
+ * every `export const` this generator emits is independently callable
+ * and a reference from within a `Choice` (e.g. `real = helper "x" /
+ * "hz"`, where `helper` happens to be `rules[0]`) is exactly the live
+ * backtrack point the soundness argument requires there be none of. This
+ * codebase's own `commitAtTopLevel` doc comment names this precisely:
+ * "a cut inside a referenced rule that happens to always be invoked at
+ * backtrack depth 0" is a case the general Mizushima result would handle
+ * safely but this narrow, structural condition does not -- so a
+ * reference from elsewhere must fall back to the ordinary, always-safe
+ * `commit` instead of asserting an unverified guarantee.
+ *
+ * Deliberately conservative: falls back to plain `commit` (still
+ * correct, just missing the `memoize`-pruning optimization
+ * `commitAtTopLevel` exists for) the moment ANY reference is found,
+ * including one that might itself be provably safe under the fuller
+ * `promoteGlobalCuts` argument -- a grammar wanting that broader
+ * treatment can opt into `promoteGlobalCuts` explicitly, which marks a
+ * `Cut` `global: true` after actually proving it (see that module's own
+ * doc comment); this check only protects the default, always-on
+ * `isStartRuleTopLevel` path from asserting something nobody verified.
+ */
+export const isRuleReferencedAnywhere = (
+  grammar: GrammarDefinition,
+  ruleName: string,
+): boolean =>
+  grammar.rules.some((rule) => containsReferenceTo(rule.pattern, ruleName));
+
 /**
  * Returns the label a single expression is bound to, unwrapping a `Group`
  * (which is transparent at codegen time) - or undefined if the expression
@@ -543,6 +619,16 @@ export class TPEGCodeGenerator {
     // Collect used combinators
     const usedCombinators = new Set<string>();
 
+    // `commitAtTopLevel` for a Cut in the start rule's own top-level
+    // Sequence is only sound when `rules[0]` is EXCLUSIVELY the grammar's
+    // external entry point -- see `isRuleReferencedAnywhere`'s doc comment
+    // for the concrete counterexample (a `Choice` alternative elsewhere in
+    // the grammar referencing `rules[0]` by name) this guards against.
+    const startRuleName = grammar.rules[0]?.name;
+    const startRuleIsSafeForCommitAtTopLevel =
+      startRuleName !== undefined &&
+      !isRuleReferencedAnywhere(grammar, startRuleName);
+
     // Collect all rule names and their declaration order first, since a
     // reference to a rule needs to know both (whether it's a rule at all,
     // and whether generating it as a plain identifier would read a `const`
@@ -556,7 +642,7 @@ export class TPEGCodeGenerator {
         rule.pattern,
         usedCombinators,
         index,
-        index === 0,
+        index === 0 && startRuleIsSafeForCommitAtTopLevel,
       );
     });
 
@@ -577,16 +663,20 @@ export class TPEGCodeGenerator {
       // heuristic of its own (unlike codegen-optimized.ts).
       // commitAtTopLevel is emitted (in place of the ordinary `commit`,
       // see generateSequence) only for a `Cut` that is a direct element
-      // of the grammar's start rule's own top-level Sequence -- see
+      // of the grammar's start rule's own top-level Sequence, AND ONLY
+      // when nothing else in the grammar references that start rule by
+      // name -- see `isRuleReferencedAnywhere`'s doc comment, and
       // `packages/combinator/src/logic.ts`'s `commitAtTopLevel` doc
-      // comment for why only that specific shape is safe.
+      // comment for why the narrower shape is the one that's actually
+      // safe.
       const combinatorPackageImports: string[] = [];
       if (grammar.rules.some((rule) => findMemoizeAnnotation(rule))) {
         combinatorPackageImports.push("memoize");
       }
       const startRule = grammar.rules[0];
       if (
-        (startRule?.pattern.type === "Sequence" &&
+        (startRuleIsSafeForCommitAtTopLevel &&
+          startRule?.pattern.type === "Sequence" &&
           startRule.pattern.elements.some((el) => el.type === "Cut")) ||
         grammarHasGlobalCut(grammar)
       ) {
@@ -607,7 +697,7 @@ export class TPEGCodeGenerator {
       const ruleCode = this.generateRule(
         rule,
         transformsByRuleName.get(rule.name),
-        index === 0,
+        index === 0 && startRuleIsSafeForCommitAtTopLevel,
       );
       parts.push(ruleCode);
       exports.push(rule.name);
@@ -752,10 +842,14 @@ export class TPEGCodeGenerator {
     // `isStartRuleTopLevel` is `true` only when `expr` IS the grammar's
     // start rule's own top-level pattern (set once, in `generateRule`,
     // and never forwarded to any recursive call below -- see
-    // `generateExpression`) -- a cut here is provably at backtrack depth
-    // 0 (see `commitAtTopLevel`'s doc comment in
-    // `packages/combinator/src/logic.ts` for why that's the condition
-    // that matters), so `commitAtTopLevel(...)` is emitted instead of the
+    // `generateExpression`) AND `rules[0]` is never referenced by name
+    // from anywhere else in the grammar (see
+    // `isRuleReferencedAnywhere`'s doc comment for why that second
+    // condition is load-bearing, not just belt-and-suspenders) -- a cut
+    // here is provably at backtrack depth 0 (see `commitAtTopLevel`'s doc
+    // comment in `packages/combinator/src/logic.ts` for why that's the
+    // condition that matters), so `commitAtTopLevel(...)` is emitted
+    // instead of the
     // ordinary `commit(...)`, letting `memoize` discard now-unreachable
     // cache entries as the parse commits past them. A `Cut` marked
     // `global: true` by `promoteGlobalCuts` (`ast-optimize.ts`)

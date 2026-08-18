@@ -21,6 +21,7 @@ import {
   createIdentifier,
   createNegativeLookahead,
   createOptional,
+  createQualifiedIdentifier,
   createRuleDefinition,
   createSequence,
   createStar,
@@ -331,6 +332,61 @@ describe("validateGrammar: left recursion", () => {
         includeTypes: false,
       }),
     ).not.toThrow();
+  });
+});
+
+// A `QualifiedIdentifier` (`module.name`) whose `module` part collides
+// with a rule actually declared in THIS grammar can never have been an
+// intentional cross-module reference -- see
+// `grammar-validation.ts`'s `collectQualifiedIdentifierCollisions` doc
+// comment for the concrete mistake this catches: `start = word.suffix`
+// with both `word` and `suffix` declared as ordinary local rules, where
+// `composition.ts`'s `basicSyntax` (trying `qualifiedIdentifier` before
+// `identifier`) silently combines what the author meant as two separate
+// tokens into one `QualifiedIdentifier` node.
+describe("validateGrammar: QualifiedIdentifier / local-rule-name collisions", () => {
+  it("rejects a QualifiedIdentifier whose module part is a locally-declared rule", () => {
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createQualifiedIdentifier("word", "suffix"),
+        ),
+        createRuleDefinition("word", createStringLiteral("a", '"')),
+        createRuleDefinition("suffix", createStringLiteral("b", '"')),
+      ],
+    );
+
+    expect(() => validateGrammar(grammar)).toThrow(/undefined rule/i);
+  });
+
+  it("does not reject a QualifiedIdentifier whose module part names no local rule (a genuine cross-module reference)", () => {
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createQualifiedIdentifier("math", "expr"),
+        ),
+      ],
+    );
+
+    expect(() => validateGrammar(grammar)).not.toThrow();
+  });
+
+  it("end-to-end: word.suffix mis-tokenization is rejected via real .tpeg source", () => {
+    const grammar = grammarFromSource(
+      'start = word.suffix\n  word = "a"\n  suffix = "b"',
+    );
+    expect(() =>
+      generateTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+      }),
+    ).toThrow(/undefined rule/i);
   });
 });
 

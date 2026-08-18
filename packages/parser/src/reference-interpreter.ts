@@ -49,14 +49,18 @@
  * ## Termination
  *
  * A zero-width match inside `Star`/`Plus`/an unbounded `Quantified`
- * throws (mirroring `createInfiniteLoopError` in
- * `packages/core/src/repetition.ts`) rather than looping forever --
- * callers should treat this as "skip this grammar/input pair", exactly
- * like `assertNoNullableRepetition` rejects such a grammar at
- * construction time for the real codegen path. A recursion-depth guard
- * similarly throws rather than overflowing the stack on a left-recursive
- * grammar (this interpreter, like the real runtime, has no left-recursion
- * support).
+ * returns a FATAL failure (mirroring `createInfiniteLoopError` in
+ * `packages/core/src/repetition.ts`, which itself returns `fatal: true`
+ * for the identical condition) rather than looping forever or throwing --
+ * see `ReferenceInterpreterLimitError`'s own doc comment for why this
+ * changed from throwing. A `.tpeg`-sourced grammar never reaches this in
+ * practice: `assertNoNullableRepetition` rejects such a grammar at
+ * construction time for the real codegen path, before this interpreter is
+ * ever invoked on it. A recursion-depth guard separately throws rather
+ * than overflowing the stack on a left-recursive grammar (this
+ * interpreter, like the real runtime, has no left-recursion support) --
+ * that condition is NOT expressible as a `Result` and stays a thrown
+ * `ReferenceInterpreterLimitError`.
  */
 
 import type {
@@ -65,13 +69,23 @@ import type {
   RuleDefinition,
 } from "@suzumiyaaoba/tpeg-core";
 
-/** Thrown (not returned) for a condition that means "this grammar/input
- * pair is out of scope for this interpreter" -- infinite loop (zero-width
- * repetition) or unbounded recursion (most likely left recursion, which
- * neither this interpreter nor the real runtime supports). A caller
- * should catch this and skip, exactly like a construction-time rejection
- * from `assertNoNullableRepetition` is skipped elsewhere in the
- * differential harness. */
+/** Thrown (not returned) ONLY for unbounded recursion (most likely left
+ * recursion, which neither this interpreter nor the real runtime
+ * supports) -- a condition genuinely out of scope for this interpreter,
+ * distinct from anything a `Result` can express. A caller should catch
+ * this and skip, exactly like a construction-time rejection from
+ * `assertNoNullableRepetition` is skipped elsewhere in the differential
+ * harness.
+ *
+ * A zero-width match inside `Star`/`Plus`/an unbounded `Quantified` is NOT
+ * this anymore -- it is a FATAL {@link Result} (`NG(true)`), mirroring
+ * `createInfiniteLoopError` in `packages/core/src/repetition.ts`, which
+ * itself returns `fatal: true` for the identical condition. Throwing (and
+ * having every caller catch-and-skip) made this exact divergence
+ * structurally invisible to differential fuzzing: `codegen-differential.
+ * spec.ts` would silently skip the grammar/input pair instead of comparing
+ * this oracle's answer against the generated code's (also-buggy, at the
+ * time) non-fatal failure for the same condition. */
 export class ReferenceInterpreterLimitError extends Error {}
 
 interface Ok {
@@ -107,8 +121,9 @@ const DEFAULT_MAX_DEPTH = 5000;
  *   undefined rule -- a malformed-grammar bug the caller should let
  *   surface rather than silently skip.
  * @throws {ReferenceInterpreterLimitError} (from the returned function,
- *   not from this call) on a zero-width repetition or on exceeding
- *   `maxDepth` -- see the class doc comment.
+ *   not from this call) on exceeding `maxDepth` -- see the class doc
+ *   comment. A zero-width repetition is NOT thrown; it's returned as a
+ *   fatal failure, same as the real runtime.
  */
 export const makeReferenceInterpreter = (
   grammar: GrammarDefinition,
@@ -248,9 +263,7 @@ export const makeReferenceInterpreter = (
               break;
             }
             if (r.next === p) {
-              throw new ReferenceInterpreterLimitError(
-                "zero-width match inside Star",
-              );
+              return NG(true);
             }
             p = r.next;
           }
@@ -261,9 +274,7 @@ export const makeReferenceInterpreter = (
           const first = evalExpr(expr.expression, input, pos);
           if (!first.ok) return first;
           if (first.next === pos) {
-            throw new ReferenceInterpreterLimitError(
-              "zero-width match inside Plus",
-            );
+            return NG(true);
           }
           let p = first.next;
           for (;;) {
@@ -273,9 +284,7 @@ export const makeReferenceInterpreter = (
               break;
             }
             if (r.next === p) {
-              throw new ReferenceInterpreterLimitError(
-                "zero-width match inside Plus",
-              );
+              return NG(true);
             }
             p = r.next;
           }
@@ -308,9 +317,7 @@ export const makeReferenceInterpreter = (
             // an explicit `max` already bounds the loop above, mirroring
             // `quantified`'s own guard in `packages/core/src/repetition.ts`.
             if (expr.max === undefined && r.next === p) {
-              throw new ReferenceInterpreterLimitError(
-                "zero-width match inside unbounded Quantified",
-              );
+              return NG(true);
             }
             p = r.next;
           }

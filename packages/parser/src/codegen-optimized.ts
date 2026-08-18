@@ -42,6 +42,7 @@ import {
   generateQualifiedIdentifierCode,
   generateQuantifiedCode,
   generateStringLiteralCode,
+  isRuleReferencedAnywhere,
   tryGenerateCharClassRunCode,
   wrapWithAction,
   wrapWithMemoize,
@@ -325,6 +326,16 @@ export class OptimizedTPEGCodeGenerator {
    * the two passes can never disagree about what's fused -- both simply
    * ask the same `Set.has(expr)` question. */
   private fusionRoots: ReadonlySet<Expression> = new Set();
+  /** Whether `commitAtTopLevel` is safe to emit for a `Cut` that is a
+   * direct element of the grammar's start rule's (`rules[0]`) own
+   * top-level Sequence -- computed once per `generateGrammar` call. See
+   * `codegen.ts`'s `isRuleReferencedAnywhere` doc comment: that shape
+   * alone is NOT sufficient, since `rules[0]` being referenced by name
+   * from elsewhere in the grammar (a live backtrack point above what
+   * `commitAtTopLevel` assumes has none) makes the narrow structural
+   * condition this codebase's codegen relies on unsound. `true` before
+   * the first `generateGrammar` call only as an unused default. */
+  private startRuleIsSafeForCommitAtTopLevel = true;
 
   constructor(options: OptimizedCodeGenOptions = { language: "typescript" }) {
     this.options = {
@@ -371,6 +382,12 @@ export class OptimizedTPEGCodeGenerator {
     // also want predictive dispatch or regex fusion.
     this.firstSetAnalysis = analyzeFirstSets(grammar);
     assertNoNullableRepetition(grammar, this.firstSetAnalysis);
+    // See this field's own doc comment for why the narrow
+    // `isStartRuleTopLevel` shape needs this extra check.
+    const startRuleName = grammar.rules[0]?.name;
+    this.startRuleIsSafeForCommitAtTopLevel =
+      startRuleName !== undefined &&
+      !isRuleReferencedAnywhere(grammar, startRuleName);
     this.reentrancyAnalysis = this.options.enableMemoization
       ? analyzeReentrancy(grammar)
       : null;
@@ -409,7 +426,7 @@ export class OptimizedTPEGCodeGenerator {
       const ruleCode = this.generateOptimizedRule(
         rule,
         transformsByRuleName.get(rule.name),
-        index === 0,
+        index === 0 && this.startRuleIsSafeForCommitAtTopLevel,
       );
       parts.push(ruleCode);
       exports.push(stringInterner.intern(rule.name));
@@ -467,7 +484,7 @@ export class OptimizedTPEGCodeGenerator {
         rule.pattern,
         usedCombinators,
         index,
-        index === 0,
+        index === 0 && this.startRuleIsSafeForCommitAtTopLevel,
       );
     });
 
@@ -499,12 +516,15 @@ export class OptimizedTPEGCodeGenerator {
     }
     // commitAtTopLevel is emitted (in place of the ordinary `commit`, see
     // generateOptimizedSequence) only for a `Cut` that is a direct
-    // element of the grammar's start rule's own top-level Sequence -- see
-    // `packages/combinator/src/logic.ts`'s `commitAtTopLevel` doc comment
-    // for why only that specific shape is safe.
+    // element of the grammar's start rule's own top-level Sequence, AND
+    // only when nothing else in the grammar references that start rule by
+    // name -- see `startRuleIsSafeForCommitAtTopLevel`'s own doc comment,
+    // and `packages/combinator/src/logic.ts`'s `commitAtTopLevel` doc
+    // comment for why the narrower shape is the one that's actually safe.
     const startRule = grammar.rules[0];
     if (
-      (startRule?.pattern.type === "Sequence" &&
+      (this.startRuleIsSafeForCommitAtTopLevel &&
+        startRule?.pattern.type === "Sequence" &&
         startRule.pattern.elements.some((el) => el.type === "Cut")) ||
       grammarHasGlobalCut(grammar)
     ) {
