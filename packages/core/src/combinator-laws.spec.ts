@@ -33,7 +33,7 @@ import {
   sequence,
   withDefault,
 } from "./combinators";
-import { resetFailureWatermark } from "./failure";
+import { isFatalFailure, resetFailureWatermark } from "./failure";
 import { notPredicate } from "./lookahead";
 import { oneOrMore, optional, zeroOrMore } from "./repetition";
 import { map } from "./transform";
@@ -136,11 +136,22 @@ type Key = string;
  * collapses to a single `"T"` marker (both sides of every law below are
  * built from the same leaves at the same depth, so an infinite-loop guard
  * firing on one side and not the other would itself be a law violation --
- * this just avoids the comparison itself throwing). */
+ * this just avoids the comparison itself throwing). Failure is a
+ * three-way `"FATAL"` / `"F"` split, not just `"F"` -- collapsing both into
+ * one key (as this used to do) would make a law violation that gets
+ * recognition right but fatality wrong (a `fatal` failure escaping a
+ * boundary that should have absorbed it, or absorbed one that shouldn't
+ * have been) produce zero diffs, exactly the gap `codegen-differential.
+ * spec.ts`'s `keySuccessOnly` closed on the oracle side (see its own
+ * comment). `"T"` is kept as a defensive fallback only: every genParser
+ * leaf under a `zeroOrMore`/`oneOrMore` above is non-nullable, so this
+ * branch is not expected to ever fire, but a future change that violates
+ * that invariant should collapse-and-compare rather than crash the test. */
 const key = (parser: Parser<unknown>, input: string): Key => {
   try {
     const r = parser(input, 0);
-    return r.success ? `S:${r.next}:${JSON.stringify(r.val)}` : "F";
+    if (r.success) return `S:${r.next}:${JSON.stringify(r.val)}`;
+    return isFatalFailure(r) ? "FATAL" : "F";
   } catch {
     return "T";
   }
@@ -148,7 +159,8 @@ const key = (parser: Parser<unknown>, input: string): Key => {
 const keyRecognitionOnly = (parser: Parser<unknown>, input: string): Key => {
   try {
     const r = parser(input, 0);
-    return r.success ? `S:${r.next}` : "F";
+    if (r.success) return `S:${r.next}`;
+    return isFatalFailure(r) ? "FATAL" : "F";
   } catch {
     return "T";
   }

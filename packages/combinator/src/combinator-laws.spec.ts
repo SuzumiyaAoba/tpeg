@@ -20,6 +20,7 @@ import {
   anyChar,
   charClass,
   choice,
+  isFatalFailure,
   literal,
   map,
   negatedCharClass,
@@ -108,10 +109,17 @@ const INPUTS = [
 ];
 
 type Key = string;
+// Three-way failure split (`"FATAL"` vs. plain `"F"`), not just `"F"` -- see
+// `packages/core/src/combinator-laws.spec.ts`'s identical `key` comment for
+// why collapsing fatality into recognition-only would hide a cut-propagation
+// bug (`memoize`/`takeUntil`/`between`/`sepBy` all wrap combinators that can
+// carry a `fatal` failure through unchanged, per their own doc comments in
+// `logic.ts`/`string.ts`/`list.ts`).
 const key = (parser: Parser<unknown>, input: string): Key => {
   try {
     const r = parser(input, 0);
-    return r.success ? `S:${r.next}:${JSON.stringify(r.val)}` : "F";
+    if (r.success) return `S:${r.next}:${JSON.stringify(r.val)}`;
+    return isFatalFailure(r) ? "FATAL" : "F";
   } catch {
     return "T";
   }

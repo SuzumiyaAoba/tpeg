@@ -1133,3 +1133,28 @@ additive = multiplicative (("+" / "-") multiplicative)*
 multiplicative = unary (("*" / "/") unary)*
 unary = ("!" / "-")? primary             // Highest: unary operators
 primary = identifier / literal / "(" assignment ")"
+```
+
+## Known Limitations
+
+These are gaps between this specification and the current `packages/parser`/`packages/cli` implementation, found by an execution-based audit. None of them are silent correctness bugs -- each either fails loudly at parse/generation time or is simply inert -- but a grammar author relying on the specification alone could be surprised by any of them.
+
+### Escape sequences differ between string literals and character classes
+
+String literals (`"..."`, `'...'`) support only `\n \r \t \\ \" \'`. Character classes (`[...]`) support a larger set: `\t \n \r \b \f \v \0`, plus `\] \\ \^ \- \" \'` for characters that are otherwise syntactically special inside a class. Neither supports a `\uXXXX`/`\u{...}` numeric escape.
+
+Concretely, `[\b]` (a character class matching a backspace) parses, but `"\b"` (a string literal containing a backspace) does not -- it is a hard parse error, not a silent misinterpretation. This is not a dead end for grammar authors: a *raw*, unescaped control character embedded directly in the source text is accepted by both string literals and character classes alike (both parsers accept "any character except the closing quote/`\`" for the non-escape case), so `"\x08"` written as a literal byte in the file still works. Only the backslash-escape spelling is asymmetric.
+
+### `-` inside a character class must be escaped
+
+`-` is the range operator inside `[...]`, so a bare `-` where a class member is expected (`[-]`, `[a-]`) is a parse error, exactly as in most other character-class syntaxes. Write `\-` to mean a literal hyphen (`[\-]`, `[a\-z]`) instead.
+
+### Five annotations parse but have no effect on generated code
+
+`@start`, `@skip`, `@namespace`, `@private`, and `@override` are all accepted by the grammar-block parser (any `@key: value` or `@key` is syntactically valid there), but none of them currently change what `tpeg-cli`/`tpeg-parser`'s code generator produces:
+
+- **`@start: ruleName`** does not change which rule becomes the generated module's entry point -- that is always the *first* rule declared in the grammar, regardless of this annotation.
+- **`@skip: ruleName`** does not insert any implicit whitespace/comment skipping between sequence elements -- every rule must consume whitespace explicitly, exactly as if `@skip` were absent.
+- **`@namespace`**, **`@private`**, and **`@override`** are parsed but have no effect on the generated module's exports or naming.
+
+Only `@memoize` on an individual rule is actually consulted by codegen. Writing any of the five annotations above is harmless (it does not change behavior from omitting them) but does not do what the name suggests either.
