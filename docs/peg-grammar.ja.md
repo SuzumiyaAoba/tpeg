@@ -237,10 +237,10 @@ value:("0x" [0-9a-fA-F]+) // ラベル付き連接グループ
 
 ```tpeg
 // 型推論の例：
-number = digits:[0-9]+              // → キャプチャ: { digits: string }
+number = digits:[0-9]+              // → キャプチャ: { digits: string[] }
 expression = left:term right:term   // → キャプチャ: { left: T, right: T }
-optional = value?                   // → キャプチャ: { value?: T }
-repeated = item*                    // → キャプチャ: { item: T[] }
+optional = value:pattern?           // → キャプチャ: { value: [T] | [] }
+repeated = items:pattern*           // → キャプチャ: { items: T[] }
 choice = a:first / b:second         // → キャプチャ: { a?: T1, b?: T2 }
 group = sign:("+" / "-")           // → キャプチャ: { sign: string }
 ```
@@ -290,7 +290,7 @@ export const greeting = sequence(
 |-------------|---------------|------|
 | `"literal"` | `"literal"` | 文字列リテラルはリテラル型をキャプチャ |
 | `[a-z]` | `string` | 文字クラスは単一文字をキャプチャ |
-| `[a-z]+` | `string` | 繰り返し付き文字クラスは連結された文字列をキャプチャ |
+| `[a-z]+` | `string[]` | 繰り返し付き文字クラスは、他の `pattern+` と同様、マッチした文字の配列をキャプチャ |
 | `rule_name` | `T` | 規則参照は規則が返すものをキャプチャ |
 | `label:pattern` | `{ label: T }` | ラベル付きパターンは名前付きキャプチャを作成 |
 | `pattern1 pattern2` | `[T1, T2]` | ラベルなし連接は要素の配列をキャプチャ |
@@ -300,12 +300,12 @@ export const greeting = sequence(
 | `pattern*` | `T[]` | ラベルなし繰り返しはマッチの配列をキャプチャ |
 | `items:pattern*` | `{ items: T[] }` | ラベル付き繰り返しは名前付き配列をキャプチャ |
 | `pattern+` | `T[]` | 1回以上は非空配列をキャプチャ |
-| `pattern?` | `T?` | ラベルなしオプショナルはオプショナル型をキャプチャ |
-| `value:pattern?` | `{ value?: T }` | ラベル付きオプショナルはオプショナルフィールドを作成 |
+| `pattern?` | `[T] \| []` | ラベルなしオプショナルは、マッチ時は要素1個の配列、それ以外は空配列をキャプチャ - `optional()`（`packages/core/src/repetition.ts`）は裸の `T` や `undefined` を返すことはない |
+| `value:pattern?` | `{ value: [T] \| [] }` | ラベル付きオプショナルは、同じ `[T] \| []` の配列を値に持つフィールドを作成する（オプショナルフィールドにはならない） |
 | `(pattern1 / pattern2)` | `T1 \| T2` | ラベルなしグループは内容と同じ型をキャプチャ |
 | `group:(pattern1 / pattern2)` | `{ group: T1 \| T2 }` | ラベル付きグループは名前付きキャプチャを作成 |
-| `&pattern` | `null` | 肯定先読みはキャプチャしない |
-| `!pattern` | `null` | 否定先読みはキャプチャしない |
+| `&pattern` | `undefined` | 肯定先読みはキャプチャしない |
+| `!pattern` | `undefined` | 否定先読みはキャプチャしない |
 | `a ~ b` | `[T_a, T_b]` | `~` 自体は何も寄与せずタプルのスロットも持たない - 連接の要素数（およびラベルが付いている場合はキャプチャ）は、`~` が存在しなかった場合と全く同じになる |
 | `a ~` | `T_a` | 同じ規則を単一要素の場合に適用した帰結：`~` を取り除くと残るのは `a` だけ - これは連接ではなく単一のパターンなので、`a` 自身の（ラベルなしの）型としてキャプチャされ、1要素のタプル `[T_a]` にはならない |
 

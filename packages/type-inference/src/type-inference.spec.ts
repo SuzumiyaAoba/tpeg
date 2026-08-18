@@ -79,6 +79,42 @@ describe("TypeInferenceEngine", () => {
       expect(result.isArray).toBe(true);
     });
 
+    it("should merge a sequence's labeled elements into an object and drop unlabeled ones, matching captureSequence()'s runtime merge", () => {
+      // generateSequence (packages/parser/src/codegen.ts) switches to
+      // captureSequence(...) as soon as ANY element is directly labeled,
+      // and captureSequence's runtime merge (mergeCaptures,
+      // packages/core/src/capture.ts) drops every unlabeled element's
+      // value rather than keeping it as a positional slot.
+      const sequence = createSequence([
+        createLabeledExpression("name", createStringLiteral("hello", '"')),
+        createCharacterClass([createCharRange("0", "9")]), // unlabeled -- dropped
+        createLabeledExpression("age", createStringLiteral("30", '"')),
+      ]);
+      const result = engine.inferExpressionType(sequence);
+
+      expect(result.typeString).toBe('{ name: "hello", age: "30" }');
+      expect(result.baseType).toBe("object");
+      expect(result.isArray).toBe(false);
+    });
+
+    it("should let a repeated label's LAST occurrence win, not emit a duplicate object-type key", () => {
+      // `validateGrammar` doesn't reject a repeated label (e.g.
+      // `a:"x" a:"y"`), and at runtime `mergeCaptures`
+      // (packages/core/src/capture.ts) is `Object.assign` over the
+      // elements in order, so the later capture overwrites the earlier
+      // one. Emitting BOTH as separate `a: ...` fields would be a
+      // duplicate-property object type literal -- a tsc error once this
+      // typeString is written into an `export type ... = ...;` by
+      // type-integration.ts.
+      const sequence = createSequence([
+        createLabeledExpression("a", createStringLiteral("x", '"')),
+        createLabeledExpression("a", createStringLiteral("y", '"')),
+      ]);
+      const result = engine.inferExpressionType(sequence);
+
+      expect(result.typeString).toBe('{ a: "y" }');
+    });
+
     it("should infer choice types as unions", () => {
       const choice = createChoice([
         createStringLiteral("yes", '"'),
@@ -111,13 +147,14 @@ describe("TypeInferenceEngine", () => {
       expect(result.baseType).toBe("string");
     });
 
-    it("should infer optional types with undefined union", () => {
+    it("should infer optional types as [T] | [] -- matching optional()'s actual runtime signature (packages/core/src/repetition.ts), never a bare T | undefined", () => {
       const optional = createOptional(createStringLiteral("maybe", '"'));
       const result = engine.inferExpressionType(optional);
 
-      expect(result.typeString).toBe('"maybe" | undefined');
-      expect(result.nullable).toBe(true);
-      expect(result.baseType).toBe("string");
+      expect(result.typeString).toBe('["maybe"] | []');
+      expect(result.nullable).toBe(false);
+      expect(result.isArray).toBe(true);
+      expect(result.baseType).toBe("tuple");
     });
   });
 
@@ -236,9 +273,9 @@ describe("TypeInferenceEngine", () => {
       );
       const result = engine.inferExpressionType(nested);
 
-      expect(result.typeString).toBe('(("a" | "b")[]) | undefined');
-      expect(result.nullable).toBe(true);
-      expect(result.isArray).toBe(false); // The outer level is optional, not array
+      expect(result.typeString).toBe('[("a" | "b")[]] | []');
+      expect(result.nullable).toBe(false);
+      expect(result.isArray).toBe(true); // optional() itself returns [T] | [] -- an array either way
     });
 
     it("should generate proper documentation", () => {
@@ -340,8 +377,10 @@ describe("TypeInferenceEngine", () => {
 
     it("should handle quantified expressions with min === 0 as a plain array, never undefined", () => {
       // quantified(x, 0, 1) always returns T[] -- an empty array when
-      // nothing matches -- never undefined. Only Optional (`?`) can
-      // produce undefined.
+      // nothing matches -- never undefined. Optional (`?`) doesn't
+      // produce undefined either (it returns [T] | [] -- see
+      // inferOptionalType's own doc comment); no PEG repetition/optional
+      // operator in this grammar produces a bare undefined result.
       const engine = new TypeInferenceEngine();
       const quantified = createQuantified(
         createStringLiteral("hello", '"'),
@@ -419,6 +458,21 @@ describe("TypeInferenceEngine", () => {
       const resultWithoutCut = engine.inferExpressionType(withoutCut);
 
       expect(resultWithCut.typeString).toBe(resultWithoutCut.typeString);
+    });
+
+    it("should return a single post-Cut, unlabeled survivor bare, not as a 1-tuple", () => {
+      // generateSequence's `parts.length === 1 && !hasLabel` branch
+      // (packages/parser/src/codegen.ts): with the Cut gone, a lone
+      // remaining element is exactly as if the sequence were never
+      // written -- a bare pattern, not a 1-tuple.
+      const engine = new TypeInferenceEngine();
+      const cut: Expression = { type: "Cut" };
+      const sequence = createSequence([cut, createStringLiteral("a", '"')]);
+
+      const result = engine.inferExpressionType(sequence);
+
+      expect(result.typeString).toBe('"a"');
+      expect(result.isArray).toBe(false);
     });
 
     it("should wrap the inner type in an object keyed by the label, matching capture()'s runtime shape", () => {

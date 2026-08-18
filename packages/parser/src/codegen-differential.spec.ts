@@ -143,7 +143,7 @@ const genExpr = (
   const atom = () => pick(rng, allowRuleRef ? [...LEAVES, ...refs] : LEAVES);
   if (depth <= 0) return atom();
   const next = () => genExpr(rng, depth - 1, allowRuleRef, refs);
-  switch (Math.floor(rng() * 29)) {
+  switch (Math.floor(rng() * 33)) {
     case 0:
       return atom();
     case 1:
@@ -282,6 +282,35 @@ const genExpr = (
       // this is the single-survivor counterpart to case 13 above, for
       // the same "as if `~` weren't there" reason.
       return `(~ ${next()})`;
+    case 28:
+      // A TRAILING negative lookahead -- every prior lookahead case (6/
+      // 16/17/26) only ever puts `!`/`&` at the FRONT of what follows it.
+      // A trailing `!atom` at the end of a sequence is an extremely
+      // common real-world idiom ("x not immediately followed by y") and
+      // was structurally unreachable from this generator before this
+      // case existed -- confirmed unreachable by a manual audit alongside
+      // the fix that added this case (see the commit introducing it).
+      return `(${next()} !${atom()})`;
+    case 29:
+      // Same, but trailing PositiveLookahead.
+      return `(${next()} &${atom()})`;
+    case 30:
+      // Nested/doubled lookahead -- `!!a` (negate a negation) and `!&a`/
+      // `&!a` (negate an affirmation / affirm a negation), none of which
+      // any prior case produces (6/16/17/26 always wrap a single `!`/`&`
+      // around a bare atom or group, never around ANOTHER lookahead).
+      return pick(rng, [
+        `!!${atom()} ${next()}`,
+        `!&${atom()} ${next()}`,
+        `&!${atom()} ${next()}`,
+      ]);
+    case 31:
+      // A greedy `*` immediately followed by a trailing negative
+      // lookahead in the same group -- unlike case 28 (a single `atom()`
+      // before the `!`), this exercises the lookahead firing right after
+      // a REPETITION's own backtracking exhausts itself, not just after
+      // one match.
+      return `(${atom()}* !${atom()})`;
     default:
       return `(${next()} ~ ${next()})`;
   }

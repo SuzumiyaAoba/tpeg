@@ -242,10 +242,10 @@ Types are automatically inferred from grammar patterns:
 
 ```tpeg
 // Type inference examples:
-number = digits:[0-9]+              // → captures: { digits: string }
+number = digits:[0-9]+              // → captures: { digits: string[] }
 expression = left:term right:term   // → captures: { left: T, right: T }
-optional = value?                   // → captures: { value?: T }
-repeated = item*                    // → captures: { item: T[] }
+optional = value:pattern?           // → captures: { value: [T] | [] }
+repeated = items:pattern*           // → captures: { items: T[] }
 choice = a:first / b:second         // → captures: { a?: T1, b?: T2 }
 group = sign:("+" / "-")           // → captures: { sign: string }
 ```
@@ -297,7 +297,7 @@ export const greeting = captureSequence(
 |-----------------|-------------------|-------------|
 | `"literal"` | `"literal"` | String literal captures the literal type |
 | `[a-z]` | `string` | Character class captures single character |
-| `[a-z]+` | `string` | Character class with repetition captures concatenated string |
+| `[a-z]+` | `string[]` | Character class with repetition captures an array of matched characters, same as any other `pattern+` |
 | `rule_name` | `T` | Rule reference captures whatever the rule returns |
 | `label:pattern` | `{ label: T }` | Labeled pattern creates named capture |
 | `pattern1 pattern2` | `[T1, T2]` | Unlabeled sequence captures array of elements |
@@ -308,12 +308,12 @@ export const greeting = captureSequence(
 | `pattern*` | `T[]` | Unlabeled repetition captures array of matches |
 | `items:pattern*` | `{ items: T[] }` | Labeled repetition captures named array |
 | `pattern+` | `T[]` | One-or-more captures non-empty array |
-| `pattern?` | `T?` | Unlabeled optional captures optional type |
-| `value:pattern?` | `{ value?: T }` | Labeled optional creates optional field |
+| `pattern?` | `[T] \| []` | Unlabeled optional captures a one-element array on a match, an empty array otherwise - `optional()` (`packages/core/src/repetition.ts`) never returns a bare `T` or `undefined` |
+| `value:pattern?` | `{ value: [T] \| [] }` | Labeled optional creates a field holding that same `[T] \| []` array, not an optional field |
 | `(pattern1 / pattern2)` | `T1 \| T2` | Unlabeled group captures same type as contents |
 | `group:(pattern1 / pattern2)` | `{ group: T1 \| T2 }` | Labeled group creates named capture |
-| `&pattern` | `null` | Positive lookahead doesn't capture |
-| `!pattern` | `null` | Negative lookahead doesn't capture |
+| `&pattern` | `undefined` | Positive lookahead doesn't capture |
+| `!pattern` | `undefined` | Negative lookahead doesn't capture |
 | `a ~ b` | `[T_a, T_b]` | `~` itself contributes nothing and no tuple slot - the sequence's element count (and captures, if labeled) is exactly as if `~` weren't there |
 | `a ~` | `T_a` | Same rule taken to its single-element conclusion: with `~` gone, only `a` is left - a bare pattern, not a sequence - so it captures as `a`'s own (unlabeled) type, not a 1-tuple `[T_a]` |
 

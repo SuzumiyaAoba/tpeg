@@ -77,7 +77,7 @@ describe("TypeIntegrationEngine", () => {
         'export type LiteralResult = "test";',
       );
       expect(typedGrammar.typeDefinitions).toContain(
-        'export type OptionalResult = "maybe" | undefined;',
+        'export type OptionalResult = ["maybe"] | [];',
       );
       expect(typedGrammar.typeDefinitions).toContain(
         "export type ParserResult = LiteralResult | OptionalResult;",
@@ -479,7 +479,7 @@ describe("TypeIntegrationEngine", () => {
 
       expect(elementType?.typeString).toBe('"a" | "b"');
       expect(listType?.typeString).toBe('("a" | "b")[]');
-      expect(optionalListType?.typeString).toBe('(("a" | "b")[]) | undefined');
+      expect(optionalListType?.typeString).toBe('[("a" | "b")[]] | []');
     });
 
     it("should convert rule names to PascalCase for types", () => {

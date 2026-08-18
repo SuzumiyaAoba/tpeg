@@ -189,6 +189,25 @@ export class TypeInferenceError extends Error {
 }
 
 /**
+ * Peels away transparent `Group` wrappers to see if `expr` is (or wraps)
+ * a `LabeledExpression` -- a local duplicate of `labelOf` in
+ * packages/parser/src/codegen.ts (not imported: this package depends on
+ * tpeg-core only, not tpeg-parser). Used by `inferSequenceType` to decide
+ * which elements contribute a field to a `captureSequence(...)`-merged
+ * object, exactly like codegen's `collectTopLevelLabels` decides which
+ * elements name a label.
+ */
+const unwrapToLabeledExpression = (
+  expr: Expression,
+): LabeledExpression | undefined => {
+  if (expr.type === "LabeledExpression") return expr as LabeledExpression;
+  if (expr.type === "Group") {
+    return unwrapToLabeledExpression((expr as Group).expression);
+  }
+  return undefined;
+};
+
+/**
  * Type inference engine for TPEG grammars
  *
  * Provides comprehensive type inference capabilities for TPEG grammar definitions.
@@ -597,8 +616,40 @@ export class TypeInferenceEngine {
   /**
    * Infer type for sequence expressions
    *
-   * When inferObjectTypes is enabled, generates tuple types.
-   * Otherwise, returns a simple string type.
+   * When inferObjectTypes is enabled, this mirrors `generateSequence` in
+   * packages/parser/src/codegen.ts branch-for-branch (this package
+   * deliberately depends on tpeg-core only, not tpeg-parser -- see
+   * CLAUDE.md's package dependency graph -- so the branching is
+   * duplicated here rather than imported; keep the two in sync by hand):
+   *
+   * 1. A `Cut` (`~`) marker never becomes an argument to the generated
+   *    `sequence(...)`/`captureSequence(...)` call -- unlike a
+   *    lookahead, which is kept as a real (void-valued) tuple slot -- so
+   *    it's excluded here too, or the inferred tuple would have one more
+   *    element than the runtime value actually does.
+   * 2. If ANY remaining element is directly (or through a transparent
+   *    `Group`) a `LabeledExpression`, codegen emits `captureSequence(...)`
+   *    instead of `sequence(...)`, which merges captured fields into a
+   *    single object rather than a positional tuple -- see `mergeCaptures`
+   *    in packages/core/src/capture.ts. Only elements that are themselves
+   *    directly labeled contribute a field here (matching
+   *    `collectTopLevelLabels`, codegen.ts); every unlabeled element is
+   *    dropped, exactly like `mergeCaptures` drops every untagged entry.
+   *    Simplification, not modeled: an unlabeled element that is itself a
+   *    `Choice` whose winning alternative happens to be its own raw
+   *    `capture(...)` also merges its field in at runtime (`choice`
+   *    forwards whichever alternative's value it matched, tag and all --
+   *    see `CAPTURE_TAG`'s doc comment, capture.ts). That shape is
+   *    under-inferred here (the field is silently absent from the
+   *    inferred type) rather than over-claimed, which is the safer
+   *    direction to be wrong in.
+   * 3. Otherwise, with no direct label anywhere, a single surviving
+   *    element (after the Cut is dropped) is returned BARE -- not
+   *    wrapped in a 1-tuple -- exactly like `generateSequence`'s
+   *    `parts.length === 1 && !hasLabel` branch. Two or more survivors
+   *    produce an ordinary positional tuple, as before.
+   *
+   * When inferObjectTypes is disabled, returns a simple string type.
    *
    * @param expression - Sequence expression
    * @returns Inferred type for sequence
@@ -617,15 +668,56 @@ export class TypeInferenceEngine {
       };
     }
 
-    // A `Cut` (`~`) marker never becomes an argument to the generated
-    // `sequence(...)`/`captureSequence(...)` call (see `generateSequence`
-    // in packages/parser/src/codegen.ts) -- unlike a lookahead, which is
-    // kept as a real (void-valued) tuple slot -- so it must be excluded
-    // here too, or the inferred tuple would have one more element than the
-    // runtime value actually does.
-    const elementTypes = expression.elements
-      .filter((element: Expression) => element.type !== "Cut")
-      .map((element: Expression) => this.inferExpressionType(element));
+    const nonCutElements = expression.elements.filter(
+      (element: Expression) => element.type !== "Cut",
+    );
+    const labeledElements = nonCutElements
+      .map((element: Expression) => unwrapToLabeledExpression(element))
+      .filter((element): element is LabeledExpression => element !== undefined);
+
+    if (labeledElements.length > 0) {
+      // A repeated label (e.g. `a:"x" a:"y"`) isn't rejected by
+      // `validateGrammar` -- and at runtime, `mergeCaptures`
+      // (packages/core/src/capture.ts) is `Object.assign` over the
+      // elements in order, so the LAST occurrence's value wins. A `Map`
+      // keyed by label reproduces that (a later `.set` for the same key
+      // overwrites the earlier field's type), which also avoids emitting
+      // a duplicate-property object type literal (a `tsc` error) when
+      // this typeString is written out verbatim by
+      // `type-integration.ts`'s `export type ... = ...;`.
+      const fieldsByLabel = new Map<string, InferredType>();
+      for (const labeled of labeledElements) {
+        fieldsByLabel.set(
+          labeled.label,
+          this.inferExpressionType(labeled.expression),
+        );
+      }
+      const fields = Array.from(fieldsByLabel, ([key, type]) => ({
+        key,
+        type,
+      }));
+      const allImports = fields.flatMap((f) => f.type.imports);
+
+      return {
+        typeString: `{ ${fields.map((f) => `${f.key}: ${f.type.typeString}`).join(", ")} }`,
+        nullable: false,
+        isArray: false,
+        baseType: "object",
+        imports: Array.from(new Set(allImports)),
+        documentation: this.options.generateDocumentation
+          ? "Sequence with labeled elements merged into an object"
+          : undefined,
+      };
+    }
+
+    const elementTypes = nonCutElements.map((element: Expression) =>
+      this.inferExpressionType(element),
+    );
+
+    if (elementTypes.length === 1) {
+      const [only] = elementTypes;
+      if (only) return only;
+    }
 
     const typeStrings = elementTypes.map((t) => t.typeString);
     const allImports = elementTypes.flatMap((t) => t.imports);
@@ -792,7 +884,16 @@ export class TypeInferenceEngine {
   /**
    * Infer type for optional expressions
    *
-   * Always generates nullable types (union with undefined).
+   * `optional()` (packages/core/src/repetition.ts:41-70) has signature
+   * `Parser<[T] | []>` and its implementation matches: a one-element
+   * array on a match, an empty array on failure -- NEVER a bare `T` or
+   * `undefined`. This mirrors that runtime shape exactly rather than the
+   * more conventional-looking `T | undefined` docs/peg-grammar.md's
+   * Capture Structure Reference Table used to describe for `pattern?`
+   * (that table has been corrected to match). Changing `optional()`
+   * itself to return `T | undefined` instead would be a breaking change
+   * across core/combinator/codegen/every generated parser, so runtime is
+   * treated as the source of truth here, not the other way around.
    *
    * @param expression - Optional expression
    * @returns Inferred type for optional expression
@@ -800,18 +901,11 @@ export class TypeInferenceEngine {
   private inferOptionalType(expression: Optional): InferredType {
     const innerType = this.inferExpressionType(expression.expression);
 
-    // Handle parentheses for complex types
-    const needsParens =
-      innerType.typeString.includes(" | ") || innerType.isArray;
-    const wrappedType = needsParens
-      ? `(${innerType.typeString})`
-      : innerType.typeString;
-
     return {
-      typeString: `${wrappedType} | undefined`,
-      nullable: true,
-      isArray: false, // Optional wrapper makes it not an array at the top level
-      baseType: innerType.baseType,
+      typeString: `[${innerType.typeString}] | []`,
+      nullable: false,
+      isArray: true,
+      baseType: "tuple",
       imports: innerType.imports,
       documentation: this.options.generateDocumentation
         ? "Optional expression"
@@ -825,9 +919,11 @@ export class TypeInferenceEngine {
    * Handles various quantification patterns including exact counts,
    * ranges, and optional repetitions. Note that `quantified()`
    * (packages/core/src/repetition.ts) always returns `T[]`, including for
-   * `{0,n}` / `{0,}` -- an empty array on zero matches, never `undefined`.
-   * Only the PEG `?` operator (`Optional`, handled by inferOptionalType)
-   * actually produces a possibly-`undefined` result.
+   * `{0,n}` / `{0,}` -- an empty array on zero matches. Like `Optional`
+   * (`inferOptionalType`, just above), this never produces a bare
+   * `undefined` result either -- neither PEG repetition operator does;
+   * see `inferOptionalType`'s own doc comment for `optional()`'s actual
+   * `[T] | []` shape.
    *
    * @param expression - Quantified expression
    * @returns Inferred type for quantified expression

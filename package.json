@@ -5,7 +5,8 @@
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@tsconfig/strictest": "^2.0.5",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "fast-check": "^4.9.0"
   },
   "peerDependencies": {
     "typescript": "^7.0.2"
