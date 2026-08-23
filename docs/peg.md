@@ -25,7 +25,7 @@ Parsing Expression Grammar (PEG) is a type of formal grammar proposed by Bryan F
 PEG consists of the following elements:
 
 1. **Set of Terminal Symbols** T
-2. **Set of Non-terminal Symbols** N  
+2. **Set of Non-terminal Symbols** N
 3. **Set of Parsing Expressions** P
 4. **Start Symbol** S ∈ N
 
@@ -55,11 +55,11 @@ Recognition function R(e, x, i) for input string x and position i is defined as 
 R(ε, x, i) = i
 R(a, x, i) = i+1 if x[i] = a, fail otherwise
 R(A, x, i) = R(P[A], x, i)
-R(e₁ e₂, x, i) = let j = R(e₁, x, i) in 
+R(e₁ e₂, x, i) = let j = R(e₁, x, i) in
                   if j ≠ fail then R(e₂, x, j) else fail
-R(e₁ / e₂, x, i) = let j = R(e₁, x, i) in 
+R(e₁ / e₂, x, i) = let j = R(e₁, x, i) in
                     if j ≠ fail then j else R(e₂, x, i)
-R(e*, x, i) = let j = R(e, x, i) in 
+R(e*, x, i) = let j = R(e, x, i) in
               if j ≠ fail then R(e*, x, j) else i
 R(&e, x, i) = if R(e, x, i) ≠ fail then i else fail
 R(!e, x, i) = if R(e, x, i) = fail then i else fail
@@ -69,12 +69,12 @@ R(!e, x, i) = if R(e, x, i) = fail then i else fail
 
 ### Key Differences
 
-| Aspect | CFG | PEG |
-|--------|-----|-----|
-| Choice | Non-deterministic | Deterministic (ordered choice) |
-| Ambiguity | May exist | Does not exist |
-| Backtracking | Theoretically unnecessary | Explicitly supported |
-| Implementation | Complex (LR, LALR, etc.) | Direct |
+| Aspect         | CFG                       | PEG                            |
+| -------------- | ------------------------- | ------------------------------ |
+| Choice         | Non-deterministic         | Deterministic (ordered choice) |
+| Ambiguity      | May exist                 | Does not exist                 |
+| Backtracking   | Theoretically unnecessary | Explicitly supported           |
+| Implementation | Complex (LR, LALR, etc.)  | Direct                         |
 
 ### Importance of Ordered Choice
 
@@ -151,12 +151,12 @@ function parseA(input: string, pos: number): ParseResult {
 
 ### Foundational Papers
 
-1. Ford, B. (2004). "Parsing Expression Grammars: A Recognition-Based Syntactic Foundation". *POPL '04*.
+1. Ford, B. (2004). "Parsing Expression Grammars: A Recognition-Based Syntactic Foundation". _POPL '04_.
 
-2. Ford, B. (2002). "Packrat Parsing: Simple, Powerful, Lazy, Linear Time". *ICFP '02*.
+2. Ford, B. (2002). "Packrat Parsing: Simple, Powerful, Lazy, Linear Time". _ICFP '02_.
 
 ### Extension Research
 
-3. Warth, A., Douglass, J., & Millstein, T. (2008). "Packrat Parsers Can Support Left Recursion". *PEPM '08*.
+3. Warth, A., Douglass, J., & Millstein, T. (2008). "Packrat Parsers Can Support Left Recursion". _PEPM '08_.
 
-4. Redziejowski, R. R. (2007). "Parsing Expression Grammar as a Primitive Recursive-Descent Parser with Backtracking". *Fundamenta Informaticae*. 
+4. Redziejowski, R. R. (2007). "Parsing Expression Grammar as a Primitive Recursive-Descent Parser with Backtracking". _Fundamenta Informaticae_.

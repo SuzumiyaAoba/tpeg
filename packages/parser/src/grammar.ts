@@ -556,53 +556,44 @@ type GrammarItemType =
  * immediately followed by a rule, which must keep working exactly as before).
  */
 const grammarItem: Parser<GrammarItemType> = choice(
-  map(
-    exportDeclaration,
-    (decl): GrammarItemType => ({ type: "export", value: decl }),
-  ),
-  map(
-    moduleInfoListAnnotation,
-    (decl): GrammarItemType => ({
-      type: "moduleInfoList",
-      key: decl.key,
-      values: decl.values,
-    }),
-  ),
-  map(
-    moduleInfoRecordAnnotation,
-    (decl): GrammarItemType => ({
-      type: "moduleInfoRecord",
-      key: decl.key,
-      values: decl.values,
-    }),
-  ),
-  map(
-    annotatedRuleDefinition,
-    (rule): GrammarItemType => ({ type: "rule", value: rule }),
-  ),
-  map(
-    grammarAnnotation,
-    (annotation): GrammarItemType => ({
-      type: "annotation",
-      value: annotation,
-    }),
-  ),
-  map(
-    ruleDefinition,
-    (rule): GrammarItemType => ({ type: "rule", value: rule }),
-  ),
-  map(
-    transformDefinition,
-    (transform): GrammarItemType => ({ type: "transform", value: transform }),
-  ),
-  map(
-    singleLineComment,
-    (comment): GrammarItemType => ({ type: "comment", value: comment }),
-  ),
-  map(
-    documentationComment,
-    (comment): GrammarItemType => ({ type: "comment", value: comment }),
-  ),
+  map(exportDeclaration, (decl): GrammarItemType => ({
+    type: "export",
+    value: decl,
+  })),
+  map(moduleInfoListAnnotation, (decl): GrammarItemType => ({
+    type: "moduleInfoList",
+    key: decl.key,
+    values: decl.values,
+  })),
+  map(moduleInfoRecordAnnotation, (decl): GrammarItemType => ({
+    type: "moduleInfoRecord",
+    key: decl.key,
+    values: decl.values,
+  })),
+  map(annotatedRuleDefinition, (rule): GrammarItemType => ({
+    type: "rule",
+    value: rule,
+  })),
+  map(grammarAnnotation, (annotation): GrammarItemType => ({
+    type: "annotation",
+    value: annotation,
+  })),
+  map(ruleDefinition, (rule): GrammarItemType => ({
+    type: "rule",
+    value: rule,
+  })),
+  map(transformDefinition, (transform): GrammarItemType => ({
+    type: "transform",
+    value: transform,
+  })),
+  map(singleLineComment, (comment): GrammarItemType => ({
+    type: "comment",
+    value: comment,
+  })),
+  map(documentationComment, (comment): GrammarItemType => ({
+    type: "comment",
+    value: comment,
+  })),
 );
 
 /**

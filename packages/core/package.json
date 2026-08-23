@@ -1,10 +1,17 @@
 {
   "name": "@suzumiyaaoba/tpeg-core",
-  "type": "module",
   "version": "0.1.0",
+  "description": "Core types and utilities for tpeg PEG parser",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "type": "module",
+  "sideEffects": false,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist", "README.md", "package.json"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -24,8 +31,5 @@
   "dependencies": {},
   "devDependencies": {
     "@types/bun": "latest"
-  },
-  "description": "Core types and utilities for tpeg PEG parser",
-  "license": "MIT",
-  "sideEffects": false
+  }
 }

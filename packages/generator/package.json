@@ -2,6 +2,23 @@
   "name": "@suzumiyaaoba/tpeg-generator",
   "version": "0.1.0",
   "description": "Code generation system for TPEG parsers with template-based output",
+  "keywords": [
+    "code-generation",
+    "eta",
+    "generator",
+    "parser",
+    "template",
+    "typescript"
+  ],
+  "license": "MIT",
+  "author": "SuzumiyaAoba",
+  "files": [
+    "dist",
+    "templates",
+    "README.md",
+    "README.ja.md",
+    "package.json"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -11,27 +28,16 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "templates", "README.md", "README.ja.md", "package.json"],
   "scripts": {
     "build": "tsc --project ./tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "cd ../.. && vp test packages/generator"
   },
-  "keywords": [
-    "parser",
-    "generator",
-    "code-generation",
-    "template",
-    "eta",
-    "typescript"
-  ],
-  "author": "SuzumiyaAoba",
-  "license": "MIT",
   "dependencies": {
-    "eta": "^3.4.0",
-    "@suzumiyaaoba/tpeg-core": "workspace:*",
     "@suzumiyaaoba/tpeg-combinator": "workspace:*",
-    "@suzumiyaaoba/tpeg-parser": "workspace:*"
+    "@suzumiyaaoba/tpeg-core": "workspace:*",
+    "@suzumiyaaoba/tpeg-parser": "workspace:*",
+    "eta": "^3.4.0"
   },
   "devDependencies": {
     "@types/bun": "latest",

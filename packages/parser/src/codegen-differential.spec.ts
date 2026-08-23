@@ -239,12 +239,16 @@ describe("codegen differential fuzzing (base generator vs. every optimization va
   test(
     `agrees with the base generator (and the oracle) across ${SAMPLE_SIZE} random grammars x ${ALL_TEST_INPUTS.length} inputs, for every variant`,
     async () => {
-      const core = (await import(
-        "@suzumiyaaoba/tpeg-core"
-      )) as unknown as Record<string, unknown>;
-      const combinator = (await import(
-        "@suzumiyaaoba/tpeg-combinator"
-      )) as unknown as Record<string, unknown>;
+      const core =
+        (await import("@suzumiyaaoba/tpeg-core")) as unknown as Record<
+          string,
+          unknown
+        >;
+      const combinator =
+        (await import("@suzumiyaaoba/tpeg-combinator")) as unknown as Record<
+          string,
+          unknown
+        >;
 
       const rng = makeRng(SEED);
       const diffs: string[] = [];

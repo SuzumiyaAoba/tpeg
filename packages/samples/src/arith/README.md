@@ -55,7 +55,7 @@ bun demo.ts --ast "(1 + 2) * 3"
 #             Number(2)
 #   right:
 #     Number(3)
-# 
+#
 # Result: 9
 ```
 
@@ -81,8 +81,8 @@ Runs comprehensive examples from all categories.
 
 ```typescript
 // Number parsing with map
-export const Integer = map(oneOrMore(Digit), (digits: string[]) => 
-  Number.parseInt(digits.join(""), 10)
+export const Integer = map(oneOrMore(Digit), (digits: string[]) =>
+  Number.parseInt(digits.join(""), 10),
 );
 
 // Direct calculation in Term parser
@@ -93,12 +93,15 @@ export function DirectTerm(input: string, pos: number): ParseResult<number> {
       // Direct calculation using map functions
       return rest.reduce((left, [, operator, , right]) => {
         switch (operator) {
-          case "*": return left * right;
-          case "/": return left / right;
-          case "%": return left % right;
+          case "*":
+            return left * right;
+          case "/":
+            return left / right;
+          case "%":
+            return left % right;
         }
       }, first);
-    }
+    },
   )(input, pos);
 }
 ```
@@ -112,11 +115,11 @@ export function Term(input: string, pos: number): ParseResult<ExpressionNode> {
     seq(Factor, star(/* multiplication/division/modulo */)),
     ([first, rest]) => {
       // Construct AST using map functions
-      return rest.reduce((left, [, operator, , right]) => 
-        createBinaryOp(operator, left, right), 
-        first
+      return rest.reduce(
+        (left, [, operator, , right]) => createBinaryOp(operator, left, right),
+        first,
       );
-    }
+    },
   )(input, pos);
 }
 ```
@@ -124,6 +127,7 @@ export function Term(input: string, pos: number): ParseResult<ExpressionNode> {
 ## Example Expressions
 
 ### Basic Operations
+
 - `1 + 2` → 3
 - `3 - 1` → 2
 - `2 * 3` → 6
@@ -131,22 +135,26 @@ export function Term(input: string, pos: number): ParseResult<ExpressionNode> {
 - `7 % 3` → 1
 
 ### Floating Point
+
 - `1.5 + 2.5` → 4
 - `3.14 * 2` → 6.28
 - `10.0 / 3.0` → 3.3333333333333335
 
 ### Operator Precedence
+
 - `1 + 2 * 3` → 7
 - `2 * 3 + 1` → 7
 - `(1 + 2) * 3` → 9
 - `2 * (3 + 1)` → 8
 
 ### Complex Expressions
+
 - `((1 + 2) * 3 - 4) / 2` → 2.5
 - `2 * 3 + 4 * 5 - 6 / 2` → 23
 - `1 + 2 * 3 + 4 * 5 + 6` → 33
 
 ### Signed Numbers
+
 - `-5 + 3` → -2
 - `+5 - 3` → 2
 
@@ -165,4 +173,4 @@ The parser handles various error conditions:
 2. **Left associativity**: Implemented using `reduce` in map functions
 3. **Operator precedence**: Handled by parser structure (Term vs Expression)
 4. **Error propagation**: Errors from map functions propagate through the parsing chain
-5. **Type safety**: TypeScript ensures type correctness throughout the parsing pipeline 
+5. **Type safety**: TypeScript ensures type correctness throughout the parsing pipeline

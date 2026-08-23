@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 import type { ParseResult } from "@suzumiyaaoba/tpeg-core";
 import { jsonParser, parseJSON } from "./json";
 import type { JSONObject, Parser } from "./json";

@@ -9,26 +9,31 @@ Snapshot tests ensure consistency of code generation using eta. They verify that
 ## Test Types
 
 ### 1. Basic Grammar Tests
+
 - Simple string literals
 - Character classes
 - Basic combinations
 
 ### 2. Complex Grammar Tests
+
 - Multiple rules
 - Nested expressions
 - Recursive rules
 
 ### 3. Optimization Tests
+
 - Memoization application
 - Performance monitoring
 - Complexity analysis
 
 ### 4. Option Configuration Tests
+
 - Type annotation presence/absence
 - Import presence/absence
 - Custom name prefixes
 
 ### 5. Special Expression Tests
+
 - Quantified expressions
 - Lookahead expressions
 - Labeled expressions
@@ -144,4 +149,4 @@ bun test src/eta-generator.spec.ts
 - `src/eta-generator.spec.ts`: Test file
 - `src/__snapshots__/eta-generator.spec.ts.snap`: Snapshot file
 - `templates/`: Eta template files
-- `src/eta-generator.ts`: Code generation logic 
+- `src/eta-generator.ts`: Code generation logic

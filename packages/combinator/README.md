@@ -24,8 +24,19 @@ Combinators re-export nothing from `tpeg-core` — primitives like `literal`, `c
 ## Quick Start
 
 ```typescript
-import { literal, choice, seq, zeroOrMore, parse } from "@suzumiyaaoba/tpeg-core";
-import { quotedString, number, sepBy, memoize } from "@suzumiyaaoba/tpeg-combinator";
+import {
+  literal,
+  choice,
+  seq,
+  zeroOrMore,
+  parse,
+} from "@suzumiyaaoba/tpeg-core";
+import {
+  quotedString,
+  number,
+  sepBy,
+  memoize,
+} from "@suzumiyaaoba/tpeg-combinator";
 
 // Simple parser for "hello" or "world"
 const helloOrWorld = choice(literal("hello"), literal("world"));
@@ -42,6 +53,7 @@ console.log(result);
 ### String Parsing
 
 #### `quotedString`
+
 Parses a JavaScript/JSON-style double-quoted string with escape sequences.
 
 ```typescript
@@ -53,6 +65,7 @@ const result = parse(quotedString)('"Hello, \\"world\\"!"');
 ```
 
 #### `singleQuotedString`
+
 Parses a single-quoted string.
 
 ```typescript
@@ -64,6 +77,7 @@ const result = parse(singleQuotedString)("'Hello, world!'");
 ```
 
 #### `anyQuotedString`
+
 Parses a string with either single or double quotes.
 
 ```typescript
@@ -75,6 +89,7 @@ const result2 = parse(anyQuotedString)("'single quoted'");
 ```
 
 #### `takeUntil(condition)`
+
 Consumes characters until a condition is met.
 
 ```typescript
@@ -87,6 +102,7 @@ const result = parse(parser)("hello,world");
 ```
 
 #### `between(open, close)`
+
 Matches content between two parsers.
 
 ```typescript
@@ -101,6 +117,7 @@ const result = parse(parser)("(content)");
 ### Number Parsing
 
 #### `number`
+
 Parses a JavaScript/JSON-style number including fractions and exponents.
 
 ```typescript
@@ -113,6 +130,7 @@ const result3 = parse(number)("1.23e-4");
 ```
 
 #### `int`
+
 Parses an integer number.
 
 ```typescript
@@ -126,6 +144,7 @@ const result = parse(int)("42");
 ### List Parsing
 
 #### `sepBy(value, separator)`
+
 Parses values separated by a delimiter (zero or more).
 
 ```typescript
@@ -138,6 +157,7 @@ const result = parse(parser)("1,2,3,4");
 ```
 
 #### `sepBy1(value, separator)`
+
 Parses values separated by a delimiter (one or more).
 
 ```typescript
@@ -150,6 +170,7 @@ const result = parse(parser)("1,2,3");
 ```
 
 #### `commaSeparated(value)`
+
 Parses comma-separated values with optional trailing comma.
 
 ```typescript
@@ -164,6 +185,7 @@ const result = parse(parser)("1, 2, 3,");
 ### Error Handling
 
 #### `labeled(parser, message)`
+
 Provides custom error messages.
 
 ```typescript
@@ -176,6 +198,7 @@ const result = parse(parser)("world");
 ```
 
 #### `withDetailedError(parser, name)`
+
 Creates detailed error reports with input excerpts.
 
 ```typescript
@@ -188,6 +211,7 @@ const result = parse(parser)("world");
 ```
 
 #### `withPosition(parser)`
+
 Tracks line and column for better error reporting.
 
 ```typescript
@@ -202,6 +226,7 @@ const result = parse(parser)("world");
 ### Performance and Debugging
 
 #### `memoize(parser, options)`
+
 Creates a memoized version of a parser with cache size control.
 
 ```typescript
@@ -213,6 +238,7 @@ const result = parse(parser)("hello");
 ```
 
 #### `recursive()`
+
 Creates a recursive parser. Returns a `[parser, setter]` pair — build the body with other combinators first, then call `setter` to close the recursive tie.
 
 ```typescript
@@ -221,16 +247,14 @@ import { recursive } from "@suzumiyaaoba/tpeg-combinator";
 
 const [expression, setExpression] = recursive<string>();
 setExpression(
-  choice(
-    literal("x"),
-    seq(literal("("), expression, literal(")")),
-  ),
+  choice(literal("x"), seq(literal("("), expression, literal(")"))),
 );
 
 const result = parse(expression)("((x))");
 ```
 
 #### `debug(parser, name, options)`
+
 Logs parsing process for debugging.
 
 ```typescript
@@ -245,6 +269,7 @@ const result = parse(parser)("hello");
 ### Whitespace and Tokens
 
 #### `token(parser)`
+
 Wraps a parser to consume whitespace before and after.
 
 ```typescript
@@ -257,6 +282,7 @@ const result = parse(parser)("  hello  ");
 ```
 
 #### `whitespace`
+
 Consumes whitespace characters.
 
 ```typescript
@@ -268,6 +294,7 @@ const result = parse(whitespace)("   \t\n");
 ```
 
 #### `spaces`
+
 Consumes zero or more whitespace characters.
 
 ```typescript
@@ -283,7 +310,13 @@ const result = parse(spaces)("   \t\n");
 ### JSON Value Parser
 
 ```typescript
-import { choice, seq, zeroOrMore, literal, parse } from "@suzumiyaaoba/tpeg-core";
+import {
+  choice,
+  seq,
+  zeroOrMore,
+  literal,
+  parse,
+} from "@suzumiyaaoba/tpeg-core";
 import { quotedString, number } from "@suzumiyaaoba/tpeg-combinator";
 
 const jsonValue = choice(
@@ -301,7 +334,7 @@ const jsonArray = seq(
   literal("]"),
 );
 
-const result = parse(jsonArray)('[1,2,3]');
+const result = parse(jsonArray)("[1,2,3]");
 ```
 
 This minimal grammar doesn't skip whitespace between elements — wrap `jsonValue`/the literals in `token()` (see below) if the input may contain spaces.

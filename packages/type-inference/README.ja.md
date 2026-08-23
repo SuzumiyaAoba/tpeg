@@ -28,39 +28,49 @@ npm install @suzumiyaaoba/tpeg-type-inference
 ### 基本的な型推論
 
 ```typescript
-import { TypeInferenceEngine } from '@suzumiyaaoba/tpeg-type-inference';
-import { 
-  createGrammarDefinition, 
-  createRuleDefinition, 
+import { TypeInferenceEngine } from "@suzumiyaaoba/tpeg-type-inference";
+import {
+  createGrammarDefinition,
+  createRuleDefinition,
   createStringLiteral,
   createCharacterClass,
   createCharRange,
   createIdentifier,
   createPlus,
   createSequence,
-  createChoice
-} from '@suzumiyaaoba/tpeg-core';
+  createChoice,
+} from "@suzumiyaaoba/tpeg-core";
 
 // シンプルな文法を作成
-const grammar = createGrammarDefinition('MyGrammar', [], [
-  createRuleDefinition('greeting', createStringLiteral('hello', '"')),
-  createRuleDefinition('digit', createCharacterClass([createCharRange('0', '9')])),
-  createRuleDefinition('number', createPlus(createIdentifier('digit'))),
-  createRuleDefinition('expression', createChoice([
-    createStringLiteral('hello', '"'),
-    createStringLiteral('world', '"')
-  ]))
-]);
+const grammar = createGrammarDefinition(
+  "MyGrammar",
+  [],
+  [
+    createRuleDefinition("greeting", createStringLiteral("hello", '"')),
+    createRuleDefinition(
+      "digit",
+      createCharacterClass([createCharRange("0", "9")]),
+    ),
+    createRuleDefinition("number", createPlus(createIdentifier("digit"))),
+    createRuleDefinition(
+      "expression",
+      createChoice([
+        createStringLiteral("hello", '"'),
+        createStringLiteral("world", '"'),
+      ]),
+    ),
+  ],
+);
 
 // 型推論を実行
 const engine = new TypeInferenceEngine();
 const result = engine.inferGrammarTypes(grammar);
 
 // 推論された型にアクセス
-console.log(result.ruleTypes.get('greeting')?.typeString); // '"hello"'
-console.log(result.ruleTypes.get('digit')?.typeString); // 'string'
-console.log(result.ruleTypes.get('number')?.typeString); // 'string[]'
-console.log(result.ruleTypes.get('expression')?.typeString); // '"hello" | "world"'
+console.log(result.ruleTypes.get("greeting")?.typeString); // '"hello"'
+console.log(result.ruleTypes.get("digit")?.typeString); // 'string'
+console.log(result.ruleTypes.get("number")?.typeString); // 'string[]'
+console.log(result.ruleTypes.get("expression")?.typeString); // '"hello" | "world"'
 ```
 
 ### 高度な設定
@@ -75,23 +85,23 @@ const engine = new TypeInferenceEngine({
   enableCaching: true,
   detectCircularDependencies: true,
   customTypeMappings: new Map([
-    ['email', 'string'],
-    ['url', 'string'],
-    ['uuid', 'string']
-  ])
+    ["email", "string"],
+    ["url", "string"],
+    ["uuid", "string"],
+  ]),
 });
 ```
 
 ### コード生成との型統合
 
 ```typescript
-import { TypeIntegrationEngine } from '@suzumiyaaoba/tpeg-type-inference';
+import { TypeIntegrationEngine } from "@suzumiyaaoba/tpeg-type-inference";
 
 const integrationEngine = new TypeIntegrationEngine({
   strictTypes: true,
   includeDocumentation: true,
   generateTypeGuards: true,
-  typeNamespace: 'MyGrammarTypes'
+  typeNamespace: "MyGrammarTypes",
 });
 
 const typedGrammar = integrationEngine.createTypedGrammar(grammar);
@@ -104,7 +114,7 @@ console.log(typedGrammar.typeDefinitions);
 //   export type DigitResult = string;
 //   export type NumberResult = string[];
 //   export type ExpressionResult = "hello" | "world";
-//   
+//
 //   export function isGreetingResult(value: unknown): value is GreetingResult {
 //     return typeof value === "string" && value === "hello";
 //   }
@@ -126,9 +136,9 @@ console.log(parserInterface);
 ### 複雑な文法の例
 
 ```typescript
-import { 
-  createGrammarDefinition, 
-  createRuleDefinition, 
+import {
+  createGrammarDefinition,
+  createRuleDefinition,
   createStringLiteral,
   createCharacterClass,
   createCharRange,
@@ -136,50 +146,67 @@ import {
   createSequence,
   createChoice,
   createOptional,
-  createStar
-} from '@suzumiyaaoba/tpeg-core';
+  createStar,
+} from "@suzumiyaaoba/tpeg-core";
 
 // JSONライクな文法
-const jsonGrammar = createGrammarDefinition('JSONGrammar', [], [
-  createRuleDefinition('string', createStringLiteral('"', '"')),
-  createRuleDefinition('number', createCharacterClass([createCharRange('0', '9')])),
-  createRuleDefinition('boolean', createChoice([
-    createStringLiteral('true', '"'),
-    createStringLiteral('false', '"')
-  ])),
-  createRuleDefinition('array', createSequence([
-    createStringLiteral('[', '"'),
-    createOptional(createChoice([
-      createCharacterClass([createCharRange('0', '9')]),
-      createStringLiteral('"', '"')
-    ])),
-    createStar(createSequence([
-      createStringLiteral(',', '"'),
+const jsonGrammar = createGrammarDefinition(
+  "JSONGrammar",
+  [],
+  [
+    createRuleDefinition("string", createStringLiteral('"', '"')),
+    createRuleDefinition(
+      "number",
+      createCharacterClass([createCharRange("0", "9")]),
+    ),
+    createRuleDefinition(
+      "boolean",
       createChoice([
-        createCharacterClass([createCharRange('0', '9')]),
-        createStringLiteral('"', '"')
-      ])
-    ])),
-    createStringLiteral(']', '"')
-  ]))
-]);
+        createStringLiteral("true", '"'),
+        createStringLiteral("false", '"'),
+      ]),
+    ),
+    createRuleDefinition(
+      "array",
+      createSequence([
+        createStringLiteral("[", '"'),
+        createOptional(
+          createChoice([
+            createCharacterClass([createCharRange("0", "9")]),
+            createStringLiteral('"', '"'),
+          ]),
+        ),
+        createStar(
+          createSequence([
+            createStringLiteral(",", '"'),
+            createChoice([
+              createCharacterClass([createCharRange("0", "9")]),
+              createStringLiteral('"', '"'),
+            ]),
+          ]),
+        ),
+        createStringLiteral("]", '"'),
+      ]),
+    ),
+  ],
+);
 
 const engine = new TypeInferenceEngine({
   inferArrayTypes: true,
   inferUnionTypes: true,
   inferObjectTypes: true,
-  generateDocumentation: true
+  generateDocumentation: true,
 });
 
 const result = engine.inferGrammarTypes(jsonGrammar);
 
 // 循環依存をチェック
-console.log('循環依存:', result.circularDependencies);
+console.log("循環依存:", result.circularDependencies);
 
 // 特定のルールの型情報を取得
-const stringType = result.ruleTypes.get('string');
-console.log('Stringルールの型:', stringType?.typeString);
-console.log('Stringルールのドキュメント:', stringType?.documentation);
+const stringType = result.ruleTypes.get("string");
+console.log("Stringルールの型:", stringType?.typeString);
+console.log("Stringルールのドキュメント:", stringType?.documentation);
 ```
 
 ### ユーティリティメソッド
@@ -189,16 +216,19 @@ const integrationEngine = new TypeIntegrationEngine();
 const typedGrammar = integrationEngine.createTypedGrammar(grammar);
 
 // 特定のルールの型情報を取得
-const typeInfo = integrationEngine.getTypeInfo(typedGrammar, 'greeting');
+const typeInfo = integrationEngine.getTypeInfo(typedGrammar, "greeting");
 console.log(typeInfo?.typeString); // '"hello"'
 
 // 循環依存をチェック
-const hasCircular = integrationEngine.hasCircularDependency(typedGrammar, 'ruleName');
-console.log('循環依存あり:', hasCircular);
+const hasCircular = integrationEngine.hasCircularDependency(
+  typedGrammar,
+  "ruleName",
+);
+console.log("循環依存あり:", hasCircular);
 
 // ルールの依存関係を取得
-const dependencies = integrationEngine.getDependencies(typedGrammar, 'number');
-console.log('依存関係:', dependencies); // ['digit']
+const dependencies = integrationEngine.getDependencies(typedGrammar, "number");
+console.log("依存関係:", dependencies); // ['digit']
 ```
 
 ## API リファレンス
@@ -250,12 +280,12 @@ TPEG文法の型推論を実行するメインクラス。
 
 ```typescript
 interface InferredType {
-  typeString: string;           // TypeScript型文字列
-  nullable: boolean;           // 型がnull/undefinedになりうるかどうか
-  isArray: boolean;           // 型が配列かどうか
-  baseType: string;           // 基本型（string、numberなど）
-  imports: string[];          // 必要なインポート
-  documentation: string;      // 生成されたドキュメント
+  typeString: string; // TypeScript型文字列
+  nullable: boolean; // 型がnull/undefinedになりうるかどうか
+  isArray: boolean; // 型が配列かどうか
+  baseType: string; // 基本型（string、numberなど）
+  imports: string[]; // 必要なインポート
+  documentation: string; // 生成されたドキュメント
 }
 ```
 
@@ -263,10 +293,10 @@ interface InferredType {
 
 ```typescript
 interface GrammarTypeInference {
-  ruleTypes: Map<string, InferredType>;           // 各ルールの型情報
-  circularDependencies: string[][];               // 検出された循環依存
-  imports: string[];                              // 必要なインポート
-  documentation: string;                          // 生成されたドキュメント
+  ruleTypes: Map<string, InferredType>; // 各ルールの型情報
+  circularDependencies: string[][]; // 検出された循環依存
+  imports: string[]; // 必要なインポート
+  documentation: string; // 生成されたドキュメント
 }
 ```
 
@@ -274,11 +304,11 @@ interface GrammarTypeInference {
 
 ```typescript
 interface TypedGrammarDefinition extends Omit<GrammarDefinition, "rules"> {
-  originalGrammar: GrammarDefinition;             // 元の文法定義
-  rules: TypedRuleDefinition[];                   // 型情報を持つルール
-  typeInference: GrammarTypeInference;           // 型推論結果
-  typeDefinitions: string;                        // 生成されたTypeScript型定義
-  imports: string[];                              // 必要なインポート
+  originalGrammar: GrammarDefinition; // 元の文法定義
+  rules: TypedRuleDefinition[]; // 型情報を持つルール
+  typeInference: GrammarTypeInference; // 型推論結果
+  typeDefinitions: string; // 生成されたTypeScript型定義
+  imports: string[]; // 必要なインポート
 }
 ```
 
@@ -300,4 +330,4 @@ interface TypedGrammarDefinition extends Omit<GrammarDefinition, "rules"> {
 
 ## ライセンス
 
-MIT 
+MIT

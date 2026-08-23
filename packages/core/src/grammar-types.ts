@@ -614,8 +614,10 @@ export interface QualifiedIdentifier {
  * Includes import statements, export declarations, and module metadata
  * in addition to the standard grammar components.
  */
-export interface ModularGrammarDefinition
-  extends Omit<GrammarDefinition, "type"> {
+export interface ModularGrammarDefinition extends Omit<
+  GrammarDefinition,
+  "type"
+> {
   /** The node type identifier */
   type: "ModularGrammarDefinition";
   /** Import statements for this grammar */

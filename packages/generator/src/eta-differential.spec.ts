@@ -97,12 +97,16 @@ describe("Eta generator differential fuzzing (vs. tpeg-parser's base generator)"
   test(
     `agrees with the base generator across ${SAMPLE_SIZE} random grammars x ${ALL_TEST_INPUTS.length} inputs, for every Eta variant`,
     async () => {
-      const core = (await import(
-        "@suzumiyaaoba/tpeg-core"
-      )) as unknown as Record<string, unknown>;
-      const combinator = (await import(
-        "@suzumiyaaoba/tpeg-combinator"
-      )) as unknown as Record<string, unknown>;
+      const core =
+        (await import("@suzumiyaaoba/tpeg-core")) as unknown as Record<
+          string,
+          unknown
+        >;
+      const combinator =
+        (await import("@suzumiyaaoba/tpeg-combinator")) as unknown as Record<
+          string,
+          unknown
+        >;
 
       const rng = makeRng(SEED);
       const diffs: string[] = [];

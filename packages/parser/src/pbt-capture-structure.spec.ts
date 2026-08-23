@@ -248,9 +248,11 @@ describe("PEG invariants (fast-check): captureSequence/captureChoice result shap
       string,
       unknown
     >;
-    const combinator = (await import(
-      "@suzumiyaaoba/tpeg-combinator"
-    )) as unknown as Record<string, unknown>;
+    const combinator =
+      (await import("@suzumiyaaoba/tpeg-combinator")) as unknown as Record<
+        string,
+        unknown
+      >;
 
     fc.assert(
       fc.property(seqFragmentArb, (frag) => {
@@ -292,9 +294,11 @@ describe("PEG invariants (fast-check): captureSequence/captureChoice result shap
       string,
       unknown
     >;
-    const combinator = (await import(
-      "@suzumiyaaoba/tpeg-combinator"
-    )) as unknown as Record<string, unknown>;
+    const combinator =
+      (await import("@suzumiyaaoba/tpeg-combinator")) as unknown as Record<
+        string,
+        unknown
+      >;
 
     fc.assert(
       fc.property(seqFragmentArb, seqFragmentArb, (winner, loser) => {

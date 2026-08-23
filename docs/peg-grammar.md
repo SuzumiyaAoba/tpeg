@@ -5,12 +5,14 @@ TPEG (TypeScript Parsing Expression Grammar) is an extended PEG grammar definiti
 ## Specification Scope
 
 This specification covers:
+
 - **PEG Grammar Definition Syntax** - Language-agnostic grammar rules
 - **Semantic Actions** - Inline `{ code }` blocks attached to an alternative
 - **Transform Definition Syntax** - Rule-level, typed, language-specific transforms
 - **Type Inference System** - Automatic type derivation from transforms
 
 This specification does **NOT** cover:
+
 - Generated parser code in target languages
 - Target language-specific APIs
 - Runtime behavior of generated parsers
@@ -47,6 +49,7 @@ TPEG separates grammar definition from type information to maintain language-agn
 ## Basic Syntax Elements
 
 ### Literals
+
 Direct string matching
 
 ```tpeg
@@ -56,11 +59,12 @@ Direct string matching
 ```
 
 ### Character Classes
+
 Character set matching
 
 ```tpeg
 [a-z]          // Lowercase letters
-[A-Z]          // Uppercase letters  
+[A-Z]          // Uppercase letters
 [0-9]          // Digits
 [a-zA-Z0-9_]   // Identifier characters
 [^0-9]         // Non-digits
@@ -72,6 +76,7 @@ point, not just ASCII - `[あ-ん]`, `[é]`, and `[😀-🙏]` (an astral, outsi
 range) are all valid, matched exactly like any other range.
 
 ### Identifiers
+
 References to defined rules
 
 ```tpeg
@@ -83,6 +88,7 @@ expression     // Rule reference
 ## Composition Operators
 
 ### Sequence
+
 Sequential matching
 
 ```tpeg
@@ -92,6 +98,7 @@ identifier "(" arguments ")"
 ```
 
 ### Choice
+
 Alternative matching
 
 ```tpeg
@@ -100,6 +107,7 @@ number / string / identifier
 ```
 
 ### Group
+
 Precedence control and grouping
 
 ```tpeg
@@ -119,14 +127,14 @@ expr{2,5}      // 2 to 5 times
 expr{3,}       // 3 or more times
 ```
 
-An *unbounded* repetition (`expr*`, `expr+`, or `expr{n,}` with no upper
+An _unbounded_ repetition (`expr*`, `expr+`, or `expr{n,}` with no upper
 bound) whose `expr` can itself match zero characters (e.g. `("a"?)*`, or
 `sub*` where `sub` is itself nullable) has no well-defined meaning: the
 repetition could keep "succeeding" without ever consuming input, so there is
 no principled stopping point. The code generator rejects such a rule
 outright, at generation time, rather than emit a parser whose behavior would
 depend on incidental details of how the repetition happens to be wrapped. A
-*bounded* range (`expr{2,5}`, `expr{3,3}`) has well-defined semantics
+_bounded_ range (`expr{2,5}`, `expr{3,3}`) has well-defined semantics
 regardless of whether `expr` is nullable, since the repetition count itself
 already bounds how many times it can run, and is never rejected.
 
@@ -158,7 +166,7 @@ follows:
 5. **Sequence** - `expr1 expr2 expr3` (juxtaposition)
 6. **Choice** - `expr1 / expr2 / expr3` (lowest precedence)
 
-Repetition binds *tighter* than lookahead - `!expr*` parses as `!(expr*)`,
+Repetition binds _tighter_ than lookahead - `!expr*` parses as `!(expr*)`,
 not `(!expr)*` - matching standard PEG (Ford, POPL 2004: `Prefix <- (AND /
 NOT)? Suffix`) and every mainstream PEG implementation (PEG.js, LPeg, Pest).
 An explicit group spells out the other reading when that's what's actually
@@ -176,7 +184,7 @@ are `x:(&"a")` and `x:(!("a"*))` respectively - there is no separate
 ## Cut/Commit Operator
 
 `~` may appear as one of a sequence's elements. Once everything before it has
-matched, it commits to that alternative: if anything *after* it then fails,
+matched, it commits to that alternative: if anything _after_ it then fails,
 the enclosing `/` choice does not fall back to a sibling alternative the way
 ordinary PEG backtracking would. This is most useful once a short, unambiguous
 prefix (a keyword, an opening delimiter) has told you which alternative was
@@ -192,7 +200,7 @@ if_stmt = "if" ~ condition "then" body
 Without `~`, a typo in `condition` (e.g. a missing operand) would make the
 `"if" condition "then" body` alternative fail as a whole, and the parser
 would silently move on to try `while_stmt` and `expr_stmt` too - producing a
-confusing error about the *last* alternative it tried, far from the actual
+confusing error about the _last_ alternative it tried, far from the actual
 mistake. With `~`, a failure anywhere after `"if"` is reported immediately as
 a failure in the `if` statement, since the parser is already committed to
 that alternative.
@@ -202,14 +210,14 @@ sequence's capture (see the [Capture Structure Reference Table](#capture-structu
 It has no effect as the very last element of a sequence (there is nothing
 after it left to protect), and it does not by itself affect anything outside
 the sequence it appears in - in particular, a cut inside a group nested
-inside a larger sequence only protects the rest of *its own* group, not
+inside a larger sequence only protects the rest of _its own_ group, not
 sibling elements of the outer sequence, and a cut inside `&expr`/`!expr`
 only protects the rest of `expr`'s own attempt, not whatever encloses the
 lookahead (see [Lookahead Operators](#lookahead-operators) above). Multiple
 `~` in the same sequence are allowed but redundant: once committed, a
 sequence stays committed.
 
-`~` only has meaning as one of *several* elements of a sequence - on its
+`~` only has meaning as one of _several_ elements of a sequence - on its
 own it matches nothing. A rule, group, or choice alternative whose entire
 content is `~` (optionally repeated, e.g. `~ ~`) is rejected as a
 grammar-authoring error at generation time rather than silently compiled
@@ -225,12 +233,14 @@ start = "a" ~ "b"   // fine: `~` shares its sequence with real matches
 ## Labels and Captures
 
 ### Basic Labels
+
 ```tpeg
 name:identifier          // Single capture
 left:expr op:"+" right:expr  // Multiple captures
 ```
 
 ### Group Labels
+
 ```tpeg
 sign:("+" / "-")         // Labeled choice group
 chars:(letter / digit)*  // Labeled repetition group
@@ -238,6 +248,7 @@ value:("0x" [0-9a-fA-F]+) // Labeled sequence group
 ```
 
 ### Capture Inference
+
 Types are automatically inferred from grammar patterns:
 
 ```tpeg
@@ -267,7 +278,7 @@ const result = nameParser("hello", 0);
 const userParser = captureSequence(
   capture("firstName", literal("John")),
   literal(" "),
-  capture("lastName", literal("Doe"))
+  capture("lastName", literal("Doe")),
 );
 const result = userParser("John Doe", 0);
 // result.val = { firstName: "John", lastName: "Doe" }
@@ -293,29 +304,29 @@ export const greeting = captureSequence(
 
 ### Capture Structure Reference Table
 
-| Grammar Pattern | Capture Structure | Description |
-|-----------------|-------------------|-------------|
-| `"literal"` | `"literal"` | String literal captures the literal type |
-| `[a-z]` | `string` | Character class captures single character |
-| `[a-z]+` | `string[]` | Character class with repetition captures an array of matched characters, same as any other `pattern+` |
-| `rule_name` | `T` | Rule reference captures whatever the rule returns |
-| `label:pattern` | `{ label: T }` | Labeled pattern creates named capture |
-| `pattern1 pattern2` | `[T1, T2]` | Unlabeled sequence captures array of elements |
-| `left:pattern1 right:pattern2` | `{ left: T1, right: T2 }` | Labeled sequence creates object with named fields |
-| `name:pattern1 pattern2 age:pattern3` | `{ name: T1, age: T3 }` | A sequence with *some* labeled elements still merges into an object - the unlabeled `pattern2` match is captured but has no key, so it's dropped rather than appearing positionally |
-| `pattern1 / pattern2` | `T1 \| T2` | Unlabeled choice captures union type |
-| `a:pattern1 / b:pattern2` | `{ a?: T1, b?: T2 }` | Labeled choice creates optional fields |
-| `pattern*` | `T[]` | Unlabeled repetition captures array of matches |
-| `items:pattern*` | `{ items: T[] }` | Labeled repetition captures named array |
-| `pattern+` | `T[]` | One-or-more captures non-empty array |
-| `pattern?` | `[T] \| []` | Unlabeled optional captures a one-element array on a match, an empty array otherwise - `optional()` (`packages/core/src/repetition.ts`) never returns a bare `T` or `undefined` |
-| `value:pattern?` | `{ value: [T] \| [] }` | Labeled optional creates a field holding that same `[T] \| []` array, not an optional field |
-| `(pattern1 / pattern2)` | `T1 \| T2` | Unlabeled group captures same type as contents |
-| `group:(pattern1 / pattern2)` | `{ group: T1 \| T2 }` | Labeled group creates named capture |
-| `&pattern` | `undefined` | Positive lookahead doesn't capture |
-| `!pattern` | `undefined` | Negative lookahead doesn't capture |
-| `a ~ b` | `[T_a, T_b]` | `~` itself contributes nothing and no tuple slot - the sequence's element count (and captures, if labeled) is exactly as if `~` weren't there |
-| `a ~` | `T_a` | Same rule taken to its single-element conclusion: with `~` gone, only `a` is left - a bare pattern, not a sequence - so it captures as `a`'s own (unlabeled) type, not a 1-tuple `[T_a]` |
+| Grammar Pattern                       | Capture Structure         | Description                                                                                                                                                                              |
+| ------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"literal"`                           | `"literal"`               | String literal captures the literal type                                                                                                                                                 |
+| `[a-z]`                               | `string`                  | Character class captures single character                                                                                                                                                |
+| `[a-z]+`                              | `string[]`                | Character class with repetition captures an array of matched characters, same as any other `pattern+`                                                                                    |
+| `rule_name`                           | `T`                       | Rule reference captures whatever the rule returns                                                                                                                                        |
+| `label:pattern`                       | `{ label: T }`            | Labeled pattern creates named capture                                                                                                                                                    |
+| `pattern1 pattern2`                   | `[T1, T2]`                | Unlabeled sequence captures array of elements                                                                                                                                            |
+| `left:pattern1 right:pattern2`        | `{ left: T1, right: T2 }` | Labeled sequence creates object with named fields                                                                                                                                        |
+| `name:pattern1 pattern2 age:pattern3` | `{ name: T1, age: T3 }`   | A sequence with _some_ labeled elements still merges into an object - the unlabeled `pattern2` match is captured but has no key, so it's dropped rather than appearing positionally      |
+| `pattern1 / pattern2`                 | `T1 \| T2`                | Unlabeled choice captures union type                                                                                                                                                     |
+| `a:pattern1 / b:pattern2`             | `{ a?: T1, b?: T2 }`      | Labeled choice creates optional fields                                                                                                                                                   |
+| `pattern*`                            | `T[]`                     | Unlabeled repetition captures array of matches                                                                                                                                           |
+| `items:pattern*`                      | `{ items: T[] }`          | Labeled repetition captures named array                                                                                                                                                  |
+| `pattern+`                            | `T[]`                     | One-or-more captures non-empty array                                                                                                                                                     |
+| `pattern?`                            | `[T] \| []`               | Unlabeled optional captures a one-element array on a match, an empty array otherwise - `optional()` (`packages/core/src/repetition.ts`) never returns a bare `T` or `undefined`          |
+| `value:pattern?`                      | `{ value: [T] \| [] }`    | Labeled optional creates a field holding that same `[T] \| []` array, not an optional field                                                                                              |
+| `(pattern1 / pattern2)`               | `T1 \| T2`                | Unlabeled group captures same type as contents                                                                                                                                           |
+| `group:(pattern1 / pattern2)`         | `{ group: T1 \| T2 }`     | Labeled group creates named capture                                                                                                                                                      |
+| `&pattern`                            | `undefined`               | Positive lookahead doesn't capture                                                                                                                                                       |
+| `!pattern`                            | `undefined`               | Negative lookahead doesn't capture                                                                                                                                                       |
+| `a ~ b`                               | `[T_a, T_b]`              | `~` itself contributes nothing and no tuple slot - the sequence's element count (and captures, if labeled) is exactly as if `~` weren't there                                            |
+| `a ~`                                 | `T_a`                     | Same rule taken to its single-element conclusion: with `~` gone, only `a` is left - a bare pattern, not a sequence - so it captures as `a`'s own (unlabeled) type, not a 1-tuple `[T_a]` |
 
 ## Semantic Actions
 
@@ -359,7 +370,7 @@ position-based one.
 
 **Mixed labeled/unlabeled sequences:** as the
 [Capture Structure Reference Table](#capture-structure-reference-table) notes,
-a sequence with *some* labeled elements still merges into one object, and the
+a sequence with _some_ labeled elements still merges into one object, and the
 unlabeled elements' matches have no key to be merged under - so they're
 dropped from `$$` entirely, not present positionally either. `name:"a" " " age:[0-9]`
 gives an action `{ name, age }`, with the `" "` match unreachable.
@@ -408,6 +419,7 @@ matching, or is shared/generated across multiple target languages.
 ## Grammar Definition
 
 ### Rule Definition
+
 ```tpeg
 // Basic rule
 rule_name = pattern
@@ -447,25 +459,26 @@ directly. `@memoize` with no value leaves the cache unbounded for that rule,
 matching `memoize`'s own default.
 
 ### Grammar Block
+
 ```tpeg
 grammar ArithmeticCalculator {
   // Metadata
   @language_version: "1.0"
   @description: "Simple arithmetic calculator"
   @author: "TPEG Team"
-  
+
   // Entry point
   @start: expression
-  
+
   // Rule definitions
   expression = left:term rest:(op:add_op right:term)*
   term = left:factor rest:(op:mul_op right:factor)*
   factor = num:number / paren:"(" expr:expression ")"
-  
+
   number = digits:[0-9]+
   add_op = "+" / "-"
   mul_op = "*" / "/"
-  
+
   // Ignored elements
   @skip: whitespace
   whitespace = [ \t\n\r]+
@@ -477,6 +490,7 @@ grammar ArithmeticCalculator {
 TPEG automatically infers types from grammar structure and transform signatures:
 
 ### Grammar-Level Type Inference
+
 ```tpeg
 // Type inference rules:
 number = digits:[0-9]+           // Inferred: digits -> string (concatenated)
@@ -488,7 +502,9 @@ sign:("+" / "-")                 // Inferred: sign -> string (from group)
 ```
 
 ### Transform-Driven Type Specification
+
 Types are explicitly specified in transform function signatures, enabling:
+
 - Multiple type interpretations of the same grammar
 - Language-specific type optimizations
 - Automatic type checking and inference
@@ -496,6 +512,7 @@ Types are explicitly specified in transform function signatures, enabling:
 ## Transform Function Specification
 
 ### Unified Transform Declaration Syntax
+
 Transform functions use a language-agnostic declaration syntax with language-specific body implementation:
 
 ```tpeg
@@ -508,6 +525,7 @@ transforms TransformSetName@target_language {
 ```
 
 ### Capture Structure Types
+
 Capture structures are automatically inferred from grammar patterns:
 
 ```tpeg
@@ -523,6 +541,7 @@ group = sign:("+" / "-")           // → captures: { sign: string }
 ### Error Handling Interface
 
 #### Standardized Result Type
+
 All transform functions must return a standardized Result type to ensure consistent error handling across languages:
 
 ```tpeg
@@ -540,6 +559,7 @@ type Result<T> = {
 ```
 
 #### Transform Error Handling Contract
+
 Transform functions must implement a consistent error handling pattern:
 
 ```tpeg
@@ -553,13 +573,14 @@ transforms ExampleTransforms@target {
 ```
 
 #### Error Categories and Handling
+
 TPEG defines standard error categories for consistent error reporting:
 
 ```tpeg
 // Standard error types
 enum ErrorType {
   ParseError,      // Grammar parsing failed
-  TransformError,  // Transform function failed  
+  TransformError,  // Transform function failed
   ValidationError, // Type validation failed
   RuntimeError     // Runtime execution error
 }
@@ -583,6 +604,7 @@ type EnhancedResult<T> = {
 ```
 
 #### Language-Specific Error Mapping
+
 Each target language maps the standardized Result type to its native error handling:
 
 ```tpeg
@@ -622,10 +644,10 @@ transforms ArithmeticEvaluator@typescript {
     }
     return { success: true, value };
   }
-  
-  expression(captures: { 
-    left: number, 
-    rest: Array<{op: string, right: number}> 
+
+  expression(captures: {
+    left: number,
+    rest: Array<{op: string, right: number}>
   }) -> Result<number> {
     let result = captures.left;
     for (const operation of captures.rest) {
@@ -637,13 +659,13 @@ transforms ArithmeticEvaluator@typescript {
     }
     return { success: true, value: result };
   }
-  
+
   factor(captures: { num?: number, paren?: number }) -> Result<number> {
     return { success: true, value: captures.num ?? captures.paren };
   }
 }
 
-// Python arithmetic evaluator 
+// Python arithmetic evaluator
 transforms ArithmeticEvaluator@python {
   number(captures: { digits: string }) -> Result<int> {
     try:
@@ -652,7 +674,7 @@ transforms ArithmeticEvaluator@python {
     except ValueError:
       return {'success': False, 'error': 'Invalid number format'}
   }
-  
+
   expression(captures: { left: int, rest: Array<{op: string, right: int}> }) -> Result<int> {
     result = captures['left']
     for operation in captures['rest']:
@@ -679,6 +701,7 @@ transforms ArithmeticEvaluator@go {
 ```
 
 ### Multiple Transform Sets from Same Grammar
+
 The same grammar can generate completely different type systems through different transforms:
 
 ```tpeg
@@ -687,33 +710,33 @@ transforms ArithmeticEvaluator@typescript {
   number(captures: { digits: string }) -> Result<number> {
     return { success: true, value: parseInt(captures.digits, 10) };
   }
-  
+
   expression(captures: { left: number, rest: Array<{op: string, right: number}> }) -> Result<number> {
     // Returns numeric result
   }
 }
 
-// AST generator - returns syntax tree nodes  
+// AST generator - returns syntax tree nodes
 transforms ArithmeticAST@typescript {
   number(captures: { digits: string }) -> Result<NumberLiteral> {
-    return { 
-      success: true, 
-      value: { 
-        type: 'NumberLiteral', 
+    return {
+      success: true,
+      value: {
+        type: 'NumberLiteral',
         value: parseInt(captures.digits, 10),
         raw: captures.digits
       }
     };
   }
-  
-  expression(captures: { 
-    left: ASTNode, 
-    rest: Array<{op: string, right: ASTNode}> 
+
+  expression(captures: {
+    left: ASTNode,
+    rest: Array<{op: string, right: ASTNode}>
   }) -> Result<ASTNode> {
     if (captures.rest.length === 0) {
       return { success: true, value: captures.left };
     }
-    
+
     let result = captures.left;
     for (const operation of captures.rest) {
       result = {
@@ -731,46 +754,48 @@ transforms ArithmeticAST@typescript {
 ## Complete Arithmetic Example
 
 ### Grammar Definition
+
 ```tpeg
 grammar ArithmeticCalculator {
   @version: "1.0"
   @description: "Simple four arithmetic operations calculator"
   @start: expression
   @skip: whitespace
-  
+
   // Operator precedence is expressed through grammar hierarchy:
   // expression (lowest precedence: +, -)
   //   ↳ term (higher precedence: *, /)
   //     ↳ factor (highest precedence: numbers, parentheses)
-  
+
   // Main expression (addition/subtraction)
   // Types inferred from transform signatures
   expression = left:term rest:(op:add_op right:term)*
-  
-  // Term (multiplication/division)  
+
+  // Term (multiplication/division)
   term = left:factor rest:(op:mul_op right:factor)*
-  
+
   // Factor (number or parenthesized expression)
   factor = num:number / paren:"(" expr:expression ")"
-  
+
   // Number literal
   number = sign:("+" / "-")? digits:[0-9]+ fraction:("." [0-9]+)?
-  
+
   // Operators
   add_op = "+" / "-"
   mul_op = "*" / "/"
-  
+
   // Whitespace (to be skipped)
   whitespace = [ \t\n\r]+
 }
 ```
 
 ### Transform Definition
+
 ```tpeg
 // TypeScript transforms using unified declaration syntax
 transforms ArithmeticEvaluator@typescript {
   // Type signature defines the complete type system for this rule
-  number(captures: { 
+  number(captures: {
     sign?: string,      // Inferred as optional from grammar '?'
     digits: string,     // Inferred as string from character class repetition
     fraction?: string   // Inferred as optional string
@@ -785,10 +810,10 @@ transforms ArithmeticEvaluator@typescript {
     }
     return { success: true, value: base };
   }
-  
-  expression(captures: { 
-    left: number, 
-    rest: Array<{op: string, right: number}> 
+
+  expression(captures: {
+    left: number,
+    rest: Array<{op: string, right: number}>
   }) -> Result<number> {
     let result = captures.left;
     for (const operation of captures.rest) {
@@ -800,7 +825,7 @@ transforms ArithmeticEvaluator@typescript {
     }
     return { success: true, value: result };
   }
-  
+
   factor(captures: { num?: number, paren?: number }) -> Result<number> {
     if (captures.num !== undefined) {
       return { success: true, value: captures.num };
@@ -817,6 +842,7 @@ transforms ArithmeticEvaluator@typescript {
 ### Modular Grammar System
 
 #### Module Declaration and Import
+
 TPEG supports modular grammar development with explicit import/export mechanisms:
 
 ```tpeg
@@ -824,22 +850,22 @@ TPEG supports modular grammar development with explicit import/export mechanisms
 grammar Base {
   @version: "1.0"
   @description: "Common base patterns for programming languages"
-  
+
   // Exported rules (default: all rules are exported)
   @export: [identifier, whitespace, number, string_literal]
-  
+
   // Core identifier pattern
   identifier = [a-zA-Z_][a-zA-Z0-9_]*
-  
+
   // Whitespace handling
   whitespace = [ \t\n\r]+
-  
+
   // Basic number pattern
   number = [0-9]+ ("." [0-9]+)?
-  
+
   // String literal pattern
   string_literal = "\"" (!["] .)* "\""
-  
+
   // Private rule (not exported)
   @private
   internal_helper = [a-z]+
@@ -850,15 +876,15 @@ import "base.tpeg" as base
 import "operators.tpeg" as ops
 
 grammar Arithmetic extends base.Base {
-  @version: "1.0" 
+  @version: "1.0"
   @description: "Arithmetic expression parser"
   @start: expression
-  
+
   // Use imported rules with module prefix
   expression = term (ops.add_op term)*
   term = factor (ops.mul_op factor)*
   factor = base.number / "(" expression ")"
-  
+
   // Override inherited rules if needed
   @override
   number = sign:("+" / "-")? base.number
@@ -867,7 +893,7 @@ grammar Arithmetic extends base.Base {
 // operators.tpeg - Reusable operator definitions
 grammar Operators {
   @export: [add_op, mul_op, cmp_op, logical_op]
-  
+
   add_op = "+" / "-"
   mul_op = "*" / "/"
   cmp_op = "==" / "!=" / "<" / "<=" / ">" / ">="
@@ -876,11 +902,12 @@ grammar Operators {
 ```
 
 #### Module Resolution and Namespacing
+
 ```tpeg
 // File: math/core.tpeg
 grammar Math.Core {
   @namespace: "Math.Core"
-  
+
   expression = term (add_op term)*
   term = factor (mul_op factor)*
   factor = number / "(" expression ")"
@@ -892,7 +919,7 @@ import "math/functions.tpeg" as func
 
 grammar Math.Advanced extends core.Math.Core {
   @namespace: "Math.Advanced"
-  
+
   // Extended expression with function calls
   @override
   factor = func.function_call / core.factor
@@ -907,17 +934,18 @@ grammar Calculator extends math.Math.Advanced {
 ```
 
 #### Module Composition Patterns
+
 ```tpeg
 // Mixin pattern - combining multiple grammar modules
 import "literals.tpeg" as lit
-import "operators.tpeg" as ops  
+import "operators.tpeg" as ops
 import "expressions.tpeg" as expr
 
-grammar ProgrammingLanguage 
+grammar ProgrammingLanguage
   includes lit.Literals, ops.Operators, expr.Expressions {
-  
+
   @start: program
-  
+
   program = statement*
   statement = assignment / expression_stmt
   assignment = lit.identifier "=" expr.expression
@@ -930,13 +958,14 @@ import "operators.tpeg" { add_op, mul_op }
 
 grammar MiniCalc {
   expression = term (add_op term)*
-  term = factor (mul_op factor)*  
+  term = factor (mul_op factor)*
   factor = number / identifier
   number = [0-9]+
 }
 ```
 
 #### Module Versioning and Compatibility
+
 ```tpeg
 // Version specification in imports
 import "base.tpeg" version "^1.0" as base
@@ -947,7 +976,7 @@ grammar MyGrammar extends base.Base {
     "base.tpeg": "^1.0",
     "operators.tpeg": ">=2.0, <3.0"
   }
-  
+
   // Grammar rules...
 }
 
@@ -955,30 +984,31 @@ grammar MyGrammar extends base.Base {
 grammar ConditionalGrammar {
   @if: base.version >= "1.5"
   enhanced_feature = complex_pattern+
-  
-  @else  
+
+  @else
   enhanced_feature = simple_pattern
 }
 ```
 
 #### Module Dependencies and Circular Reference Prevention
+
 ```tpeg
 // Module dependency declaration
 grammar ModuleA {
   @dependencies: ["base.tpeg", "utils.tpeg"]
   @conflicts: ["legacy.tpeg"]  // Cannot be used together
-  
+
   // Rules that depend on base and utils modules
 }
 
 // Circular reference detection
 // File: a.tpeg
 import "b.tpeg" as b
-grammar A { 
+grammar A {
   rule_a = b.rule_b some_pattern
 }
 
-// File: b.tpeg  
+// File: b.tpeg
 import "a.tpeg" as a  // ERROR: Circular dependency detected
 grammar B {
   rule_b = a.rule_a another_pattern
@@ -986,23 +1016,24 @@ grammar B {
 ```
 
 #### Export Control and Access Modifiers
+
 ```tpeg
 grammar DataTypes {
   // Public exports (default)
   @export: [string_type, number_type, boolean_type]
-  
+
   // Explicitly public
   @public
   string_type = "\"" char* "\""
-  
+
   // Protected - only available to extending grammars
-  @protected  
+  @protected
   char = [^"\\] / escape_sequence
-  
+
   // Private - internal use only
   @private
   escape_sequence = "\\" (["\\/bfnrt] / unicode_escape)
-  
+
   // Internal - visible within module hierarchy
   @internal
   unicode_escape = "u" [0-9a-fA-F]{4}
@@ -1013,12 +1044,13 @@ grammar Consumer extends DataTypes {
   // Can use public and protected rules
   my_string = string_type
   my_char = char        // OK: protected access
-  
+
   // my_escape = escape_sequence  // ERROR: private access
 }
 ```
 
 ### Labeled Choices
+
 Choice alternatives can be labeled to enable branching in transforms
 
 ```tpeg
@@ -1026,13 +1058,13 @@ Choice alternatives can be labeled to enable branching in transforms
 value = string:string_literal / number:number_literal / boolean:boolean_literal
 
 // Complex labeled choice with nested captures
-expression = 
+expression =
   binary:(left:term op:("+" / "-") right:term) /
   unary:(op:("+" / "-") operand:factor) /
   primary:factor
 
 // Mixed labeled and unlabeled choices
-statement = 
+statement =
   assignment:(target:identifier "=" value:expression) /
   call:(func:identifier "(" args:arguments? ")") /
   "return" expr:expression? /
@@ -1043,39 +1075,40 @@ statement =
 ### JSON Grammar with Labeled Choices
 
 #### Grammar Definition
+
 ```tpeg
 grammar JSON {
   @start: json
   @skip: whitespace
-  
+
   json = value
-  
+
   // Labeled choice for different value types
-  value = 
-    obj:object / 
-    arr:array / 
-    str:string / 
-    num:number / 
-    bool:boolean / 
+  value =
+    obj:object /
+    arr:array /
+    str:string /
+    num:number /
+    bool:boolean /
     nil:"null"
-  
+
   object = "{" pairs:(pair ("," pair)*)? "}"
   pair = key:string ":" value:value
-  
+
   array = "[" values:(value ("," value)*)? "]"
-  
+
   string = "\"" chars:char* "\""
   char = [^"\\] / "\\" escape:escape_char
   escape_char = "\"" / "\\" / "/" / "b" / "f" / "n" / "r" / "t" / unicode
   unicode = "u" [0-9a-fA-F]{4}
-  
+
   number = sign:"-"? int:int_part frac:frac_part? exp:exp_part?
   int_part = "0" / [1-9][0-9]*
   frac_part = "." [0-9]+
   exp_part = ("e"/"E") sign:("+"/"-")? [0-9]+
-  
+
   boolean = true:"true" / false:"false"
-  
+
   whitespace = [ \t\n\r]+
 }
 ```
@@ -1083,6 +1116,7 @@ grammar JSON {
 ## Operator Precedence and Associativity in PEG
 
 ### Grammar Hierarchy for Precedence
+
 In PEG, operator precedence is naturally expressed through the hierarchical structure of grammar rules:
 
 ```tpeg
@@ -1093,6 +1127,7 @@ factor = primary                          // Precedence level 3 (highest)
 ```
 
 ### Left Associativity
+
 The repetition operator `*` naturally creates left associativity:
 
 ```
@@ -1102,6 +1137,7 @@ Result: ((1 + 2) + 3) = 6
 ```
 
 ### Right Associativity
+
 For right associativity, use recursive rules instead of repetition:
 
 ```tpeg
@@ -1114,19 +1150,21 @@ power = base:factor (op:"^" right:power)?
 ### Precedence Examples
 
 #### Arithmetic Operations
+
 ```tpeg
 expression = term (("+" / "-") term)*    // Lowest: addition, subtraction
-term = factor (("*" / "/") factor)*      // Higher: multiplication, division  
+term = factor (("*" / "/") factor)*      // Higher: multiplication, division
 factor = power                           // Higher: grouping
 power = primary ("^" power)?             // Highest: exponentiation (right-assoc)
 primary = number / "(" expression ")"    // Atoms and parentheses
 ```
 
 #### Programming Language Expressions
+
 ```tpeg
 assignment = identifier "=" logical_or    // Lowest: assignment
 logical_or = logical_and ("||" logical_and)*
-logical_and = equality ("&&" equality)*  
+logical_and = equality ("&&" equality)*
 equality = relational (("==" / "!=") relational)*
 relational = additive (("<" / ">" / "<=" / ">=") additive)*
 additive = multiplicative (("+" / "-") multiplicative)*
@@ -1143,7 +1181,7 @@ These are gaps between this specification and the current `packages/parser`/`pac
 
 String literals (`"..."`, `'...'`) support only `\n \r \t \\ \" \'`. Character classes (`[...]`) support a larger set: `\t \n \r \b \f \v \0`, plus `\] \\ \^ \- \" \'` for characters that are otherwise syntactically special inside a class. Neither supports a `\uXXXX`/`\u{...}` numeric escape.
 
-Concretely, `[\b]` (a character class matching a backspace) parses, but `"\b"` (a string literal containing a backspace) does not -- it is a hard parse error, not a silent misinterpretation. This is not a dead end for grammar authors: a *raw*, unescaped control character embedded directly in the source text is accepted by both string literals and character classes alike (both parsers accept "any character except the closing quote/`\`" for the non-escape case), so `"\x08"` written as a literal byte in the file still works. Only the backslash-escape spelling is asymmetric.
+Concretely, `[\b]` (a character class matching a backspace) parses, but `"\b"` (a string literal containing a backspace) does not -- it is a hard parse error, not a silent misinterpretation. This is not a dead end for grammar authors: a _raw_, unescaped control character embedded directly in the source text is accepted by both string literals and character classes alike (both parsers accept "any character except the closing quote/`\`" for the non-escape case), so `"\x08"` written as a literal byte in the file still works. Only the backslash-escape spelling is asymmetric.
 
 ### `-` inside a character class must be escaped
 
@@ -1153,7 +1191,7 @@ Concretely, `[\b]` (a character class matching a backspace) parses, but `"\b"` (
 
 `@start`, `@skip`, `@namespace`, `@private`, and `@override` are all accepted by the grammar-block parser (any `@key: value` or `@key` is syntactically valid there), but none of them currently change what `tpeg-cli`/`tpeg-parser`'s code generator produces:
 
-- **`@start: ruleName`** does not change which rule becomes the generated module's entry point -- that is always the *first* rule declared in the grammar, regardless of this annotation.
+- **`@start: ruleName`** does not change which rule becomes the generated module's entry point -- that is always the _first_ rule declared in the grammar, regardless of this annotation.
 - **`@skip: ruleName`** does not insert any implicit whitespace/comment skipping between sequence elements -- every rule must consume whitespace explicitly, exactly as if `@skip` were absent.
 - **`@namespace`**, **`@private`**, and **`@override`** are parsed but have no effect on the generated module's exports or naming.
 

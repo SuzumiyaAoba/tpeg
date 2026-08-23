@@ -136,7 +136,13 @@ bun run arith:repl
 ### 基本的な例
 
 ```typescript
-import { literal, choice, seq, zeroOrMore, parse } from "@suzumiyaaoba/tpeg-core";
+import {
+  literal,
+  choice,
+  seq,
+  zeroOrMore,
+  parse,
+} from "@suzumiyaaoba/tpeg-core";
 
 // "hello"または"world"の簡単なパーサーを定義
 const helloOrWorld = choice(literal("hello"), literal("world"));
@@ -152,29 +158,29 @@ console.log(result);
 ### コード生成の例
 
 ```typescript
-import { generateEtaTypeScriptParser } from '@suzumiyaaoba/tpeg-generator';
-import type { GrammarDefinition } from '@suzumiyaaoba/tpeg-generator';
+import { generateEtaTypeScriptParser } from "@suzumiyaaoba/tpeg-generator";
+import type { GrammarDefinition } from "@suzumiyaaoba/tpeg-generator";
 
 const grammar: GrammarDefinition = {
-  type: 'GrammarDefinition',
-  name: 'Calculator',
+  type: "GrammarDefinition",
+  name: "Calculator",
   annotations: [],
   rules: [
     {
-      type: 'RuleDefinition',
-      name: 'number',
+      type: "RuleDefinition",
+      name: "number",
       pattern: {
-        type: 'StringLiteral',
-        value: '123'
-      }
-    }
-  ]
+        type: "StringLiteral",
+        value: "123",
+      },
+    },
+  ],
 };
 
 const result = await generateEtaTypeScriptParser(grammar, {
-  namePrefix: 'calc_',
+  namePrefix: "calc_",
   includeTypes: true,
-  optimize: true
+  optimize: true,
 });
 
 console.log(result.code); // 生成されたTypeScriptパーサーコード
@@ -316,4 +322,4 @@ bun run test:watch
 
 ## ライセンス
 
-このプロジェクトはMITライセンスの下でライセンスされています - 詳細はLICENSEファイルを参照してください。 
+このプロジェクトはMITライセンスの下でライセンスされています - 詳細はLICENSEファイルを参照してください。

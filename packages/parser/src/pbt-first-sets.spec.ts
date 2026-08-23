@@ -92,41 +92,35 @@ const { tree } = fc.letrec<{ tree: Expression; leaf: Expression }>((tie) => ({
     fc
       .tuple(tie("tree"), tie("tree"))
       .map(([a, b]): Expression => ({ type: "Sequence", elements: [a, b] })),
-    fc.tuple(tie("tree"), tie("tree")).map(
-      ([a, b]): Expression => ({
-        type: "Choice",
-        alternatives: [a, b],
-      }),
-    ),
+    fc.tuple(tie("tree"), tie("tree")).map(([a, b]): Expression => ({
+      type: "Choice",
+      alternatives: [a, b],
+    })),
     tie("leaf").map((e): Expression => ({ type: "Star", expression: e })),
     tie("leaf").map((e): Expression => ({ type: "Plus", expression: e })),
     tie("tree").map((e): Expression => ({ type: "Optional", expression: e })),
     tie("tree").map((e): Expression => ({ type: "Group", expression: e })),
-    tie("tree").map(
-      (e): Expression => ({ type: "PositiveLookahead", expression: e }),
-    ),
-    tie("tree").map(
-      (e): Expression => ({ type: "NegativeLookahead", expression: e }),
-    ),
-    tie("tree").map(
-      (e): Expression => ({
-        type: "LabeledExpression",
-        label: "x",
-        expression: e,
-      }),
-    ),
+    tie("tree").map((e): Expression => ({
+      type: "PositiveLookahead",
+      expression: e,
+    })),
+    tie("tree").map((e): Expression => ({
+      type: "NegativeLookahead",
+      expression: e,
+    })),
+    tie("tree").map((e): Expression => ({
+      type: "LabeledExpression",
+      label: "x",
+      expression: e,
+    })),
     // A leading non-nullable leaf, then a `Cut`, then a further tree --
     // exercises fatal-failure propagation alongside the FIRST-set
     // analysis (a `Cut` itself is always nullable and contributes no
     // characters of its own, see `first-sets.ts`).
-    fc
-      .tuple(tie("leaf"), tie("tree"))
-      .map(
-        ([lead, rest]): Expression => ({
-          type: "Sequence",
-          elements: [lead, { type: "Cut" }, rest],
-        }),
-      ),
+    fc.tuple(tie("leaf"), tie("tree")).map(([lead, rest]): Expression => ({
+      type: "Sequence",
+      elements: [lead, { type: "Cut" }, rest],
+    })),
   ),
 }));
 
@@ -214,35 +208,31 @@ const { tree: multiTree } = fc.letrec<{ tree: Expression; leaf: Expression }>(
       fc
         .tuple(tie("tree"), tie("tree"))
         .map(([a, b]): Expression => ({ type: "Sequence", elements: [a, b] })),
-      fc.tuple(tie("tree"), tie("tree")).map(
-        ([a, b]): Expression => ({
-          type: "Choice",
-          alternatives: [a, b],
-        }),
-      ),
+      fc.tuple(tie("tree"), tie("tree")).map(([a, b]): Expression => ({
+        type: "Choice",
+        alternatives: [a, b],
+      })),
       tie("leaf").map((e): Expression => ({ type: "Star", expression: e })),
       tie("leaf").map((e): Expression => ({ type: "Plus", expression: e })),
       tie("tree").map((e): Expression => ({ type: "Optional", expression: e })),
       tie("tree").map((e): Expression => ({ type: "Group", expression: e })),
-      tie("tree").map(
-        (e): Expression => ({ type: "PositiveLookahead", expression: e }),
-      ),
-      tie("tree").map(
-        (e): Expression => ({ type: "NegativeLookahead", expression: e }),
-      ),
-      tie("tree").map(
-        (e): Expression => ({
-          type: "LabeledExpression",
-          label: "x",
-          expression: e,
-        }),
-      ),
-      fc.tuple(tie("leaf"), tie("tree")).map(
-        ([lead, rest]): Expression => ({
-          type: "Sequence",
-          elements: [lead, { type: "Cut" }, rest],
-        }),
-      ),
+      tie("tree").map((e): Expression => ({
+        type: "PositiveLookahead",
+        expression: e,
+      })),
+      tie("tree").map((e): Expression => ({
+        type: "NegativeLookahead",
+        expression: e,
+      })),
+      tie("tree").map((e): Expression => ({
+        type: "LabeledExpression",
+        label: "x",
+        expression: e,
+      })),
+      fc.tuple(tie("leaf"), tie("tree")).map(([lead, rest]): Expression => ({
+        type: "Sequence",
+        elements: [lead, { type: "Cut" }, rest],
+      })),
     ),
   }),
 );

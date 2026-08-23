@@ -2,11 +2,25 @@
   "name": "@suzumiyaaoba/tpeg-cli",
   "version": "0.1.0",
   "description": "Command-line interface for generating TypeScript parsers from TPEG grammar files",
-  "type": "module",
+  "keywords": [
+    "cli",
+    "code-generation",
+    "parser",
+    "peg",
+    "tpeg",
+    "typescript"
+  ],
+  "license": "MIT",
+  "author": "SuzumiyaAoba",
   "bin": {
     "tpeg": "./dist/cli.js"
   },
-  "files": ["dist", "README.md", "package.json"],
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "type": "module",
   "scripts": {
     "build": "tsc --project ./tsconfig.build.json",
     "dev": "bun run src/cli.ts",
@@ -20,8 +34,5 @@
   "devDependencies": {
     "@types/bun": "latest",
     "typescript": "^7.0.2"
-  },
-  "keywords": ["tpeg", "cli", "parser", "peg", "code-generation", "typescript"],
-  "author": "SuzumiyaAoba",
-  "license": "MIT"
+  }
 }

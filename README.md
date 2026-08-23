@@ -10,17 +10,17 @@ TPEG is a TypeScript library for building parsers using Parsing Expression Gramm
 
 ## Packages
 
-| Package | Description |
-| --- | --- |
-| [`@suzumiyaaoba/tpeg-core`](./packages/core) | Core PEG parsing types, primitives, and utilities. No dependency on any other package in this repo. |
-| [`@suzumiyaaoba/tpeg-combinator`](./packages/combinator) | Higher-level parser combinators (strings, lists, error labeling, memoization, debugging) built on `tpeg-core`. |
-| [`@suzumiyaaoba/tpeg-ast`](./packages/ast) | AST construction and manipulation helpers, built on the [unist](https://github.com/syntax-tree/unist) ecosystem. |
-| [`@suzumiyaaoba/tpeg-type-inference`](./packages/type-inference) | Type inference and type-safe-grammar integration for TPEG grammar definitions. |
-| [`@suzumiyaaoba/tpeg-parser`](./packages/parser) | A parser for TPEG's own grammar definition syntax, built on `tpeg-core` and `tpeg-combinator`. See [`docs/peg-grammar.md`](./docs/peg-grammar.md). |
-| [`@suzumiyaaoba/tpeg-generator`](./packages/generator) | Template-based (Eta) code generation: turns a parsed TPEG grammar into a standalone TypeScript parser. |
-| [`@suzumiyaaoba/tpeg-cli`](./packages/cli) | `tpeg` command-line tool: generates a standalone TypeScript parser from a `.tpeg` grammar file. |
-| [`@suzumiyaaoba/tpeg-parser-sample`](./packages/parser-sample) | Runnable demos of the grammar parser and generator (`bun run demo`, `bun run demo:grammar`, ...). |
-| [`@suzumiyaaoba/tpeg-samples`](./packages/samples) | Legacy example parsers (JSON, CSV, arithmetic, PEG) written directly against `tpeg-core`/`tpeg-combinator`. |
+| Package                                                          | Description                                                                                                                                        |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`@suzumiyaaoba/tpeg-core`](./packages/core)                     | Core PEG parsing types, primitives, and utilities. No dependency on any other package in this repo.                                                |
+| [`@suzumiyaaoba/tpeg-combinator`](./packages/combinator)         | Higher-level parser combinators (strings, lists, error labeling, memoization, debugging) built on `tpeg-core`.                                     |
+| [`@suzumiyaaoba/tpeg-ast`](./packages/ast)                       | AST construction and manipulation helpers, built on the [unist](https://github.com/syntax-tree/unist) ecosystem.                                   |
+| [`@suzumiyaaoba/tpeg-type-inference`](./packages/type-inference) | Type inference and type-safe-grammar integration for TPEG grammar definitions.                                                                     |
+| [`@suzumiyaaoba/tpeg-parser`](./packages/parser)                 | A parser for TPEG's own grammar definition syntax, built on `tpeg-core` and `tpeg-combinator`. See [`docs/peg-grammar.md`](./docs/peg-grammar.md). |
+| [`@suzumiyaaoba/tpeg-generator`](./packages/generator)           | Template-based (Eta) code generation: turns a parsed TPEG grammar into a standalone TypeScript parser.                                             |
+| [`@suzumiyaaoba/tpeg-cli`](./packages/cli)                       | `tpeg` command-line tool: generates a standalone TypeScript parser from a `.tpeg` grammar file.                                                    |
+| [`@suzumiyaaoba/tpeg-parser-sample`](./packages/parser-sample)   | Runnable demos of the grammar parser and generator (`bun run demo`, `bun run demo:grammar`, ...).                                                  |
+| [`@suzumiyaaoba/tpeg-samples`](./packages/samples)               | Legacy example parsers (JSON, CSV, arithmetic, PEG) written directly against `tpeg-core`/`tpeg-combinator`.                                        |
 
 Each package has its own README with package-specific usage details and API notes; the list above is the map, not the territory — when a package's own README and this one disagree, trust the package's.
 
@@ -41,7 +41,13 @@ tpeg-core (no workspace dependencies)
 ## Quick example
 
 ```typescript
-import { choice, literal, parse, seq, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
+import {
+  choice,
+  literal,
+  parse,
+  seq,
+  zeroOrMore,
+} from "@suzumiyaaoba/tpeg-core";
 
 // A parser for "hello" or "world"
 const helloOrWorld = choice(literal("hello"), literal("world"));

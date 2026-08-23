@@ -5,7 +5,7 @@ Core parsing functionality for TPEG (Typed Parser Expression Grammar) library.
 ## Features
 
 - **Basic Parsers**: String literals, character classes, and any-character parsers
-- **Combinators**: Sequence, choice, repetition, and lookahead combinators  
+- **Combinators**: Sequence, choice, repetition, and lookahead combinators
 - **Capture System**: Label and capture parsed values with structured output
 - **Error Handling**: Comprehensive error reporting with position tracking
 - **Type Safety**: Full TypeScript support with strict type checking
@@ -45,7 +45,13 @@ const anyResult = any("x", 0);
 ### Combinators
 
 ```typescript
-import { sequence, choice, zeroOrMore, oneOrMore, optional } from "@suzumiyaaoba/tpeg-core";
+import {
+  sequence,
+  choice,
+  zeroOrMore,
+  oneOrMore,
+  optional,
+} from "@suzumiyaaoba/tpeg-core";
 
 // Sequence: match multiple parsers in order
 const greeting = sequence(literal("hello"), literal(" "), literal("world"));
@@ -68,7 +74,11 @@ const digitsResult = digits("123abc", 0);
 The capture system allows you to structure parsed data with meaningful labels:
 
 ```typescript
-import { capture, captureSequence, captureChoice } from "@suzumiyaaoba/tpeg-core";
+import {
+  capture,
+  captureSequence,
+  captureChoice,
+} from "@suzumiyaaoba/tpeg-core";
 
 // Basic capture
 const nameParser = capture("name", literal("John"));
@@ -79,7 +89,7 @@ const nameResult = nameParser("John", 0);
 const userParser = captureSequence(
   capture("firstName", literal("John")),
   literal(" "),
-  capture("lastName", literal("Doe"))
+  capture("lastName", literal("Doe")),
 );
 const userResult = userParser("John Doe", 0);
 // userResult.val = { firstName: "John", lastName: "Doe" }
@@ -87,7 +97,7 @@ const userResult = userParser("John Doe", 0);
 // Captures with choice
 const greetingParser = captureChoice(
   capture("formal", literal("Hello")),
-  capture("casual", literal("Hi"))
+  capture("casual", literal("Hi")),
 );
 const greetingResult = greetingParser("Hello", 0);
 // greetingResult.val = { formal: "Hello" }
@@ -100,27 +110,37 @@ const greetingResult = greetingParser("Hello", 0);
 #### HTTP Request Parser with Captures
 
 ```typescript
-import { capture, captureSequence, literal, charClass, oneOrMore, choice, sequence, map } from "@suzumiyaaoba/tpeg-core";
+import {
+  capture,
+  captureSequence,
+  literal,
+  charClass,
+  oneOrMore,
+  choice,
+  sequence,
+  map,
+} from "@suzumiyaaoba/tpeg-core";
 
-const method = capture("method", choice(
-  literal("GET"),
-  literal("POST"),
-  literal("PUT"),
-  literal("DELETE")
-));
+const method = capture(
+  "method",
+  choice(literal("GET"), literal("POST"), literal("PUT"), literal("DELETE")),
+);
 
 const pathChar = choice(
   charClass(["a", "z"]),
   charClass(["A", "Z"]),
   charClass(["0", "9"]),
   literal("/"),
-  literal("-")
+  literal("-"),
 );
 
-const path = capture("path", map(
-  sequence(literal("/"), oneOrMore(pathChar)),
-  ([slash, rest]) => slash + rest.join("")
-));
+const path = capture(
+  "path",
+  map(
+    sequence(literal("/"), oneOrMore(pathChar)),
+    ([slash, rest]) => slash + rest.join(""),
+  ),
+);
 
 const protocol = capture("protocol", literal("HTTP/1.1"));
 
@@ -129,7 +149,7 @@ const httpRequest = captureSequence(
   literal(" "),
   path,
   literal(" "),
-  protocol
+  protocol,
 );
 
 const result = httpRequest("GET /api/users HTTP/1.1", 0);
@@ -143,33 +163,44 @@ const result = httpRequest("GET /api/users HTTP/1.1", 0);
 #### JSON-like Parser
 
 ```typescript
-import { capture, captureChoice, captureSequence, literal, charClass, zeroOrMore, oneOrMore, choice, sequence, map } from "@suzumiyaaoba/tpeg-core";
+import {
+  capture,
+  captureChoice,
+  captureSequence,
+  literal,
+  charClass,
+  zeroOrMore,
+  oneOrMore,
+  choice,
+  sequence,
+  map,
+} from "@suzumiyaaoba/tpeg-core";
 
-const stringValue = capture("string", map(
-  sequence(
-    literal('"'),
-    zeroOrMore(charClass(["a", "z"], ["A", "Z"], ["0", "9"], " ")),
-    literal('"')
+const stringValue = capture(
+  "string",
+  map(
+    sequence(
+      literal('"'),
+      zeroOrMore(charClass(["a", "z"], ["A", "Z"], ["0", "9"], " ")),
+      literal('"'),
+    ),
+    ([, chars]) => chars.join(""),
   ),
-  ([, chars]) => chars.join("")
-));
+);
 
-const numberValue = capture("number", map(
-  oneOrMore(charClass(["0", "9"])),
-  (digits) => digits.join("")
-));
+const numberValue = capture(
+  "number",
+  map(oneOrMore(charClass(["0", "9"])), (digits) => digits.join("")),
+);
 
-const boolValue = capture("boolean", choice(
-  literal("true"),
-  literal("false")
-));
+const boolValue = capture("boolean", choice(literal("true"), literal("false")));
 
 const value = captureChoice(stringValue, numberValue, boolValue);
 
 const keyValue = captureSequence(
   capture("key", stringValue),
   literal(":"),
-  capture("value", value)
+  capture("value", value),
 );
 
 const result = keyValue('"name":"John"', 0);

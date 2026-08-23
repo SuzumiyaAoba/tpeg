@@ -24,8 +24,19 @@ bun add @suzumiyaaoba/tpeg-combinator
 ## クイックスタート
 
 ```typescript
-import { literal, choice, seq, zeroOrMore, parse } from "@suzumiyaaoba/tpeg-core";
-import { quotedString, number, sepBy, memoize } from "@suzumiyaaoba/tpeg-combinator";
+import {
+  literal,
+  choice,
+  seq,
+  zeroOrMore,
+  parse,
+} from "@suzumiyaaoba/tpeg-core";
+import {
+  quotedString,
+  number,
+  sepBy,
+  memoize,
+} from "@suzumiyaaoba/tpeg-combinator";
 
 // "hello"または"world"の簡単なパーサー
 const helloOrWorld = choice(literal("hello"), literal("world"));
@@ -42,6 +53,7 @@ console.log(result);
 ### 文字列パース
 
 #### `quotedString`
+
 エスケープシーケンス付きのJavaScript/JSONスタイルの二重引用符付き文字列をパースします。
 
 ```typescript
@@ -53,6 +65,7 @@ const result = parse(quotedString)('"Hello, \\"world\\"!"');
 ```
 
 #### `singleQuotedString`
+
 単一引用符付き文字列をパースします。
 
 ```typescript
@@ -64,6 +77,7 @@ const result = parse(singleQuotedString)("'Hello, world!'");
 ```
 
 #### `anyQuotedString`
+
 単一または二重引用符の文字列をパースします。
 
 ```typescript
@@ -75,6 +89,7 @@ const result2 = parse(anyQuotedString)("'single quoted'");
 ```
 
 #### `takeUntil(condition)`
+
 条件が満たされるまで文字を消費します。
 
 ```typescript
@@ -87,6 +102,7 @@ const result = parse(parser)("hello,world");
 ```
 
 #### `between(open, close)`
+
 2つのパーサー間のコンテンツにマッチします。
 
 ```typescript
@@ -101,6 +117,7 @@ const result = parse(parser)("(content)");
 ### 数値パース
 
 #### `number`
+
 分数と指数を含むJavaScript/JSONスタイルの数値をパースします。
 
 ```typescript
@@ -113,6 +130,7 @@ const result3 = parse(number)("1.23e-4");
 ```
 
 #### `int`
+
 整数をパースします。
 
 ```typescript
@@ -126,6 +144,7 @@ const result = parse(int)("42");
 ### リストパース
 
 #### `sepBy(value, separator)`
+
 区切り文字で区切られた値をパースします（0回以上）。
 
 ```typescript
@@ -138,6 +157,7 @@ const result = parse(parser)("1,2,3,4");
 ```
 
 #### `sepBy1(value, separator)`
+
 区切り文字で区切られた値をパースします（1回以上）。
 
 ```typescript
@@ -150,6 +170,7 @@ const result = parse(parser)("1,2,3");
 ```
 
 #### `commaSeparated(value)`
+
 オプションの末尾カンマを持つカンマ区切り値をパースします。
 
 ```typescript
@@ -164,6 +185,7 @@ const result = parse(parser)("1, 2, 3,");
 ### エラーハンドリング
 
 #### `labeled(parser, message)`
+
 カスタムエラーメッセージを提供します。
 
 ```typescript
@@ -176,6 +198,7 @@ const result = parse(parser)("world");
 ```
 
 #### `withDetailedError(parser, name)`
+
 入力抜粋を含む詳細なエラーレポートを作成します。
 
 ```typescript
@@ -188,6 +211,7 @@ const result = parse(parser)("world");
 ```
 
 #### `withPosition(parser)`
+
 より良いエラー報告のために行と列を追跡します。
 
 ```typescript
@@ -202,6 +226,7 @@ const result = parse(parser)("world");
 ### パフォーマンスとデバッグ
 
 #### `memoize(parser, options)`
+
 キャッシュサイズ制御を持つパーサーのメモ化版を作成します。
 
 ```typescript
@@ -213,6 +238,7 @@ const result = parse(parser)("hello");
 ```
 
 #### `recursive()`
+
 再帰パーサーを作成します。`[パーサー, セッター]`のペアを返すので、他のコンビネーターで本体を組み立ててから`setter`を呼んで再帰の結び目を閉じます。
 
 ```typescript
@@ -221,16 +247,14 @@ import { recursive } from "@suzumiyaaoba/tpeg-combinator";
 
 const [expression, setExpression] = recursive<string>();
 setExpression(
-  choice(
-    literal("x"),
-    seq(literal("("), expression, literal(")")),
-  ),
+  choice(literal("x"), seq(literal("("), expression, literal(")"))),
 );
 
 const result = parse(expression)("((x))");
 ```
 
 #### `debug(parser, name, options)`
+
 デバッグのためにパースプロセスをログ出力します。
 
 ```typescript
@@ -245,6 +269,7 @@ const result = parse(parser)("hello");
 ### 空白とトークン
 
 #### `token(parser)`
+
 前後の空白を消費するパーサーをラップします。
 
 ```typescript
@@ -257,6 +282,7 @@ const result = parse(parser)("  hello  ");
 ```
 
 #### `whitespace`
+
 空白文字を消費します。
 
 ```typescript
@@ -268,6 +294,7 @@ const result = parse(whitespace)("   \t\n");
 ```
 
 #### `spaces`
+
 0回以上の空白文字を消費します。
 
 ```typescript
@@ -283,7 +310,13 @@ const result = parse(spaces)("   \t\n");
 ### JSON値パーサー
 
 ```typescript
-import { choice, seq, zeroOrMore, literal, parse } from "@suzumiyaaoba/tpeg-core";
+import {
+  choice,
+  seq,
+  zeroOrMore,
+  literal,
+  parse,
+} from "@suzumiyaaoba/tpeg-core";
 import { quotedString, number } from "@suzumiyaaoba/tpeg-combinator";
 
 const jsonValue = choice(
@@ -301,7 +334,7 @@ const jsonArray = seq(
   literal("]"),
 );
 
-const result = parse(jsonArray)('[1,2,3]');
+const result = parse(jsonArray)("[1,2,3]");
 ```
 
 この最小文法は要素間の空白を読み飛ばしません。入力に空白が含まれる場合は、`jsonValue`やリテラルを下記の`token()`でラップしてください。

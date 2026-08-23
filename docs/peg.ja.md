@@ -25,7 +25,7 @@
 PEGは以下の要素で構成されます：
 
 1. **終端記号の集合** T
-2. **非終端記号の集合** N  
+2. **非終端記号の集合** N
 3. **解析表現の集合** P
 4. **開始記号** S ∈ N
 
@@ -55,11 +55,11 @@ PEGは以下の要素で構成されます：
 R(ε, x, i) = i
 R(a, x, i) = i+1 if x[i] = a, fail otherwise
 R(A, x, i) = R(P[A], x, i)
-R(e₁ e₂, x, i) = let j = R(e₁, x, i) in 
+R(e₁ e₂, x, i) = let j = R(e₁, x, i) in
                   if j ≠ fail then R(e₂, x, j) else fail
-R(e₁ / e₂, x, i) = let j = R(e₁, x, i) in 
+R(e₁ / e₂, x, i) = let j = R(e₁, x, i) in
                     if j ≠ fail then j else R(e₂, x, i)
-R(e*, x, i) = let j = R(e, x, i) in 
+R(e*, x, i) = let j = R(e, x, i) in
               if j ≠ fail then R(e*, x, j) else i
 R(&e, x, i) = if R(e, x, i) ≠ fail then i else fail
 R(!e, x, i) = if R(e, x, i) = fail then i else fail
@@ -69,12 +69,12 @@ R(!e, x, i) = if R(e, x, i) = fail then i else fail
 
 ### 主な違い
 
-| 側面 | CFG | PEG |
-|------|-----|-----|
-| 選択 | 非決定論的 | 決定論的（順序付き選択） |
-| 曖昧性 | 存在する可能性 | 存在しない |
-| バックトラッキング | 理論的には不要 | 明示的にサポート |
-| 実装 | 複雑（LR、LALRなど） | 直接的 |
+| 側面               | CFG                  | PEG                      |
+| ------------------ | -------------------- | ------------------------ |
+| 選択               | 非決定論的           | 決定論的（順序付き選択） |
+| 曖昧性             | 存在する可能性       | 存在しない               |
+| バックトラッキング | 理論的には不要       | 明示的にサポート         |
+| 実装               | 複雑（LR、LALRなど） | 直接的                   |
 
 ### 順序付き選択の重要性
 
@@ -151,12 +151,12 @@ function parseA(input: string, pos: number): ParseResult {
 
 ### 基礎論文
 
-1. Ford, B. (2004). "Parsing Expression Grammars: A Recognition-Based Syntactic Foundation". *POPL '04*.
+1. Ford, B. (2004). "Parsing Expression Grammars: A Recognition-Based Syntactic Foundation". _POPL '04_.
 
-2. Ford, B. (2002). "Packrat Parsing: Simple, Powerful, Lazy, Linear Time". *ICFP '02*.
+2. Ford, B. (2002). "Packrat Parsing: Simple, Powerful, Lazy, Linear Time". _ICFP '02_.
 
 ### 拡張研究
 
-3. Warth, A., Douglass, J., & Millstein, T. (2008). "Packrat Parsers Can Support Left Recursion". *PEPM '08*.
+3. Warth, A., Douglass, J., & Millstein, T. (2008). "Packrat Parsers Can Support Left Recursion". _PEPM '08_.
 
-4. Redziejowski, R. R. (2007). "Parsing Expression Grammar as a Primitive Recursive-Descent Parser with Backtracking". *Fundamenta Informaticae*. 
+4. Redziejowski, R. R. (2007). "Parsing Expression Grammar as a Primitive Recursive-Descent Parser with Backtracking". _Fundamenta Informaticae_.

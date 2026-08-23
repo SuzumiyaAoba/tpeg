@@ -1,8 +1,8 @@
 {
   "name": "@suzumiyaaoba/tpeg-samples",
   "version": "0.0.1",
-  "license": "MIT",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "bun run ./src/index.ts",

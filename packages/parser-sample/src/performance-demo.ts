@@ -121,7 +121,9 @@ const standardBenchmark = benchmark(
 console.log(
   `   📈 ${standardBenchmark.operationsPerSecond.toFixed(0)} operations/second`,
 );
-console.log(`   ⏱️  ${standardBenchmark.averageTime.toFixed(2)}ms average time`);
+console.log(
+  `   ⏱️  ${standardBenchmark.averageTime.toFixed(2)}ms average time`,
+);
 
 // Benchmark optimized code generation
 console.log("\n⚡ Benchmarking Optimized Code Generation...");

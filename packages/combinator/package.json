@@ -2,15 +2,20 @@
   "name": "@suzumiyaaoba/tpeg-combinator",
   "version": "0.0.2",
   "license": "MIT",
-  "module": "index.ts",
+  "files": [
+    "*.ts",
+    "dist",
+    "README.md",
+    "package.json"
+  ],
   "type": "module",
+  "module": "index.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
   },
-  "files": ["*.ts", "dist", "README.md", "package.json"],
   "scripts": {
     "dev": "bun run ./index.ts",
     "typecheck": "tsc --noEmit",

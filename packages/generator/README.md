@@ -21,29 +21,29 @@ bun add @suzumiyaaoba/tpeg-generator
 ### Basic Code Generation
 
 ```typescript
-import { generateEtaTypeScriptParser } from '@suzumiyaaoba/tpeg-generator';
-import type { GrammarDefinition } from '@suzumiyaaoba/tpeg-generator';
+import { generateEtaTypeScriptParser } from "@suzumiyaaoba/tpeg-generator";
+import type { GrammarDefinition } from "@suzumiyaaoba/tpeg-generator";
 
 const grammar: GrammarDefinition = {
-  type: 'GrammarDefinition',
-  name: 'Calculator',
+  type: "GrammarDefinition",
+  name: "Calculator",
   annotations: [],
   rules: [
     {
-      type: 'RuleDefinition',
-      name: 'number',
+      type: "RuleDefinition",
+      name: "number",
       pattern: {
-        type: 'StringLiteral',
-        value: '123'
-      }
-    }
-  ]
+        type: "StringLiteral",
+        value: "123",
+      },
+    },
+  ],
 };
 
 const result = await generateEtaTypeScriptParser(grammar, {
-  namePrefix: 'calc_',
+  namePrefix: "calc_",
   includeTypes: true,
-  optimize: true
+  optimize: true,
 });
 
 console.log(result.code); // Generated TypeScript parser code
@@ -52,18 +52,18 @@ console.log(result.code); // Generated TypeScript parser code
 ### Advanced Configuration
 
 ```typescript
-import { EtaTPEGCodeGenerator } from '@suzumiyaaoba/tpeg-generator';
+import { EtaTPEGCodeGenerator } from "@suzumiyaaoba/tpeg-generator";
 
 const generator = new EtaTPEGCodeGenerator({
-  language: 'typescript',
-  namePrefix: 'parser_',
+  language: "typescript",
+  namePrefix: "parser_",
   includeTypes: true,
   optimize: true,
   enableMemoization: true,
   includeMonitoring: false,
-  templatesDir: './custom-templates',
+  templatesDir: "./custom-templates",
   cache: true,
-  debug: false
+  debug: false,
 });
 
 const result = await generator.generateGrammar(grammar);
@@ -114,7 +114,7 @@ Configuration options for code generation:
 
 ```typescript
 interface CodeGenOptions {
-  language: 'typescript';
+  language: "typescript";
   namePrefix?: string;
   includeImports?: boolean;
   includeTypes?: boolean;
@@ -137,7 +137,7 @@ interface GeneratedCode {
   imports: string[];
   exports: string[];
   performance: {
-    estimatedComplexity: 'low' | 'medium' | 'high';
+    estimatedComplexity: "low" | "medium" | "high";
     optimizationSuggestions: string[];
     generationTime: number;
     templateEngine: string;
@@ -150,7 +150,7 @@ interface GeneratedCode {
 The generator includes comprehensive performance analysis:
 
 ```typescript
-import { analyzeGrammarPerformance } from '@suzumiyaaoba/tpeg-generator';
+import { analyzeGrammarPerformance } from "@suzumiyaaoba/tpeg-generator";
 
 const analysis = analyzeGrammarPerformance(grammar);
 console.log(analysis.estimatedParseComplexity); // 'low' | 'medium' | 'high'
@@ -163,7 +163,7 @@ You can customize code generation by providing your own template directory:
 
 ```typescript
 const generator = new EtaTPEGCodeGenerator({
-  templatesDir: './my-custom-templates',
+  templatesDir: "./my-custom-templates",
   // ... other options
 });
 ```

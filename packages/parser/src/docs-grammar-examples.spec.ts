@@ -28,14 +28,7 @@ import { parse } from "@suzumiyaaoba/tpeg-core";
 import { tpegModuleFile } from "./grammar";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const docsPath = join(
-  __dirname,
-  "..",
-  "..",
-  "..",
-  "docs",
-  "peg-grammar.md",
-);
+const docsPath = join(__dirname, "..", "..", "..", "docs", "peg-grammar.md");
 const docsContent = readFileSync(docsPath, "utf8");
 
 const fencedTpegBlocks = [

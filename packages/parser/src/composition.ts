@@ -186,10 +186,9 @@ const withOptionalAction = (parser: Parser<Expression>): Parser<Expression> => {
  * grammar-types.ts for the full semantics and `generateSequence` in
  * codegen.ts for how a `Sequence` containing one compiles to `commit(...)`.
  */
-const cutMarker: Parser<Expression> = map(
-  literal("~"),
-  (): Expression => ({ type: "Cut" }),
-);
+const cutMarker: Parser<Expression> = map(literal("~"), (): Expression => ({
+  type: "Cut",
+}));
 
 /**
  * Parses a single sequence element: either the `~` cut marker or an

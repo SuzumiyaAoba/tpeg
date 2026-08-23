@@ -37,11 +37,10 @@ export type Not<T extends false> = T extends false ? true : never;
  * type Test3 = Equal<string | number, string | number>; // true
  * ```
  */
-export type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends <
-  T,
->() => T extends Y ? 1 : 2
-  ? true
-  : false;
+export type Equal<X, Y> =
+  (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2
+    ? true
+    : false;
 
 /**
  * 2つの型の形状が一致するかをチェックするヘルパー型
@@ -63,11 +62,12 @@ export type ShapesMatch<T, U> = [T] extends [U]
  * type Test2 = TypesMatch<{a: string}, {a: string; b?: number}>; // false
  * ```
  */
-export type TypesMatch<T, U> = ShapesMatch<T, U> extends true
-  ? ShapesMatch<keyof T, keyof U> extends true
-    ? true
-    : false
-  : false;
+export type TypesMatch<T, U> =
+  ShapesMatch<T, U> extends true
+    ? ShapesMatch<keyof T, keyof U> extends true
+      ? true
+      : false
+    : false;
 
 /**
  * 型がneverかどうかをチェックする型
@@ -82,13 +82,14 @@ export type IsAny<T> = 0 extends 1 & T ? true : false;
 /**
  * 型がunknownかどうかをチェックする型
  */
-export type IsUnknown<T> = IsAny<T> extends true
-  ? false
-  : unknown extends T
-    ? T extends unknown
-      ? true
-      : false
-    : false;
+export type IsUnknown<T> =
+  IsAny<T> extends true
+    ? false
+    : unknown extends T
+      ? T extends unknown
+        ? true
+        : false
+      : false;
 
 /**
  * 関数の戻り値の型を取得するヘルパー型（TypeScript組み込みのReturnTypeの代替）
@@ -154,7 +155,5 @@ export type ExtractNodeType<T> = T extends { type: infer U } ? U : never;
 /**
  * 特定のノード型かどうかをチェックするヘルパー型
  */
-export type IsNodeType<
-  T,
-  NodeType extends string,
-> = ExtractNodeType<T> extends NodeType ? true : false;
+export type IsNodeType<T, NodeType extends string> =
+  ExtractNodeType<T> extends NodeType ? true : false;

@@ -82,7 +82,7 @@ bun run arith:examples
 ```typescript
 // mapを使った数値パース
 export const Integer = map(oneOrMore(Digit), (digits: string[]) =>
-  Number.parseInt(digits.join(""), 10)
+  Number.parseInt(digits.join(""), 10),
 );
 
 // Termパーサーでの直接計算
@@ -93,12 +93,15 @@ export function DirectTerm(input: string, pos: number): ParseResult<number> {
       // mapを使った直接計算
       return rest.reduce((left, [, operator, , right]) => {
         switch (operator) {
-          case "*": return left * right;
-          case "/": return left / right;
-          case "%": return left % right;
+          case "*":
+            return left * right;
+          case "/":
+            return left / right;
+          case "%":
+            return left % right;
         }
       }, first);
-    }
+    },
   )(input, pos);
 }
 ```
@@ -108,22 +111,20 @@ export function DirectTerm(input: string, pos: number): ParseResult<number> {
 ```typescript
 // TermパーサーでのAST構築
 export function Term(input: string, pos: number): ParseResult<ExpressionNode> {
-  return map(
-    seq(Factor, star(/* 乗算・除算・剰余 */)),
-    ([first, rest]) => {
-      // mapを使ってASTを構築
-      return rest.reduce((left, [, operator, , right]) =>
-        createBinaryOp(operator, left, right),
-        first
-      );
-    }
-  )(input, pos);
+  return map(seq(Factor, star(/* 乗算・除算・剰余 */)), ([first, rest]) => {
+    // mapを使ってASTを構築
+    return rest.reduce(
+      (left, [, operator, , right]) => createBinaryOp(operator, left, right),
+      first,
+    );
+  })(input, pos);
 }
 ```
 
 ## 式の例
 
 ### 基本演算
+
 - `1 + 2` → 3
 - `3 - 1` → 2
 - `2 * 3` → 6
@@ -131,22 +132,26 @@ export function Term(input: string, pos: number): ParseResult<ExpressionNode> {
 - `7 % 3` → 1
 
 ### 浮動小数点数
+
 - `1.5 + 2.5` → 4
 - `3.14 * 2` → 6.28
 - `10.0 / 3.0` → 3.3333333333333335
 
 ### 演算子優先度
+
 - `1 + 2 * 3` → 7
 - `2 * 3 + 1` → 7
 - `(1 + 2) * 3` → 9
 - `2 * (3 + 1)` → 8
 
 ### 複雑な式
+
 - `((1 + 2) * 3 - 4) / 2` → 2.5
 - `2 * 3 + 4 * 5 - 6 / 2` → 23
 - `1 + 2 * 3 + 4 * 5 + 6` → 33
 
 ### 符号付き数値
+
 - `-5 + 3` → -2
 - `+5 - 3` → 2
 

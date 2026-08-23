@@ -31,8 +31,10 @@ export interface TypedRuleDefinition extends RuleDefinition {
 /**
  * Enhanced grammar definition with type information
  */
-export interface TypedGrammarDefinition
-  extends Omit<GrammarDefinition, "rules"> {
+export interface TypedGrammarDefinition extends Omit<
+  GrammarDefinition,
+  "rules"
+> {
   /** Original grammar definition */
   originalGrammar: GrammarDefinition;
   /** Rules with type information */

@@ -1,7 +1,7 @@
 # TPEG self-hosting proof of concept
 
 This directory demonstrates that TPEG's own grammar-definition syntax can be
-described *in TPEG itself* (using labeled captures + semantic actions,
+described _in TPEG itself_ (using labeled captures + semantic actions,
 `docs/peg-grammar.md`'s "Semantic Actions" section), compiled by the existing
 `tpeg-cli`/`tpeg-parser` code generator, and validated against the
 hand-written parser (`packages/parser/src/composition.ts`, `grammar.ts`, etc.)
@@ -95,7 +95,7 @@ action or transform body, which is display-only (it doesn't affect where
 subsequent parsing resumes).
 
 **Generated files with a multi-label action failed `tsc --noEmit`** - this one
-*was* fixed (`codegen.ts`'s `wrapWithAction`/`filterReferencedLabels`), since
+_was_ fixed (`codegen.ts`'s `wrapWithAction`/`filterReferencedLabels`), since
 it's a defect in the semantic-actions feature itself, not something specific
 to this PoC. `captureSequence()`'s TS return type is a union of the merged
 capture object and a positional tuple, so destructuring an untyped `$$` (e.g.

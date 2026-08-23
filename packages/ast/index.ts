@@ -64,8 +64,7 @@ export interface Literal<T extends string = string> extends PegLiteral, Expr {
  * ```
  */
 export interface Identifier<T extends string = string>
-  extends PegLiteral,
-    Expr {
+  extends PegLiteral, Expr {
   type: "identifier";
   value: T;
 }
@@ -90,8 +89,7 @@ export interface Identifier<T extends string = string>
  * ```
  */
 export interface Sequence<T extends readonly ExprNode[] = ExprNode[]>
-  extends PegParent,
-    Expr {
+  extends PegParent, Expr {
   type: "sequence";
   children: [...T];
 }
@@ -116,8 +114,7 @@ export interface Sequence<T extends readonly ExprNode[] = ExprNode[]>
  * ```
  */
 export interface Choice<T extends readonly ExprNode[] = ExprNode[]>
-  extends PegParent,
-    Expr {
+  extends PegParent, Expr {
   type: "choice";
   children: [...T];
 }
@@ -139,8 +136,7 @@ export interface Choice<T extends readonly ExprNode[] = ExprNode[]>
  * ```
  */
 export interface Optional<T extends ExprNode = ExprNode>
-  extends PegParent,
-    Expr {
+  extends PegParent, Expr {
   type: "optional";
   children: [T];
 }
@@ -165,8 +161,7 @@ export interface Optional<T extends ExprNode = ExprNode>
  * ```
  */
 export interface MapNode<T extends ExprNode = ExprNode, F = unknown>
-  extends PegParent,
-    Expr {
+  extends PegParent, Expr {
   type: "map";
   children: [T];
   data: {
@@ -210,8 +205,10 @@ export interface Char<T extends string = string> extends PegLiteral {
  * };
  * ```
  */
-export interface Range<F extends string = string, T extends string = string>
-  extends PegLiteral {
+export interface Range<
+  F extends string = string,
+  T extends string = string,
+> extends PegLiteral {
   type: "range";
   value: [F, T];
 }
@@ -243,8 +240,8 @@ export type CharClassElement = Char<string> | Range<string, string>;
  */
 export interface CharClass<
   T extends readonly CharClassElement[] = CharClassElement[],
-> extends PegParent,
-    Expr {
+>
+  extends PegParent, Expr {
   type: "charClass";
   children: [...T];
 }
@@ -283,8 +280,7 @@ export interface AnyChar extends PegNode, Expr {
  * ```
  */
 export interface AndPredicate<T extends ExprNode = ExprNode>
-  extends PegParent,
-    Expr {
+  extends PegParent, Expr {
   type: "andPredicate";
   children: [T];
 }
@@ -306,8 +302,7 @@ export interface AndPredicate<T extends ExprNode = ExprNode>
  * ```
  */
 export interface NotPredicate<T extends ExprNode = ExprNode>
-  extends PegParent,
-    Expr {
+  extends PegParent, Expr {
   type: "notPredicate";
   children: [T];
 }
@@ -329,8 +324,7 @@ export interface NotPredicate<T extends ExprNode = ExprNode>
  * ```
  */
 export interface ZeroOrMore<T extends ExprNode = ExprNode>
-  extends PegParent,
-    Expr {
+  extends PegParent, Expr {
   type: "zeroOrMore";
   children: [T];
 }
@@ -352,8 +346,7 @@ export interface ZeroOrMore<T extends ExprNode = ExprNode>
  * ```
  */
 export interface OneOrMore<T extends ExprNode = ExprNode>
-  extends PegParent,
-    Expr {
+  extends PegParent, Expr {
   type: "oneOrMore";
   children: [T];
 }
@@ -435,8 +428,9 @@ export interface Definition<
  * };
  * ```
  */
-export interface Grammar<T extends readonly Definition[] = Definition[]>
-  extends PegParent {
+export interface Grammar<
+  T extends readonly Definition[] = Definition[],
+> extends PegParent {
   type: "grammar";
   children: [...T];
 }

@@ -2,6 +2,20 @@
   "name": "@suzumiyaaoba/tpeg-type-inference",
   "version": "0.1.0",
   "description": "Type inference system for TPEG grammar definitions",
+  "keywords": [
+    "grammar",
+    "parser",
+    "tpeg",
+    "type-inference",
+    "typescript"
+  ],
+  "license": "MIT",
+  "author": "TPEG Team",
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,7 +25,6 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md", "package.json"],
   "scripts": {
     "test": "cd ../.. && vp test packages/type-inference",
     "build": "tsc --project ./tsconfig.build.json",
@@ -22,8 +35,5 @@
   },
   "devDependencies": {
     "typescript": "^7.0.2"
-  },
-  "keywords": ["tpeg", "parser", "type-inference", "typescript", "grammar"],
-  "author": "TPEG Team",
-  "license": "MIT"
+  }
 }

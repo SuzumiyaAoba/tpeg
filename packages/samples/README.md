@@ -5,6 +5,7 @@ This package contains practical examples of the TPEG (TypeScript Parsing Express
 ## 📋 Available Samples
 
 ### 🧮 Arithmetic Calculator
+
 - **Location**: `src/arith/`
 - **Function**: Parsing and evaluation of arithmetic expressions
 - **Features**:
@@ -15,6 +16,7 @@ This package contains practical examples of the TPEG (TypeScript Parsing Express
   - Interactive REPL
 
 ### 📊 CSV Parser
+
 - **Location**: `src/csv/`
 - **Function**: Parsing CSV format data
 - **Features**:
@@ -25,6 +27,7 @@ This package contains practical examples of the TPEG (TypeScript Parsing Express
   - Proper handling of empty fields
 
 ### 📋 JSON Parser
+
 - **Location**: `src/json/`
 - **Function**: Parsing JSON format data
 - **Features**:
@@ -34,6 +37,7 @@ This package contains practical examples of the TPEG (TypeScript Parsing Express
   - Proper whitespace handling
 
 ### 📝 PEG Meta-Grammar
+
 - **Location**: `src/peg/`
 - **Function**: Parsing PEG grammar itself
 - **Features**:
@@ -44,6 +48,7 @@ This package contains practical examples of the TPEG (TypeScript Parsing Express
 ## 🚀 Usage
 
 ### Running All Samples
+
 ```bash
 # Use the main sample runner
 bun run samples
@@ -59,6 +64,7 @@ bun run samples --all
 ```
 
 ### Running Individual Samples
+
 ```bash
 # Arithmetic calculator
 bun run arith              # Basic demo
@@ -76,6 +82,7 @@ bun run peg                # PEG grammar demo
 ```
 
 ### Running Tests
+
 ```bash
 # Run all tests
 bun test
@@ -90,7 +97,9 @@ bun test src/csv/csv.spec.ts
 ## 📚 Learning Points
 
 ### 1. Parser Combinators
+
 Each sample demonstrates how to use TPEG's basic parser combinators:
+
 - `literal()` - Literal string matching
 - `choice()` - Alternative handling
 - `seq()` - Sequence handling
@@ -98,16 +107,19 @@ Each sample demonstrates how to use TPEG's basic parser combinators:
 - `zeroOrMore()`, `oneOrMore()` - Repetition patterns
 
 ### 2. Error Handling
+
 - Providing meaningful error messages
 - Proper handling of parse failures
 - Error reporting with position information
 
 ### 3. Performance Considerations
+
 - Using memoization
 - Efficient parser structures
 - Processing large datasets
 
 ### 4. Practical Patterns
+
 - Handling recursive grammars
 - Proper whitespace handling
 - Data transformation and AST construction
@@ -115,6 +127,7 @@ Each sample demonstrates how to use TPEG's basic parser combinators:
 ## 🔧 Development
 
 ### Project Structure
+
 ```
 src/
 ├── arith/          # Arithmetic calculator sample
@@ -139,6 +152,7 @@ src/
 ```
 
 ### Adding New Samples
+
 1. Create a new directory under `src/`
 2. Create parser implementation file
 3. Create demo file (`demo.ts`)
@@ -147,6 +161,7 @@ src/
 6. Register sample in `src/index.ts`
 
 ### Coding Standards
+
 - Use TypeScript strict mode
 - Provide proper type annotations
 - Maintain comprehensive test coverage
@@ -169,4 +184,4 @@ New samples and sample improvements are welcome! Please follow these guidelines:
 
 ## 📄 License
 
-MIT License - See [LICENSE](../../LICENSE) file for details. 
+MIT License - See [LICENSE](../../LICENSE) file for details.

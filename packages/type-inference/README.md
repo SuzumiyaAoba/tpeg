@@ -28,39 +28,49 @@ npm install @suzumiyaaoba/tpeg-type-inference
 ### Basic Type Inference
 
 ```typescript
-import { TypeInferenceEngine } from '@suzumiyaaoba/tpeg-type-inference';
-import { 
-  createGrammarDefinition, 
-  createRuleDefinition, 
+import { TypeInferenceEngine } from "@suzumiyaaoba/tpeg-type-inference";
+import {
+  createGrammarDefinition,
+  createRuleDefinition,
   createStringLiteral,
   createCharacterClass,
   createCharRange,
   createIdentifier,
   createPlus,
   createSequence,
-  createChoice
-} from '@suzumiyaaoba/tpeg-core';
+  createChoice,
+} from "@suzumiyaaoba/tpeg-core";
 
 // Create a simple grammar
-const grammar = createGrammarDefinition('MyGrammar', [], [
-  createRuleDefinition('greeting', createStringLiteral('hello', '"')),
-  createRuleDefinition('digit', createCharacterClass([createCharRange('0', '9')])),
-  createRuleDefinition('number', createPlus(createIdentifier('digit'))),
-  createRuleDefinition('expression', createChoice([
-    createStringLiteral('hello', '"'),
-    createStringLiteral('world', '"')
-  ]))
-]);
+const grammar = createGrammarDefinition(
+  "MyGrammar",
+  [],
+  [
+    createRuleDefinition("greeting", createStringLiteral("hello", '"')),
+    createRuleDefinition(
+      "digit",
+      createCharacterClass([createCharRange("0", "9")]),
+    ),
+    createRuleDefinition("number", createPlus(createIdentifier("digit"))),
+    createRuleDefinition(
+      "expression",
+      createChoice([
+        createStringLiteral("hello", '"'),
+        createStringLiteral("world", '"'),
+      ]),
+    ),
+  ],
+);
 
 // Perform type inference
 const engine = new TypeInferenceEngine();
 const result = engine.inferGrammarTypes(grammar);
 
 // Access inferred types
-console.log(result.ruleTypes.get('greeting')?.typeString); // '"hello"'
-console.log(result.ruleTypes.get('digit')?.typeString); // 'string'
-console.log(result.ruleTypes.get('number')?.typeString); // 'string[]'
-console.log(result.ruleTypes.get('expression')?.typeString); // '"hello" | "world"'
+console.log(result.ruleTypes.get("greeting")?.typeString); // '"hello"'
+console.log(result.ruleTypes.get("digit")?.typeString); // 'string'
+console.log(result.ruleTypes.get("number")?.typeString); // 'string[]'
+console.log(result.ruleTypes.get("expression")?.typeString); // '"hello" | "world"'
 ```
 
 ### Advanced Configuration
@@ -75,23 +85,23 @@ const engine = new TypeInferenceEngine({
   enableCaching: true,
   detectCircularDependencies: true,
   customTypeMappings: new Map([
-    ['email', 'string'],
-    ['url', 'string'],
-    ['uuid', 'string']
-  ])
+    ["email", "string"],
+    ["url", "string"],
+    ["uuid", "string"],
+  ]),
 });
 ```
 
 ### Type Integration with Code Generation
 
 ```typescript
-import { TypeIntegrationEngine } from '@suzumiyaaoba/tpeg-type-inference';
+import { TypeIntegrationEngine } from "@suzumiyaaoba/tpeg-type-inference";
 
 const integrationEngine = new TypeIntegrationEngine({
   strictTypes: true,
   includeDocumentation: true,
   generateTypeGuards: true,
-  typeNamespace: 'MyGrammarTypes'
+  typeNamespace: "MyGrammarTypes",
 });
 
 const typedGrammar = integrationEngine.createTypedGrammar(grammar);
@@ -104,7 +114,7 @@ console.log(typedGrammar.typeDefinitions);
 //   export type DigitResult = string;
 //   export type NumberResult = string[];
 //   export type ExpressionResult = "hello" | "world";
-//   
+//
 //   export function isGreetingResult(value: unknown): value is GreetingResult {
 //     return typeof value === "string" && value === "hello";
 //   }
@@ -126,9 +136,9 @@ console.log(parserInterface);
 ### Complex Grammar Example
 
 ```typescript
-import { 
-  createGrammarDefinition, 
-  createRuleDefinition, 
+import {
+  createGrammarDefinition,
+  createRuleDefinition,
   createStringLiteral,
   createCharacterClass,
   createCharRange,
@@ -136,50 +146,67 @@ import {
   createSequence,
   createChoice,
   createOptional,
-  createStar
-} from '@suzumiyaaoba/tpeg-core';
+  createStar,
+} from "@suzumiyaaoba/tpeg-core";
 
 // JSON-like grammar
-const jsonGrammar = createGrammarDefinition('JSONGrammar', [], [
-  createRuleDefinition('string', createStringLiteral('"', '"')),
-  createRuleDefinition('number', createCharacterClass([createCharRange('0', '9')])),
-  createRuleDefinition('boolean', createChoice([
-    createStringLiteral('true', '"'),
-    createStringLiteral('false', '"')
-  ])),
-  createRuleDefinition('array', createSequence([
-    createStringLiteral('[', '"'),
-    createOptional(createChoice([
-      createCharacterClass([createCharRange('0', '9')]),
-      createStringLiteral('"', '"')
-    ])),
-    createStar(createSequence([
-      createStringLiteral(',', '"'),
+const jsonGrammar = createGrammarDefinition(
+  "JSONGrammar",
+  [],
+  [
+    createRuleDefinition("string", createStringLiteral('"', '"')),
+    createRuleDefinition(
+      "number",
+      createCharacterClass([createCharRange("0", "9")]),
+    ),
+    createRuleDefinition(
+      "boolean",
       createChoice([
-        createCharacterClass([createCharRange('0', '9')]),
-        createStringLiteral('"', '"')
-      ])
-    ])),
-    createStringLiteral(']', '"')
-  ]))
-]);
+        createStringLiteral("true", '"'),
+        createStringLiteral("false", '"'),
+      ]),
+    ),
+    createRuleDefinition(
+      "array",
+      createSequence([
+        createStringLiteral("[", '"'),
+        createOptional(
+          createChoice([
+            createCharacterClass([createCharRange("0", "9")]),
+            createStringLiteral('"', '"'),
+          ]),
+        ),
+        createStar(
+          createSequence([
+            createStringLiteral(",", '"'),
+            createChoice([
+              createCharacterClass([createCharRange("0", "9")]),
+              createStringLiteral('"', '"'),
+            ]),
+          ]),
+        ),
+        createStringLiteral("]", '"'),
+      ]),
+    ),
+  ],
+);
 
 const engine = new TypeInferenceEngine({
   inferArrayTypes: true,
   inferUnionTypes: true,
   inferObjectTypes: true,
-  generateDocumentation: true
+  generateDocumentation: true,
 });
 
 const result = engine.inferGrammarTypes(jsonGrammar);
 
 // Check for circular dependencies
-console.log('Circular dependencies:', result.circularDependencies);
+console.log("Circular dependencies:", result.circularDependencies);
 
 // Get type information for specific rules
-const stringType = result.ruleTypes.get('string');
-console.log('String rule type:', stringType?.typeString);
-console.log('String rule documentation:', stringType?.documentation);
+const stringType = result.ruleTypes.get("string");
+console.log("String rule type:", stringType?.typeString);
+console.log("String rule documentation:", stringType?.documentation);
 ```
 
 ### Utility Methods
@@ -189,16 +216,19 @@ const integrationEngine = new TypeIntegrationEngine();
 const typedGrammar = integrationEngine.createTypedGrammar(grammar);
 
 // Get type info for specific rule
-const typeInfo = integrationEngine.getTypeInfo(typedGrammar, 'greeting');
+const typeInfo = integrationEngine.getTypeInfo(typedGrammar, "greeting");
 console.log(typeInfo?.typeString); // '"hello"'
 
 // Check for circular dependencies
-const hasCircular = integrationEngine.hasCircularDependency(typedGrammar, 'ruleName');
-console.log('Has circular dependency:', hasCircular);
+const hasCircular = integrationEngine.hasCircularDependency(
+  typedGrammar,
+  "ruleName",
+);
+console.log("Has circular dependency:", hasCircular);
 
 // Get dependencies for a rule
-const dependencies = integrationEngine.getDependencies(typedGrammar, 'number');
-console.log('Dependencies:', dependencies); // ['digit']
+const dependencies = integrationEngine.getDependencies(typedGrammar, "number");
+console.log("Dependencies:", dependencies); // ['digit']
 ```
 
 ## API Reference
@@ -250,12 +280,12 @@ Combines type inference with code generation for enhanced type-safe parser gener
 
 ```typescript
 interface InferredType {
-  typeString: string;           // TypeScript type string
-  nullable: boolean;           // Whether the type can be null/undefined
-  isArray: boolean;           // Whether the type is an array
-  baseType: string;           // Base type (string, number, etc.)
-  imports: string[];          // Required imports
-  documentation: string;      // Generated documentation
+  typeString: string; // TypeScript type string
+  nullable: boolean; // Whether the type can be null/undefined
+  isArray: boolean; // Whether the type is an array
+  baseType: string; // Base type (string, number, etc.)
+  imports: string[]; // Required imports
+  documentation: string; // Generated documentation
 }
 ```
 
@@ -263,10 +293,10 @@ interface InferredType {
 
 ```typescript
 interface GrammarTypeInference {
-  ruleTypes: Map<string, InferredType>;           // Type information for each rule
-  circularDependencies: string[][];               // Detected circular dependencies
-  imports: string[];                              // Required imports
-  documentation: string;                          // Generated documentation
+  ruleTypes: Map<string, InferredType>; // Type information for each rule
+  circularDependencies: string[][]; // Detected circular dependencies
+  imports: string[]; // Required imports
+  documentation: string; // Generated documentation
 }
 ```
 
@@ -274,11 +304,11 @@ interface GrammarTypeInference {
 
 ```typescript
 interface TypedGrammarDefinition extends Omit<GrammarDefinition, "rules"> {
-  originalGrammar: GrammarDefinition;             // Original grammar definition
-  rules: TypedRuleDefinition[];                   // Rules with type information
-  typeInference: GrammarTypeInference;           // Type inference results
-  typeDefinitions: string;                        // Generated TypeScript type definitions
-  imports: string[];                              // Required imports
+  originalGrammar: GrammarDefinition; // Original grammar definition
+  rules: TypedRuleDefinition[]; // Rules with type information
+  typeInference: GrammarTypeInference; // Type inference results
+  typeDefinitions: string; // Generated TypeScript type definitions
+  imports: string[]; // Required imports
 }
 ```
 
@@ -300,4 +330,4 @@ The type inference system gracefully handles various error conditions:
 
 ## License
 
-MIT 
+MIT

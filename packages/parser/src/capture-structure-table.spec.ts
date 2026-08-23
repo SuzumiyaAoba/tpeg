@@ -188,12 +188,16 @@ describe("docs/peg-grammar.md's Capture Structure Reference Table (each row actu
   test.each(ROWS.map((row, i) => [i, row] as const))(
     "row #%i (`%s`) produces the value the table's Capture Structure column claims",
     async (_i, row) => {
-      const core = (await import(
-        "@suzumiyaaoba/tpeg-core"
-      )) as unknown as Record<string, unknown>;
-      const combinator = (await import(
-        "@suzumiyaaoba/tpeg-combinator"
-      )) as unknown as Record<string, unknown>;
+      const core =
+        (await import("@suzumiyaaoba/tpeg-core")) as unknown as Record<
+          string,
+          unknown
+        >;
+      const combinator =
+        (await import("@suzumiyaaoba/tpeg-combinator")) as unknown as Record<
+          string,
+          unknown
+        >;
 
       const source = `grammar G {\n  start = ${row.pattern}\n${row.extraRules ?? ""}\n}`;
       const parsed = grammarDefinition(source, 0);

@@ -5,12 +5,14 @@ A comprehensive demonstration of TPEG (TypeScript Parsing Expression Grammar) pa
 ## 🎯 What's Demonstrated
 
 ### Basic Parsing Features
+
 - **String Literals**: `"hello world"`, `'single quotes'`, escape sequences
 - **Character Classes**: `[a-z]`, `[0-9A-F]`, `[abc]`
 - **Identifiers**: Variable names, camelCase, snake_case, Unicode support
 - **Expression Composition**: Sequences, choices, groupings
 
 ### Advanced Grammar Features (Phase 1.6)
+
 - **Grammar Annotations**: `@version`, `@description`, `@author`
 - **Rule Definitions**: Complex parsing rules with expressions
 - **Complete Grammar Blocks**: Structured grammar definitions
@@ -33,17 +35,22 @@ bun run demo:grammar
 ## 📚 Demo Scripts
 
 ### 1. Complete Demo (`bun run demo`)
+
 A comprehensive overview of all TPEG features with real-world examples including a calculator grammar definition.
 
 ### 2. Basic Demo (`bun run demo:basic`)
+
 Demonstrates fundamental parsing capabilities:
+
 - String literal parsing with escape sequences
 - Character class matching
 - Identifier recognition
 - Expression composition (sequences, choices, groups)
 
 ### 3. Grammar Demo (`bun run demo:grammar`)
+
 Showcases Phase 1.6 grammar definition features:
+
 - Grammar annotations for metadata
 - Rule definitions with complex expressions
 - Complete grammar blocks
@@ -51,7 +58,9 @@ Showcases Phase 1.6 grammar definition features:
 - Real-world grammar examples
 
 ### 4. File-Based Demo (`bun run demo:files`)
+
 Demonstrates file-based parsing workflows:
+
 - Loading grammar definitions from .tpeg files
 - Reading input samples from text files
 - Real-world parsing scenarios
@@ -63,7 +72,11 @@ Demonstrates file-based parsing workflows:
 
 ```typescript
 import { parse } from "@suzumiyaaoba/tpeg-core";
-import { stringLiteral, identifier, tpegExpression } from "@suzumiyaaoba/tpeg-parser";
+import {
+  stringLiteral,
+  identifier,
+  tpegExpression,
+} from "@suzumiyaaoba/tpeg-parser";
 
 // Parse a string literal
 const result1 = parse(stringLiteral)('"hello world"');
@@ -102,6 +115,7 @@ const result = parse(grammarDefinition)(grammarSource);
 ## 🌟 Key Features Highlighted
 
 ### ✅ Implemented Features
+
 - String literals with escape sequences (`\\n`, `\\t`, `\\"`, etc.)
 - Character classes and ranges `[a-z]`, `[0-9A-F]`
 - Identifiers with underscore support
@@ -114,6 +128,7 @@ const result = parse(grammarDefinition)(grammarSource);
 - Comprehensive error reporting with position info
 
 ### 🏗️ Architecture Benefits
+
 - **Monorepo Structure**: Multiple focused packages
 - **TypeScript Strict Mode**: Full compliance with `@tsconfig/strictest`
 - **Comprehensive Testing**: high test coverage across the monorepo (run `bun run test` for the current count — it drifts with every commit)
