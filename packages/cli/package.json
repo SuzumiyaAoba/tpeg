@@ -22,7 +22,7 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "tsc --project ./tsconfig.build.json",
+    "build": "cd ../.. && vp -C packages/cli pack",
     "dev": "bun run src/cli.ts",
     "test": "cd ../.. && vp test packages/cli",
     "typecheck": "tsc --noEmit"

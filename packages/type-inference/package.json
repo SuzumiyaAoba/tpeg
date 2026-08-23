@@ -27,7 +27,7 @@
   },
   "scripts": {
     "test": "cd ../.. && vp test packages/type-inference",
-    "build": "tsc --project ./tsconfig.build.json",
+    "build": "cd ../.. && vp -C packages/type-inference pack",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

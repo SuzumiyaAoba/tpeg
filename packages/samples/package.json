@@ -17,8 +17,7 @@
     "test": "cd ../.. && vp test packages/samples",
     "test:watch": "cd ../.. && vp test watch packages/samples",
     "typecheck": "tsc --noEmit",
-    "build": "bun build ./src --outdir ./dist",
-    "build:types": "tsc --emitDeclarationOnly --skipLibCheck --declaration --outDir ./dist"
+    "build": "cd ../.. && vp -C packages/samples pack"
   },
   "dependencies": {
     "@suzumiyaaoba/tpeg-combinator": "workspace:*",

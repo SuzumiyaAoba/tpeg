@@ -28,7 +28,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "cd ../.. && vp -C packages/parser-sample pack",
     "demo": "bun run src/demo.ts",
     "demo:basic": "bun run src/basic-demo.ts",
     "demo:grammar": "bun run src/grammar-demo.ts",

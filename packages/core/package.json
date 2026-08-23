@@ -25,8 +25,7 @@
     "test:ci": "cd ../.. && vp test run packages/core --reporter=verbose --bail=1",
     "test:grep": "cd ../.. && vp test run packages/core -t",
     "typecheck": "tsc --noEmit",
-    "build": "bun run build:types && bun build --target=node --sourcemap ./index.ts --outdir=./dist",
-    "build:types": "tsc --project ./tsconfig.build.json"
+    "build": "cd ../.. && vp -C packages/core pack"
   },
   "dependencies": {},
   "devDependencies": {

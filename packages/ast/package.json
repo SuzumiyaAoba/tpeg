@@ -19,8 +19,7 @@
   "scripts": {
     "dev": "bun run ./index.ts",
     "typecheck": "tsc --noEmit",
-    "build": "bun run build:types && bun build ./index.ts --outdir ./dist",
-    "build:types": "tsc --project ./tsconfig.build.json"
+    "build": "cd ../.. && vp -C packages/ast pack"
   },
   "dependencies": {
     "@types/unist": "^3.0.3"

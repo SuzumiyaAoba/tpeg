@@ -15,7 +15,7 @@
     "test:coverage": "vp test run --coverage",
     "test:watch": "vp test watch",
     "test:perf": "TPEG_STRICT_PERF=1 vp test",
-    "typecheck": "bun run typecheck:all",
+    "typecheck": "vp run -r typecheck",
     "typecheck:all": "bun run typecheck:core && bun run typecheck:ast && bun run typecheck:combinator && bun run typecheck:parser && bun run typecheck:generator && bun run typecheck:type-inference && bun run typecheck:parser-sample && bun run typecheck:samples && bun run typecheck:cli",
     "typecheck:core": "cd packages/core && bun run typecheck",
     "typecheck:ast": "cd packages/ast && bun run typecheck",
@@ -26,7 +26,7 @@
     "typecheck:parser-sample": "cd packages/parser-sample && bun run typecheck",
     "typecheck:samples": "cd packages/samples && bun run typecheck",
     "typecheck:cli": "cd packages/cli && bun run typecheck",
-    "build": "bun run build:all",
+    "build": "vp run -r build",
     "build:all": "bun run build:core && bun run build:ast && bun run build:combinator && bun run build:parser && bun run build:generator && bun run build:type-inference && bun run build:parser-sample && bun run build:samples && bun run build:cli",
     "build:core": "cd packages/core && bun run build",
     "build:ast": "cd packages/ast && bun run build",
@@ -60,5 +60,12 @@
   "overrides": {
     "vite": "npm:@voidzero-dev/vite-plus-core@latest",
     "vitest": "4.1.10"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "bun",
+      "version": "1.4.0",
+      "onFail": "download"
+    }
   }
 }

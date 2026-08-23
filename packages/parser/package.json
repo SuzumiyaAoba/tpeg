@@ -31,7 +31,7 @@
     }
   },
   "scripts": {
-    "build": "tsc --project ./tsconfig.build.json",
+    "build": "cd ../.. && vp -C packages/parser pack",
     "test": "cd ../.. && vp test packages/parser",
     "test:watch": "cd ../.. && vp test watch packages/parser",
     "typecheck": "tsc --noEmit && tsc --noEmit -p bench/tsconfig.json",

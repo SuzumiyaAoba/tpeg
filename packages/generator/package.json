@@ -29,7 +29,7 @@
     }
   },
   "scripts": {
-    "build": "tsc --project ./tsconfig.build.json",
+    "build": "cd ../.. && vp -C packages/generator pack",
     "typecheck": "tsc --noEmit",
     "test": "cd ../.. && vp test packages/generator"
   },
