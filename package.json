@@ -7,10 +7,10 @@
   "type": "module",
   "scripts": {
     "prepare": "bunx husky",
-    "lint": "bunx biome lint ./packages",
-    "check": "bunx biome check ./packages",
-    "fix": "bunx biome check --fix --unsafe ./packages",
-    "format": "bunx biome format --write ./packages",
+    "lint": "vp lint",
+    "check": "vp check",
+    "fix": "vp check --fix",
+    "format": "vp fmt",
     "test": "vp test",
     "test:coverage": "vp test run --coverage",
     "test:watch": "vp test watch",
@@ -48,7 +48,6 @@
     "husky": "^9.1.7"
   },
   "devDependencies": {
-    "@biomejs/biome": "1.9.4",
     "@tsconfig/strictest": "2.0.8",
     "@types/bun": "1.4.0",
     "@vitest/coverage-v8": "4.1.10",

@@ -31,6 +31,14 @@ export default defineConfig({
     },
     rules: {
       "typescript/no-explicit-any": "warn",
+      "eslint/no-unused-vars": [
+        "error",
+        {
+          caughtErrorsIgnorePattern: "^_",
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+        },
+      ],
     },
   },
   test: {

@@ -17,7 +17,7 @@ alwaysApply: false
   - Use UPPER_CASE for constants
 - Keep functions small and focused on a single responsibility
 - Avoid unnecessary complexity and deep nesting
-- Use `prettier` and `biome` for consistent formatting
+- Use Vite+'s `vp fmt`/`vp lint` (Oxfmt/Oxlint) for consistent formatting
 - Be explicit about types in TypeScript
 
 ## Type Safety

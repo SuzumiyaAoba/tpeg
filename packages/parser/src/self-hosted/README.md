@@ -115,9 +115,10 @@ bun run packages/cli/src/cli.ts packages/parser/src/self-hosted/grammar-source/0
   -o packages/parser/src/self-hosted/generated/grammar.generated.ts
 ```
 
-(the `.generated.ts` suffix matches this repo's `biome.json` ignore pattern, so
-the machine-generated output - which uses `Parser<any>` throughout and would
-otherwise fail lint - is exempted from formatting/lint checks.)
+(the `.generated.ts` suffix matches this repo's `vite.config.ts` `fmt`/`lint`
+ignore patterns, so the machine-generated output - which uses `Parser<any>`
+throughout and would otherwise fail lint - is exempted from formatting/lint
+checks.)
 
 (repeat for `01`-`03` against their respective output files), then:
 
