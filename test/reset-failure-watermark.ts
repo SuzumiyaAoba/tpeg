@@ -35,7 +35,7 @@
  * are reset here so neither family of specs depends on the other's
  * watermark instance being clean.
  */
-import { beforeEach } from "bun:test";
+import { beforeEach } from "vite-plus/test";
 import { resetFailureWatermark as resetFailureWatermarkFromSource } from "../packages/core/src/failure";
 import { resetFailureWatermark as resetFailureWatermarkFromPackage } from "@suzumiyaaoba/tpeg-core";
 

@@ -4,7 +4,7 @@
  * Tests for TPEG lookahead operators (&expr, !expr) parsing functionality.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { literal } from "@suzumiyaaoba/tpeg-core";
 import {

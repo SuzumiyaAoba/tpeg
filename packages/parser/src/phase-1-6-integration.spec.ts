@@ -4,7 +4,7 @@
  * with the main TPEG parser module.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { type Parser, parse } from "@suzumiyaaoba/tpeg-core";
 import {
   documentationComment,
@@ -125,9 +125,9 @@ describe("Phase 1.6 Integration Tests", () => {
   });
 
   describe("backward compatibility", () => {
-    test("should maintain existing TPEG expression parsing", () => {
+    test("should maintain existing TPEG expression parsing", async () => {
       // Import the main tpegExpression parser
-      const { tpegExpression } = require("./index") as typeof import("./index");
+      const { tpegExpression } = await import("./index");
 
       const result = testParse(tpegExpression, '"hello" / "world"');
       expect(result.success).toBe(true);
@@ -136,8 +136,8 @@ describe("Phase 1.6 Integration Tests", () => {
       }
     });
 
-    test("should maintain all existing exports", () => {
-      const index = require("./index");
+    test("should maintain all existing exports", async () => {
+      const index = await import("./index");
 
       // Check that all previous exports still exist
       expect(index.stringLiteral).toBeDefined();

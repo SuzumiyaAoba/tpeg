@@ -46,7 +46,7 @@
  * here just as much as `predictiveChoice` is.
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import { anyChar, literal } from "./basic";
 import { charClass, charClassRun, negatedCharClass } from "./char-class";
 import {

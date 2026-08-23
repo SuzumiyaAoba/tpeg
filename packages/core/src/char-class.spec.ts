@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import { charClass, charClassRun, negatedCharClass } from "./char-class";
 import { resetFailureWatermark } from "./failure";
 import { oneOrMore, zeroOrMore } from "./repetition";

@@ -1,4 +1,4 @@
-import { describe, it } from "bun:test";
+import { describe, it } from "vite-plus/test";
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { any, charClass, lit } from "@suzumiyaaoba/tpeg-core";
 

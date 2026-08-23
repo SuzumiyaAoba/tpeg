@@ -4,7 +4,7 @@
  * Tests for module resolution, dependency tracking, and circular dependency detection.
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import {
   CircularDependencyError,
   type FileSystemInterface,

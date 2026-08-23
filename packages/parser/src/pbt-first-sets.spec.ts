@@ -30,7 +30,7 @@
  * separately before treating a FIRST set as a valid filter).
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import type { Expression, GrammarDefinition } from "@suzumiyaaoba/tpeg-core";
 import { resetFailureWatermark } from "@suzumiyaaoba/tpeg-core";
 import fc from "fast-check";

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { scanBalancedBraces as handActionBlock } from "../brace-scanner";
 import { actionBlock as genActionBlock } from "./generated/action.generated";
 

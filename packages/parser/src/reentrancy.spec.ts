@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { grammarDefinition } from "./grammar";
 import { analyzeReentrancy } from "./reentrancy";
 import {

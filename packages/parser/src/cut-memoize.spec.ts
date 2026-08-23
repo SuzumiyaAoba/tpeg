@@ -4,7 +4,7 @@
  * compile it with the real code generator, and run the generated parser.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { type Parser, parse } from "@suzumiyaaoba/tpeg-core";
 import { promoteGlobalCuts } from "./ast-optimize";
 import { generateTypeScriptParser } from "./codegen";

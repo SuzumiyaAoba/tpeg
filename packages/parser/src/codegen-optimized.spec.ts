@@ -9,7 +9,7 @@
  * instance reuse across multiple `generateGrammar` calls.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import {
   OptimizedTPEGCodeGenerator,
   generateOptimizedTypeScriptParser,

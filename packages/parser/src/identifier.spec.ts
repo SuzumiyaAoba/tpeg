@@ -2,7 +2,7 @@
  * Identifier Parser Tests
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { identifier } from "./identifier";
 
 describe("identifier", () => {

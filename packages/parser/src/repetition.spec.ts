@@ -4,7 +4,7 @@
  * Tests for star, plus, optional, and quantified repetition operators.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   applyRepetition,

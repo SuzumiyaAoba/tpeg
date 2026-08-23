@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { generateTypeScriptParser } from "./codegen";
 import { generateOptimizedTypeScriptParser } from "./codegen-optimized";
 import { expression } from "./composition";

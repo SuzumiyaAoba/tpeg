@@ -20,14 +20,16 @@
  * composition.spec.ts for direct coverage of that parsing behavior.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse } from "@suzumiyaaoba/tpeg-core";
 import { tpegModuleFile } from "./grammar";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const docsPath = join(
-  import.meta.dir,
+  __dirname,
   "..",
   "..",
   "..",

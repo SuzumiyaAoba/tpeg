@@ -47,7 +47,7 @@
  *   faithfully rather than diverging from it.
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import {
   type CharSpecItem,
   type FirstCharFilter,

@@ -3,7 +3,7 @@
  * alternative.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { type Parser, parse } from "@suzumiyaaoba/tpeg-core";
 import { generateTypeScriptParser } from "./codegen";
 import { generateOptimizedTypeScriptParser } from "./codegen-optimized";

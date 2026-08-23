@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { expression as handExpression } from "../composition";
 import { choiceExpr as genExpression } from "./generated/composition.generated";
 

@@ -9,7 +9,7 @@
  * - Recursive pattern performance
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { generateTypeScriptParser, grammarDefinition } from "./index";
 import type { Expression } from "./types";
 import {

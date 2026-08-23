@@ -1,11 +1,11 @@
-import { describe, expect, it, mock } from "bun:test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { parse } from "@suzumiyaaoba/tpeg-core";
 import { literal } from "@suzumiyaaoba/tpeg-core";
 import { debug } from "./debug";
 
 describe("debug combinator", () => {
   it("should log success", () => {
-    const logger = mock(() => {});
+    const logger = vi.fn(() => {});
     const parser = debug(literal("abc"), "TestParser", {
       customLogger: logger,
       logSuccess: true,
@@ -21,7 +21,7 @@ describe("debug combinator", () => {
   });
 
   it("should log failure", () => {
-    const logger = mock(() => {});
+    const logger = vi.fn(() => {});
     const parser = debug(literal("abc"), "TestParser", {
       customLogger: logger,
       logFailure: true,
@@ -37,7 +37,7 @@ describe("debug combinator", () => {
   });
 
   it("should log input if requested", () => {
-    const logger = mock(() => {});
+    const logger = vi.fn(() => {});
     const parser = debug(literal("abc"), "TestParser", {
       customLogger: logger,
       logInput: true,

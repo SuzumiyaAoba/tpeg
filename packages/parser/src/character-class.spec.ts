@@ -2,7 +2,7 @@
  * Character Class Parser Tests
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { characterClass } from "./character-class";
 
 describe("characterClass", () => {

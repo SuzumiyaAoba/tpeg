@@ -4,7 +4,7 @@
  * Tests for parsing labeled expressions: name:expr
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { characterClass } from "./character-class";
 import { identifier } from "./identifier";
 import { labeledExpression, withOptionalLabel } from "./label";

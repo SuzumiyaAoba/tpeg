@@ -13,7 +13,7 @@
   },
   "files": ["dist", "README.md", "package.json"],
   "scripts": {
-    "test": "bun test",
+    "test": "cd ../.. && vp test packages/type-inference",
     "build": "tsc --project ./tsconfig.build.json",
     "typecheck": "tsc --noEmit"
   },

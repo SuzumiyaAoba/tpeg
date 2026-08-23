@@ -54,7 +54,7 @@
  * space instead of keeping a second, driftable copy.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { type Parser, parse } from "@suzumiyaaoba/tpeg-core";
 import {
   applyAstOptimizations,

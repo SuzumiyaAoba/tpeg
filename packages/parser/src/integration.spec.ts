@@ -5,7 +5,7 @@
  * Based on docs/peg-grammar.md specification.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { map, parse, sequence, star } from "@suzumiyaaoba/tpeg-core";
 import { grammarDefinition } from "./grammar";
 import { transformDefinition } from "./transforms";

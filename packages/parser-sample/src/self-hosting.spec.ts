@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 /**
  * Self-hosting verification: TPEG's own grammar syntax, described as a
  * `.tpeg` file (`examples/tpeg-self.tpeg`), is parsed by the hand-written
@@ -28,7 +28,8 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ParseResult, Parser } from "@suzumiyaaoba/tpeg-core";
 import { parse } from "@suzumiyaaoba/tpeg-core";
 import {
@@ -37,11 +38,12 @@ import {
   grammarDefinition,
 } from "@suzumiyaaoba/tpeg-parser";
 
-const EXAMPLES_DIR = join(import.meta.dir, "..", "examples");
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const EXAMPLES_DIR = join(__dirname, "..", "examples");
 const EXAMPLE_PATH = join(EXAMPLES_DIR, "tpeg-self.tpeg");
 // Outside src/ (and outside tsconfig.json's "src/**/*" include) so a
 // crashed run's leftover file can't be picked up by a later build/typecheck.
-const GENERATED_DIR = join(import.meta.dir, "..", ".generated");
+const GENERATED_DIR = join(__dirname, "..", ".generated");
 const source = readFileSync(EXAMPLE_PATH, "utf-8");
 const otherExampleFiles = readdirSync(EXAMPLES_DIR)
   .filter((f) => f.endsWith(".tpeg") && f !== "tpeg-self.tpeg")

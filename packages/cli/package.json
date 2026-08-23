@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc --project ./tsconfig.build.json",
     "dev": "bun run src/cli.ts",
-    "test": "bun test",
+    "test": "cd ../.. && vp test packages/cli",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

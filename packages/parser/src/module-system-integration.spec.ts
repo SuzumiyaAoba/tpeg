@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import type { ImportStatement, ModuleFile } from "@suzumiyaaoba/tpeg-core";
 import { type FileSystemInterface, ModuleResolver } from "./module-resolver.js";
 import { NamespaceManager } from "./namespace-manager.js";

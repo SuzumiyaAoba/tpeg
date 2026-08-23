@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { grammarDefinition as handGrammarDefinition } from "../grammar";
 import { grammarBlockNode as genGrammarDefinition } from "./generated/grammar.generated";
 

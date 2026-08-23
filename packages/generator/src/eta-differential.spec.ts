@@ -57,7 +57,7 @@
  * best-effort -- outcome.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { type Parser, parse } from "@suzumiyaaoba/tpeg-core";
 import {
   ALL_TEST_INPUTS,

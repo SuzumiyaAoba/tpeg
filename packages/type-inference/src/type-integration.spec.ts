@@ -2,7 +2,7 @@
  * Type Integration System Tests
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import {
   type GrammarDefinition,
   createCharRange,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { anyChar, literal } from "./basic";
 import { choice, sequence } from "./combinators";
 import { zeroOrMore } from "./repetition";

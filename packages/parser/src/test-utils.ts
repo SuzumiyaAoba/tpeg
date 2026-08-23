@@ -5,7 +5,7 @@
  * to reduce duplication across test files and ensure consistent testing patterns.
  */
 
-import { expect } from "bun:test";
+import { expect } from "vite-plus/test";
 import type {
   ParseFailure,
   ParseResult,

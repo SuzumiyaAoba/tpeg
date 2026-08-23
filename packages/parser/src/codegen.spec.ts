@@ -2,7 +2,7 @@
  * Tests for TPEG Code Generation System
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { TPEGCodeGenerator, generateTypeScriptParser } from "./codegen";
 import {
   createAnyChar,

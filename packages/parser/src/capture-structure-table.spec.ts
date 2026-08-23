@@ -23,7 +23,7 @@
  * sync by hand.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { generateTypeScriptParser } from "./codegen";
 import { grammarDefinition } from "./grammar";

@@ -2,7 +2,7 @@
  * Tests for Eta Template Engine Based Code Generator
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import {
   EtaTPEGCodeGenerator,
   generateEtaTypeScriptParser,

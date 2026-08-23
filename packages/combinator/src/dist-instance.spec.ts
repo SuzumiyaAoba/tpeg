@@ -34,7 +34,7 @@
  * `build` -> `typecheck` -> `test` order (see CLAUDE.md).
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import * as combinator from "@suzumiyaaoba/tpeg-combinator";
 import * as core from "@suzumiyaaoba/tpeg-core";
 

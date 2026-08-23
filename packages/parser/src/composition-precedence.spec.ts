@@ -15,7 +15,7 @@
  *   accidental future regressions.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { expression } from "./composition";
 import {
   createChoice,

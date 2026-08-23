@@ -23,7 +23,7 @@
  * run).
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import fc from "fast-check";
 import { anyChar, literal } from "./basic";
 import { charClass, negatedCharClass } from "./char-class";

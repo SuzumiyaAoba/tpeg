@@ -4,7 +4,7 @@
  * Advanced edge cases and comprehensive test coverage for labeled expressions
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { expression } from "./composition";
 import { withOptionalLabel } from "./label";
 import { stringLiteral } from "./string-literal";

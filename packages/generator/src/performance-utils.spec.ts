@@ -9,7 +9,7 @@
  * rule dependency graph, which is what `analyzeGrammarPerformance` builds.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { analyzeGrammarPerformance } from "./performance-utils";
 import type {
   Choice,

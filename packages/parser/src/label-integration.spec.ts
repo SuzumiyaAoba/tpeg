@@ -5,7 +5,7 @@
  * including repetition, lookahead, composition, and groups.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { expression } from "./composition";
 import type {
   Choice,

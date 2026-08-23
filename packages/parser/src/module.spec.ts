@@ -5,7 +5,7 @@
  * Based on docs/peg-grammar.md specification.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import {
   exportDeclaration,
   extendsClause,

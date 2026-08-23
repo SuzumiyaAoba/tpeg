@@ -4,7 +4,7 @@
  * Tests for quantified expression code generation functionality.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { TPEGCodeGenerator, generateTypeScriptParser } from "./codegen";
 import {
   createGrammarDefinition,

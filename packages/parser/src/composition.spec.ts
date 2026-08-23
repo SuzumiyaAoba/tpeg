@@ -4,7 +4,7 @@
  * Tests for sequence, choice, and group operators.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import {
   choiceOperator,
   expression,

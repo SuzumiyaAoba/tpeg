@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { choice, commit, literal, parse, seq } from "@suzumiyaaoba/tpeg-core";
 import { labeled, labeledWithContext, named, withDetailedError } from "./error";
 

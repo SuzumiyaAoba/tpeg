@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import { any, anyChar, benchmarkParser, lit, literal } from "./basic";
 import { resetFailureWatermark } from "./failure";
 import { parse } from "./utils";

@@ -16,7 +16,7 @@
  * than relying on distinct-looking input strings to save each test.
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import {
   FAIL,
   FAIL_FATAL,

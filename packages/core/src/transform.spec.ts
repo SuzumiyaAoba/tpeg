@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { lit } from "./basic";
 import { filter, map, mapError, mapResult, tap } from "./transform";
 import type { ParseSuccess } from "./types";

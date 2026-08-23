@@ -2,7 +2,7 @@
  * Type Inference System Tests
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import type { Expression, GrammarDefinition } from "@suzumiyaaoba/tpeg-core";
 import {
   createAnyChar,

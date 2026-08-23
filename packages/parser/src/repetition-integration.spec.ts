@@ -4,7 +4,7 @@
  * Tests that verify repetition operators work correctly with composition operators.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { expression } from "./composition";
 
 const pos = 0;

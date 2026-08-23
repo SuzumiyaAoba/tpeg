@@ -9,7 +9,7 @@
  * would.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { parse } from "@suzumiyaaoba/tpeg-core";
 import { generateTypeScriptParser } from "./codegen";
 import { generateOptimizedTypeScriptParser } from "./codegen-optimized";

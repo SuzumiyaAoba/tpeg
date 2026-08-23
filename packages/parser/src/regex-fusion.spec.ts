@@ -5,9 +5,10 @@
  * through `generateOptimizedTypeScriptParser({ enableRegexFusion: true })`.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { generateOptimizedTypeScriptParser } from "./codegen-optimized";
 import { analyzeFirstSets } from "./first-sets";
 import { grammarDefinition } from "./grammar";
@@ -31,6 +32,7 @@ import {
 import type { GrammarDefinition } from "./types";
 
 const ORIGIN = 0;
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /** Parses `src`, computes FIRST-set analysis, and returns a lookup from
  * rule name to `isRuleFusable`'s verdict -- the shape most tests below
@@ -869,7 +871,7 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
   it("produces identical results to the unfused path on the real calculator.tpeg example grammar (packages/parser-sample/examples/calculator.tpeg), across a battery of arithmetic inputs", async () => {
     const calculatorSrc = readFileSync(
       join(
-        import.meta.dir,
+        __dirname,
         "..",
         "..",
         "parser-sample",
@@ -958,7 +960,7 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
   it("advances line/column correctly across a fused match that spans a newline -- regexFused's single advancePos(text, pos) call must agree with per-character nextPos, exercised via calculator.tpeg's own whitespace = [ \\t\\n\\r]*", async () => {
     const calculatorSrc = readFileSync(
       join(
-        import.meta.dir,
+        __dirname,
         "..",
         "..",
         "parser-sample",

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import { literal as lit } from "./basic";
 import { charClass } from "./char-class";
 import { choice, commit, seq, withDefault } from "./combinators";

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { characterClass as handCharacterClass } from "../character-class";
 import { identifier as handIdentifier } from "../identifier";
 import { qualifiedIdentifier as handQualifiedIdentifier } from "../module";

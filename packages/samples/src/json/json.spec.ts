@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ParseResult } from "@suzumiyaaoba/tpeg-core";
 import { jsonParser, parseJSON } from "./json";
 import type { JSONObject, Parser } from "./json";
@@ -237,7 +237,7 @@ describe("parseJSON", () => {
 
   beforeEach(() => {
     originalConsoleError = console.error;
-    console.error = mock(() => {});
+    console.error = vi.fn(() => {});
   });
 
   afterEach(() => {

@@ -14,7 +14,7 @@
  * any future failure is reproducible from the printed seed alone.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   anyChar,

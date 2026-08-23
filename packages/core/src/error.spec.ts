@@ -1,4 +1,4 @@
-import { describe, expect, it, spyOn } from "bun:test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { lit } from "./basic";
 import { formatParseError, formatParseResult, reportParseError } from "./error";
 import type { ParseError, ParseResult } from "./types";
@@ -192,7 +192,7 @@ describe("reportParseError", () => {
     const result = parse(lit("abc"))(input);
 
     // Use spyOn to spy on console.error before calling the function
-    const spy = spyOn(console, "error").mockImplementation(() => {});
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     reportParseError(result, input);
 
@@ -207,7 +207,7 @@ describe("reportParseError", () => {
     const result = parse(lit("abc"))(input);
 
     // Use spyOn to spy on console.error
-    const spy = spyOn(console, "error").mockImplementation(() => {});
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     reportParseError(result, input);
 
@@ -221,7 +221,7 @@ describe("reportParseError", () => {
     const result = parse(lit("abc"))(input);
 
     // Use spyOn to spy on console.error
-    const spy = spyOn(console, "error").mockImplementation(() => {});
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     reportParseError(result, input, { colorize: false });
 

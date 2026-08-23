@@ -69,7 +69,7 @@
  * that would mostly generate non-matching inputs is needed.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import fc from "fast-check";
 import { generateTypeScriptParser } from "./codegen";

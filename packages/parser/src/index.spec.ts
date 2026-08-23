@@ -2,7 +2,7 @@
  * TPEG Parser Integration Tests
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { parse } from "@suzumiyaaoba/tpeg-core";
 import { basicSyntax, tpegFile } from "./index";
 

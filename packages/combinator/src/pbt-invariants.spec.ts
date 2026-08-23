@@ -11,7 +11,7 @@
  * Deliberately not a replacement -- both files stay.
  */
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import type { NonEmptyArray, Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   anyChar,
