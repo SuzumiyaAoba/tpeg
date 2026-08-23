@@ -184,20 +184,20 @@ __snapshots__/
 
 ```bash
 # すべてのスナップショットを更新
-bun test --update-snapshots
+bunx vp test -u
 
 # 特定のテストファイルのスナップショットを更新
-bun test --update-snapshots src/eta-generator.spec.ts
+bunx vp test packages/generator/src/eta-generator.spec.ts -u
 ```
 
 ### スナップショットの検証
 
 ```bash
 # スナップショットテストを実行
-bun test src/eta-generator.spec.ts
+bunx vp test packages/generator/src/eta-generator.spec.ts
 
 # 詳細な出力でテストを実行
-bun test src/eta-generator.spec.ts --verbose
+bunx vp test packages/generator/src/eta-generator.spec.ts --reporter=verbose
 ```
 
 ## ベストプラクティス
@@ -281,9 +281,9 @@ console.log("Exports:", result.exports);
 
 ```bash
 # 詳細な差分を表示
-bun test src/eta-generator.spec.ts --verbose
+bunx vp test packages/generator/src/eta-generator.spec.ts --reporter=verbose
 ```
 
 ## 継続的インテグレーション
 
-このリポジトリのCI（`.github/workflows/ci.yml`、`check` → `build` → `typecheck` → `test`の順）は`bun test`を実行するだけで、スナップショットテストも通常のテストスイートの一部として実行されます。スナップショットの自動更新のような特別な自動化はCI上には存在しません——スナップショットの意図的な更新はローカルで行い、変更を通常のコミット・レビューフローに乗せてください。
+このリポジトリのCI（`.github/workflows/ci.yml`、`check` → `build` → `typecheck` → `test`の順）は`vp test`（Vitest）を実行するだけで、スナップショットテストも通常のテストスイートの一部として実行されます。スナップショットの自動更新のような特別な自動化はCI上には存在しません——スナップショットの意図的な更新はローカルで行い、変更を通常のコミット・レビューフローに乗せてください。

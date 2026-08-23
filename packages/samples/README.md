@@ -85,13 +85,13 @@ bun run peg                # PEG grammar demo
 
 ```bash
 # Run all tests
-bun test
+bun run test
 
 # Run tests in watch mode
-bun test:watch
+bun run test:watch
 
 # Run specific test file
-bun test src/csv/csv.spec.ts
+bunx vp test packages/samples/src/csv/csv.spec.ts
 ```
 
 ## 📚 Learning Points

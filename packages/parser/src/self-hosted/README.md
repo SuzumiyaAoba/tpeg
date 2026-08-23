@@ -123,5 +123,5 @@ checks.)
 (repeat for `01`-`03` against their respective output files), then:
 
 ```bash
-cd packages/parser && bun test src/self-hosted/
+bunx vp test packages/parser/src/self-hosted/
 ```

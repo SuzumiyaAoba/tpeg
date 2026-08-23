@@ -363,13 +363,13 @@ const result = parse(csvParser)('name,age\n"John",30\n"Jane",25');
 
 ```bash
 # すべてのテストを実行
-bun test
+bun run test
 
 # 特定モジュールのテストを実行
-bun test src/primitive.spec.ts
+bunx vp test packages/combinator/src/primitive.spec.ts
 
 # モジュール横断の統合テストを実行
-bun test src/integration.spec.ts
+bunx vp test packages/combinator/src/integration.spec.ts
 ```
 
 ## APIリファレンス

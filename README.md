@@ -80,17 +80,19 @@ Requires [Bun](https://bun.sh/).
 ```bash
 bun install       # install dependencies for every workspace package
 
-bun run check     # biome check, read-only (what CI runs)
-bun run fix       # biome check --fix --unsafe, writes to source
-bun run format    # biome format --write
+bun run check     # vp check (Oxfmt + Oxlint), read-only (what CI runs)
+bun run fix       # vp check --fix, writes to source
+bun run format    # vp fmt (Oxfmt), writes to source
 
-bun run typecheck # tsc --noEmit for every package
-bun run build     # build every package in dependency order
+bun run typecheck # vp run -r typecheck (tsc --noEmit for every package)
+bun run build     # vp run -r build (tsdown, in dependency order)
 
-bun run test            # bun's own recursive test discovery, all packages
+bun run test            # vp test (Vitest), all packages
 bun run test:coverage   # same, with coverage
 bun run test:watch      # same, in watch mode
 ```
+
+The toolchain is [Vite+](https://viteplus.dev) (`vp`) -- Vite, Vitest, Rolldown, tsdown, Oxlint and Oxfmt behind one CLI -- configured from the root `vite.config.ts` plus a `pack` block in each package's own `vite.config.ts`. Bun remains the package manager.
 
 `lint`/`check` are read-only and safe to run in CI; `fix`/`format` write to files and are meant for local use. CI (`.github/workflows/ci.yml`) runs `check` → `build` → `typecheck` → `test`, in that order — `typecheck` runs after `build` because cross-package type resolution depends on each package's `dist/` existing.
 

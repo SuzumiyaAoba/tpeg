@@ -174,13 +174,13 @@ The package includes comprehensive tests including snapshot tests for code gener
 
 ```bash
 # Run all tests
-bun test
+bunx vp test
 
 # Run snapshot tests only
-bun test src/eta-generator.spec.ts
+bunx vp test packages/generator/src/eta-generator.spec.ts
 
 # Update snapshots after code changes
-bun test --update-snapshots
+bunx vp test -u
 ```
 
 ### Snapshot Testing
@@ -204,7 +204,7 @@ bun install
 bun run build
 
 # Run tests
-bun test
+bun run test
 
 # Type checking
 bun run typecheck

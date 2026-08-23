@@ -16,7 +16,9 @@ TPEG is a TypeScript library for building parsers using Parsing Expression Gramm
 - **tpeg-samples**: Legacy example parsers (JSON, CSV, arithmetic, PEG grammar), built directly on tpeg-core/tpeg-combinator
 - **tpeg-cli**: `tpeg` command-line tool that generates a standalone TypeScript parser from a `.tpeg` grammar file, built on tpeg-core + tpeg-parser
 
-For exact current counts (packages, files, tests), don't trust prose — run the commands in this file (`find packages -name "*.spec.ts" | wc -l`, `bun test`, etc.); they drift with every commit and this file doesn't get updated in lockstep.
+For exact current counts (packages, files, tests), don't trust prose — run the commands in this file (`find packages -name "*.spec.ts" | wc -l`, `vp test`, etc.); they drift with every commit and this file doesn't get updated in lockstep.
+
+The dev toolchain is [Vite+](https://viteplus.dev) (`vp`), which bundles Vite, Vitest, Rolldown, tsdown, Oxlint, and Oxfmt behind one CLI; Bun remains the package manager (`bun.lock`, workspace installs). All lint/format/test configuration lives in the root `vite.config.ts`, plus a `pack` block in each package's own `vite.config.ts` for its build. Run `bunx vp <command>` or the equivalent `bun run <script>`.
 
 ## Development Commands
 
@@ -38,38 +40,43 @@ bun run build:samples
 bun run build:cli
 ```
 
-Cross-package type resolution (e.g. `tpeg-combinator` importing types from `tpeg-core`) depends on each dependency's `dist/` existing — a package's `dist/index.d.ts` is what `tsc` resolves against for a workspace dependency. If you `bun run typecheck` on a package whose dependencies haven't been built yet, `tsc` can fall back to that dependency's raw `src/`, checked under _your_ package's compiler options instead of its own (this is why CI runs `build` before `typecheck`).
+Cross-package type resolution (e.g. `tpeg-combinator` importing types from `tpeg-core`) depends on each dependency's `dist/` existing — a package's `dist/index.d.ts` is what `tsc` resolves against for a workspace dependency. Each package's build now runs through tsdown (`vp pack`, invoked as each package's `build` script) rather than plain `tsc`, and rolls declarations into a single flat `dist/index.d.ts` per package. If you `bun run typecheck` on a package whose dependencies haven't been built yet, `tsc` can fall back to that dependency's raw `src/`, checked under _your_ package's compiler options instead of its own (this is why CI runs `build` before `typecheck`).
 
 ### Testing
 
 ```bash
 # Run all tests
-bun run test
+bun run test          # vp test
 
 # Run tests with coverage
-bun run test:coverage
+bun run test:coverage # vp test run --coverage
 
 # Watch tests during development
-bun run test:watch
+bun run test:watch    # vp test watch
 
-# Test specific package
-cd packages/core && bun test
+# Test specific package (path filter, run from repo root -- vp test
+# resolves vite.config.ts's setupFiles etc. relative to the root config)
+bunx vp test packages/core
 ```
+
+Specs import from `vite-plus/test` (a re-export of Vitest 4), not `bun:test` -- Bun is still the package manager and still runs standalone scripts (demos, `packages/parser/bench/`), but `vp test` (Vitest) is the actual test runner.
 
 ### Code Quality
 
 ```bash
 # Read-only checks (what CI runs) -- do not modify files
-bun run lint      # biome lint
-bun run check     # biome check (lint + format + import order); this is the CI gate
+bun run lint      # vp lint  (Oxlint)
+bun run check     # vp check (Oxfmt + Oxlint, and type-aware lint via tsgolint); this is the CI gate
 
 # Writes to files -- local use only
-bun run fix       # biome check --fix --unsafe
-bun run format    # biome format --write
+bun run fix       # vp check --fix
+bun run format    # vp fmt  (Oxfmt)
 
 # Type checking (all 9 packages with a package.json)
-bun run typecheck
+bun run typecheck # vp run -r typecheck
 ```
+
+Lint/format settings live in `vite.config.ts`'s `fmt`/`lint` blocks (ported from the former `biome.json`). `lint.options.typeCheck` is currently `false` -- `vp check` type-awareness (`typeAware: true`) is on, but full type-checking inside `vp check` is left off pending reconciling this repo's 9 differently-strict tsconfigs; `tsc --noEmit` per package (`bun run typecheck`) remains the source of truth for type errors.
 
 CI order is `check` → `build` → `typecheck` → `test` (see `.github/workflows/ci.yml`); run the same sequence locally before pushing if you want to catch what CI will catch.
 
@@ -183,7 +190,7 @@ const typeDefinitions = typedGrammar.typeDefinitions;
 
 ### Code Quality
 
-- Uses Biome for formatting and linting — see "Code Quality" under Development Commands above for which scripts are read-only vs. which write
+- Uses Oxlint/Oxfmt (via Vite+) for formatting and linting — see "Code Quality" under Development Commands above for which scripts are read-only vs. which write
 - Double quotes for strings, space indentation
 - ESM modules throughout
 - Keep functions small and focused on single responsibility

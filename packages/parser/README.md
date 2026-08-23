@@ -20,7 +20,7 @@ bun install
 bun run build
 
 # Run tests
-bun test
+bun run test
 ```
 
 ## Usage
@@ -202,7 +202,7 @@ The package includes comprehensive tests covering:
 Run tests with:
 
 ```bash
-bun test
+bun run test
 ```
 
 ## Dependencies

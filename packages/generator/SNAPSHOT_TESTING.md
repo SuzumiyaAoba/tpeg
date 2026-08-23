@@ -69,13 +69,13 @@ Each test case generates the following 4 snapshots:
 
 ```bash
 # Run all tests
-bun test
+bunx vp test
 
 # Run snapshot tests only
-bun test src/eta-generator.spec.ts
+bunx vp test packages/generator/src/eta-generator.spec.ts
 
 # Update snapshots after code changes
-bun test --update-snapshots
+bunx vp test -u
 ```
 
 ## Updating Snapshots
@@ -84,10 +84,10 @@ When code generation logic is changed, snapshots need to be updated:
 
 ```bash
 # Update all snapshots
-bun test --update-snapshots
+bunx vp test -u
 
 # Update snapshots for specific test file
-bun test src/eta-generator.spec.ts --update-snapshots
+bunx vp test packages/generator/src/eta-generator.spec.ts -u
 ```
 
 ## Adding Test Cases
@@ -141,7 +141,7 @@ it("should generate consistent code for new feature", async () => {
 ```bash
 # Delete snapshots and regenerate
 rm src/__snapshots__/eta-generator.spec.ts.snap
-bun test src/eta-generator.spec.ts
+bunx vp test packages/generator/src/eta-generator.spec.ts -u
 ```
 
 ## Related Files

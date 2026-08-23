@@ -20,7 +20,7 @@ bun install
 bun run build
 
 # テストを実行
-bun test
+bun run test
 ```
 
 ## 使用法
@@ -202,7 +202,7 @@ interface AnyChar {
 テストを実行：
 
 ```bash
-bun test
+bun run test
 ```
 
 ## 依存関係

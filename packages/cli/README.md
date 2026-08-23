@@ -41,5 +41,5 @@ tpeg grammar.tpeg --optimize --regex-fusion --auto-cut > parser.ts
 bun run dev -- grammar.tpeg      # run from source
 bun run build                    # compile to dist/
 bun run typecheck
-bun test
+bun run test
 ```

@@ -174,13 +174,13 @@ const generator = new EtaTPEGCodeGenerator({
 
 ```bash
 # すべてのテストを実行
-bun test
+bunx vp test
 
 # スナップショットテストのみ実行
-bun test src/eta-generator.spec.ts
+bunx vp test packages/generator/src/eta-generator.spec.ts
 
 # コード変更後にスナップショットを更新
-bun test --update-snapshots
+bunx vp test -u
 ```
 
 ### スナップショットテスト
@@ -204,7 +204,7 @@ bun install
 bun run build
 
 # テストを実行
-bun test
+bun run test
 
 # 型チェック
 bun run typecheck

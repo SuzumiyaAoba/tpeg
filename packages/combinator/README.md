@@ -363,13 +363,13 @@ The package includes comprehensive tests, one spec file per module (`primitive`,
 
 ```bash
 # Run all tests
-bun test
+bun run test
 
 # Run a specific module's tests
-bun test src/primitive.spec.ts
+bunx vp test packages/combinator/src/primitive.spec.ts
 
 # Run the cross-module integration tests
-bun test src/integration.spec.ts
+bunx vp test packages/combinator/src/integration.spec.ts
 ```
 
 ## API Reference
