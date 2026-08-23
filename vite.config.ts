@@ -9,6 +9,9 @@ const generatedIgnores = [
 ];
 
 export default defineConfig({
+  staged: {
+    "*.{ts,js,mjs,cjs,json}": "vp check --fix",
+  },
   fmt: {
     useTabs: false,
     tabWidth: 2,

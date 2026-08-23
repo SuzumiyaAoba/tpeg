@@ -6,7 +6,7 @@
   ],
   "type": "module",
   "scripts": {
-    "prepare": "bunx husky",
+    "prepare": "vp config",
     "lint": "vp lint",
     "check": "vp check",
     "fix": "vp check --fix",
@@ -43,9 +43,6 @@
     "demo:files": "cd packages/parser-sample && bun run demo:files",
     "bench": "bun run bench:parser",
     "bench:parser": "cd packages/parser && bun run bench"
-  },
-  "dependencies": {
-    "husky": "^9.1.7"
   },
   "devDependencies": {
     "@tsconfig/strictest": "2.0.8",
