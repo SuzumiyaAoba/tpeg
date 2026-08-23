@@ -78,7 +78,7 @@ bun run typecheck # vp run -r typecheck
 
 Lint/format settings live in `vite.config.ts`'s `fmt`/`lint` blocks (ported from the former `biome.json`). `lint.options.typeCheck` is currently `false` -- `vp check` type-awareness (`typeAware: true`) is on, but full type-checking inside `vp check` is left off pending reconciling this repo's 9 differently-strict tsconfigs; `tsc --noEmit` per package (`bun run typecheck`) remains the source of truth for type errors.
 
-CI order is `check` → `build` → `typecheck` → `test` (see `.github/workflows/ci.yml`); run the same sequence locally before pushing if you want to catch what CI will catch.
+CI order is `build` → `check` → `typecheck` → `test` (see `.github/workflows/ci.yml`); run the same sequence locally before pushing if you want to catch what CI will catch. `check` runs after `build`, not before, for the same reason `typecheck` does: `lint.options.typeAware` resolves workspace-package types through each dependency's `dist/index.d.ts`, so linting against a clean checkout with no `dist/` yet produces extra, misleading type-resolution warnings (still non-fatal -- `vp check`'s exit code is unaffected either way -- but noisier and inconsistent with a locally-built tree).
 
 ### Demo and Sample Parsers
 

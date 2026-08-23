@@ -20,7 +20,7 @@
     "dev": "bun run ./index.ts",
     "typecheck": "tsc --noEmit",
     "build": "cd ../.. && vp -C packages/combinator pack",
-    "benchmark": "bun test benchmark.spec.ts"
+    "benchmark": "cd ../.. && bunx vitest run packages/combinator/benchmark.spec.ts --config packages/combinator/vite.config.ts"
   },
   "dependencies": {
     "@suzumiyaaoba/tpeg-core": "workspace:*"
