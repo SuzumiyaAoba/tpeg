@@ -45,6 +45,25 @@ export {
   type GeneratedCode,
 } from "./codegen";
 
+// Export codegen building blocks shared with @suzumiyaaoba/tpeg-generator's
+// Eta-template generator, so it can defer to these instead of maintaining
+// its own (previously divergent - see that package's `eta-generator.ts`
+// module doc comment) copies of the same PEG-semantics-sensitive logic:
+// forward/self/mutual rule references need `lazy(() => ...)` to avoid a
+// TDZ `ReferenceError`, a string/char-class literal's value needs control
+// characters escaped to stay valid TypeScript source, and an
+// `ActionExpression`'s labels need the same collect/filter/wrap steps.
+export {
+  generateIdentifierCode,
+  generateQualifiedIdentifierCode,
+  generateStringLiteralCode,
+  generateCharacterClassCode,
+  collectTopLevelLabels,
+  filterReferencedLabels,
+  wrapWithAction,
+} from "./codegen";
+export { escapeStringLiteral } from "./constants";
+
 // Export optimized code generation system
 export {
   OptimizedTPEGCodeGenerator,
@@ -91,6 +110,29 @@ export {
   referenceRecognize,
   ReferenceInterpreterLimitError,
 } from "./reference-interpreter";
+
+// Export the random-grammar/random-input differential-fuzzing plumbing
+// this package's own `codegen-differential.spec.ts` is built on, so
+// `@suzumiyaaoba/tpeg-generator`'s `eta-differential.spec.ts` can drive the
+// exact same (grammar, input) space against its Eta-based generator without
+// keeping a second, driftable copy. See `differential-fuzz.ts`'s own module
+// doc comment.
+export {
+  makeRng,
+  pick,
+  LEAVES,
+  genExpr,
+  genRecursiveRuleBody,
+  genMemoizeAnnotation,
+  genGrammarSource,
+  FIXED_TEST_INPUTS,
+  RANDOM_TEST_INPUTS,
+  ALL_TEST_INPUTS,
+  compileStart,
+  keySuccessOnly,
+  keyWithValue,
+  type ResultKey,
+} from "./differential-fuzz";
 
 // Export AST rewrite passes (left-factoring, character-class merging,
 // negative-lookahead degeneration, automatic cut insertion). None of

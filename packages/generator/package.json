@@ -29,7 +29,9 @@
   "license": "MIT",
   "dependencies": {
     "eta": "^3.4.0",
-    "@suzumiyaaoba/tpeg-core": "workspace:*"
+    "@suzumiyaaoba/tpeg-core": "workspace:*",
+    "@suzumiyaaoba/tpeg-combinator": "workspace:*",
+    "@suzumiyaaoba/tpeg-parser": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

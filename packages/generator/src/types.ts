@@ -7,6 +7,7 @@
  */
 
 import type {
+  ActionExpression,
   AnyChar,
   CharacterClass,
   Choice,
@@ -49,6 +50,7 @@ export type {
   PositiveLookahead,
   NegativeLookahead,
   LabeledExpression,
+  ActionExpression,
   RuleDefinition,
   GrammarDefinition,
   GrammarAnnotation,

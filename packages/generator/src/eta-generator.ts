@@ -8,6 +8,15 @@
 import { join } from "node:path";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  collectTopLevelLabels,
+  filterReferencedLabels,
+  generateCharacterClassCode,
+  generateIdentifierCode,
+  generateQualifiedIdentifierCode,
+  generateStringLiteralCode,
+  wrapWithAction,
+} from "@suzumiyaaoba/tpeg-parser";
 import { Eta } from "eta";
 import { validateGrammarForEtaGenerator } from "./grammar-validation";
 import {
@@ -15,6 +24,7 @@ import {
   globalPerformanceMonitor,
 } from "./performance-utils";
 import type {
+  ActionExpression,
   CharacterClass,
   Choice,
   CodeGenOptions,
@@ -111,58 +121,19 @@ ${transformFn.body}
 };
 
 /**
- * Returns the label a single expression is bound to, unwrapping a `Group`
- * (transparent at codegen time) -- or `undefined` if the expression isn't a
- * (possibly grouped) `LabeledExpression`. Mirrors `packages/parser/src/
- * codegen.ts`'s identical helper; duplicated rather than imported because
- * this package depends only on `@suzumiyaaoba/tpeg-core` for its AST types,
- * not on `tpeg-parser` (see CLAUDE.md's package dependency graph).
- */
-const labelOf = (expr: Expression): string | undefined => {
-  if (expr.type === "LabeledExpression") {
-    return (expr as LabeledExpression).label;
-  }
-  if (expr.type === "Group") {
-    return labelOf((expr as Group).expression);
-  }
-  return undefined;
-};
-
-/**
- * Collects the label names directly visible on an expression -- see
- * `packages/parser/src/codegen.ts`'s identical `collectTopLevelLabels` for
- * the full rationale. Needed here so `generateSequence` (below) can decide
- * between `sequence()` (positional tuple) and `captureSequence()` (merged,
- * named-field object) exactly the way that generator does -- without it,
- * every label in a multi-element `Sequence` is emitted as an unmerged,
- * still-`capture()`-tagged value nested inside a positional tuple instead
- * of resolving to its named field.
- */
-const collectTopLevelLabels = (expr: Expression): string[] => {
-  const unwrapped = expr.type === "Group" ? (expr as Group).expression : expr;
-  if (unwrapped.type === "Sequence") {
-    return (unwrapped as Sequence).elements
-      .map(labelOf)
-      .filter((label): label is string => label !== undefined);
-  }
-  if (unwrapped.type === "Choice") {
-    const seen = new Set<string>();
-    for (const alt of (unwrapped as Choice).alternatives) {
-      for (const label of collectTopLevelLabels(alt)) seen.add(label);
-    }
-    return [...seen];
-  }
-  const single = labelOf(unwrapped);
-  return single !== undefined ? [single] : [];
-};
-
-/**
  * Eta-based TPEG code generator
  */
 export class EtaTPEGCodeGenerator {
   private eta: Eta;
   private options: Required<CodeGenOptions>;
   private ruleNames: Set<string> = new Set();
+  /** Rule name -> declaration index, used to detect forward/self/mutual
+   * references -- mirrors `packages/parser/src/codegen.ts`'s
+   * `TPEGCodeGenerator` (`generateIdentifierCode`, shared from that
+   * package, needs this same shape). */
+  private ruleIndex: Map<string, number> = new Map();
+  /** Declaration index of the rule currently being generated. */
+  private currentRuleIndex = -1;
 
   constructor(options: CodeGenOptions = { language: "typescript" }) {
     // Get the directory of the current module
@@ -192,6 +163,31 @@ export class EtaTPEGCodeGenerator {
     });
   }
 
+  // ## A trap in every `.eta` template under `../templates`: Eta's default
+  // `autoTrim: [false, "nl"]` strips a text chunk's LEADING newline when
+  // that chunk is JUST a bare newline sitting between two adjacent tags
+  // (e.g. `<% } %>` on its own line followed by another `<% ... %>` on the
+  // next) -- but only when the chunk starts with nothing but the newline
+  // itself; a chunk like `;\n` (real content before the newline) is left
+  // alone. This bit `optimized/rule-optimized.eta`: its trailing
+  // `<% if (it.comment) { %>\n// <%= it.comment %>\n<% } %>` block had TWO
+  // such bare-newline chunks (before the `if` and before its closing
+  // `}`), both silently stripped -- so a rule with a comment (`@memoize`'d,
+  // recursive, or "high complexity") swallowed the FOLLOWING rule's entire
+  // `export const ...` declaration into its own `//` line comment,
+  // compiling to fewer rules than the grammar declared with no error at
+  // all (fixed by emitting the comment's trailing newline as part of a
+  // dynamically-interpolated string, `<%~ "// " + it.comment + "\n" %>`,
+  // immune to this static-text trimming; see that file and
+  // `eta-generator.spec.ts`'s "should generate consistent optimized code"
+  // snapshot, and `eta-differential.spec.ts`'s pinned regression for it).
+  // `base/rule.eta`/`base/rule-memoized.eta` have no equivalent risk today
+  // (verified by rendering each standalone -- both templates end their
+  // rule declaration at a SOLE closing tag with no adjacent bare-newline
+  // chunk before it), but the SAME class of bug reappears the moment any
+  // template here ends its own output at a tag boundary preceded by a
+  // bare-newline separator rather than by dynamically-emitted content.
+
   /**
    * Generate TypeScript parser code from TPEG grammar
    */
@@ -208,11 +204,14 @@ export class EtaTPEGCodeGenerator {
     const performanceAnalysis = analyzeGrammarPerformance(grammar);
 
     // Reset per-instance state so a reused generator doesn't leak rule
-    // names from a previous grammar into this one's identifier resolution.
+    // names/order from a previous grammar into this one's identifier
+    // resolution.
     this.ruleNames.clear();
-    for (const rule of grammar.rules) {
+    this.ruleIndex.clear();
+    grammar.rules.forEach((rule, index) => {
       this.ruleNames.add(rule.name);
-    }
+      this.ruleIndex.set(rule.name, index);
+    });
 
     const imports = this.generateImports(grammar, performanceAnalysis);
     const exports: string[] = [];
@@ -221,7 +220,8 @@ export class EtaTPEGCodeGenerator {
     // Generate template data for each rule, applying a matching TypeScript
     // transform function (if the grammar declares one) to the rule's result
     const transformsByRuleName = collectTransformFunctions(grammar);
-    for (const rule of grammar.rules) {
+    grammar.rules.forEach((rule, index) => {
+      this.currentRuleIndex = index;
       const complexity = performanceAnalysis.ruleComplexity.get(rule.name);
       const transformFn = transformsByRuleName.get(rule.name);
       const memoized = this.shouldMemoize(rule, complexity);
@@ -253,7 +253,7 @@ export class EtaTPEGCodeGenerator {
 
       rules.push(ruleData);
       exports.push(this.options.namePrefix + rule.name);
-    }
+    });
 
     const templateData: ParserTemplateData = {
       imports,
@@ -307,9 +307,9 @@ export class EtaTPEGCodeGenerator {
       // Analyze which combinators are actually needed
       const usedCombinators = new Set<string>();
 
-      for (const rule of grammar.rules) {
-        this.collectUsedCombinators(rule.pattern, usedCombinators);
-      }
+      grammar.rules.forEach((rule, index) => {
+        this.collectUsedCombinators(rule.pattern, usedCombinators, index);
+      });
 
       // memoize lives in tpeg-combinator, not tpeg-core, so it gets its own
       // import line rather than being folded into usedCombinators below --
@@ -364,11 +364,17 @@ export class EtaTPEGCodeGenerator {
   }
 
   /**
-   * Collect all combinators used in an expression
+   * Collect all combinators used in an expression. `currentRuleIndex` is
+   * the declaration index of the rule this expression tree belongs to --
+   * needed for the `Identifier` case below to decide, exactly like
+   * `generateIdentifier`/`generateIdentifierCode` do, whether a reference
+   * is forward/self/mutual (and therefore emitted as `lazy(() => ...)`,
+   * which needs the import).
    */
   private collectUsedCombinators(
     expr: Expression,
     combinators: Set<string>,
+    currentRuleIndex: number,
   ): void {
     switch (expr.type) {
       case "StringLiteral":
@@ -382,6 +388,16 @@ export class EtaTPEGCodeGenerator {
       case "AnyChar":
         combinators.add("anyChar");
         break;
+      case "Identifier": {
+        // Mirrors `generateIdentifier`'s decision (via the shared
+        // `generateIdentifierCode`): a forward/self/mutual reference is
+        // generated as `lazy(() => name)`, which needs the import.
+        const targetIndex = this.ruleIndex.get((expr as Identifier).name);
+        if (targetIndex !== undefined && targetIndex >= currentRuleIndex) {
+          combinators.add("lazy");
+        }
+        break;
+      }
       case "Sequence":
         combinators.add("sequence");
         // Mirrors `generateSequence`'s own choice between `sequence()` and
@@ -400,7 +416,7 @@ export class EtaTPEGCodeGenerator {
             combinators.add("commit");
             continue;
           }
-          this.collectUsedCombinators(element, combinators);
+          this.collectUsedCombinators(element, combinators, currentRuleIndex);
         }
         break;
       case "Cut":
@@ -408,26 +424,43 @@ export class EtaTPEGCodeGenerator {
       case "Choice":
         combinators.add("choice");
         for (const alternative of (expr as Choice).alternatives) {
-          this.collectUsedCombinators(alternative, combinators);
+          this.collectUsedCombinators(
+            alternative,
+            combinators,
+            currentRuleIndex,
+          );
         }
         break;
       case "Star":
         combinators.add("zeroOrMore");
-        this.collectUsedCombinators((expr as Star).expression, combinators);
+        this.collectUsedCombinators(
+          (expr as Star).expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "Plus":
         combinators.add("oneOrMore");
-        this.collectUsedCombinators((expr as Plus).expression, combinators);
+        this.collectUsedCombinators(
+          (expr as Plus).expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "Optional":
         combinators.add("optional");
-        this.collectUsedCombinators((expr as Optional).expression, combinators);
+        this.collectUsedCombinators(
+          (expr as Optional).expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "PositiveLookahead":
         combinators.add("andPredicate");
         this.collectUsedCombinators(
           (expr as PositiveLookahead).expression,
           combinators,
+          currentRuleIndex,
         );
         break;
       case "NegativeLookahead":
@@ -435,16 +468,29 @@ export class EtaTPEGCodeGenerator {
         this.collectUsedCombinators(
           (expr as NegativeLookahead).expression,
           combinators,
+          currentRuleIndex,
         );
         break;
       case "Group":
-        this.collectUsedCombinators((expr as Group).expression, combinators);
+        this.collectUsedCombinators(
+          (expr as Group).expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       case "LabeledExpression":
         combinators.add("capture");
         this.collectUsedCombinators(
           (expr as LabeledExpression).expression,
           combinators,
+          currentRuleIndex,
+        );
+        break;
+      case "ActionExpression":
+        this.collectUsedCombinators(
+          (expr as ActionExpression).expression,
+          combinators,
+          currentRuleIndex,
         );
         break;
       case "Quantified": {
@@ -463,7 +509,11 @@ export class EtaTPEGCodeGenerator {
             combinators.add("quantified");
           }
         }
-        this.collectUsedCombinators(quantifiedExpr.expression, combinators);
+        this.collectUsedCombinators(
+          quantifiedExpr.expression,
+          combinators,
+          currentRuleIndex,
+        );
         break;
       }
     }
@@ -511,6 +561,8 @@ export class EtaTPEGCodeGenerator {
         return `notPredicate(${this.generateExpressionCode((expr as NegativeLookahead).expression)})`;
       case "LabeledExpression":
         return this.generateLabeledExpression(expr as LabeledExpression);
+      case "ActionExpression":
+        return this.generateActionExpression(expr as ActionExpression);
       case "Cut":
         // Only reachable via `generateSequence`'s single-element
         // shortcut, for the degenerate case of a rule whose entire
@@ -525,62 +577,57 @@ export class EtaTPEGCodeGenerator {
     }
   }
 
-  private escapeStringLiteral(value: string): string {
-    return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  }
-
+  // `generateStringLiteral`/`generateCharacterClass` delegate to
+  // `packages/parser/src/codegen.ts`'s shared `generateStringLiteralCode`/
+  // `generateCharacterClassCode` (both re-exported by `tpeg-parser`'s
+  // entry point): those escape control characters (newline, tab, CR, and
+  // other non-printables) via `constants.ts`'s `escapeStringLiteral`,
+  // where this module's own former copy only escaped backslash/double-
+  // quote -- a `StringLiteral`/`CharacterClass` containing a literal
+  // control character (e.g. `"\n"`, `[\t]`) would otherwise be emitted as
+  // a raw control byte inside a `"..."` source literal, invalid
+  // TypeScript.
   private generateStringLiteral(expr: StringLiteral): string {
-    return `literal("${this.escapeStringLiteral(expr.value)}")`;
+    return generateStringLiteralCode(expr.value);
   }
 
   private generateCharacterClass(expr: CharacterClass): string {
-    const ranges = expr.ranges
-      .map((range) => {
-        if (range.end) {
-          return `["${this.escapeStringLiteral(range.start)}", "${this.escapeStringLiteral(range.end)}"]`;
-        }
-        return `"${this.escapeStringLiteral(range.start)}"`;
-      })
-      .join(", ");
-
-    const combinator = expr.negated ? "negatedCharClass" : "charClass";
-    return `${combinator}(${ranges})`;
+    return generateCharacterClassCode(expr);
   }
 
+  // `generateIdentifier` delegates to the shared `generateIdentifierCode`:
+  // a reference to a rule declared LATER than (or equal to, for
+  // self-recursion) the current rule must be emitted as `lazy(() => ...)`
+  // rather than a bare identifier, or the generated module throws a `const`
+  // temporal-dead-zone `ReferenceError` the moment it's evaluated -- this
+  // module's own former version never did that, so any forward/self/mutual
+  // rule reference broke every generated parser at load time.
   private generateIdentifier(expr: Identifier): string {
-    const name = expr.name;
-    if (this.ruleNames.has(name)) {
-      return this.options.namePrefix + name;
-    }
-    return name;
+    return generateIdentifierCode(expr, {
+      ruleNames: this.ruleNames,
+      ruleIndex: this.ruleIndex,
+      currentRuleIndex: this.currentRuleIndex,
+      namePrefix: this.options.namePrefix,
+    });
   }
 
   private generateQualifiedIdentifier(expr: QualifiedIdentifier): string {
-    // References a rule exported from another module, e.g. `math.expr`.
-    // The generated code assumes the module is imported as a namespace
-    // object under its alias (see namespace-manager.ts's import resolution).
-    return `${expr.module}.${expr.name}`;
+    return generateQualifiedIdentifierCode(expr);
   }
 
   private generateSequence(expr: Sequence): string {
-    if (expr.elements.length === 0) {
-      return "sequence()";
-    }
-
-    if (expr.elements.length === 1) {
-      const element = expr.elements[0];
-      if (element) {
-        return this.generateExpressionCode(element);
-      }
-    }
-
     // A `~` cut marker is dropped from the emitted arguments entirely --
     // it consumes no input and contributes no value of its own -- and
     // every element *after* it is individually wrapped in `commit(...)`.
     // Mirrors `codegen.ts`'s `generateSequence` exactly (see that
     // function's doc comment for the full rationale, including why
     // wrapping each element individually rather than nesting the tail in
-    // a sub-sequence keeps the emitted tuple shape unchanged).
+    // a sub-sequence keeps the emitted tuple shape unchanged, and why the
+    // single-remaining-part shortcut below must be checked AFTER dropping
+    // the cut -- not on the original element count, which would wrongly
+    // wrap a degenerate `~ "a"` / `"a" ~` in `sequence(...)`, turning its
+    // value from `"a"` into `["a"]`).
+    const hasLabel = collectTopLevelLabels(expr).length > 0;
     const parts: string[] = [];
     let committed = false;
     for (const el of expr.elements) {
@@ -591,12 +638,19 @@ export class EtaTPEGCodeGenerator {
       const code = this.generateExpressionCode(el);
       parts.push(committed ? `commit(${code})` : code);
     }
+    if (parts.length === 0) {
+      return "sequence()";
+    }
+    if (parts.length === 1 && !hasLabel) {
+      const [only] = parts;
+      if (only) return only;
+    }
     // A sequence with labeled elements needs its per-element captured
     // objects merged into one named-field object -- plain `sequence()`
     // returns a positional tuple instead (each label's value left nested
     // inside it, still `capture()`-tagged), which would leave every label
     // unreachable by name. Mirrors `codegen.ts`'s identical check.
-    return collectTopLevelLabels(expr).length > 0
+    return hasLabel
       ? `captureSequence(${parts.join(", ")})`
       : `sequence(${parts.join(", ")})`;
   }
@@ -648,6 +702,22 @@ export class EtaTPEGCodeGenerator {
     return `capture("${expr.label}", ${inner})`;
   }
 
+  // Delegates to the shared `collectTopLevelLabels`/`filterReferencedLabels`/
+  // `wrapWithAction` (`packages/parser/src/codegen.ts`, re-exported by
+  // `tpeg-parser`) -- this module previously had no `ActionExpression`
+  // case at all, so a grammar with an inline `{ ... }` action threw
+  // `Unsupported expression type: ActionExpression` at generation time
+  // even though `validateGrammarForEtaGenerator` (`grammar-validation.ts`)
+  // accepts the node.
+  private generateActionExpression(expr: ActionExpression): string {
+    const inner = this.generateExpressionCode(expr.expression);
+    const labels = filterReferencedLabels(
+      expr.code,
+      collectTopLevelLabels(expr.expression),
+    );
+    return wrapWithAction(inner, expr.code, labels, this.options.includeTypes);
+  }
+
   /**
    * Infer TypeScript type for a rule
    */
@@ -667,17 +737,17 @@ export class EtaTPEGCodeGenerator {
    * for why the proxy under-memoizes some non-recursive grammars (e.g.
    * `BENCH_ACYCLIC_CHAIN_GRAMMAR` in `packages/parser/bench/grammars.ts`)
    * and over-memoizes some recursive ones (a FIRST-disjoint recursive
-   * choice, e.g. JSON's `value`). This path was left unported rather
-   * than duplicated: `tpeg-generator` has no dependency on `tpeg-parser`
-   * (see `packages/generator/package.json` and the dependency graph in
-   * the repo root `CLAUDE.md`), and `packages/cli/src/cli.ts` generates
-   * code via `tpeg-parser`'s `generateTypeScriptParser`/
+   * choice, e.g. JSON's `value`). Still left unported here even though
+   * `tpeg-generator` now depends on `tpeg-parser` (see
+   * `packages/generator/package.json` -- added so this module could
+   * share `codegen.ts`'s `lazy()`/escaping/`ActionExpression` handling
+   * instead of re-diverging from it) -- `packages/cli/src/cli.ts`
+   * generates code via `tpeg-parser`'s `generateTypeScriptParser`/
    * `generateOptimizedTypeScriptParser` directly, not via this Eta-based
-   * generator -- so this heuristic doesn't sit on the path the `tpeg`
-   * CLI actually exercises. Porting or sharing the reentrancy analysis
-   * properly needs a package-boundary decision (duplicate it here the
-   * way `performance-utils.ts` already is, or add a `tpeg-parser`
-   * dependency to `tpeg-generator`), not a same-file patch.
+   * generator, so this heuristic still doesn't sit on the path the
+   * `tpeg` CLI actually exercises. Swapping this proxy for
+   * `packages/parser/src/reentrancy.ts`'s analysis (now importable) is
+   * an independent follow-up, not part of this fix.
    */
   private shouldMemoize(
     _rule: RuleDefinition,

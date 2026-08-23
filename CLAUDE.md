@@ -105,12 +105,20 @@ tpeg-core (no workspace dependencies)
     ├── tpeg-ast (also depends on unist ecosystem: @types/unist)
     ├── tpeg-combinator (depends on tpeg-core)
     │   └── tpeg-samples (depends on tpeg-core, tpeg-combinator) [legacy]
-    ├── tpeg-generator (depends on tpeg-core, eta templates)
     ├── tpeg-type-inference (depends on tpeg-core)
     └── tpeg-parser (depends on tpeg-core, tpeg-combinator)
         ├── tpeg-parser-sample (depends on tpeg-core, tpeg-parser)
-        └── tpeg-cli (depends on tpeg-core, tpeg-parser)
+        ├── tpeg-cli (depends on tpeg-core, tpeg-parser)
+        └── tpeg-generator (depends on tpeg-core, tpeg-combinator, tpeg-parser, eta templates)
 ```
+
+`tpeg-generator` reuses `tpeg-parser`'s `codegen.ts` building blocks (identifier
+reference resolution, string/char-class escaping, action-expression wrapping)
+rather than keeping its own copies, after those copies were found to have
+drifted out of sync with `codegen.ts`'s fixes. It is not itself a dependency of
+any other package in this repo -- the `tpeg` CLI generates code via
+`tpeg-parser`'s `generateTypeScriptParser`/`generateOptimizedTypeScriptParser`
+directly, not via this Eta-based generator.
 
 ### Architecture Notes
 - The grammar parser (`packages/parser/src/`) implements TPEG's own grammar definition syntax; the spec it follows is `docs/peg-grammar.md`.

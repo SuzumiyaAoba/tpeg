@@ -38,6 +38,10 @@ task*-runner-results.json
 # generated fixtures written by self-hosting.spec.ts at test time
 packages/parser-sample/.generated
 
+# scratch dirs written by cli-e2e.spec.ts at test time (removed in the
+# test's own afterEach/finally; this is only a safety net for a crashed run)
+packages/cli/.tmp-e2e-*
+
 # IntelliJ based IDEs
 .idea
 
