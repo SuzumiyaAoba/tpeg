@@ -80,12 +80,10 @@ templates/
 │   ├── parser-file.eta      # Basic parser file structure
 │   ├── rule.eta            # Standard rule generation
 │   └── rule-memoized.eta   # Memoized rule generation
-├── optimized/
-│   ├── imports.eta          # Performance-enhanced imports
-│   ├── parser-file.eta      # Optimized parser file
-│   └── rule-optimized.eta   # Performance-optimized rules
-└── helpers/
-    └── format-utils.eta     # Formatting utilities
+└── optimized/
+    ├── imports.eta          # Performance-enhanced imports
+    ├── parser-file.eta      # Optimized parser file
+    └── rule-optimized.eta   # Performance-optimized rules
 ```
 
 ## API Reference

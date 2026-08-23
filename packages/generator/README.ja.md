@@ -80,12 +80,10 @@ templates/
 │   ├── parser-file.eta      # 基本パーサーファイル構造
 │   ├── rule.eta            # 標準規則生成
 │   └── rule-memoized.eta   # メモ化規則生成
-├── optimized/
-│   ├── imports.eta          # パフォーマンス強化インポート
-│   ├── parser-file.eta      # 最適化されたパーサーファイル
-│   └── rule-optimized.eta   # パフォーマンス最適化された規則
-└── helpers/
-    └── format-utils.eta     # フォーマットユーティリティ
+└── optimized/
+    ├── imports.eta          # パフォーマンス強化インポート
+    ├── parser-file.eta      # 最適化されたパーサーファイル
+    └── rule-optimized.eta   # パフォーマンス最適化された規則
 ```
 
 ## APIリファレンス
