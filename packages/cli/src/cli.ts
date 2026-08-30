@@ -292,7 +292,14 @@ export function run(argv: string[]): number {
   }
 
   if (options.output) {
-    writeFileSync(options.output, generated.code, "utf8");
+    try {
+      writeFileSync(options.output, generated.code, "utf8");
+    } catch (error) {
+      process.stderr.write(
+        `error: could not write "${options.output}": ${(error as Error).message}\n`,
+      );
+      return 1;
+    }
     process.stderr.write(
       `wrote ${generated.exports.length} parser(s) to ${options.output}\n`,
     );

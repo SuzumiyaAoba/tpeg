@@ -743,6 +743,34 @@ describe("TPEG Code Generation", () => {
       expect(result.code).toContain("export const term: Parser<any> = number;");
       expect(result.imports.join("\n")).not.toContain("lazy");
     });
+
+    test("does not leak rule names across generateGrammar calls on a reused instance", () => {
+      const generator = new TPEGCodeGenerator({
+        language: "typescript",
+        namePrefix: "g_",
+      });
+
+      const grammarWithLocalFoo = createGrammarDefinition(
+        "First",
+        [],
+        [
+          createRuleDefinition("foo", createStringLiteral("x")),
+          createRuleDefinition("bar", createIdentifier("foo")),
+        ],
+      );
+      const grammarWithExternalFoo = createGrammarDefinition(
+        "Second",
+        [],
+        [createRuleDefinition("baz", createIdentifier("foo"))],
+      );
+
+      generator.generateGrammar(grammarWithLocalFoo);
+      const result = generator.generateGrammar(grammarWithExternalFoo);
+
+      expect(result.code).toContain("export const g_baz");
+      expect(result.code).toContain("= foo;");
+      expect(result.code).not.toContain("g_foo");
+    });
   });
 
   describe("control characters in character classes", () => {

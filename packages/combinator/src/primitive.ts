@@ -147,7 +147,14 @@ export const alphaNum = charClass(["a", "z"], ["A", "Z"], ["0", "9"]);
  * Parser that matches the start of input or start of a line.
  */
 export const startOfLine = (): Parser<null> => (input: string, pos) => {
-  if (pos === 0 || input[pos - 1] === "\n") {
+  // Recognize LF, bare CR, and CRLF as line terminators. A position between
+  // the CR and LF of a CRLF pair is deliberately not a line start: the pair
+  // is one logical newline, and `offsetToPos` uses the same boundary rule.
+  if (
+    pos === 0 ||
+    input[pos - 1] === "\n" ||
+    (input[pos - 1] === "\r" && input[pos] !== "\n")
+  ) {
     return {
       success: true,
       val: null,

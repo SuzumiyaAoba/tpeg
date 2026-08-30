@@ -59,6 +59,28 @@ describe("logic combinators", () => {
       expect(callCount).toBe(3);
     });
 
+    it("treats maxCacheSize: 0 as a cache with no entries", () => {
+      let callCount = 0;
+      const memoized = memoize(
+        (input: string, pos: number) => {
+          callCount++;
+          return literal("a")(input, pos);
+        },
+        { maxCacheSize: 0 },
+      );
+
+      memoized("a", 0);
+      memoized("a", 0);
+
+      expect(callCount).toBe(2);
+    });
+
+    it("rejects negative memoize cache sizes", () => {
+      expect(() => memoize(literal("a"), { maxCacheSize: -1 })).toThrow(
+        /non-negative integer/,
+      );
+    });
+
     it("discards the whole cache the moment a different input arrives, regardless of maxCacheSize", () => {
       // Not an eviction policy anymore -- the cache is always scoped to
       // exactly the most recently seen input. `maxCacheSize` (even unset

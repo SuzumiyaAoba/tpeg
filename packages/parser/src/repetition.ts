@@ -250,7 +250,7 @@ export const withRepetition = <T extends Expression>(
         repetitionOp !== undefined
           ? applyRepetition(baseResult.val, repetitionOp)
           : baseResult.val,
-      current: baseResult.next,
+      current: baseResult.current,
       next: opResult.next,
     };
   };

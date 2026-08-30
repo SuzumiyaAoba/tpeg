@@ -186,6 +186,11 @@ describe("primitive combinators", () => {
       expect(result.success).toBe(true);
     });
 
+    it("should succeed right after a bare carriage-return newline", () => {
+      const result = startOfLine()("a\rb", 2);
+      expect(result.success).toBe(true);
+    });
+
     it("should succeed after a CRLF line ending (position after the \\n)", () => {
       const result = startOfLine()("a\r\nb", 3);
       expect(result.success).toBe(true);

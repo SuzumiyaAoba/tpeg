@@ -598,6 +598,12 @@ export class TPEGCodeGenerator {
    * Generate TypeScript parser code from a TPEG grammar
    */
   generateGrammar(grammar: GrammarDefinition): GeneratedCode {
+    // Reset per-instance state so a reused generator does not leak rule
+    // names or declaration-order information from a previous grammar.
+    this.ruleNames.clear();
+    this.ruleIndex.clear();
+    this.currentRuleIndex = -1;
+
     // Reject a duplicate rule name or a left-recursive rule outright,
     // before anything else -- see `grammar-validation.ts`'s doc comment
     // for why this MUST run before `analyzeFirstSets` (a duplicate name

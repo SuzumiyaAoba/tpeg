@@ -356,6 +356,16 @@ describe("repetition operators", () => {
       }
     });
 
+    it("preserves the input offset where parsing started", () => {
+      const parser = withRepetition(itemParser);
+      const result = parser("xxitem*", 2);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.current).toBe(2);
+        expect(result.next).toBe(7);
+      }
+    });
+
     it("leaves a trailing non-operator suffix (e.g. a semantic action block) unconsumed for the caller to parse separately", () => {
       const parser = withRepetition(itemParser);
       const result = parser("item{2} { return 1; }", pos);

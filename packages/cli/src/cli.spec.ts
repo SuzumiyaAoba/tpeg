@@ -136,6 +136,20 @@ describe("tpeg CLI", () => {
     expect(written).toContain("export const number");
   });
 
+  it("returns a clear error when the output file cannot be written", () => {
+    const inputPath = join(dir, "grammar.tpeg");
+    const outputPath = join(dir, "missing-parent", "parser.ts");
+    writeFileSync(inputPath, SIMPLE_GRAMMAR, "utf8");
+
+    const { exitCode, stdout, stderr } = captureOutput(() =>
+      run([inputPath, "-o", outputPath]),
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toBe("");
+    expect(stderr).toContain(`could not write "${outputPath}"`);
+  });
+
   it("applies --name-prefix to generated exports", () => {
     const inputPath = join(dir, "grammar.tpeg");
     writeFileSync(inputPath, SIMPLE_GRAMMAR, "utf8");

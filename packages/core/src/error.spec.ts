@@ -300,4 +300,27 @@ describe("Complex Error Formatting Scenarios", () => {
     // So 4 + 3 = 7 spaces.
     expect(pointerLine).toContain("       ^");
   });
+
+  it("keeps the pointer aligned after an astral character", () => {
+    // `offsetToPos` reports columns in code points, while the source string
+    // is indexed in UTF-16 code units. The emoji before `x` must still count
+    // as two terminal cells when the pointer is rendered.
+    const input = "😀x";
+    const result = formatParseError({ message: "Error", pos: 2 }, input, {
+      colorize: false,
+    });
+
+    const lines = result.split("\n");
+    const pointerLine = lines[lines.length - 1];
+    expect(pointerLine).toContain("      ^");
+  });
+
+  it("formats bare-CR input using the same line boundaries as offsetToPos", () => {
+    const result = formatParseError({ message: "Error", pos: 2 }, "a\rb", {
+      colorize: false,
+    });
+
+    expect(result).toContain("line 2");
+    expect(result).toContain("2 | b");
+  });
 });

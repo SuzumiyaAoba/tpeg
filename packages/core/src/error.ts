@@ -533,6 +533,8 @@ const getStringWidth = (str: string | undefined): number => {
         (code >= 0xfe30 && code <= 0xfe6f) || // CJK Compatibility Forms
         (code >= 0xff00 && code <= 0xff60) || // Fullwidth Forms
         (code >= 0xffe0 && code <= 0xffe6) ||
+        (code >= 0x1f000 && code <= 0x1faff) || // Emoji and symbols
+        (code >= 0x1fc00 && code <= 0x1fffd) || // Supplemental symbols
         (code >= 0x20000 && code <= 0x2fffd) ||
         (code >= 0x30000 && code <= 0x3fffd))
     ) {
@@ -779,7 +781,11 @@ const formatSourceContext = (
   maxLineLength: number,
   showLineNumbers: boolean,
 ): string | null => {
-  const lines = input.split("\n");
+  // Keep CRLF together and recognize bare CR as a line terminator too, in
+  // lockstep with `offsetToPos` (`./utils.ts`). Splitting on `"\n"` alone
+  // would leave CR-only documents as one displayed line and would disagree
+  // with the positions reported by the parser helpers.
+  const lines = input.split(/\r\n|\r|\n/);
   const totalLines = lines.length;
 
   // Enhanced line number validation
@@ -822,8 +828,22 @@ const formatSourceContext = (
     if (isErrorLine && highlightErrors && errorColumn >= 0) {
       const linePrefix = showLineNumbers ? maxLineNumberWidth + 3 : 0; // " | " = 3 chars
 
-      // Calculate visual position considering multi-byte characters
-      const beforeColumn = lineContent.slice(0, errorColumn);
+      // `errorColumn` is a code-point count (`offsetToPos`), while
+      // `String#slice` takes a UTF-16 code-unit offset. Convert the former
+      // to the latter before measuring visual width so an astral character
+      // before the error does not move the pointer one cell to the left.
+      let beforeColumnOffset = 0;
+      let beforeColumnCount = 0;
+      while (
+        beforeColumnOffset < lineContent.length &&
+        beforeColumnCount < errorColumn
+      ) {
+        const codePoint = lineContent.codePointAt(beforeColumnOffset);
+        beforeColumnOffset +=
+          codePoint !== undefined && codePoint > 0xffff ? 2 : 1;
+        beforeColumnCount++;
+      }
+      const beforeColumn = lineContent.slice(0, beforeColumnOffset);
       const visualColumn = getStringWidth(beforeColumn);
 
       const pointerOffset =

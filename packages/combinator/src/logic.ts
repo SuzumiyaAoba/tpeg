@@ -214,6 +214,28 @@ export const memoize = <T>(
   options: { maxCacheSize?: number; parserName?: string } = {},
 ): Parser<T> => {
   const { maxCacheSize, parserName } = options;
+
+  // A cache size is a count of retained positions. Reject malformed counts
+  // eagerly instead of allowing fractional/negative/NaN values to fall
+  // through to array-index and eviction logic with surprising behavior.
+  // `Infinity` remains an explicit spelling of an unbounded cache, matching
+  // the behavior of the omitted option.
+  if (
+    maxCacheSize !== undefined &&
+    maxCacheSize !== Number.POSITIVE_INFINITY &&
+    (!Number.isInteger(maxCacheSize) || maxCacheSize < 0)
+  ) {
+    throw new Error(
+      `Invalid memoize cache size: maxCacheSize (${maxCacheSize}) must be a non-negative integer or Infinity`,
+    );
+  }
+
+  // A zero-sized cache is useful when callers want the same API shape while
+  // disabling memoization (for example, to compare a grammar with and
+  // without caching). Returning the wrapped parser directly avoids the
+  // eviction path's unavoidable one-entry overshoot at size zero.
+  if (maxCacheSize === 0) return named(parser, parserName);
+
   let cachedInput: string | null = null;
   let cache: (MemoEntry<T> | undefined)[] | null = null;
   // Offset that cache[0] corresponds to; entries before this are pruned.

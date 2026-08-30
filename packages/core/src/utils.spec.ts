@@ -413,6 +413,29 @@ describe("Utils", () => {
       expect(offsetToPos(input, 12).line).toBe(3); // right after second \n
     });
 
+    it("treats bare CR as one newline and CRLF as one combined newline", () => {
+      expect(offsetToPos("a\rb", 1)).toEqual({
+        offset: 1,
+        line: 1,
+        column: 1,
+      });
+      expect(offsetToPos("a\rb", 2)).toEqual({
+        offset: 2,
+        line: 2,
+        column: 0,
+      });
+
+      // Both code units of CRLF remain on the preceding line; only the
+      // offset after LF starts the next line.
+      expect(offsetToPos("a\r\nb", 1).line).toBe(1);
+      expect(offsetToPos("a\r\nb", 2).line).toBe(1);
+      expect(offsetToPos("a\r\nb", 3)).toEqual({
+        offset: 3,
+        line: 2,
+        column: 0,
+      });
+    });
+
     it("counts a column in CODE POINTS, not UTF-16 code units, on a line containing an astral character", () => {
       // "a🌍b" -- the emoji is 2 UTF-16 code units but must count as ONE
       // column, matching what per-character `nextPos` used to produce

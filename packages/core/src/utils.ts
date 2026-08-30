@@ -398,7 +398,7 @@ export const advancePos = (str: string, pos: number): number =>
   pos + str.length;
 
 /**
- * Single-entry cache of the last input's newline offsets, keyed by
+ * Single-entry cache of line-start offsets for the last input, keyed by
  * reference/value equality on the input string itself (strings can't be
  * `WeakMap` keys, and a `Map` keyed by arbitrary input strings would
  * grow unboundedly across many different parses -- a single slot,
@@ -406,17 +406,31 @@ export const advancePos = (str: string, pos: number): number =>
  * still amortizing repeated `offsetToPos` calls against the SAME input,
  * which is the common case: `withPosition` inside a repetition, or
  * multiple diagnostics from formatting one parse's error).
+ *
+ * Each entry is the offset immediately AFTER a line terminator, not the
+ * terminator's first code unit. This lets the binary search keep both code
+ * units of a CRLF delimiter on the preceding line, while an offset exactly
+ * after the LF starts the next line. Bare CR and LF have the same one-unit
+ * treatment.
  */
 let cachedNewlineIndexInput: string | null = null;
 let cachedNewlineIndexOffsets: Uint32Array | null = null;
 
-const getNewlineOffsets = (input: string): Uint32Array => {
+const getLineStartOffsets = (input: string): Uint32Array => {
   if (cachedNewlineIndexInput === input && cachedNewlineIndexOffsets) {
     return cachedNewlineIndexOffsets;
   }
   const offsets: number[] = [];
   for (let i = 0; i < input.length; i++) {
-    if (input.charCodeAt(i) === 10 /* "\n" */) offsets.push(i);
+    const code = input.charCodeAt(i);
+    if (code === 13 /* "\r" */) {
+      // Treat CRLF as one terminator. The loop skips the LF so it cannot
+      // create a second line-start entry for the same logical newline.
+      if (input.charCodeAt(i + 1) === 10 /* "\n" */) i++;
+      offsets.push(i + 1);
+    } else if (code === 10 /* "\n" */) {
+      offsets.push(i + 1);
+    }
   }
   const result = Uint32Array.from(offsets);
   cachedNewlineIndexInput = input;
@@ -432,7 +446,7 @@ const getNewlineOffsets = (input: string): Uint32Array => {
  *
  * Line lookup is O(log n) (binary search over a per-input newline-offset
  * index, cached across repeated calls against the same input -- see
- * `getNewlineOffsets`). Column is then counted in *code points* (to
+ * `getLineStartOffsets`). Column is then counted in *code points* (to
  * match what per-character `nextPos` used to produce -- a line
  * containing an astral character must not count it as 2 columns) by
  * scanning from the start of that line up to `offset`, an O(line
@@ -447,24 +461,27 @@ const getNewlineOffsets = (input: string): Uint32Array => {
  * ```
  */
 export const offsetToPos = (input: string, offset: number): Pos => {
-  const newlineOffsets = getNewlineOffsets(input);
+  const lineStartOffsets = getLineStartOffsets(input);
 
   let lo = 0;
-  let hi = newlineOffsets.length;
+  let hi = lineStartOffsets.length;
   while (lo < hi) {
     const mid = (lo + hi) >>> 1;
-    if ((newlineOffsets[mid] as number) < offset) {
+    // A line starts at the first offset after its terminator. An offset
+    // equal to that boundary is therefore already on the new line; an
+    // offset inside CRLF (the CR or the LF itself) is still on the old line.
+    if ((lineStartOffsets[mid] as number) <= offset) {
       lo = mid + 1;
     } else {
       hi = mid;
     }
   }
-  const newlinesBefore = lo;
-  const line = newlinesBefore + 1;
+  const lineStartsBefore = lo;
+  const line = lineStartsBefore + 1;
   const lineStart =
-    newlinesBefore === 0
+    lineStartsBefore === 0
       ? 0
-      : (newlineOffsets[newlinesBefore - 1] as number) + 1;
+      : (lineStartOffsets[lineStartsBefore - 1] as number);
 
   let column = 0;
   let i = lineStart;
