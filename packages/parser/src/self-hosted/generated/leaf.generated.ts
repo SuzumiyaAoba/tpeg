@@ -1,5 +1,5 @@
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
-import { capture, captureSequence, charClass, choice, literal, negatedCharClass, oneOrMore, optional, sequence, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
+import { capture, captureSequence, charClass, charClassRun, choice, literal, negatedCharClass, oneOrMore, optional, sequence, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
 
 export const escapeChar: Parser<any> = sequence(literal("\\"), charClass("n", "r", "t", "\\", "\"", "'"));
 
@@ -177,7 +177,7 @@ export const characterClass: Parser<any> = choice(characterClassBrackets, anyCha
 
 export const identStart: Parser<any> = charClass(["a", "z"], ["A", "Z"], "_");
 
-export const identCont: Parser<any> = zeroOrMore(charClass(["a", "z"], ["A", "Z"], ["0", "9"], "_"));
+export const identCont: Parser<any> = charClassRun([["a", "z"], ["A", "Z"], ["0", "9"], "_"], 0);
 
 export const identifierName: Parser<any> = (input, pos) => {
   const __base = (captureSequence(capture("start", identStart), capture("rest", identCont)));
