@@ -2,13 +2,12 @@
  * TPEG grammar sources used by the parse-throughput benchmark harness
  * (see `run.ts`).
  *
- * These are deliberately NOT reused from `packages/parser-sample/examples/`:
- * `json-lite.tpeg` there defines a rule named `null`, and the standard
- * codegen emits `export const null = ...`, which is a JavaScript reserved
- * word and fails to `eval`. That's a real latent codegen bug (rule names
- * aren't checked against the JS reserved-word list), but fixing it is out
- * of scope for the benchmark harness -- `BENCH_JSON_GRAMMAR` below just
- * avoids the collision by naming the rule `nullLiteral`.
+ * These are deliberately NOT reused from `packages/parser-sample/examples/`
+ * to keep the benchmark corpus self-contained and independent of the sample
+ * grammars' structure. `BENCH_JSON_GRAMMAR` below already named its literal
+ * rule `nullLiteral` rather than `null` -- codegen now rejects a rule named
+ * `null` outright (it would emit `export const null = ...`, a reserved
+ * word), and `json-lite.tpeg`/`simple-json.tpeg` were renamed to match.
  */
 
 /**

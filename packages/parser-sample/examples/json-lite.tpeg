@@ -7,7 +7,7 @@ grammar JsonLite {
   @license: "MIT"
   
   // Main JSON value types
-  value = string / number / boolean / null / object / array
+  value = string / number / boolean / nullLiteral / object / array
   
   // String parsing with escape sequences
   string = "\"" [^\"]* "\""
@@ -19,7 +19,7 @@ grammar JsonLite {
   boolean = "true" / "false"
   
   // Null literal
-  null = "null"
+  nullLiteral = "null"
   
   // Object structure
   object = "{" (pair ("," pair)*)? "}"
