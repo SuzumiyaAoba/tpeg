@@ -16,6 +16,8 @@ grammar Calculator {
 }
 `;
 
+const USAGE_HEADER = "Usage: tpeg <input.tpeg> [options]";
+
 const GRAMMAR_WITH_TRANSFORM = `
 grammar Calculator {
   number = digits:[0-9]+
@@ -105,6 +107,83 @@ describe("tpeg CLI", () => {
     expect(exitCode).toBe(1);
     expect(stderr).toContain("failed to parse");
     expect(stderr).toMatch(/line \d+, column \d+/);
+  });
+
+  it("escapes control characters in the reported expected/found values instead of writing them raw", () => {
+    // `a\tb = "x"` -- a tab where only whitespace-then-"=" is valid makes
+    // the underlying error's `expected` list literally contain a raw tab
+    // byte (see `packages/core/src/basic.ts`'s `literal("\t")` building
+    // its expectation label as `` `"${str}"` ``, i.e. quote + the actual
+    // character + quote). Unescaped, a `\r` in particular would rewind
+    // the terminal cursor and overwrite this message.
+    const inputPath = join(dir, "ctrl.tpeg");
+    writeFileSync(inputPath, 'grammar T {\n  a\tb = "x"\n}\n', "utf8");
+
+    const { exitCode, stderr } = captureOutput(() => run([inputPath]));
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain('"\\t"');
+    expect(stderr).not.toContain("\t");
+    expect(stderr).not.toContain("\r");
+  });
+
+  it("rejects a grammar file with unparsed trailing content instead of silently discarding it", () => {
+    // `parse()` only requires matching a PREFIX of the input -- without an
+    // explicit full-consumption check, a second (malformed) block after a
+    // syntactically valid one is silently dropped and the CLI exits 0 with
+    // only the first block's parsers, no diagnostic at all.
+    const inputPath = join(dir, "trailing-garbage.tpeg");
+    writeFileSync(
+      inputPath,
+      `${SIMPLE_GRAMMAR}\nthis is complete garbage !!! @@@\n`,
+      "utf8",
+    );
+
+    const { exitCode, stdout, stderr } = captureOutput(() => run([inputPath]));
+    expect(exitCode).toBe(1);
+    expect(stdout).toBe("");
+    expect(stderr).toContain("failed to parse");
+    expect(stderr).toContain("did not consume the rest of the file");
+  });
+
+  it("rejects a mistyped 'transforms' block instead of silently dropping it", () => {
+    const inputPath = join(dir, "typo-transforms.tpeg");
+    writeFileSync(
+      inputPath,
+      `${SIMPLE_GRAMMAR}\ntransformz Bad@typescript {\n  number(x: string) -> Result<number> { return { success: true, value: 1 }; }\n}\n`,
+      "utf8",
+    );
+
+    const { exitCode, stderr } = captureOutput(() => run([inputPath]));
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("failed to parse");
+  });
+
+  it("accepts trailing whitespace and a trailing comment after the last block", () => {
+    const inputPath = join(dir, "trailing-ok.tpeg");
+    writeFileSync(
+      inputPath,
+      `${SIMPLE_GRAMMAR}\n// trailing comment\n\n`,
+      "utf8",
+    );
+
+    const { exitCode, stdout } = captureOutput(() => run([inputPath]));
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("export const number");
+  });
+
+  it("reports an unknown option through the normal error format instead of a raw stack trace", () => {
+    const inputPath = join(dir, "grammar.tpeg");
+    writeFileSync(inputPath, SIMPLE_GRAMMAR, "utf8");
+
+    const { exitCode, stdout, stderr } = captureOutput(() =>
+      run([inputPath, "--nope"]),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toBe("");
+    expect(stderr).toContain("error:");
+    expect(stderr).toContain(USAGE_HEADER);
+    expect(stderr).not.toContain("at parseCliArgs");
+    expect(stderr).not.toContain("node:internal");
   });
 
   it("writes generated code to stdout by default", () => {

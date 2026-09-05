@@ -29,6 +29,7 @@ export {
   quotedString,
   singleLineComment,
   documentationComment,
+  skipTrailingWhitespaceAndComments,
 } from "./grammar";
 
 // Export transform definition parser

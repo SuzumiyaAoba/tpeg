@@ -79,8 +79,15 @@ const isLineBreakOrSpaceOrTab = (char: string | undefined): boolean =>
  * see that function's own doc comment for why a naive `result.next ===
  * ruleContent.length` check would wrongly reject a rule followed only by
  * a trailing comment (a legitimate, currently-working shape).
+ *
+ * Exported (in addition to its internal use here) so a caller of
+ * `tpegFile`/`grammarDefinition` -- namely `packages/cli/src/cli.ts` --
+ * can check that a parse consumed an ENTIRE source file the same way,
+ * without re-requiring exact end-of-input (which would wrongly reject a
+ * file with trailing whitespace or a trailing comment after the last
+ * `transforms` block).
  */
-const skipTrailingWhitespaceAndComments = (
+export const skipTrailingWhitespaceAndComments = (
   text: string,
   start: number,
 ): number => {

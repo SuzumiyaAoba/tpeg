@@ -13,6 +13,7 @@ import {
   generateTypeScriptParser,
   insertAutomaticCuts,
   promoteGlobalCuts,
+  skipTrailingWhitespaceAndComments,
   tpegFile,
 } from "@suzumiyaaoba/tpeg-parser";
 
@@ -154,8 +155,46 @@ function readVersion(): string {
   return pkg.version;
 }
 
+/**
+ * Neutralizes control characters (CR, LF, TAB, and other C0 bytes) before
+ * writing untrusted text (a grammar's own error `message`/`expected`/`found`
+ * strings, which can contain any byte from the source file) to the
+ * terminal. A raw `\r` in particular rewinds the cursor to the start of the
+ * line and overwrites everything printed so far, making the error
+ * unreadable -- this is display-safety, not the JS-string-literal escaping
+ * `escapeStringLiteral` (`packages/parser/src/constants.ts`) does (that one
+ * also escapes quotes/backslashes for embedding in generated TS source,
+ * which would be wrong here and make plain messages harder to read).
+ */
+function sanitizeForTerminal(text: string): string {
+  let result = "";
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0;
+    if (char === "\n") {
+      result += "\\n";
+    } else if (char === "\r") {
+      result += "\\r";
+    } else if (char === "\t") {
+      result += "\\t";
+    } else if (code < 0x20 || code === 0x7f) {
+      result += `\\x${code.toString(16).padStart(2, "0")}`;
+    } else {
+      result += char;
+    }
+  }
+  return result;
+}
+
 export function run(argv: string[]): number {
-  const { options, positionals } = parseCliArgs(argv);
+  let options: CliOptions;
+  let positionals: string[];
+  try {
+    ({ options, positionals } = parseCliArgs(argv));
+  } catch (error) {
+    process.stderr.write(`error: ${(error as Error).message}\n\n`);
+    process.stderr.write(USAGE);
+    return 1;
+  }
 
   if (options.help) {
     process.stdout.write(USAGE);
@@ -163,7 +202,14 @@ export function run(argv: string[]): number {
   }
 
   if (options.version) {
-    process.stdout.write(`${readVersion()}\n`);
+    try {
+      process.stdout.write(`${readVersion()}\n`);
+    } catch (error) {
+      process.stderr.write(
+        `error: could not read package version: ${(error as Error).message}\n`,
+      );
+      return 1;
+    }
     return 0;
   }
 
@@ -171,6 +217,18 @@ export function run(argv: string[]): number {
   if (!inputPath) {
     process.stderr.write("error: missing required <input.tpeg> argument\n\n");
     process.stderr.write(USAGE);
+    return 1;
+  }
+
+  // Argument-combination errors are reported before touching the
+  // filesystem or the parser: they don't depend on the input file's
+  // content, so there's no reason to make a user wait through a read and
+  // a parse (potentially of a large file) just to be told the flags
+  // don't go together.
+  if (options.regexFusion && !options.optimize) {
+    process.stderr.write(
+      "error: --regex-fusion/--regex-fusion-subtree requires --optimize (the standard generator has no such option)\n",
+    );
     return 1;
   }
 
@@ -185,28 +243,45 @@ export function run(argv: string[]): number {
   }
 
   const parseResult = parse(tpegFile)(source);
-  if (!parseResult.success) {
-    const { message, pos, expected, found } = parseResult.error;
+  // `parse()` only requires `tpegFile` to match a PREFIX of `source`, not
+  // the whole file (see `packages/core/src/utils.ts`'s `parse`) -- so a
+  // syntactically valid grammar followed by garbage (a typo'd second
+  // `grammar` block, a misspelled `transforms` keyword that silently
+  // stops matching as a transform block) would otherwise be accepted
+  // with the trailing content silently discarded and no diagnostic at
+  // all. `skipTrailingWhitespaceAndComments` (the same helper the
+  // grammar parser's own rule-boundary scan uses) allows trailing
+  // whitespace and comments after the last rule/transform, exactly like
+  // one would expect at the end of a normal source file, without
+  // requiring literal end-of-input immediately after the last token.
+  const consumedThroughEnd =
+    parseResult.success &&
+    skipTrailingWhitespaceAndComments(source, parseResult.next) ===
+      source.length;
+  if (!parseResult.success || !consumedThroughEnd) {
+    const pos = parseResult.success ? parseResult.next : parseResult.error.pos;
     const { line, column } = offsetToPos(source, pos);
+    if (parseResult.success) {
+      process.stderr.write(
+        `error: failed to parse "${inputPath}": unexpected content after line ${line}, column ${column} (the grammar/transforms block(s) before this point parsed successfully, but did not consume the rest of the file)\n`,
+      );
+      return 1;
+    }
+    const { message, expected, found } = parseResult.error;
     process.stderr.write(
-      `error: failed to parse "${inputPath}" at line ${line}, column ${column}: ${message}\n`,
+      `error: failed to parse "${inputPath}" at line ${line}, column ${column}: ${sanitizeForTerminal(message)}\n`,
     );
     if (expected) {
       const expectedList = Array.isArray(expected)
         ? expected.join(", ")
         : expected;
-      process.stderr.write(`  expected: ${expectedList}\n`);
+      process.stderr.write(
+        `  expected: ${sanitizeForTerminal(expectedList)}\n`,
+      );
     }
     if (found) {
-      process.stderr.write(`  found: ${found}\n`);
+      process.stderr.write(`  found: ${sanitizeForTerminal(found)}\n`);
     }
-    return 1;
-  }
-
-  if (options.regexFusion && !options.optimize) {
-    process.stderr.write(
-      "error: --regex-fusion/--regex-fusion-subtree requires --optimize (the standard generator has no such option)\n",
-    );
     return 1;
   }
 
@@ -314,5 +389,14 @@ export function run(argv: string[]): number {
 }
 
 if (import.meta.main) {
-  process.exit(run(process.argv.slice(2)));
+  // `process.exitCode = ...` (letting the process exit naturally) rather
+  // than `process.exit(...)`: a write to a piped stdout (as opposed to a
+  // file or a TTY) is asynchronous, and `process.exit()` terminates the
+  // process immediately without waiting for pending writes to flush --
+  // silently truncating large generated output (observed: a ~439KB
+  // parser piped through `tpeg g.tpeg | wc -c` came out at exactly 64KiB,
+  // still exit code 0). Setting `exitCode` and letting the event loop
+  // drain lets Node/Bun flush the stdout buffer before the process
+  // actually exits.
+  process.exitCode = run(process.argv.slice(2));
 }

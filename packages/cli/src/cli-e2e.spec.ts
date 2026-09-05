@@ -35,7 +35,7 @@
 
 import { describe, expect, test } from "vite-plus/test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { run } from "./cli";
@@ -95,6 +95,20 @@ const typeCheck = (dir: string, outputPath: string): void => {
     cwd: dir,
     stdio: "pipe",
   });
+};
+
+/**
+ * Builds a `.tpeg` source large enough that its generated output exceeds a
+ * single OS pipe buffer (64KiB on macOS/Linux), so a truncation bug that
+ * only shows up once `process.stdout.write` has to be flushed across
+ * multiple writes/ticks is actually exercised.
+ */
+const bigGrammarSource = (ruleCount: number): string => {
+  const rules = Array.from(
+    { length: ruleCount },
+    (_, i) => `  rule_${i} = "token_${i}"`,
+  ).join("\n");
+  return `grammar Big {\n${rules}\n}\n`;
 };
 
 describe("tpeg CLI end-to-end (generate -> type-check -> execute)", () => {
@@ -158,6 +172,47 @@ describe("tpeg CLI end-to-end (generate -> type-check -> execute)", () => {
         val: 7,
         next: 1,
       });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("stdout is not truncated when piped to another process, even for output larger than one OS pipe buffer", () => {
+    // Regression test for a real bug: `process.stdout.write()` to a piped
+    // (non-TTY, non-regular-file) stdout is asynchronous, and the CLI used
+    // to call the synchronous `process.exit(...)` immediately afterwards --
+    // terminating the process before pending writes reached the OS pipe.
+    // `-o <file>` and shell `>` redirection both go through a different,
+    // synchronous fs path and never showed the bug, which is why it went
+    // unnoticed: only a genuine pipe to a second process exercises it. This
+    // spawns the real CLI as its own OS process (an in-process `run()` call,
+    // as the rest of this file uses, would not reproduce the race at all)
+    // and reads its stdout the same way a shell pipeline would.
+    const dir = makeWorkDir();
+    try {
+      const inputPath = join(dir, "big.tpeg");
+      // 4000 rules -> a few hundred KB of generated code, several multiples
+      // of a 64KiB pipe buffer.
+      writeFileSync(inputPath, bigGrammarSource(4000), "utf8");
+
+      const cliEntry = join(REPO_ROOT, "packages", "cli", "src", "cli.ts");
+      const stdout = execFileSync("bun", ["run", cliEntry, inputPath], {
+        cwd: dir,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+
+      const outputPath = join(dir, "parser.ts");
+      const exitCode = run([inputPath, "-o", outputPath]);
+      expect(exitCode).toBe(0);
+      const written = readFileSync(outputPath, "utf8");
+      // `-o` writes the generated code as-is; stdout additionally appends a
+      // trailing newline when the generated code doesn't already end with
+      // one (see `cli.ts`) -- so the piped output is the file's content
+      // plus exactly that one byte.
+      const expected = written.endsWith("\n") ? written : `${written}\n`;
+
+      expect(stdout.length).toBe(Buffer.byteLength(expected, "utf8"));
+      expect(stdout.toString("utf8")).toBe(expected);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
