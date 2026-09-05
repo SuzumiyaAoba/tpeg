@@ -4,6 +4,22 @@ import { choice, sequence } from "./combinators";
 import { zeroOrMore } from "./repetition";
 import { createPos, getCharAndLength, unicodeGraphemeLength } from "./utils";
 
+/**
+ * Several assertions below are absolute wall-clock (ms) or absolute
+ * heap-byte thresholds -- machine-dependent and flaky under contention,
+ * matching `performance.spec.ts`'s own doc comment (and
+ * `type-guards.spec.ts`'s "Type Guard Performance", guarded the same
+ * way). Confirmed empirically: several `vp test run` processes running
+ * concurrently reproduces failures like `expected 1037.7… to be less
+ * than 1000` here, even though the loop under test is unchanged -- this
+ * is very likely one mechanism behind this repo's previously-
+ * unidentified rare "1 test failed" flake. By default (plain `bun
+ * test`, what CI runs) the timed/measured operation still runs, so a
+ * thrown error still fails the suite -- only the numeric threshold
+ * check is skipped. Set `TPEG_STRICT_PERF=1` to enforce these locally.
+ */
+const STRICT_PERF = process.env["TPEG_STRICT_PERF"] === "1";
+
 describe("Edge Cases and Stress Tests", () => {
   describe("Very Large Input Handling", () => {
     it("should handle extremely large strings efficiently", () => {
@@ -29,7 +45,9 @@ describe("Edge Cases and Stress Tests", () => {
       const duration = endTime - startTime;
 
       expect(count).toBe(1000000);
-      expect(duration).toBeLessThan(1000); // Should complete within 1 second
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(1000); // Should complete within 1 second
+      }
     });
 
     it("should handle very long Unicode strings", () => {
@@ -54,12 +72,14 @@ describe("Edge Cases and Stress Tests", () => {
       const duration = endTime - startTime;
 
       expect(count).toBe(10000);
-      expect(duration).toBeLessThan(2000); // Should complete within 2 seconds
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(2000); // Should complete within 2 seconds
+      }
     });
   });
 
   describe("Memory Leak Prevention", () => {
-    it("should not leak memory during repeated parsing operations", () => {
+    it("should not leak memory during repeated parsing operations (heap-growth threshold gated by TPEG_STRICT_PERF)", () => {
       const initialMemory = process.memoryUsage().heapUsed;
 
       // Perform many parsing operations
@@ -81,7 +101,9 @@ describe("Edge Cases and Stress Tests", () => {
       const memoryIncrease = finalMemory - initialMemory;
 
       // Memory increase should be reasonable (less than 50MB)
-      expect(memoryIncrease).toBeLessThan(50 * 1024 * 1024);
+      if (STRICT_PERF) {
+        expect(memoryIncrease).toBeLessThan(50 * 1024 * 1024);
+      }
     });
 
     it("should create many positions without corrupting their values", () => {
@@ -245,7 +267,9 @@ describe("Edge Cases and Stress Tests", () => {
       const endTime = performance.now();
 
       expect(result.success).toBe(true);
-      expect(endTime - startTime).toBeLessThan(100); // Should be fast
+      if (STRICT_PERF) {
+        expect(endTime - startTime).toBeLessThan(100); // Should be fast
+      }
 
       if (result.success) {
         expect(result.val).toHaveLength(10000);
@@ -301,7 +325,9 @@ describe("Edge Cases and Stress Tests", () => {
       const duration = endTime - startTime;
 
       // Should complete within reasonable time
-      expect(duration).toBeLessThan(1000);
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(1000);
+      }
     });
 
     it("should handle concurrent-like operations efficiently", () => {
@@ -326,7 +352,9 @@ describe("Edge Cases and Stress Tests", () => {
       const endTime = performance.now();
       const duration = endTime - startTime;
 
-      expect(duration).toBeLessThan(500);
+      if (STRICT_PERF) {
+        expect(duration).toBeLessThan(500);
+      }
     });
   });
 });

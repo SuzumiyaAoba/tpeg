@@ -21,6 +21,18 @@ beforeEach(() => {
   resetFailureWatermark();
 });
 
+/**
+ * "should handle large inputs efficiently"'s single assertion below is an
+ * absolute wall-clock (ms) threshold -- machine-dependent and flaky
+ * under contention, matching `performance.spec.ts`'s own doc comment
+ * (and `edge-cases.spec.ts`/`type-guards.spec.ts`, guarded the same
+ * way). By default (plain `bun test`, what CI runs) the timed operation
+ * still runs, so a thrown error still fails the suite -- only the
+ * numeric threshold check is skipped. Set `TPEG_STRICT_PERF=1` to
+ * enforce it locally.
+ */
+const STRICT_PERF = process.env["TPEG_STRICT_PERF"] === "1";
+
 describe("opt", () => {
   it("should parse with the given parser", () => {
     const input = "a";
@@ -351,7 +363,9 @@ describe("repetition edge cases", () => {
     if (result.success) {
       expect(result.val.length).toBe(1000);
       // 1秒以内に完了することを確認（合理的なパフォーマンス期待）
-      expect(endTime - startTime).toBeLessThan(1000);
+      if (STRICT_PERF) {
+        expect(endTime - startTime).toBeLessThan(1000);
+      }
     }
   });
 

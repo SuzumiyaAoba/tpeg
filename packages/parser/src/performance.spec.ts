@@ -35,9 +35,18 @@ import {
  * `TPEG_STRICT_PERF=1` to enforce them locally.
  *
  * The scaling-factor assertion in "should scale linearly with grammar
- * size" is deliberately NOT gated: it compares ops/sec measured within
- * the same run against each other (a ratio), so it self-normalizes to
- * the machine it runs on and stays meaningful in CI.
+ * size" was PREVIOUSLY left ungated on the theory that comparing two
+ * ops/sec measurements taken within the same run (a ratio) self-
+ * normalizes to the machine it runs on. That assumption doesn't hold
+ * under contention: the two measurements it ratios are taken
+ * sequentially, not simultaneously, so a contention burst that happens
+ * to land during only one of the two windows still skews the ratio.
+ * Confirmed empirically -- several `vp test run` processes running
+ * concurrently reproduces `expected 54.2… to be less than 31.6…` (this
+ * exact assertion) even though each process's own suite is internally
+ * unchanged; this is very likely the mechanism behind this repo's
+ * previously-unidentified rare "1 test failed" flake. Gated behind
+ * `STRICT_PERF` like every other threshold here, for the same reason.
  */
 const STRICT_PERF = process.env["TPEG_STRICT_PERF"] === "1";
 
@@ -362,7 +371,9 @@ describe("TPEG Parser Performance Benchmarks", () => {
       console.log(
         `Scaling factor: ${scalingFactor.toFixed(2)}x (should be < ${expectedMaxScaling.toFixed(2)}x)`,
       );
-      expect(scalingFactor).toBeLessThan(expectedMaxScaling);
+      if (STRICT_PERF) {
+        expect(scalingFactor).toBeLessThan(expectedMaxScaling);
+      }
     });
 
     it("should handle deeply nested expressions efficiently", () => {
