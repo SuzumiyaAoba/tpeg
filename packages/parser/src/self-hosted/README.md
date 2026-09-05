@@ -47,7 +47,7 @@ hand-written parser remains the one actually used by `tpeg-parser`/`tpeg-cli`.
   `documentation` field) is **not applicable, not merely unimplemented**:
   `grammar.ts`'s `ruleDefinition` calls `createRuleDefinition(name, pattern)`
   with only two arguments, and its `grammarItem` choice tries
-  `singleLineComment` (`literal("//")`) *before* `documentationComment`
+  `singleLineComment` (`literal("//")`) _before_ `documentationComment`
   (`literal("///")`) - a `///` line matches `singleLineComment` first (its
   `zeroOrMore(nonNewlineChar)` happily consumes the leftover third `/` as
   ordinary content) and `///` never reaches `documentationComment` at all.
@@ -126,7 +126,7 @@ A handful of hand-written-parser quirks had to be reproduced exactly (not
   scanner described below) didn't treat the `transforms` keyword as a
   rule/block boundary - only `"identifier <same-line-ws> ="` and a bare `}`
   were recognized boundaries - so it greedily scanned the `transforms` block
-  into the *preceding* rule's own pattern slice, hit `expression()` stopping
+  into the _preceding_ rule's own pattern slice, hit `expression()` stopping
   short at the block's own `@` (which nothing in `expression()`'s grammar
   accepts), and the whole grammar block parse failed with an unhelpful error
   (`Unexpected content after rule expression: "@typescript { f() ->"`,
