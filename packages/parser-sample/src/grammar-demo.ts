@@ -99,11 +99,11 @@ const grammarExamples = [
     @author: "TPEG Team"
     @description: "Lightweight JSON parser"
     
-    value = string / number / boolean / null
+    value = string / number / boolean / nullLiteral
     string = "\\"" [^\\"]* "\\""
     number = [0-9]+ ("." [0-9]+)?
     boolean = "true" / "false"
-    null = "null"
+    nullLiteral = "null"
   }`,
 
   // Grammar with various annotation types
