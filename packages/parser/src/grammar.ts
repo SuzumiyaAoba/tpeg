@@ -261,6 +261,31 @@ const grammarRuleExpression: Parser<Expression> = (
             identEnd++;
           }
 
+          // A whole-word "transforms" here can ONLY start a new grammarItem
+          // (transformDefinition, see transforms.ts) - unlike a plain
+          // identifier, expression()'s own grammar has no "@"/"->"/brace-
+          // parameter syntax at all, so "transforms" can never legitimately
+          // continue a multi-line sequence as an ordinary rule reference
+          // immediately followed by a `transforms Name@language { ... }`
+          // block's own tokens. Without this, this scan doesn't stop before
+          // "transforms" the way it already does before "}"/"@" above,
+          // greedily absorbs the whole transforms block into the CURRENT
+          // rule's slice, and fails once expression() stops short at that
+          // block's "@" with no boundary check having caught it first (a
+          // genuine production parse failure, not merely a self-hosting-PoC
+          // gap - see packages/parser/src/self-hosted/README.md). This is
+          // narrowly the whole word "transforms", not a prefix (checked via
+          // identEnd === checkPos + keyword-length, not identText.startsWith)
+          // so a rule legitimately named e.g. "transformsFoo" is unaffected.
+          if (
+            activeBraceDepth === 0 &&
+            input.startsWith(GRAMMAR_KEYWORDS.TRANSFORMS, checkPos) &&
+            identEnd === checkPos + GRAMMAR_KEYWORDS.TRANSFORMS.length
+          ) {
+            foundEnd = true;
+            break;
+          }
+
           // Same-line whitespace only: "identifier\n=" isn't recognized as
           // the next rule's start, matching the original implementation.
           let afterIdent = identEnd;

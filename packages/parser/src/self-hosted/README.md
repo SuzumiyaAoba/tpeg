@@ -120,28 +120,25 @@ A handful of hand-written-parser quirks had to be reproduced exactly (not
   `typescript_x` still resolves to language `typescript` on both sides, not
   a parse failure, matching that guard's actual (not fully identifier-aware)
   regex.
-- **A rule immediately followed by a `transforms` block in the same grammar
-  block fails on both sides.** `grammar.ts`'s `grammarRuleExpression`
-  (the hand-rolled rule-boundary scanner described below) doesn't treat the
-  `transforms` keyword as a rule/block boundary - only `"identifier <same-
-  line-ws> ="` and a bare `}` are recognized boundaries - so it greedily
-  scans the `transforms` block into the *preceding* rule's own pattern
-  slice, hits `expression()` failing partway in (a bare `T@typescript`
-  contains a `@`, which nothing in `expression()`'s grammar accepts), and
-  the whole grammar block parse fails. `05-full.tpeg`'s `sequenceContinuation`
-  hits the analogous failure for a structurally different reason (`identifier
-  sameLineWs "="` doesn't match `transforms T@typescript`'s shape either, so
-  it's accepted into the sequence and then chokes on the same `@`). This
-  PoC reproduces the failure rather than working around it - see
-  `full.compare.spec.ts`'s last `modularGrammarBlockNode` case - since
-  `transforms` blocks that appear anywhere else (first item, or after any
-  other item) work correctly on both sides. This is a genuine production
-  parse failure for any real `.tpeg` file shaped that way, with an
-  unhelpful error message (`Unexpected content after rule expression:
-  "@typescript { f() ->"`, pointing at the wrong construct entirely) - it
-  would be worth its own tracked issue against `grammar.ts`'s
-  `grammarRuleExpression` rather than staying documented only here, but
-  fixing it is a production change outside this PoC's scope.
+- **A rule directly followed by a `transforms` block in the same grammar
+  block used to fail on both sides - now fixed on both sides.**
+  `grammar.ts`'s `grammarRuleExpression` (the hand-rolled rule-boundary
+  scanner described below) didn't treat the `transforms` keyword as a
+  rule/block boundary - only `"identifier <same-line-ws> ="` and a bare `}`
+  were recognized boundaries - so it greedily scanned the `transforms` block
+  into the *preceding* rule's own pattern slice, hit `expression()` stopping
+  short at the block's own `@` (which nothing in `expression()`'s grammar
+  accepts), and the whole grammar block parse failed with an unhelpful error
+  (`Unexpected content after rule expression: "@typescript { f() ->"`,
+  pointing at the wrong construct entirely). Fixed in `grammarRuleExpression`
+  by recognizing a whole-word `"transforms"` (not a prefix - a rule
+  legitimately named e.g. `transformsFoo` is unaffected) as a boundary the
+  same way `"}"` and `"@"` already were. `05-full.tpeg`'s `notNextRuleStart`
+  got the analogous fix (an added `!("transforms" !identContChar)` negative
+  lookahead) to keep parity - see `full.compare.spec.ts`'s
+  `modularGrammarBlockNode` cases for a rule directly followed by
+  `transforms`, `transforms` between two rules, and the `transformsFoo`
+  non-regression case.
 
 ## The key finding: no bounded pre-scan needed
 

@@ -166,15 +166,27 @@ grammar G {
   r = "a"
 }`,
 
-      // a rule immediately followed by a transforms block in the same grammar
-      // block: grammarRuleExpression's boundary scan doesn't recognize
-      // "transforms" as a rule/block boundary (see this directory's README),
-      // so it greedily swallows the transforms block into the rule's own
-      // pattern and fails - reproduced here, not worked around, to keep this
-      // grammar an honest model of the hand-written parser's actual behavior
+      // a rule immediately followed by a transforms block in the same
+      // grammar block - see README ("A rule directly followed by a
+      // transforms block") for the grammarRuleExpression boundary-scan fix
+      // this now depends on
       `grammar G {
   r = "a"
   transforms T@typescript { f() -> X { return 1; } }
+}`,
+      `grammar G {
+  a = "x"
+  transforms T@typescript { f() -> X { return 1; } }
+  b = "y"
+}`,
+
+      // a rule legitimately named "transformsFoo" (not the bare keyword)
+      // referenced as a multi-line sequence continuation must still work -
+      // the boundary check is a whole-word match, not a prefix
+      `grammar G {
+  transformsFoo = "x"
+  other = "a"
+           transformsFoo
 }`,
     ],
     modularGrammarDefinition,

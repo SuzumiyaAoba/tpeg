@@ -177,7 +177,9 @@ export const characterClassNode: Parser<any> = choice(characterClassBrackets, an
 
 export const identStart: Parser<any> = charClass(["a", "z"], ["A", "Z"], "_");
 
-export const identCont: Parser<any> = charClassRun([["a", "z"], ["A", "Z"], ["0", "9"], "_"], 0);
+export const identContChar: Parser<any> = charClass(["a", "z"], ["A", "Z"], ["0", "9"], "_");
+
+export const identCont: Parser<any> = zeroOrMore(identContChar);
 
 export const identifierName: Parser<any> = (input, pos) => {
   const __base = (captureSequence(capture("start", identStart), capture("rest", identCont)));
@@ -640,7 +642,7 @@ export const labeled: Parser<any> = choice((input, pos) => {
   };
 }, prefix);
 
-export const notNextRuleStart: Parser<any> = notPredicate(sequence(identifierName, sameLineWs, literal("=")));
+export const notNextRuleStart: Parser<any> = sequence(notPredicate(sequence(identifierName, sameLineWs, literal("="))), notPredicate(sequence(literal("transforms"), notPredicate(identContChar))));
 
 export const sequenceContinuation: Parser<any> = sequence(interWs, notNextRuleStart, labeled);
 

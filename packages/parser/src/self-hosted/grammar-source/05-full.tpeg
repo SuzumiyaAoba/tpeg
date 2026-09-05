@@ -34,7 +34,8 @@ grammar SelfHostFull {
   characterClassNode = characterClassBrackets / anyCharDot
 
   identStart = [a-zA-Z_]
-  identCont = [a-zA-Z0-9_]*
+  identContChar = [a-zA-Z0-9_]
+  identCont = identContChar*
 
   identifierName = start:identStart rest:identCont { return start + rest.join(""); }
 
@@ -111,7 +112,12 @@ grammar SelfHostFull {
   labeled = label:identifierName ":" expr:prefix { return { type: "LabeledExpression", label, expression: expr }; }
           / prefix
 
-  notNextRuleStart = !(identifierName sameLineWs "=")
+  // A whole-word "transforms" can only start a new grammarItem (a transform
+  // set definition) - mirrors the equivalent fix in grammar.ts's
+  // grammarRuleExpression (see packages/parser/src/self-hosted/README.md).
+  // The "!identContChar" guard keeps this narrowly the whole word, not a
+  // prefix, so a rule legitimately named e.g. "transformsFoo" is unaffected.
+  notNextRuleStart = !(identifierName sameLineWs "=") !("transforms" !identContChar)
 
   sequenceContinuation = interWs notNextRuleStart labeled
 

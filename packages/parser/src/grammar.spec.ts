@@ -512,6 +512,57 @@ describe("Grammar Definition Block Tests", () => {
       }
     });
 
+    test("should treat a whole-word 'transforms' as a rule boundary, not absorb it into the preceding rule", () => {
+      // Regression test: grammarRuleExpression's boundary scanner used to
+      // recognize only "identifier ws* =" and a bare "}" as boundaries, so a
+      // `transforms Name@language { ... }` block directly after a rule (with
+      // no blank-line-triggered "}" in between) was greedily absorbed into
+      // the PRECEDING rule's own pattern slice, then failed once
+      // expression() stopped short at the block's own "@" (which nothing in
+      // expression()'s grammar accepts) - see
+      // packages/parser/src/self-hosted/README.md for how this was found.
+      const input = `grammar G {
+        r = "a"
+        transforms T@typescript {
+          f() -> X { return 1; }
+        }
+      }`;
+
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules).toHaveLength(1);
+        expect(result.val.rules[0]?.name).toBe("r");
+        expect(result.val.rules[0]?.pattern).toEqual({
+          type: "StringLiteral",
+          value: "a",
+          quote: '"',
+        });
+        expect(result.val.transforms).toHaveLength(1);
+        expect(result.val.transforms?.[0]?.transformSet.name).toBe("T");
+      }
+    });
+
+    test("should still parse a rule referencing another rule literally named 'transformsFoo'", () => {
+      // The "transforms" boundary check above must be a whole-word match,
+      // not a prefix - a rule legitimately named "transformsFoo" (or
+      // anything else merely starting with "transforms") is a completely
+      // ordinary identifier reference and must not be treated as a boundary.
+      const input = `grammar G {
+        transformsFoo = "x"
+        other = "a"
+                 transformsFoo
+      }`;
+
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules).toHaveLength(2);
+        expect(result.val.rules[1]?.name).toBe("other");
+        expect(result.val.rules[1]?.pattern.type).toBe("Sequence");
+      }
+    });
+
     test("should report an accurate line/column after a rule body spanning multiple lines", () => {
       // Regression test: grammarRuleExpression used to recompute the
       // returned line/column from the *rule's own start* position plus a
