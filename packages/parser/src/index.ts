@@ -100,7 +100,11 @@ export { analyzeReentrancy, type ReentrancyAnalysis } from "./reentrancy";
 // generation, but also exported standalone for a caller that wants to
 // validate a grammar ahead of time (e.g. a linter, or before applying an
 // AST rewrite pass). See `grammar-validation.ts`'s doc comment.
-export { validateGrammar } from "./grammar-validation";
+export {
+  validateGrammar,
+  validateGeneratedIdentifiers,
+} from "./grammar-validation";
+export type { GeneratedIdentifierCheckOptions } from "./grammar-validation";
 
 // Export the reference PEG interpreter -- a differential-testing oracle,
 // independent of codegen, used by `codegen-differential.spec.ts`. See

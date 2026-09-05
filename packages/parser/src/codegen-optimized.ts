@@ -56,7 +56,10 @@ import {
   canCommitWithoutConsuming,
   predictiveFilterForExpression,
 } from "./first-sets";
-import { validateGrammar } from "./grammar-validation";
+import {
+  validateGeneratedIdentifiers,
+  validateGrammar,
+} from "./grammar-validation";
 import {
   analyzeGrammarPerformance,
   globalPerformanceMonitor,
@@ -414,7 +417,22 @@ export class OptimizedTPEGCodeGenerator {
 
     // Add optimized imports based on usage analysis
     if (this.options.includeImports) {
-      imports.push(...this.generateOptimizedImports(grammar));
+      const { lines, bindings } = this.generateOptimizedImports(grammar);
+      imports.push(...lines);
+      // Reject a rule name, capture label, or transform parameter name
+      // that would generate to a reserved word, an internal codegen
+      // name, or one of the bindings just collected above -- see
+      // `validateGeneratedIdentifiers`'s doc comment
+      // (`grammar-validation.ts`) for the concrete failure modes.
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: this.options.namePrefix,
+        importedBindings: bindings,
+      });
+    } else {
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: this.options.namePrefix,
+        importedBindings: [],
+      });
     }
 
     // Generate parser for each rule with optimization, applying a matching
@@ -463,8 +481,17 @@ export class OptimizedTPEGCodeGenerator {
   /**
    * Generate optimized imports based on grammar analysis
    */
-  private generateOptimizedImports(grammar: GrammarDefinition): string[] {
+  private generateOptimizedImports(grammar: GrammarDefinition): {
+    lines: string[];
+    /** Every binding name these `lines` actually import (`"Parser"` plus
+     * each combinator/`tpeg-combinator` name), flattened out of the
+     * assembled import statement strings above -- passed to
+     * `validateGeneratedIdentifiers` so its collision check matches what
+     * this grammar, under these options, will really emit. */
+    bindings: string[];
+  } {
     const imports = [];
+    const bindings: string[] = ["Parser"];
 
     // Core imports
     imports.push('import type { Parser } from "@suzumiyaaoba/tpeg-core";');
@@ -534,6 +561,7 @@ export class OptimizedTPEGCodeGenerator {
       imports.push(
         `import { ${combinatorPackageImports.join(", ")} } from "@suzumiyaaoba/tpeg-combinator";`,
       );
+      bindings.push(...combinatorPackageImports);
     }
 
     // Generate optimized combinator import
@@ -541,8 +569,9 @@ export class OptimizedTPEGCodeGenerator {
     imports.push(
       `import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`,
     );
+    bindings.push(...combinators);
 
-    return imports;
+    return { lines: imports, bindings };
   }
 
   /**

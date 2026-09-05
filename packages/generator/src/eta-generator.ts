@@ -15,6 +15,7 @@ import {
   generateIdentifierCode,
   generateQualifiedIdentifierCode,
   generateStringLiteralCode,
+  validateGeneratedIdentifiers,
   wrapWithAction,
 } from "@suzumiyaaoba/tpeg-parser";
 import { Eta } from "eta";
@@ -213,7 +214,27 @@ export class EtaTPEGCodeGenerator {
       this.ruleIndex.set(rule.name, index);
     });
 
-    const imports = this.generateImports(grammar, performanceAnalysis);
+    const { lines: imports, bindings: importedBindings } = this.generateImports(
+      grammar,
+      performanceAnalysis,
+    );
+    // Reject a rule name, capture label, or transform parameter name
+    // that would generate to a reserved word, an internal codegen name,
+    // or one of the bindings `imports` above actually declares -- see
+    // `validateGeneratedIdentifiers`'s doc comment
+    // (`packages/parser/src/grammar-validation.ts`) for the concrete
+    // failure modes (e.g. a rule named `class`, or one named `literal`
+    // colliding with `import { literal }`). Imported directly from
+    // `tpeg-parser` (already a real dependency of this package -- see
+    // `collectTopLevelLabels`/`wrapWithAction`/etc. above) rather than
+    // duplicated into this package's own `grammar-validation.ts`, unlike
+    // that file's other checks -- see this call's sibling
+    // `validateGrammarForEtaGenerator` for why THOSE are a deliberate,
+    // pre-existing duplication this fix doesn't revisit.
+    validateGeneratedIdentifiers(grammar, {
+      namePrefix: this.options.namePrefix,
+      importedBindings,
+    });
     const exports: string[] = [];
     const rules: RuleTemplateData[] = [];
 
@@ -297,10 +318,19 @@ export class EtaTPEGCodeGenerator {
   private generateImports(
     grammar: GrammarDefinition,
     analysis: ReturnType<typeof analyzeGrammarPerformance>,
-  ): string[] {
+  ): {
+    lines: string[];
+    /** Every binding name these `lines` actually import (`"Parser"` plus
+     * `"memoize"` when applicable and each used combinator), for
+     * `validateGeneratedIdentifiers` to check rule names against. Empty
+     * when `includeImports` is false, matching `lines` itself. */
+    bindings: string[];
+  } {
     const imports = [];
+    const bindings: string[] = [];
 
     if (this.options.includeImports) {
+      bindings.push("Parser");
       // Core imports
       imports.push('import type { Parser } from "@suzumiyaaoba/tpeg-core";');
 
@@ -336,6 +366,7 @@ export class EtaTPEGCodeGenerator {
         imports.push(
           'import { memoize } from "@suzumiyaaoba/tpeg-combinator";',
         );
+        bindings.push("memoize");
       }
 
       // Generate combinator import
@@ -343,9 +374,10 @@ export class EtaTPEGCodeGenerator {
       imports.push(
         `import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`,
       );
+      bindings.push(...combinators);
     }
 
-    return imports;
+    return { lines: imports, bindings };
   }
 
   /**

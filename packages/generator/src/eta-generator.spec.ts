@@ -409,7 +409,11 @@ describe("EtaTPEGCodeGenerator", () => {
         [],
         [
           createRuleDefinition(
-            "sequence",
+            // Not named "sequence": that's the actual `tpeg-core` import
+            // this rule's own generated code needs, and `validateGeneratedIdentifiers`
+            // (`packages/parser/src/grammar-validation.ts`) now rejects a
+            // rule name that collides with it.
+            "sequenceRule",
             createSequence([
               createStringLiteral("a"),
               createStringLiteral("b"),
@@ -491,7 +495,9 @@ describe("EtaTPEGCodeGenerator", () => {
         [],
         [
           createRuleDefinition(
-            "choice",
+            // Not named "choice": see "sequenceRule"'s comment above --
+            // same collision, this time with the `choice` import.
+            "choiceRule",
             createChoice([
               createStringLiteral("true"),
               createStringLiteral("false"),
@@ -515,7 +521,11 @@ describe("EtaTPEGCodeGenerator", () => {
           createRuleDefinition("star", createStar(createStringLiteral("a"))),
           createRuleDefinition("plus", createPlus(createStringLiteral("b"))),
           createRuleDefinition(
-            "optional",
+            // Not named "optional": `Optional` generates to an `optional(...)`
+            // call, so this rule name would collide with that import too
+            // (unlike "star"/"plus", which generate to `zeroOrMore`/
+            // `oneOrMore` -- no collision for those two names).
+            "optionalRule",
             createOptional(createStringLiteral("c")),
           ),
         ],
@@ -1107,5 +1117,58 @@ describe("EtaTPEGCodeGenerator: grammar validation", () => {
       includeTypes: false,
     });
     expect(result.code).toContain("choice(");
+  });
+
+  it("rejects a rule name that is a JS reserved word", async () => {
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [createRuleDefinition("class", createStringLiteral("a"))],
+    );
+
+    await expect(generateEtaTypeScriptParser(grammar)).rejects.toThrow(
+      /reserved word "class"/,
+    );
+  });
+
+  it("rejects a rule name that collides with a combinator its own generated code imports", async () => {
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        createRuleDefinition("main", createIdentifier("literal")),
+        createRuleDefinition("literal", createStringLiteral("a")),
+      ],
+    );
+
+    await expect(
+      generateEtaTypeScriptParser(grammar, { includeImports: true }),
+    ).rejects.toThrow(/collides with a runtime import/);
+  });
+
+  it("rejects a rule name colliding with an internal codegen name (__base/__result/__val)", async () => {
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [createRuleDefinition("__base", createStringLiteral("a"))],
+    );
+
+    await expect(generateEtaTypeScriptParser(grammar)).rejects.toThrow(
+      /code generator itself uses internally/,
+    );
+  });
+
+  it("namePrefix makes an otherwise-reserved rule name safe", async () => {
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [createRuleDefinition("class", createStringLiteral("a"))],
+    );
+
+    const result = await generateEtaTypeScriptParser(grammar, {
+      includeImports: true,
+      namePrefix: "g_",
+    });
+    expect(result.code).toContain("g_class");
   });
 });

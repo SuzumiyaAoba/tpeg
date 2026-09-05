@@ -14,7 +14,10 @@ import { parse } from "@suzumiyaaoba/tpeg-core";
 import { generateTypeScriptParser } from "./codegen";
 import { generateOptimizedTypeScriptParser } from "./codegen-optimized";
 import { grammarDefinition } from "./grammar";
-import { validateGrammar } from "./grammar-validation";
+import {
+  validateGeneratedIdentifiers,
+  validateGrammar,
+} from "./grammar-validation";
 import {
   createChoice,
   createGrammarDefinition,
@@ -454,5 +457,203 @@ describe("validateGrammar: cut-only patterns", () => {
         optimize: true,
       }),
     ).toThrow(/cannot be a rule body/i);
+  });
+});
+
+/**
+ * `validateGeneratedIdentifiers` rejects a rule name, capture label, or
+ * transform-parameter name that would generate to a JS reserved word, an
+ * import the grammar's own generated code needs, or one of the fixed
+ * internal names `wrapWithAction`/`wrapWithTransform` declare inside a
+ * rule's body -- see that function's doc comment (`grammar-validation.ts`)
+ * for concrete failure modes (a `SyntaxError`, a duplicate-declaration
+ * `TS2395`, or a self-referential TDZ `ReferenceError`), each verified by
+ * hand against `tsc`/Node before this check was added. Exercised both
+ * directly (unit-level, via `validateGeneratedIdentifiers` itself with a
+ * minimal `importedBindings` list) and end-to-end through both real
+ * generators, which is what actually determines `importedBindings` in
+ * practice.
+ */
+describe("validateGeneratedIdentifiers: reserved words and import collisions", () => {
+  it("rejects a rule name that is a JS reserved word", () => {
+    const grammar = grammarFromSource('class = "a"');
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: [],
+      }),
+    ).toThrow(/reserved word "class"/);
+  });
+
+  it("rejects a rule name that is reserved only in a module/strict context (let/static/yield/await/...)", () => {
+    for (const name of ["let", "static", "yield", "await", "interface"]) {
+      const grammar = grammarFromSource(`${name} = "a"`);
+      expect(() =>
+        validateGeneratedIdentifiers(grammar, {
+          namePrefix: "",
+          importedBindings: [],
+        }),
+      ).toThrow(new RegExp(`reserved word "${name}"`));
+    }
+  });
+
+  it("does NOT reject words that merely look reserved but compile fine as a const name", () => {
+    for (const name of ["as", "async", "from", "get", "of", "set", "type"]) {
+      const grammar = grammarFromSource(`${name} = "a"`);
+      expect(() =>
+        validateGeneratedIdentifiers(grammar, {
+          namePrefix: "",
+          importedBindings: [],
+        }),
+      ).not.toThrow();
+    }
+  });
+
+  it("checks the PREFIXED name, so --name-prefix is a real escape hatch for a reserved word", () => {
+    const grammar = grammarFromSource('class = "a"');
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "g_",
+        importedBindings: [],
+      }),
+    ).not.toThrow();
+    // ... but a prefix that itself lands on a reserved word is still caught.
+    expect(() =>
+      validateGeneratedIdentifiers(grammarFromSource('const = "a"'), {
+        namePrefix: "",
+        importedBindings: [],
+      }),
+    ).toThrow(/reserved word "const"/);
+  });
+
+  it("rejects a rule name that collides with a binding the grammar's own generated code imports", () => {
+    const grammar = grammarFromSource('literal = "a"');
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: ["Parser", "literal"],
+      }),
+    ).toThrow(/collides with a runtime import/);
+  });
+
+  it("does NOT reject a rule name absent from the actual import set (no static list)", () => {
+    const grammar = grammarFromSource('literal = "a"');
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        // "literal" the combinator isn't imported by THIS (hypothetical)
+        // grammar's generated code, so the name is safe.
+        importedBindings: ["Parser"],
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects a rule name that collides with an internal codegen name (__base/__result/__val), regardless of imports", () => {
+    for (const name of ["__base", "__result", "__val"]) {
+      const grammar = grammarFromSource(`${name} = "a"`);
+      expect(() =>
+        validateGeneratedIdentifiers(grammar, {
+          namePrefix: "",
+          importedBindings: [],
+        }),
+      ).toThrow(/code generator itself uses internally/);
+    }
+  });
+
+  it("rejects a capture label that is a reserved word, even when the enclosing action never references it by name", () => {
+    const grammar = grammarFromSource('start = new:"a" { return $$; }');
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: [],
+      }),
+    ).toThrow(/capture label named "new"/);
+  });
+
+  it("does NOT reject an ordinary label name", () => {
+    const grammar = grammarFromSource('start = value:"a" { return value; }');
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: [],
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects a transform function's parameter name when it is a reserved word", () => {
+    const result = parse(grammarDefinition)(`grammar G {
+      start = digits:[0-9]+
+    }
+
+    transforms X@typescript {
+      start(new: string) -> Result<number> { return { success: true, value: 1 }; }
+    }`);
+    if (!result.success) throw new Error("test fixture failed to parse");
+    // Only the grammar half is parsed by `grammarDefinition` above --
+    // attach the transforms block by hand the way `tpegFile` would.
+    const grammar = {
+      ...result.val,
+      transforms: [
+        {
+          type: "TransformDefinition" as const,
+          transformSet: {
+            name: "X",
+            targetLanguage: "typescript",
+            functions: [
+              {
+                name: "start",
+                parameters: [{ name: "new", type: "string" }],
+                returnType: { type: "Result", generic: "number" },
+                body: "return { success: true, value: 1 };",
+              },
+            ],
+          },
+        },
+      ],
+    };
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: [],
+      }),
+    ).toThrow(/parameter named "new"/);
+  });
+
+  it("end-to-end: both generators reject a rule name colliding with its own required import", () => {
+    const grammar = grammarFromSource('start = literal\nliteral = "a"');
+    expect(() =>
+      generateTypeScriptParser(grammar, {
+        includeImports: true,
+        includeTypes: true,
+      }),
+    ).toThrow(/collides with a runtime import/);
+    expect(() =>
+      generateOptimizedTypeScriptParser(grammar, {
+        language: "typescript",
+        includeImports: true,
+        includeTypes: true,
+        optimize: true,
+      }),
+    ).toThrow(/collides with a runtime import/);
+  });
+
+  it("end-to-end: a rule name that collides with an import is still accepted with includeImports: false (nothing to collide with)", () => {
+    const grammar = grammarFromSource('start = literal\nliteral = "a"');
+    expect(() =>
+      generateTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+      }),
+    ).not.toThrow();
+  });
+
+  it("end-to-end: --name-prefix (namePrefix option) makes an otherwise-reserved rule name safe in real generated code", () => {
+    const grammar = grammarFromSource('class = "a"');
+    const result = generateTypeScriptParser(grammar, {
+      includeImports: true,
+      includeTypes: true,
+      namePrefix: "g_",
+    });
+    expect(result.code).toContain("export const g_class");
   });
 });

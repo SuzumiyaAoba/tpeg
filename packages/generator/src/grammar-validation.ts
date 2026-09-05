@@ -2,38 +2,50 @@
  * Grammar-level structural validation for `tpeg-generator`'s Eta-based
  * code generator (`eta-generator.ts`).
  *
- * ## Why this is a DUPLICATE of `packages/parser/src/grammar-validation.ts`
- * and `first-sets.ts`'s nullability machinery, not a shared import
+ * ## Why this file still duplicates `packages/parser/src/grammar-validation.ts`
+ * and `first-sets.ts`'s nullability machinery for THESE FOUR checks
  *
- * `tpeg-generator` has no dependency on `tpeg-parser` (see this package's
- * `package.json` and the dependency graph in the repo root `CLAUDE.md`),
- * and `packages/cli/src/cli.ts` generates code via `tpeg-parser`'s
- * `generateTypeScriptParser`/`generateOptimizedTypeScriptParser` directly,
- * not via this Eta-based generator -- so the `tpeg` CLI never exercises
- * this file's own path. Before this file existed, `generateGrammar` below
- * ran no structural validation at all: a duplicate rule name would make
- * an equivalent FIRST-set-style analysis oscillate (not applicable to the
- * Eta generator's own simpler code paths today, but see the sibling
- * module's doc comment for the general hazard), a left-recursive grammar
- * would compile to a parser that stack-overflows at runtime instead of
- * failing at generation time, and an unbounded repetition over a nullable
- * body (`("a"?)*`) would compile to a parser that throws an infinite-loop
- * error at RUNTIME on any input reaching that rule, rather than being
- * rejected up front the same way `tpeg-parser`'s two generators already
- * reject it.
+ * Correction to an earlier version of this comment: `tpeg-generator` DOES
+ * depend on `tpeg-parser` (see this package's `package.json`) -- that
+ * dependency was added for `eta-generator.ts` to reuse `tpeg-parser`'s
+ * `codegen.ts` building blocks (identifier reference resolution, string/
+ * char-class escaping, action-expression wrapping; see the repo root
+ * `CLAUDE.md`'s architecture notes) after this package's OWN prior copies
+ * of those were found to have drifted out of sync with `codegen.ts`'s
+ * fixes. A newer check with the identical failure mode --
+ * `validateGeneratedIdentifiers` (rule-name/label/transform-parameter
+ * collisions with a reserved word or an emitted import) -- is imported
+ * directly from `tpeg-parser` in `eta-generator.ts` for exactly that
+ * reason, rather than duplicated here.
  *
- * Porting or sharing this properly needs a package-boundary decision
- * (add a `tpeg-parser` dependency to `tpeg-generator`, or hoist the
- * shared analysis into `tpeg-core`, which currently has none of this),
- * not a same-file patch -- see `shouldMemoize`'s doc comment in
- * `eta-generator.ts` for an identical judgment call already made for a
- * different piece of `tpeg-parser`-only analysis. This file duplicates
- * only the minimum needed to reject the three grammar shapes above at
- * generation time: it deliberately does NOT port `tpeg-parser`'s full
- * FIRST-set analysis (`first-sets.ts`'s `analyzeFirstSets`,
- * `predictiveChoice` filter derivation, etc.) -- none of that is needed
- * for validation, only for `tpeg-parser`'s optimizing codegen path, which
- * this generator doesn't have.
+ * The four checks still duplicated in THIS file (duplicate rule names,
+ * left recursion, a cut-only pattern, unbounded repetition over a
+ * nullable body) predate that dependency being added and haven't been
+ * revisited since: `packages/cli/src/cli.ts` generates code via
+ * `tpeg-parser`'s `generateTypeScriptParser`/
+ * `generateOptimizedTypeScriptParser` directly, not via this Eta-based
+ * generator, so the `tpeg` CLI never exercises this file's own path, and
+ * nothing has forced the two to be reconciled. Before this file existed,
+ * `generateGrammar` below ran no structural validation at all: a
+ * duplicate rule name would make an equivalent FIRST-set-style analysis
+ * oscillate, a left-recursive grammar would compile to a parser that
+ * stack-overflows at runtime instead of failing at generation time, and
+ * an unbounded repetition over a nullable body (`("a"?)*`) would compile
+ * to a parser that throws an infinite-loop error at RUNTIME on any input
+ * reaching that rule, rather than being rejected up front the same way
+ * `tpeg-parser`'s two generators already reject it.
+ *
+ * Replacing these four with a direct `tpeg-parser` import (matching
+ * `validateGeneratedIdentifiers` above) is a reasonable follow-up, not
+ * done here to keep that change scoped on its own -- see
+ * `shouldMemoize`'s doc comment in `eta-generator.ts` for an identical
+ * judgment call already made for a different piece of `tpeg-parser`-only
+ * analysis. This file duplicates only the minimum needed to reject the
+ * three grammar shapes above at generation time: it deliberately does NOT
+ * port `tpeg-parser`'s full FIRST-set analysis (`first-sets.ts`'s
+ * `analyzeFirstSets`, `predictiveChoice` filter derivation, etc.) -- none
+ * of that is needed for validation, only for `tpeg-parser`'s optimizing
+ * codegen path, which this generator doesn't have.
  *
  * Keep this in sync BY HAND with `packages/parser/src/grammar-validation.ts`
  * and the nullability half of `packages/parser/src/first-sets.ts` if either

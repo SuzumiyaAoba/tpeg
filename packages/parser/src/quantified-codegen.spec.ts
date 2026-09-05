@@ -180,7 +180,11 @@ describe("quantified expression code generation", () => {
         [],
         [
           createRuleDefinition(
-            "optional",
+            // Not named "optional": this rule's `{0,1}` quantifier
+            // generates to an `optional(...)` call, so "optional" as the
+            // rule name would collide with that import (rejected by
+            // `validateGeneratedIdentifiers`, `grammar-validation.ts`).
+            "optionalRule",
             createQuantified(createStringLiteral("a", '"'), 0, 1),
           ),
           createRuleDefinition(

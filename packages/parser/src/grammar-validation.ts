@@ -431,3 +431,265 @@ export const validateGrammar = (grammar: GrammarDefinition): void => {
     );
   }
 };
+
+// ============================================================================
+// Generated-identifier safety (reserved words / import collisions)
+// ============================================================================
+
+/**
+ * Every word that `tsc` rejects (or otherwise mis-parses) as a `const`
+ * binding name in an ES module, verified empirically rather than typed
+ * from memory: for each candidate, a file
+ * `import type { Parser } from "./core"; import { literal } from "./core";
+ * export const <candidate>: Parser<any> = literal("x");` was compiled with
+ * `tsc --noEmit --target es2022 --module esnext`. This matters in both
+ * directions -- a false entry here would reject an otherwise-fine grammar,
+ * a missing one would let broken code generate silently -- so the
+ * boundary is deliberately NOT "keywords I can recall" (that gets `let`,
+ * `static`, `yield`, `await`, `implements`, `interface`, `package`,
+ * `private`, `protected`, `public`, `arguments`, `eval` wrong in one
+ * direction or the other: they're all rejected by `tsc` in a module
+ * despite not being reserved words in a plain script). Confirmed NOT
+ * rejected, and therefore deliberately absent from this list: `as`,
+ * `async`, `from`, `get`, `of`, `set`, `type`, `undefined`, `NaN`,
+ * `Infinity`.
+ *
+ * TPEG's own identifier grammar (`identifier.ts`) is `[a-zA-Z_][a-zA-Z0-9_]*`
+ * -- a superset of every one of these words is syntactically reachable
+ * from `.tpeg` source as a rule name, a label, or (via
+ * `transforms ... { name(param) -> ... }`) a transform parameter name.
+ */
+const JS_RESERVED_WORDS: ReadonlySet<string> = new Set([
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "enum",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "function",
+  "if",
+  "import",
+  "in",
+  "instanceof",
+  "new",
+  "null",
+  "return",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "typeof",
+  "var",
+  "void",
+  "while",
+  "with",
+  "let",
+  "static",
+  "yield",
+  "await",
+  "implements",
+  "interface",
+  "package",
+  "private",
+  "protected",
+  "public",
+  "arguments",
+  "eval",
+]);
+
+/**
+ * Names every code generator (`codegen.ts`, `codegen-optimized.ts`,
+ * `@suzumiyaaoba/tpeg-generator`'s Eta templates) declares as a `const`
+ * INSIDE a rule's own generated function body when that rule carries a
+ * semantic action or a transform (see `wrapWithAction`/`wrapWithTransform`
+ * below in `codegen.ts`). A rule whose pattern is a bare reference to
+ * ANOTHER rule sharing one of these names generates that reference as the
+ * plain identifier `__base` (or `lazy(() => __base)`, or `__result`, or
+ * `__val`) -- which, once emitted inside `const __base = (${that
+ * reference});` in the SAME block as the sibling `const __base = ...`/
+ * `const __result = ...`/`const __val = ...` declarations these wrappers
+ * always emit, resolves to that sibling's own not-yet-initialized binding
+ * instead of the outer top-level rule, a temporal-dead-zone
+ * `ReferenceError` at the first call (confirmed: rule `__base = "a"`,
+ * `m = __base { return $$; }` generates `const __base = (__base);`).
+ *
+ * Rejected unconditionally as a RULE name regardless of whether any
+ * particular occurrence is provably reachable from an action/transform --
+ * working out exact reachability across the whole grammar (a rule
+ * referenced only through further identifiers, forward references via
+ * `lazy`, etc.) is not worth it for names nobody has a legitimate reason
+ * to choose. Not applied to labels or transform-parameter names: those
+ * are only ever destructured/bound INSIDE that same nested function
+ * scope, so at worst they shadow the outer binding (legal, unlike a
+ * duplicate top-level `const`) rather than colliding with it.
+ */
+const RESERVED_INTERNAL_RULE_NAMES: ReadonlySet<string> = new Set([
+  "__base",
+  "__result",
+  "__val",
+]);
+
+/**
+ * Every `LabeledExpression.label` reachable anywhere in `expr`'s tree,
+ * including inside nested `ActionExpression`s, `Group`s, and repetition/
+ * lookahead bodies. Deliberately over-approximates relative to what
+ * `codegen.ts`'s `wrapWithAction` actually destructures as a bare
+ * variable (only a label that is a DIRECT element of an enclosing
+ * action's own expression -- see `collectTopLevelLabels` -- and that the
+ * action's code textually references -- see `filterReferencedLabels` --
+ * ever becomes a JS binding at all): rejecting every label matching a
+ * reserved word, not just the ones provably destructured, means adding a
+ * semantic action to an existing rule later never turns an
+ * already-accepted grammar into a generation-time error. A rule with no
+ * action anywhere never actually emits `const { <label> } = $$;` for any
+ * of these, so this is deliberately more conservative than strictly
+ * necessary.
+ */
+const collectAllLabels = (expr: Expression): string[] => {
+  const labels: string[] = [];
+  const visit = (node: Expression): void => {
+    switch (node.type) {
+      case "LabeledExpression":
+        labels.push(node.label);
+        visit(node.expression);
+        return;
+      case "ActionExpression":
+      case "Group":
+      case "Star":
+      case "Plus":
+      case "Optional":
+      case "Quantified":
+      case "PositiveLookahead":
+      case "NegativeLookahead":
+        visit(node.expression);
+        return;
+      case "Sequence":
+        for (const el of node.elements) visit(el);
+        return;
+      case "Choice":
+        for (const alt of node.alternatives) visit(alt);
+        return;
+      default:
+        // StringLiteral, CharacterClass, Identifier, QualifiedIdentifier,
+        // AnyChar, Cut -- leaves, nothing to recurse into.
+        return;
+    }
+  };
+  visit(expr);
+  return labels;
+};
+
+/** Options for {@link validateGeneratedIdentifiers}: the exact prefix and
+ * import set the calling generator will actually emit, so the collision
+ * check matches real output rather than a guessed static list. */
+export interface GeneratedIdentifierCheckOptions {
+  /** `CodeGenOptions.namePrefix` (or its Eta-generator equivalent),
+   * defaulting to `""` -- prepended to every rule name before it's
+   * checked, since that's the name actually emitted as `export const
+   * <namePrefix><rule.name>`. */
+  namePrefix: string;
+  /** Every binding the generator will import (or otherwise declare at
+   * module scope) alongside the rules themselves -- e.g. `"Parser"` plus
+   * the sorted `usedCombinators` set, `"memoize"`, `"commitAtTopLevel"`.
+   * A rule name colliding with one of these produces a duplicate-
+   * declaration error (`literal` colliding with `import { literal }`) or
+   * a self-referential TDZ (`lazy` colliding with `import { lazy }`),
+   * depending on the combinator. Checked against the PREFIXED rule name,
+   * matching what's actually emitted. */
+  importedBindings: readonly string[];
+}
+
+/**
+ * Rejects a grammar whose generated TypeScript would fail to parse, fail
+ * to compile, or throw a temporal-dead-zone `ReferenceError` the moment
+ * it's loaded -- because a rule name, a capture label, or a transform
+ * function's parameter name collides with a JS reserved word, an import
+ * this generator will emit, or one of the fixed internal names
+ * `wrapWithAction`/`wrapWithTransform` declare inside a rule's own body.
+ * TPEG's identifier grammar (`[a-zA-Z_][a-zA-Z0-9_]*`) allows all of
+ * these unconditionally -- see `JS_RESERVED_WORDS`'s doc comment for
+ * concrete, `tsc`-verified reproductions of each failure mode this
+ * guards against.
+ *
+ * Called by every code generator (`codegen.ts`, `codegen-optimized.ts`,
+ * `@suzumiyaaoba/tpeg-generator`'s `eta-generator.ts`) right after
+ * collecting the combinator set it's about to import, so
+ * `options.importedBindings` reflects what will actually be emitted for
+ * THIS grammar under THESE options -- not a static guess that would
+ * either miss a real collision or reject a grammar that's actually fine.
+ *
+ * Rejects rather than silently renaming: a rule name is the generated
+ * module's own public export name, so renaming it out from under the
+ * grammar author would silently change the generated API. This matches
+ * every other check in this module (duplicate names, left recursion,
+ * cut-only patterns) -- reported at generation time, not worked around.
+ *
+ * @throws {Error} naming the offending rule/label/parameter and
+ *   suggesting a fix (rename the rule, or pass `--name-prefix`/
+ *   `namePrefix` -- neither helps for a label or transform parameter,
+ *   which have no prefix option, so those must simply be renamed).
+ */
+export const validateGeneratedIdentifiers = (
+  grammar: GrammarDefinition,
+  options: GeneratedIdentifierCheckOptions,
+): void => {
+  const importedBindings = new Set(options.importedBindings);
+
+  for (const rule of grammar.rules) {
+    const emittedName = options.namePrefix + rule.name;
+    if (JS_RESERVED_WORDS.has(emittedName)) {
+      throw new Error(
+        `Rule name "${rule.name}" generates to the reserved word "${emittedName}", which cannot be used as a TypeScript \`const\` declaration name -- rename the rule${options.namePrefix ? "" : " (or pass a --name-prefix that makes the emitted name safe)"}.`,
+      );
+    }
+    if (RESERVED_INTERNAL_RULE_NAMES.has(emittedName)) {
+      throw new Error(
+        `Rule name "${rule.name}" generates to "${emittedName}", a name the code generator itself uses internally inside an action/transform-wrapped rule's body -- rename the rule${options.namePrefix ? "" : " (or pass a --name-prefix)"} to avoid a self-referential ReferenceError in the generated code.`,
+      );
+    }
+    if (importedBindings.has(emittedName)) {
+      throw new Error(
+        `Rule name "${rule.name}" generates to "${emittedName}", which collides with a runtime import this grammar's generated code also needs -- rename the rule${options.namePrefix ? "" : " (or pass a --name-prefix)"}.`,
+      );
+    }
+
+    for (const label of collectAllLabels(rule.pattern)) {
+      if (
+        JS_RESERVED_WORDS.has(label) ||
+        RESERVED_INTERNAL_RULE_NAMES.has(label)
+      ) {
+        throw new Error(
+          `Rule "${rule.name}" has a capture label named "${label}", which cannot be used as a destructured variable name (\`const { ${label} } = ...\`) in generated code -- rename the label.`,
+        );
+      }
+    }
+  }
+
+  for (const transformDef of grammar.transforms ?? []) {
+    for (const fn of transformDef.transformSet.functions) {
+      const paramName = fn.parameters[0]?.name;
+      if (
+        paramName !== undefined &&
+        (JS_RESERVED_WORDS.has(paramName) ||
+          RESERVED_INTERNAL_RULE_NAMES.has(paramName))
+      ) {
+        throw new Error(
+          `Transform function "${fn.name}" has a parameter named "${paramName}", which cannot be used as a function parameter name in generated code -- rename the parameter.`,
+        );
+      }
+    }
+  }
+};

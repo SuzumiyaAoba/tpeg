@@ -7,7 +7,10 @@
 
 import { escapeStringLiteral } from "./constants";
 import { analyzeFirstSets, assertNoNullableRepetition } from "./first-sets";
-import { validateGrammar } from "./grammar-validation";
+import {
+  validateGeneratedIdentifiers,
+  validateGrammar,
+} from "./grammar-validation";
 import type {
   ActionExpression,
   AnyChar,
@@ -693,6 +696,29 @@ export class TPEGCodeGenerator {
           `import { ${combinatorPackageImports.join(", ")} } from "@suzumiyaaoba/tpeg-combinator";`,
         );
       }
+
+      // Reject a rule name, capture label, or transform parameter name
+      // that would generate to a reserved word, an internal codegen name,
+      // or (checked here, now that the exact set is known) one of the
+      // bindings just collected above -- see `validateGeneratedIdentifiers`'s
+      // doc comment (`grammar-validation.ts`) for the concrete failure
+      // modes. `"Parser"` is included unconditionally: the type import on
+      // line above this block is emitted whenever `includeImports` is
+      // true, regardless of `includeTypes` (see that import's own
+      // comment), so it's always a real collision risk here.
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: this.options.namePrefix,
+        importedBindings: [
+          "Parser",
+          ...usedCombinators,
+          ...combinatorPackageImports,
+        ],
+      });
+    } else {
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: this.options.namePrefix,
+        importedBindings: [],
+      });
     }
 
     // Generate parser for each rule, applying a matching TypeScript
