@@ -187,6 +187,18 @@ export class TypeIntegrationEngine {
         case "PositiveLookahead":
         case "NegativeLookahead":
         case "LabeledExpression":
+        case "ActionExpression":
+          // Traversing into an action's own wrapped expression (not just
+          // treating the action as a leaf) matters even though the
+          // action's OWN result type is `unknown`
+          // (`inferActionExpressionType`, `type-inference.ts`): the
+          // labels/rules the wrapped expression references are still
+          // real dependencies for circular-dependency detection and for
+          // the "Dependencies: ..." doc comment this analysis feeds
+          // below. Before this case existed, every rule using a semantic
+          // action silently reported zero dependencies, with no warning
+          // -- a `switch` with no `default` doesn't fail to compile just
+          // because one union member goes unhandled.
           traverse(expr.expression);
           break;
         case "StringLiteral":
@@ -195,6 +207,26 @@ export class TypeIntegrationEngine {
         case "Cut":
           // These types have no sub-expressions, so no dependencies
           break;
+        case "QualifiedIdentifier":
+          // A `module.rule` reference points OUTSIDE this grammar's own
+          // rule set (see `inferQualifiedIdentifierType`'s doc comment,
+          // `type-inference.ts`) -- not a dependency edge in this
+          // grammar's local rule graph, and nothing further to traverse
+          // into.
+          break;
+        default: {
+          // Exhaustiveness check, matching the established pattern
+          // elsewhere in this repo (e.g. `packages/samples/src/arith/
+          // calculator.ts`) -- see the identical guard in
+          // `inferExpressionType` (`type-inference.ts`) for why this
+          // matters here specifically: a switch with no `default`
+          // silently does nothing for an unhandled union member instead
+          // of failing to compile.
+          const exhaustiveCheck: never = expr;
+          throw new Error(
+            `Unhandled expression type in dependency analysis: ${(exhaustiveCheck as { type: string }).type}`,
+          );
+        }
       }
     };
 
@@ -297,6 +329,21 @@ export class TypeIntegrationEngine {
         .map((member) => `(${this.guardExpression(member)})`)
         .join(" || ");
     }
+    // Checked BEFORE `baseType`'s own per-kind branches below: `inferStarType`/
+    // `inferPlusType`/`inferQuantifiedType` (type-inference.ts) all set
+    // `isArray: true` while leaving `baseType` as whatever the ELEMENT type
+    // was (e.g. `[a-z]+` infers `{ baseType: "string", isArray: true,
+    // typeString: "string[]" }`) -- an array whose element `baseType`
+    // happens to be "string" would otherwise hit the `baseType === "string"`
+    // branch below and generate `typeof value === "string"`, a guard that
+    // returns `false` for every value of its own declared type (confirmed:
+    // `isWordResult(["a"])` returned `false` for `word = [a-z]+` before this
+    // reordering). `tsc` never catches this because the guard's declared
+    // return type is a bare `value is T` predicate -- any boolean expression
+    // type-checks regardless of whether it agrees with the runtime shape.
+    if (inferredType.isArray) {
+      return "Array.isArray(value)";
+    }
     if (
       inferredType.typeString.startsWith('"') &&
       inferredType.typeString.endsWith('"')
@@ -307,9 +354,6 @@ export class TypeIntegrationEngine {
     }
     if (inferredType.baseType === "string") {
       return `typeof value === "string"`;
-    }
-    if (inferredType.isArray) {
-      return "Array.isArray(value)";
     }
     if (inferredType.baseType === "object") {
       return `typeof value === "object" && value !== null`;

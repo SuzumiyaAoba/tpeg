@@ -25,6 +25,7 @@
  */
 
 import type {
+  ActionExpression,
   AnyChar,
   CharacterClass,
   Choice,
@@ -37,6 +38,7 @@ import type {
   Optional,
   Plus,
   PositiveLookahead,
+  QualifiedIdentifier,
   Quantified,
   RuleDefinition,
   Sequence,
@@ -465,10 +467,30 @@ export class TypeInferenceEngine {
         case "LabeledExpression":
           inferredType = this.inferLabeledExpressionType(expression);
           break;
+        case "ActionExpression":
+          inferredType = this.inferActionExpressionType(expression);
+          break;
+        case "QualifiedIdentifier":
+          inferredType = this.inferQualifiedIdentifierType(expression);
+          break;
         default: {
+          // Exhaustiveness check: every `Expression` union member has its
+          // own `case` above. If a new variant is ever added to
+          // `Expression` (`@suzumiyaaoba/tpeg-core`) without a
+          // corresponding case here, `expression` is no longer
+          // assignable to `never` and this line fails to COMPILE --
+          // catching the omission at build time instead of silently
+          // falling through to "unknown" the way `ActionExpression` and
+          // `QualifiedIdentifier` both did before this check existed
+          // (confirmed: every rule using a semantic action inferred as
+          // `unknown`, and `analyzeDependencies` in `type-integration.ts`
+          // silently returned no dependencies for such a rule -- neither
+          // was flagged by `tsc`, since the switch's own `default` branch
+          // is reachable code, not a type error).
+          const exhaustive: never = expression;
           const unknownType =
-            "type" in expression
-              ? (expression as { type: string }).type
+            "type" in exhaustive
+              ? (exhaustive as { type: string }).type
               : "unknown";
           inferredType = {
             typeString: "unknown",
@@ -1021,6 +1043,62 @@ export class TypeInferenceEngine {
       imports: innerType.imports,
       documentation: this.options.generateDocumentation
         ? `Labeled expression: ${expression.label}`
+        : undefined,
+    };
+  }
+
+  /**
+   * Infer the type of a semantic action (`expr { ... code ... }`,
+   * `packages/parser/src/codegen.ts`'s `wrapWithAction`). The action's
+   * return value REPLACES the wrapped expression's own captured value at
+   * runtime (see `docs/peg-grammar.md`'s "Semantic Actions" section) --
+   * since that return value comes from arbitrary, unparsed TypeScript
+   * source (`expression.code`), there is no sound way to infer its type
+   * from the grammar alone. `unknown` is therefore the CORRECT inferred
+   * type here, not a fallback for an unhandled case -- this differs from
+   * this class's `default` branch (reached only for a genuinely
+   * unrecognized `Expression` variant, which should never happen given
+   * the exhaustiveness check there) in being an intentional, documented
+   * policy rather than an omission.
+   */
+  private inferActionExpressionType(
+    _expression: ActionExpression,
+  ): InferredType {
+    return {
+      typeString: "unknown",
+      nullable: false,
+      isArray: false,
+      baseType: "unknown",
+      imports: [],
+      documentation: this.options.generateDocumentation
+        ? "Semantic action result (return type not statically inferable from the action's code)"
+        : undefined,
+    };
+  }
+
+  /**
+   * Infer the type of a `module.rule`-style qualified reference
+   * (`packages/parser/src/module.ts`). Like an unresolvable bare
+   * `Identifier` (see `inferIdentifierType` above), this points outside
+   * the current grammar's own rule set -- `this.context.rules` only ever
+   * holds THIS grammar's rules, never another module's -- so there is
+   * nothing here to recurse into. Mirrors `inferIdentifierType`'s
+   * "Unknown rule reference" shape/message for the analogous case,
+   * rather than falling through to a generic "Unknown expression type"
+   * message that would misdescribe a syntactically well-formed,
+   * intentional cross-module reference as if it were malformed AST.
+   */
+  private inferQualifiedIdentifierType(
+    expression: QualifiedIdentifier,
+  ): InferredType {
+    return {
+      typeString: "unknown",
+      nullable: false,
+      isArray: false,
+      baseType: "unknown",
+      imports: [],
+      documentation: this.options.generateDocumentation
+        ? `Unknown rule reference: ${expression.module}.${expression.name}`
         : undefined,
     };
   }

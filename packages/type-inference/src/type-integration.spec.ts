@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 import {
   type GrammarDefinition,
+  createActionExpression,
   createCharRange,
   createCharacterClass,
   createChoice,
@@ -143,6 +144,31 @@ describe("TypeIntegrationEngine", () => {
       expect(complexRule?.dependencies).toEqual(["dep"]);
     });
 
+    it("detects a dependency reached through a semantic action's wrapped expression (regression)", () => {
+      // `analyzeDependencies`'s traversal switch had no case for
+      // `ActionExpression` -- a `switch` with no matching case (and no
+      // `default`) silently does nothing rather than failing to compile,
+      // so a rule wrapping its pattern in an action always reported ZERO
+      // dependencies, even when the wrapped expression plainly
+      // referenced another rule.
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "ActionDepsGrammar",
+        [],
+        [
+          createRuleDefinition("dep", createStringLiteral("val", '"')),
+          createRuleDefinition(
+            "withAction",
+            createActionExpression(createIdentifier("dep"), "return $$;"),
+          ),
+        ],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+      const rule = typedGrammar.rules.find((r) => r.name === "withAction");
+
+      expect(rule?.dependencies).toEqual(["dep"]);
+    });
+
     it("should detect circular dependencies", () => {
       const grammar: GrammarDefinition = createGrammarDefinition(
         "CircularGrammar",
@@ -248,6 +274,40 @@ describe("TypeIntegrationEngine", () => {
       );
       expect(typedGrammar.typeDefinitions).not.toContain(
         "return value !== undefined;",
+      );
+    });
+
+    it("should generate an array-checking guard for a Plus/Star result, not a string-typeof check (regression)", () => {
+      // `[a-z]+` infers `{ baseType: "string", isArray: true }` (the
+      // element type carried through, with `isArray` set) -- the guard
+      // builder used to check `baseType` before `isArray`, so an array
+      // whose ELEMENT type happened to be "string" generated
+      // `typeof value === "string"`, a guard that returns `false` for
+      // every value of its own declared array type.
+      const options: Partial<TypeIntegrationOptions> = {
+        generateTypeGuards: true,
+      };
+      const engine = new TypeIntegrationEngine(options);
+
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "word",
+            createPlus(createCharacterClass([createCharRange("a", "z")])),
+          ),
+        ],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+
+      expect(typedGrammar.typeDefinitions).toContain("string[]");
+      expect(typedGrammar.typeDefinitions).toContain(
+        "return Array.isArray(value);",
+      );
+      expect(typedGrammar.typeDefinitions).not.toContain(
+        'return typeof value === "string";',
       );
     });
 

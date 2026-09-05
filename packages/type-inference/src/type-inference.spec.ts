@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 import type { Expression, GrammarDefinition } from "@suzumiyaaoba/tpeg-core";
 import {
+  createActionExpression,
   createAnyChar,
   createCharRange,
   createCharacterClass,
@@ -16,6 +17,7 @@ import {
   createOptional,
   createPlus,
   createPositiveLookahead,
+  createQualifiedIdentifier,
   createQuantified,
   createRuleDefinition,
   createSequence,
@@ -63,6 +65,41 @@ describe("TypeInferenceEngine", () => {
       expect(result.baseType).toBe("string");
       expect(result.nullable).toBe(false);
       expect(result.isArray).toBe(false);
+    });
+  });
+
+  describe("ActionExpression and QualifiedIdentifier (regression: previously fell through to the generic default branch)", () => {
+    // Before these two `Expression` variants had their own `case` in
+    // `inferExpressionType`'s switch, both silently fell through to the
+    // `default` branch and inferred as `unknown` with a misleading
+    // "Unknown expression type: ..." message -- indistinguishable from a
+    // genuinely unrecognized/malformed AST node. `unknown` is still the
+    // right TYPE for both (an action's return value comes from arbitrary
+    // unparsed code; a qualified identifier points outside this
+    // grammar's own rule set) -- what changed is that it's now an
+    // intentional, documented outcome with its own message, not an
+    // accidental one indistinguishable from a real omission.
+    it("infers a semantic action as unknown, with a message identifying it as an action (not a generic 'unknown expression type')", () => {
+      const action = createActionExpression(
+        createStringLiteral("a", '"'),
+        "return 1;",
+      );
+      const result = engine.inferExpressionType(action);
+
+      expect(result.typeString).toBe("unknown");
+      expect(result.baseType).toBe("unknown");
+      expect(result.documentation).not.toContain("Unknown expression type");
+      expect(result.documentation).toContain("not statically inferable");
+    });
+
+    it("infers a qualified identifier (module.rule) as unknown, with a message identifying the reference (not a generic 'unknown expression type')", () => {
+      const qualified = createQualifiedIdentifier("otherModule", "someRule");
+      const result = engine.inferExpressionType(qualified);
+
+      expect(result.typeString).toBe("unknown");
+      expect(result.baseType).toBe("unknown");
+      expect(result.documentation).not.toContain("Unknown expression type");
+      expect(result.documentation).toContain("otherModule.someRule");
     });
   });
 
