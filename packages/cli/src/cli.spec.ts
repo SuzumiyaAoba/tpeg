@@ -110,18 +110,21 @@ describe("tpeg CLI", () => {
   });
 
   it("escapes control characters in the reported expected/found values instead of writing them raw", () => {
-    // `a\tb = "x"` -- a tab where only whitespace-then-"=" is valid makes
-    // the underlying error's `expected` list literally contain a raw tab
-    // byte (see `packages/core/src/basic.ts`'s `literal("\t")` building
-    // its expectation label as `` `"${str}"` ``, i.e. quote + the actual
-    // character + quote). Unescaped, a `\r` in particular would rewind
-    // the terminal cursor and overwrite this message.
+    // A raw ESC byte before the grammar keyword makes the underlying
+    // error's `expected` list literally contain, among other things, the
+    // leading-whitespace alternatives as raw characters (see
+    // `packages/core/src/basic.ts`'s `literal("\t")` building its
+    // expectation label as `` `"${str}"` ``, i.e. quote + the actual
+    // character + quote) -- including a raw tab AND a raw CR byte.
+    // Unescaped, the CR in particular would rewind the terminal cursor
+    // and overwrite this message.
     const inputPath = join(dir, "ctrl.tpeg");
-    writeFileSync(inputPath, 'grammar T {\n  a\tb = "x"\n}\n', "utf8");
+    writeFileSync(inputPath, '\x1bgrammar T {\n  a = "x"\n}\n', "utf8");
 
     const { exitCode, stderr } = captureOutput(() => run([inputPath]));
     expect(exitCode).toBe(1);
     expect(stderr).toContain('"\\t"');
+    expect(stderr).toContain('"\\r"');
     expect(stderr).not.toContain("\t");
     expect(stderr).not.toContain("\r");
   });

@@ -12,10 +12,10 @@ import {
   map,
   oneOrMore,
   optional,
-  seq,
   star as zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
 
+import { skipBlockComment, skipLineComment } from "./brace-scanner";
 import { WHITESPACE_CHARS } from "./constants";
 
 /**
@@ -41,37 +41,44 @@ export const optionalWhitespace: Parser<string> = map(
 );
 
 /**
- * Parse zero or more whitespace characters and return void
- * Used when whitespace is consumed but not needed in the result
+ * Like {@link optionalWhitespace}, but also skips `//`/`///` line comments
+ * and `/* ... *\/` block comments -- for the specific grammar-HEADER
+ * positions (`grammarBlock` in `./grammar.ts`: between the grammar
+ * keyword/name/extends/includes clauses and the opening `{`) that need
+ * comment tolerance there too, without changing `optionalWhitespace`
+ * itself (63 other call sites across this package rely on its existing,
+ * comment-free behavior). Comments BETWEEN grammar items (rules,
+ * annotations, transforms) don't need this: `grammarItem`
+ * (`./grammar.ts`) already accepts a comment as a standalone item in its
+ * own right, interleaved by `grammarBlockWhitespace` below exactly like
+ * any other item.
+ *
+ * Returns void rather than the consumed text (unlike `optionalWhitespace`):
+ * every call site this exists for already discards the value.
  */
-export const whitespaceVoid: Parser<void> = map(
-  zeroOrMore(choice(...WHITESPACE_CHARS.map((char) => literal(char)))),
-  () => undefined,
-);
-
-/**
- * Create a parser that consumes leading whitespace before running the given parser
- * @param parser The parser to run after consuming whitespace
- * @returns Parser that consumes optional leading whitespace then runs the given parser
- */
-export const withLeadingWhitespace = <T>(parser: Parser<T>): Parser<T> =>
-  map(seq(optionalWhitespace, parser), ([_, result]) => result);
-
-/**
- * Create a parser that consumes trailing whitespace after running the given parser
- * @param parser The parser to run before consuming whitespace
- * @returns Parser that runs the given parser then consumes optional trailing whitespace
- */
-export const withTrailingWhitespace = <T>(parser: Parser<T>): Parser<T> =>
-  map(seq(parser, optionalWhitespace), ([result, _]) => result);
-
-/**
- * Create a parser that consumes whitespace before and after the given parser
- * @param parser The parser to wrap with whitespace handling
- * @returns Parser that handles optional whitespace on both sides
- */
-export const withSurroundingWhitespace = <T>(parser: Parser<T>): Parser<T> =>
-  withLeadingWhitespace(withTrailingWhitespace(parser));
+export const optionalWhitespaceOrComment: Parser<void> = (input, pos) => {
+  let i = pos;
+  while (i < input.length) {
+    const char = input[i] as (typeof WHITESPACE_CHARS)[number] | undefined;
+    if (
+      char !== undefined &&
+      (WHITESPACE_CHARS as readonly string[]).includes(char)
+    ) {
+      i++;
+      continue;
+    }
+    if (input[i] === "/" && input[i + 1] === "/") {
+      i = skipLineComment(input, i);
+      continue;
+    }
+    if (input[i] === "/" && input[i + 1] === "*") {
+      i = skipBlockComment(input, i);
+      continue;
+    }
+    break;
+  }
+  return { success: true, val: undefined, current: pos, next: i };
+};
 
 /**
  * Parse line-oriented whitespace including newlines for grammar blocks

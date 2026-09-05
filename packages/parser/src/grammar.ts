@@ -16,6 +16,7 @@ import type {
 import {
   charClass,
   choice,
+  createFailure,
   createModularGrammarDefinition,
   createModuleInfo,
   literal,
@@ -57,6 +58,7 @@ import {
 import {
   grammarBlockWhitespace,
   optionalWhitespace,
+  optionalWhitespaceOrComment,
   whitespace,
 } from "./whitespace-utils";
 
@@ -379,6 +381,42 @@ export const documentationComment: Parser<string> = map(
 );
 
 /**
+ * Parse a `/* ... *\/` block comment, returning its trimmed inner content.
+ * Unlike `singleLineComment`/`documentationComment` (which the surrounding
+ * `zeroOrMore(nonNewlineChar)` bounds at the input's own structure), a
+ * block comment's extent depends on finding a matching `*\/` -- reuses
+ * `skipBlockComment` (`./brace-scanner.ts`, the same rule the rule-
+ * boundary scanner below and `composition.ts`'s expression-level
+ * whitespace both use) for that scan rather than a second,
+ * potentially-diverging one.
+ *
+ * An unterminated block comment (no closing `*\/` before EOF) is not
+ * rejected as an error here: `skipBlockComment` already treats "ran off
+ * the end of input" as "the comment extends to EOF", matching how a real
+ * editor/highlighter would show it, and this parser's caller
+ * (`grammarItem`) has no more useful diagnostic to offer for it than
+ * "this comment consumed the rest of the file" would already convey.
+ */
+const blockComment: Parser<string> = (input: string, pos: number) => {
+  if (input[pos] !== "/" || input[pos + 1] !== "*") {
+    return createFailure('Expected "/*"', pos, {
+      expected: "/*",
+      parserName: "blockComment",
+    });
+  }
+  const next = skipBlockComment(input, pos);
+  return {
+    success: true,
+    val: input
+      .slice(pos + 2, next)
+      .replace(/\*\/$/, "")
+      .trim(),
+    current: pos,
+    next,
+  };
+};
+
+/**
  * Parse a quoted string value for annotations
  * Reuses the existing stringLiteral parser and extracts the value
  */
@@ -459,7 +497,13 @@ export const ruleDefinition: Parser<RuleDefinition> = map(
   sequence(
     optionalWhitespace,
     identifier,
-    optionalWhitespace,
+    // Comment-tolerant (see `optionalWhitespaceOrComment`'s doc comment,
+    // `./whitespace-utils.ts`): a comment between a rule's name and its
+    // "=" (e.g. `r /* c */ = "a"`) is a legitimate position for one, and
+    // WITHOUT this, `grammarRuleExpression`'s own multi-line-sequence
+    // support (comments freely inside a rule's pattern) would have this
+    // one narrow gap right at the rule's own header.
+    optionalWhitespaceOrComment,
     literal(GRAMMAR_SYMBOLS.RULE_ASSIGNMENT),
     optionalWhitespace,
     grammarRuleExpression,
@@ -601,6 +645,10 @@ const grammarItem: Parser<GrammarItemType> = choice(
     type: "comment",
     value: comment,
   })),
+  map(blockComment, (comment): GrammarItemType => ({
+    type: "comment",
+    value: comment,
+  })),
 );
 
 /**
@@ -680,6 +728,7 @@ const leadingContentItem: Parser<void> = map(
   choice(
     singleLineComment, // Consumes // + content + implicit newline handling
     documentationComment, // Consumes /// + content + implicit newline handling
+    blockComment, // Consumes /* ... */ (at least "/*", so never zero-width)
     literal("\n"), // Consumes newline
     literal("\r\n"), // Consumes CRLF
     literal("\r"), // Consumes CR
@@ -777,7 +826,15 @@ const grammarBlock: Parser<{
     optional(grammarExtendsClause),
     optionalWhitespace,
     optional(grammarIncludesClause),
-    optionalWhitespace,
+    // Comment-tolerant (unlike the other `optionalWhitespace` calls in
+    // this sequence): a block comment between the grammar's name/
+    // extends/includes clauses and its opening "{" (e.g. `grammar G /*
+    // c */ {`) is a header-level position, not a between-items one --
+    // `grammarItem` below already accepts a comment as its own item for
+    // the BETWEEN-items case. See `optionalWhitespaceOrComment`'s doc
+    // comment (`./whitespace-utils.ts`) for why only this one position
+    // needs it.
+    optionalWhitespaceOrComment,
     literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_OPEN),
     grammarItems,
     grammarBlockWhitespace,

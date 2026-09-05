@@ -22,7 +22,6 @@
 import { recursive } from "@suzumiyaaoba/tpeg-combinator";
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
-  charClass,
   choice,
   createFailure,
   literal,
@@ -31,7 +30,11 @@ import {
   seq,
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
-import { scanBalancedBraces } from "./brace-scanner";
+import {
+  scanBalancedBraces,
+  skipBlockComment,
+  skipLineComment,
+} from "./brace-scanner";
 import { characterClass } from "./character-class";
 import { identifier } from "./identifier";
 import { withOptionalLabel } from "./label";
@@ -49,13 +52,50 @@ import type {
 } from "./types";
 
 /**
- * Parses whitespace and returns nothing.
- * Used for optional whitespace in composition operators.
+ * Parses whitespace AND comments (`//`, `///`, `/* ... *\/`), returning
+ * nothing. Used for optional whitespace in composition operators -- so a
+ * comment can sit between a sequence's elements, before/after a `/`
+ * choice separator, or inside a group, not just at a rule's own
+ * boundaries (which `grammar.ts`'s rule-boundary scanner already handles
+ * separately). Hand-written (not built from `charClass`/`zeroOrMore`)
+ * because a single "next char" decision here has three outcomes --
+ * ordinary whitespace, the start of a comment, or neither -- more
+ * naturally expressed as one scan than as three composed combinators.
+ *
+ * A lone `/` (not immediately followed by another `/` or `*`) is
+ * deliberately left unconsumed: it's the choice operator (see
+ * `choiceExpression` below, `seq(whitespace, literal("/"), ...)`), and
+ * this function must never swallow it as a would-be comment start. Only
+ * an ACTUAL `//`/`/*` prefix is treated as a comment.
+ *
+ * Always succeeds, possibly consuming nothing (e.g. immediately at a
+ * non-whitespace, non-comment character) -- the same zero-width-safe
+ * contract the previous `zeroOrMore(charClass(...))` implementation had.
+ * Reuses `skipLineComment`/`skipBlockComment` (`./brace-scanner.ts`) --
+ * the same comment-skipping rules `grammar.ts`'s rule-boundary scanner
+ * already uses -- rather than a second, potentially-diverging
+ * implementation.
  */
-const whitespace: Parser<void> = map(
-  zeroOrMore(charClass(" ", "\t", "\n", "\r")),
-  () => undefined,
-);
+const whitespace: Parser<void> = (input, pos) => {
+  let i = pos;
+  while (i < input.length) {
+    const char = input[i];
+    if (char === " " || char === "\t" || char === "\n" || char === "\r") {
+      i++;
+      continue;
+    }
+    if (char === "/" && input[i + 1] === "/") {
+      i = skipLineComment(input, i);
+      continue;
+    }
+    if (char === "/" && input[i + 1] === "*") {
+      i = skipBlockComment(input, i);
+      continue;
+    }
+    break;
+  }
+  return { success: true, val: undefined, current: pos, next: i };
+};
 
 /**
  * Parses any basic syntax element (string literal, character class,
@@ -216,12 +256,7 @@ const sequenceElement = (): Parser<Expression> => choice(cutMarker, labeled());
 const sequenceExpression = (): Parser<Expression> => {
   return withOptionalAction(
     map(
-      seq(
-        sequenceElement(),
-        zeroOrMore(
-          seq(zeroOrMore(charClass(" ", "\t", "\n", "\r")), sequenceElement()),
-        ),
-      ),
+      seq(sequenceElement(), zeroOrMore(seq(whitespace, sequenceElement()))),
       ([first, rest]) => {
         if (rest.length === 0) {
           return first;

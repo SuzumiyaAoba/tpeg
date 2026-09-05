@@ -763,4 +763,89 @@ describe("Grammar Definition Block Tests", () => {
       }
     });
   });
+
+  /**
+   * Regression coverage for comment support in positions that used to
+   * reject a `//`/`///` or `/* ... *\/` comment outright -- before this
+   * fix, ANY of these positions made the ENTIRE enclosing rule (or the
+   * whole file, for the header/leading cases) fail to parse, with an
+   * error pointing at the rule's own name rather than the comment. Each
+   * case below is checked for full consumption (`result.next` equal to
+   * the source length), not just `result.success`, since a comment that
+   * silently stops a sequence/choice short would otherwise look like
+   * success while actually discarding everything after it.
+   */
+  describe("comments in expression/rule/grammar-header positions", () => {
+    const fullyParses = (input: string) => {
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.next).toBe(input.length);
+      }
+      return result;
+    };
+
+    test("line comment between choice alternatives", () => {
+      fullyParses('grammar G {\n  r = "a" // c\n    / "b"\n}');
+    });
+
+    test("block comment between choice alternatives", () => {
+      fullyParses('grammar G {\n  r = "a" /* c */ / "b"\n}');
+    });
+
+    test("block comment between sequence elements", () => {
+      fullyParses('grammar G {\n  r = "a" /* c */ "b"\n}');
+    });
+
+    test("block comment inside a group", () => {
+      fullyParses('grammar G {\n  r = ( /* c */ "a" )\n}');
+    });
+
+    test("block comment between a rule's name and its '='", () => {
+      fullyParses('grammar G {\n  r /* c */ = "a"\n}');
+    });
+
+    test("block comment in the grammar header, before the opening '{'", () => {
+      fullyParses('grammar G /* c */ {\n  r = "a"\n}');
+    });
+
+    test("block comment before the grammar keyword (file start)", () => {
+      fullyParses('/* c */\ngrammar G {\n  r = "a"\n}');
+    });
+
+    test("block comment between two rules", () => {
+      fullyParses('grammar G {\n  r = "a"\n  /* c */\n  s = "b"\n}');
+    });
+
+    test("block comment between an annotation and a rule", () => {
+      fullyParses('grammar G {\n  @version: "1"\n  /* c */\n  r = "a"\n}');
+    });
+
+    test("line comment between two rules (already worked; kept as a baseline)", () => {
+      fullyParses('grammar G {\n  r = "a"\n  // c\n  s = "b"\n}');
+    });
+
+    test("line comment before the grammar keyword (already worked; kept as a baseline)", () => {
+      fullyParses('// c\ngrammar G {\n  r = "a"\n}');
+    });
+
+    // A bare "/" must still be recognized as the choice operator, never
+    // swallowed as a would-be comment start -- `whitespace` in
+    // `composition.ts` only treats `/` as a comment when IMMEDIATELY
+    // followed by a second `/` or a `*`.
+    test("a lone '/' between alternatives is still the choice operator, not eaten as a comment start", () => {
+      const result = fullyParses('grammar G {\n  r = "a" / "b"\n}');
+      if (result.success) {
+        expect(result.val.rules[0]?.pattern.type).toBe("Choice");
+      }
+    });
+
+    test("a choice alternative ending in a line comment still parses (trailing comment, not mid-sequence)", () => {
+      fullyParses('grammar G {\n  r = "a" // c\n}');
+    });
+
+    test("a block comment immediately followed by a choice on the next line still parses", () => {
+      fullyParses('grammar G {\n  r = "a" /* c */ / "b" / "c"\n}');
+    });
+  });
 });

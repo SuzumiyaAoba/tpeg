@@ -432,6 +432,33 @@ rule_name = pattern
 expression = left:term op:("+" / "-") right:term
 ```
 
+### Comments
+
+TPEG has three comment forms: `//` (line), `///` (documentation - see
+[Rule Definition](#rule-definition) above), and `/* ... */` (block, which may
+span multiple lines). All three are ignored by the parser and never appear in
+the resulting AST.
+
+A comment is accepted in every position that separates two syntactic
+elements, not only between top-level rules:
+
+```tpeg
+/* Header comment before the grammar keyword */
+grammar Example {
+  @version: "1.0" // trailing line comment
+  /* a block comment standing between two grammar items */
+  rule_a /* between a rule's name and its "=" */ = "a" /* between a
+    choice's alternatives */ / "b" /* between a sequence's elements */ "c"
+  rule_b = ( /* inside a group */ "d" )
+}
+```
+
+`/` is also the [choice](#composition-operators) operator, so only an ACTUAL
+`//`/`/*` prefix (not a lone `/`) is ever treated as a comment start -
+`expr = "a" / "b"` parses as a two-alternative choice exactly as it always
+has, and a trailing `// comment` after the last alternative on a line is
+never mistaken for the start of a choice.
+
 ### Rule-Level Annotations: `@memoize`
 
 A rule definition may be preceded by `@memoize` (an unbounded cache) or
