@@ -229,7 +229,7 @@ export const createFailure = (
  */
 export const parse =
   <T>(parser: Parser<T>) =>
-  (input: string) => {
+  (input: string): ParseResult<T> => {
     // Start this top-level parse with a clean farthest-failure watermark
     // (see `./failure.ts`) rather than relying on `fail`'s own
     // `input !== watermarkInput` identity check -- a direct `Parser<T>`
@@ -238,7 +238,35 @@ export const parse =
     // even if this exact `input` string (by value) was already used by an
     // unrelated previous parse.
     resetFailureWatermark();
-    return parser(input, 0);
+    const result = parser(input, 0);
+    if (result.success) return result;
+
+    // A failing `result` here is very likely `FAIL`/`FAIL_FATAL`
+    // (`./failure.ts`) -- the same frozen singleton every failing leaf
+    // parser in the whole process returns, whose `.error` is a GETTER
+    // that re-materializes from the module-global watermark on every
+    // read. Returning that singleton across this function's boundary
+    // would hand the caller something that looks like an ordinary value
+    // but silently changes contents (or, after any LATER successful
+    // parse anywhere in the process resets the watermark, becomes an
+    // invalid `{ message: "Parse failed", pos: -1 }` that even this
+    // package's OWN `formatParseError`/`formatParseResult` throw on) --
+    // observable any time a caller holds onto a failed `ParseResult` past
+    // the next parse it (or anything else sharing this module) performs
+    // (a batch/collect-then-report loop, a test helper, `Promise.all`
+    // over several documents). Reading `.error` here, once, at the
+    // natural point this top-level parse is already concluding, snapshots
+    // whatever the watermark holds RIGHT NOW into a plain, already-
+    // materialized value baked into a genuinely fresh result object --
+    // exactly once per call to `parse()`, not once per discarded
+    // backtracking attempt, so the packrat-friendly zero-allocation
+    // control-flow path `fail()`/`FAIL` exists for is untouched.
+    //
+    // Safe for a non-singleton failure too (a hand-written parser, or a
+    // `createFailure` (`./utils.ts`) result): `.error` on those is
+    // already a plain, already-computed value -- re-reading it and
+    // copying it into a new object is a no-op for correctness there.
+    return { success: false, error: result.error };
   };
 
 /**

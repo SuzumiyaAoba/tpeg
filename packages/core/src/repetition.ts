@@ -317,11 +317,24 @@ export const quantified = <T>(
       }
 
       // Check for infinite loop (position doesn't advance) -- only
-      // meaningful when `max` is `undefined`: a concrete `max` already
-      // bounds this loop via `limit`, exactly like the required loop
-      // above, so a zero-width match there is likewise a legitimate
-      // result, not an infinite loop.
-      if (max === undefined && result.next === currentPos) {
+      // meaningful when `limit` is unbounded: a genuinely FINITE `max`
+      // already bounds this loop via `limit`, exactly like the required
+      // loop above, so a zero-width match there is likewise a legitimate
+      // result, not an infinite loop. Gated on `!Number.isFinite(limit)`
+      // rather than `max === undefined`: `max` itself can be
+      // `Number.POSITIVE_INFINITY` (an explicit spelling of "unbounded" --
+      // this codebase already blesses that spelling elsewhere, see
+      // `@suzumiyaaoba/tpeg-combinator`'s `memoize` cache-size option) and
+      // the constructor-time validation above (`max < min`) accepts it
+      // silently, since `Infinity < min` is always `false`. Checking
+      // `max === undefined` alone left that spelling of unbounded WITHOUT
+      // this guard: `quantified(optional(literal("a")), 0,
+      // Number.POSITIVE_INFINITY)` on input with no leading "a" looped
+      // forever (confirmed: `optional`'s zero-width match makes `limit`
+      // itself already `Infinity`, so the tail loop never terminates on
+      // its own either), pushing an unboundedly growing array the whole
+      // time.
+      if (!Number.isFinite(limit) && result.next === currentPos) {
         return createInfiniteLoopError(
           input,
           currentPos,

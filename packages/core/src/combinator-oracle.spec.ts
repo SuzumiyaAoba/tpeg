@@ -517,6 +517,52 @@ const keySuccessOnly = (r: ReturnType<Parser<unknown>>): string =>
 const FUZZ_SCALE = Math.max(1, Number(process.env["TPEG_FUZZ_SCALE"]) || 1);
 const SEEDS = 500 * FUZZ_SCALE;
 
+describe("evalSpec: quant infinite-loop guard (regression)", () => {
+  // `genSpec`'s own discipline never builds an unbounded `quant` over a
+  // nullable expression (see this file's "Unbounded quant: only safe over
+  // a guaranteed-non-nullable leaf" comment above), and never sets `max`
+  // to `Number.POSITIVE_INFINITY` at all -- so the fuzz loop below can
+  // never exercise this gap on its own. Direct unit tests, mirroring
+  // `repetition.spec.ts`'s identical regression coverage for
+  // `quantified` itself (the two guards -- this oracle's and the real
+  // combinator's -- had the exact same hole, which is why the fuzz
+  // comparison above never caught it: both sides hung the same way).
+  it("`max: undefined` over a nullable expression is a fatal error, not a hang", () => {
+    const spec: Spec = {
+      kind: "quant",
+      expression: { kind: "opt", expression: { kind: "lit", value: "a" } },
+      min: 0,
+    };
+    const r = evalSpec(spec, "bbb", 0);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.fatal).toBe(true);
+  });
+
+  it("`max: Number.POSITIVE_INFINITY` over a nullable expression is a fatal error, not a hang", () => {
+    const spec: Spec = {
+      kind: "quant",
+      expression: { kind: "opt", expression: { kind: "lit", value: "a" } },
+      min: 0,
+      max: Number.POSITIVE_INFINITY,
+    };
+    const r = evalSpec(spec, "bbb", 0);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.fatal).toBe(true);
+  });
+
+  it("a genuinely finite max over a nullable expression still succeeds", () => {
+    const spec: Spec = {
+      kind: "quant",
+      expression: { kind: "opt", expression: { kind: "lit", value: "a" } },
+      min: 0,
+      max: 2,
+    };
+    const r = evalSpec(spec, "bbb", 0);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.next).toBe(0);
+  });
+});
+
 describe("combinator oracle: choice/predictiveChoice builds vs. reference-eval.ts", () => {
   it(
     `agrees with reference-eval across ${SEEDS} random specs x ~${FIXED_INPUTS.length + 10} inputs, for both choice-mode and predictiveChoice-mode builds`,

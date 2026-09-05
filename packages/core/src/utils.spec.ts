@@ -351,6 +351,57 @@ describe("Utils", () => {
         const result = parseFn("world");
         expect(result.success).toBe(false);
       });
+
+      describe("regression: a failed result's .error stays fixed after this function returns", () => {
+        // `FAIL`/`FAIL_FATAL` (`./failure.ts`) are process-wide singletons
+        // whose `.error` is a GETTER that re-materializes from the module-
+        // global farthest-failure watermark on every read -- correct for
+        // control flow inside an in-progress parse (see that module's own
+        // doc comment), but a caller holding a `ParseResult` returned by
+        // THIS function reasonably expects it to be an ordinary, inert
+        // value. Before this fix, `parse()` returned that live singleton
+        // directly: `.error` silently changed to reflect whatever OTHER
+        // parse (anywhere in the process) ran most recently, and after
+        // ANY later successful parse it became the invalid
+        // `{ message: "Parse failed", pos: -1 }`, which this package's
+        // own `formatParseError`/`formatParseResult` throw on.
+        it("does not change after a later, unrelated failing parse", () => {
+          const r1 = parse(literal("hello"))("world");
+          expect(r1.success).toBe(false);
+          if (r1.success) return;
+          const before = { ...r1.error };
+
+          parse(literal("zzz"))("qqq");
+
+          expect(r1.error).toEqual(before);
+        });
+
+        it("does not become an invalid { pos: -1 } placeholder after a later successful parse", () => {
+          const r1 = parse(literal("hello"))("world");
+          expect(r1.success).toBe(false);
+          if (r1.success) return;
+          const before = { ...r1.error };
+
+          parse(literal("w"))("world"); // succeeds -> resets the watermark
+
+          expect(r1.error).toEqual(before);
+          expect(r1.error.pos).not.toBe(-1);
+        });
+
+        it("two separately-returned failures are distinct values, not the same shared object", () => {
+          const r1 = parse(literal("hello"))("world");
+          const r2 = parse(literal("zzz"))("qqq");
+          expect(r1).not.toBe(r2);
+        });
+
+        it("formatParseResult never throws on a result returned by parse(), even after later parses", async () => {
+          const { formatParseResult } = await import("./error");
+          const r1 = parse(literal("hello"))("world");
+          parse(literal("zzz"))("qqq");
+          parse(literal("w"))("world");
+          expect(() => formatParseResult(r1, "world")).not.toThrow();
+        });
+      });
     });
   });
 

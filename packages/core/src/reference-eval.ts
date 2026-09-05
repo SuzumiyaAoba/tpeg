@@ -312,10 +312,16 @@ export const evalSpec = (spec: Spec, input: string, pos: number): Result => {
           if (r.fatal) return r;
           break;
         }
-        // Only meaningful when unbounded -- a concrete `max` already
-        // bounds this loop via `limit`, matching `quantified`'s own
-        // guard in `./repetition.ts`.
-        if (spec.max === undefined && r.next === p) {
+        // Only meaningful when `limit` itself is unbounded -- a
+        // genuinely finite `max` already bounds this loop via `limit`.
+        // Gated on `!Number.isFinite(limit)` rather than
+        // `spec.max === undefined`, matching `quantified`'s own guard in
+        // `./repetition.ts` (see that fix's comment): `max` can itself be
+        // `Number.POSITIVE_INFINITY`, an explicit spelling of unbounded
+        // that `spec.max === undefined` alone would miss, leaving this
+        // oracle hanging in lockstep with the exact bug it exists to
+        // catch instead of ever revealing it.
+        if (!Number.isFinite(limit) && r.next === p) {
           return NG(true);
         }
         p = r.next;

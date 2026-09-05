@@ -528,6 +528,62 @@ describe("quantified", () => {
     }
   });
 
+  describe("infinite-loop guard on an unbounded max", () => {
+    // The zero-width guard used to be gated on `max === undefined`
+    // specifically -- missing the equally-unbounded spelling
+    // `max: Number.POSITIVE_INFINITY` (which the constructor-time
+    // validation above already accepts silently: `Infinity < min` is
+    // always `false`). A nullable `parser` (one that can match zero
+    // characters, like `optional(...)`) then made BOTH the tail loop's
+    // own `limit` AND the guard's condition unbounded, hanging forever
+    // and growing `results` without bound. Regression coverage for both
+    // spellings, so the two hangs found in this bug can't come back
+    // independently of each other.
+    it("`max: undefined` (the {n,} shorthand): a nullable inner parser is a fatal error, not a hang", () => {
+      const parser = quantified(optional(lit("a")), 0);
+      const result = parser("bbb", 0);
+      expect(isFailure(result)).toBe(true);
+      if (isFailure(result)) {
+        expect(result.error.fatal).toBe(true);
+        expect(result.error.message).toContain("Infinite loop detected");
+      }
+    });
+
+    it("`max: Number.POSITIVE_INFINITY` (an explicit spelling of {n,}): a nullable inner parser is a fatal error, not a hang", () => {
+      const parser = quantified(
+        optional(lit("a")),
+        0,
+        Number.POSITIVE_INFINITY,
+      );
+      const result = parser("bbb", 0);
+      expect(isFailure(result)).toBe(true);
+      if (isFailure(result)) {
+        expect(result.error.fatal).toBe(true);
+        expect(result.error.message).toContain("Infinite loop detected");
+      }
+    });
+
+    it("a genuinely FINITE max over a nullable inner parser still succeeds (not treated as an infinite loop)", () => {
+      // Sanity check that the fix's `!Number.isFinite(limit)` gate didn't
+      // over-tighten: `{0,2}` over a nullable parser is a legitimate,
+      // already-bounded repetition -- see `should handle zero minimum
+      // {0,n}` below for the un-nested case; this specifically covers a
+      // NULLABLE inner parser under a finite max, the shape the removed
+      // `max === undefined` check could have accidentally started
+      // rejecting if the fix had gated on "max is set" instead of "max is
+      // finite".
+      const parser = quantified(optional(lit("a")), 0, 2);
+      const result = parser("bbb", 0);
+      expect(isSuccess(result)).toBe(true);
+      if (isSuccess(result)) {
+        // `optional(...)` returns `[]` (not `undefined`) on a no-match --
+        // see its own doc comment in `./repetition.ts`.
+        expect(result.val).toEqual([[], []]);
+        expect(result.next).toBe(0);
+      }
+    });
+  });
+
   it("should handle zero minimum {0,n}", () => {
     const parser = quantified(lit("a"), 0, 3);
 
