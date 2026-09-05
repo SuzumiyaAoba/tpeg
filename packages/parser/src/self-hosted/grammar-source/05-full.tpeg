@@ -1,0 +1,383 @@
+grammar SelfHostFull {
+  // ---- Leaf constructs (same as 04-grammar.tpeg) ----
+
+  escapeChar = "\\" [nrt\\"']
+
+  doubleStringChar = escapeChar { const c = $$[1]; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t"; return c; }
+                    / [^"\\]
+
+  singleStringChar = escapeChar { const c = $$[1]; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t"; return c; }
+                    / [^'\\]
+
+  doubleQuotedString = "\"" chars:doubleStringChar* "\"" { return { type: "StringLiteral", value: chars.join(""), quote: '"' }; }
+
+  singleQuotedString = "'" chars:singleStringChar* "'" { return { type: "StringLiteral", value: chars.join(""), quote: "'" }; }
+
+  stringLiteralNode = doubleQuotedString / singleQuotedString
+
+  classEscapeStd = "\\" [tnrbfv0] { const c = $$[1]; if (c === "t") return "\t"; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "b") return "\b"; if (c === "f") return "\f"; if (c === "v") return "\v"; return "\0"; }
+
+  classEscapeSpecial = "\\" [\]\\\^\-"'] { return $$[1]; }
+
+  classChar = classEscapeStd / classEscapeSpecial / [^\]\\\^\-]
+
+  charRangePair = start:classChar "-" end:classChar { return { start, end }; }
+
+  charRangeSingle = start:classChar { return { start }; }
+
+  charRange = charRangePair / charRangeSingle
+
+  characterClassBrackets = "[" negation:"^"? ranges:charRange+ "]" { return { type: "CharacterClass", ranges, negated: negation.length > 0 }; }
+
+  anyCharDot = "." { return { type: "AnyChar" }; }
+
+  characterClassNode = characterClassBrackets / anyCharDot
+
+  identStart = [a-zA-Z_]
+  identCont = [a-zA-Z0-9_]*
+
+  identifierName = start:identStart rest:identCont { return start + rest.join(""); }
+
+  identifierNode = name:identifierName { return { type: "Identifier", name }; }
+
+  qualifiedIdentifierNode = module:identifierName "." name:identifierName { return { type: "QualifiedIdentifier", module, name }; }
+
+  basicSyntax = stringLiteralNode / characterClassNode / qualifiedIdentifierNode / identifierNode
+
+  // ---- Semantic action / brace-balanced blocks (same as 04-grammar.tpeg) ----
+
+  escapedActionChar = "\\" . { return "\\" + $$[1]; }
+
+  doubleQuotedActionString = "\"" chars:(escapedActionChar / [^"\\])* "\"" { return '"' + chars.join("") + '"'; }
+
+  singleQuotedActionString = "'" chars:(escapedActionChar / [^'\\])* "'" { return "'" + chars.join("") + "'"; }
+
+  templateActionString = "`" chars:(escapedActionChar / [^`\\])* "`" { return "`" + chars.join("") + "`"; }
+
+  actionStringLiteral = doubleQuotedActionString / singleQuotedActionString / templateActionString
+
+  lineCommentChar = !("\n" / "\r") c:. { return c; }
+
+  blockCommentChar = !"*/" c:. { return c; }
+
+  actionLineComment = "//" chars:lineCommentChar* { return "//" + chars.join(""); }
+
+  actionBlockComment = "/*" chars:blockCommentChar* "*/" { return "/*" + chars.join("") + "*/"; }
+
+  nestedActionBlock = inner:actionBlock { return "{" + inner + "}"; }
+
+  actionPlainChar = !("{" / "}") c:. { return c; }
+
+  actionContent = nestedActionBlock / actionStringLiteral / actionLineComment / actionBlockComment / actionPlainChar
+
+  actionBlock = "{" parts:actionContent* "}" { return parts.join(""); }
+
+  // ---- Composition operators (same as 04-grammar.tpeg) ----
+
+  interWs = [ \t\n\r]*
+  interWsPlus = [ \t\n\r]+
+  sameLineWs = [ \t]*
+
+  group = "(" interWs expr:choiceExpr interWs ")" { return { type: "Group", expression: expr }; }
+
+  primary = group / basicSyntax
+
+  integer = digits:[0-9]+ { return parseInt(digits.join(""), 10); }
+
+  quantifiedRange = "{" min:integer "," max:integer "}" { return { min, max }; }
+
+  quantifiedMin = "{" min:integer "," "}" { return { min, max: undefined }; }
+
+  quantifiedExact = "{" n:integer "}" { return { min: n, max: n }; }
+
+  quantifiedOp = quantifiedRange / quantifiedMin / quantifiedExact
+
+  starOp = expr:primary "*" { return { type: "Star", expression: expr }; }
+
+  plusOp = expr:primary "+" { return { type: "Plus", expression: expr }; }
+
+  optionalOp = expr:primary "?" { return { type: "Optional", expression: expr }; }
+
+  quantOp = expr:primary q:quantifiedOp { return { type: "Quantified", expression: expr, min: q.min, max: q.max }; }
+
+  postfix = starOp / plusOp / optionalOp / quantOp / primary
+
+  positiveLookahead = "&" expr:postfix { return { type: "PositiveLookahead", expression: expr }; }
+
+  negativeLookahead = "!" expr:postfix { return { type: "NegativeLookahead", expression: expr }; }
+
+  prefix = positiveLookahead / negativeLookahead / postfix
+
+  labeled = label:identifierName ":" expr:prefix { return { type: "LabeledExpression", label, expression: expr }; }
+          / prefix
+
+  notNextRuleStart = !(identifierName sameLineWs "=")
+
+  sequenceContinuation = interWs notNextRuleStart labeled
+
+  sequenceBase = first:labeled rest:sequenceContinuation* {
+    if (rest.length === 0) return first;
+    const elements = [first, ...rest.map((r: any) => r[2])];
+    return { type: "Sequence", elements };
+  }
+
+  alternative = base:sequenceBase act:(interWs actionBlock)? {
+    if (act.length === 0) return base;
+    return { type: "ActionExpression", expression: base, code: act[0][1] };
+  }
+
+  choiceExpr = first:alternative rest:(interWs "/" interWs alternative)* {
+    if (rest.length === 0) return first;
+    const alternatives = [first, ...rest.map((r: any) => r[3])];
+    return { type: "Choice", alternatives };
+  }
+
+  // ---- Rule / grammar block structure (same as 04-grammar.tpeg) ----
+
+  ruleDefinitionNode = interWs name:identifierName interWs "=" interWs pattern:choiceExpr {
+    return { type: "RuleDefinition", name, pattern };
+  }
+
+  annotationValueQuoted = s:stringLiteralNode { return s.value; }
+
+  annotationValue = annotationValueQuoted / identifierName
+
+  keyValueAnnotation = interWs "@" key:identifierName interWs ":" interWs value:annotationValue {
+    return { type: "GrammarAnnotation", key, value };
+  }
+
+  flagAnnotation = interWs "@" key:identifierName {
+    return { type: "GrammarAnnotation", key, value: "" };
+  }
+
+  grammarAnnotationNode = keyValueAnnotation / flagAnnotation
+
+  singleLineCommentNode = "//" chars:lineCommentChar* { return { kind: "comment" }; }
+
+  blockCommentNode = "/*" chars:blockCommentChar* "*/" { return { kind: "comment" }; }
+
+  // ---- Module system: import / export / extends / includes / @dependencies /
+  // @conflicts / @requires (docs/peg-grammar.md; packages/parser/src/module.ts,
+  // grammar.ts's modularGrammarDefinition/tpegModuleFile) ----
+
+  quotedStringValue = s:stringLiteralNode { return s.value; }
+
+  importAlias = interWsPlus "as" interWsPlus name:identifierName { return name; }
+
+  selectiveImportList = "{" interWs items:(identifierName (interWs "," interWs identifierName)*)? interWs "}" {
+    if (items.length === 0) return [];
+    const [first, rest] = items[0];
+    return [first, ...rest.map((r: any) => r[3])];
+  }
+
+  simpleImportNode = "import" interWsPlus path:quotedStringValue alias:importAlias? {
+    return { type: "ImportStatement", modulePath: path, alias: alias[0] };
+  }
+
+  selectiveImportNode = "import" interWsPlus path:quotedStringValue interWsPlus selective:selectiveImportList {
+    return { type: "ImportStatement", modulePath: path, selective };
+  }
+
+  versionedImportNode = "import" interWsPlus path:quotedStringValue interWsPlus "version" interWsPlus version:quotedStringValue alias:importAlias? {
+    return { type: "ImportStatement", modulePath: path, alias: alias[0], version };
+  }
+
+  // versioned must be tried before selective/simple: all three share the
+  // "import <ws> path" prefix, and simple's grammar is a strict prefix of
+  // versioned's, so trying simple first would match just the path and leave
+  // "version ..."/"{ ... }" as unparsed trailing content.
+  importStatementNode = versionedImportNode / selectiveImportNode / simpleImportNode
+
+  exportRuleList = "[" interWs items:(identifierName (interWs "," interWs identifierName)*)? interWs "]" {
+    if (items.length === 0) return [];
+    const [first, rest] = items[0];
+    return [first, ...rest.map((r: any) => r[3])];
+  }
+
+  // Matches the literal key "export" only (not any "@key: [...]"), same as
+  // grammar.ts's exportDeclaration - this is why it must be tried before
+  // moduleInfoListAnnotationNode below, which accepts any key.
+  exportDeclarationNode = interWs "@export" interWs ":" interWs rules:exportRuleList {
+    return { type: "ExportDeclaration", rules };
+  }
+
+  quotedStringList = "[" interWs items:(stringLiteralNode (interWs "," interWs stringLiteralNode)*)? interWs "]" {
+    if (items.length === 0) return [];
+    const [first, rest] = items[0];
+    return [first.value, ...rest.map((r: any) => r[3].value)];
+  }
+
+  // Generic "@key: [\"a\", \"b\"]" annotation (@dependencies/@conflicts) -
+  // must be tried after exportDeclarationNode (see above) and before
+  // grammarAnnotationNode (whose keyValueAnnotation alternative would
+  // otherwise fail on the "[" value and fall through to flagAnnotation,
+  // wrongly matching just "@key" and leaving ": [...]" dangling).
+  moduleInfoListAnnotationNode = interWs "@" key:identifierName interWs ":" interWs values:quotedStringList {
+    return { type: "ModuleInfoListAnnotation", key, values };
+  }
+
+  quotedStringRecordEntry = key:stringLiteralNode interWs ":" interWs value:stringLiteralNode { return [key.value, value.value]; }
+
+  quotedStringRecord = "{" interWs items:(quotedStringRecordEntry (interWs "," interWs quotedStringRecordEntry)*)? interWs "}" {
+    if (items.length === 0) return {};
+    const [first, rest] = items[0];
+    return Object.fromEntries([first, ...rest.map((r: any) => r[3])]);
+  }
+
+  // Generic "@key: { \"a\": \"b\" }" annotation (@requires) - same ordering
+  // rationale as moduleInfoListAnnotationNode above.
+  moduleInfoRecordAnnotationNode = interWs "@" key:identifierName interWs ":" interWs values:quotedStringRecord {
+    return { type: "ModuleInfoRecordAnnotation", key, values };
+  }
+
+  dottedGrammarName = first:identifierName rest:("." identifierName)* {
+    return [first, ...rest.map((r: any) => r[1])].join(".");
+  }
+
+  grammarExtendsClause = "extends" interWsPlus name:dottedGrammarName { return name; }
+
+  grammarIncludesClause = "includes" interWsPlus first:dottedGrammarName rest:(interWs "," interWs dottedGrammarName)* {
+    return [first, ...rest.map((r: any) => r[3])];
+  }
+
+  // ---- Transform definitions: `transforms Name@language { fn()->T {...} }`
+  // (packages/parser/src/transforms.ts) ----
+
+  // Same six languages, same order, and the same "not a prefix of a longer
+  // identifier" guard as transforms.ts's targetLanguage - notably the guard
+  // only excludes a following [a-zA-Z0-9], NOT "_", matching that function's
+  // TYPE_CHAR-less regex exactly (so "typescript_x" still parses as language
+  // "typescript" here, same as in the hand-written parser).
+  targetLanguageNode = lang:"typescript" !langChar { return lang; }
+                     / lang:"python" !langChar { return lang; }
+                     / lang:"go" !langChar { return lang; }
+                     / lang:"rust" !langChar { return lang; }
+                     / lang:"java" !langChar { return lang; }
+                     / lang:"cpp" !langChar { return lang; }
+
+  langChar = [a-zA-Z0-9]
+
+  transformSetName = name:identifierName interWs "@" interWs lang:targetLanguageNode { return { name, language: lang }; }
+
+  // Mirrors transforms.ts's complexType: outside braces only TYPE_CHAR-like
+  // characters are captured; once a "{" is seen, everything up to its
+  // matching "}" is captured verbatim (arbitrary object-type syntax).
+  typeChar = [a-zA-Z0-9_] / "<" / ">" / "[" / "]"
+
+  typeBraceContentChar = !("{" / "}") c:. { return c; }
+
+  typeBraceContent = parts:(typeBraceBlock / typeBraceContentChar)* { return parts.join(""); }
+
+  typeBraceBlock = "{" inner:typeBraceContent "}" { return "{" + inner + "}"; }
+
+  complexTypeNode = parts:(typeBraceBlock / typeChar)+ { return parts.join(""); }
+
+  parameterType = name:identifierName interWs ":" interWs type:complexTypeNode {
+    return { name, type, optional: false };
+  }
+
+  parameterList = "(" interWs items:(parameterType (interWs "," interWs parameterType)*)? interWs ")" {
+    if (items.length === 0) return [];
+    const [first, rest] = items[0];
+    return [first, ...rest.map((r: any) => r[3])];
+  }
+
+  genericTypeParam = "<" name:identifierName ">" { return name; }
+
+  returnTypeSpec = interWs "->" interWs base:identifierName generic:genericTypeParam? {
+    return generic.length > 0 ? { type: base, generic: generic[0] } : { type: base };
+  }
+
+  transformFunctionNode = interWs name:identifierName interWs params:parameterList ret:returnTypeSpec interWs body:actionBlock {
+    return { name, parameters: params, returnType: ret, body };
+  }
+
+  // At least one function is required - "transforms T@typescript { }" fails
+  // in the hand-written parser (transformFunctions never accepts zero), so
+  // this uses first+rest rather than a bare star().
+  transformFunctions = first:transformFunctionNode rest:(interWs transformFunctionNode)* {
+    return [first, ...rest.map((r: any) => r[1])];
+  }
+
+  transformDefinitionNode = interWs "transforms" interWsPlus info:transformSetName interWs "{" interWs functions:transformFunctions interWs "}" {
+    return {
+      type: "TransformDefinition",
+      transformSet: { name: info.name, targetLanguage: info.language, functions },
+    };
+  }
+
+  // ---- Grammar item + block, extended with module/transform items ----
+  //
+  // Order matters and mirrors grammar.ts's grammarItem exactly (minus
+  // @memoize, which is out of scope for this self-hosting PoC same as it was
+  // for 04-grammar.tpeg): export (literal "@export" key) before the generic
+  // @-array/@-record annotations (any key) before the generic @key:value/@key
+  // annotation, so a more specific alternative never gets shadowed by a more
+  // permissive one tried first.
+  grammarItemNode = e:exportDeclarationNode { return { kind: "export", value: e }; }
+                  / l:moduleInfoListAnnotationNode { return { kind: "moduleInfoList", key: l.key, values: l.values }; }
+                  / r:moduleInfoRecordAnnotationNode { return { kind: "moduleInfoRecord", key: r.key, values: r.values }; }
+                  / a:grammarAnnotationNode { return { kind: "annotation", value: a }; }
+                  / rule:ruleDefinitionNode { return { kind: "rule", value: rule }; }
+                  / t:transformDefinitionNode { return { kind: "transform", value: t }; }
+                  / c:singleLineCommentNode { return { kind: "comment" }; }
+                  / c:blockCommentNode { return { kind: "comment" }; }
+
+  grammarItemWithWs = grammarItemNode interWs
+
+  grammarItemsNode = interWs items:grammarItemWithWs* { return items.map((i: any) => i[0]); }
+
+  modularGrammarBlockNode = interWs "grammar" interWsPlus name:dottedGrammarName interWs ext:grammarExtendsClause? interWs inc:grammarIncludesClause? interWs "{" items:grammarItemsNode interWs "}" {
+    const annotations = items.filter((i: any) => i.kind === "annotation").map((i: any) => i.value);
+    const rules = items.filter((i: any) => i.kind === "rule").map((i: any) => i.value);
+    const transforms = items.filter((i: any) => i.kind === "transform").map((i: any) => i.value);
+
+    const exportedRules: string[] = [];
+    for (const i of items) {
+      if (i.kind === "export") exportedRules.push(...i.value.rules);
+    }
+
+    const moduleInfoLists: Record<string, string[]> = {};
+    for (const i of items) {
+      if (i.kind === "moduleInfoList") {
+        moduleInfoLists[i.key] = [...(moduleInfoLists[i.key] ?? []), ...i.values];
+      }
+    }
+
+    const moduleInfoRecords: Record<string, Record<string, string>> = {};
+    for (const i of items) {
+      if (i.kind === "moduleInfoRecord") {
+        moduleInfoRecords[i.key] = { ...moduleInfoRecords[i.key], ...i.values };
+      }
+    }
+
+    const version = annotations.find((a: any) => a.key === "version")?.value;
+    const dependencies = moduleInfoLists["dependencies"];
+    const conflicts = moduleInfoLists["conflicts"];
+    const requires = moduleInfoRecords["requires"];
+
+    const result: any = { type: "ModularGrammarDefinition", name, annotations, rules, transforms };
+
+    if (exportedRules.length > 0) {
+      result.exports = { type: "ExportDeclaration", rules: exportedRules };
+    }
+    if (version || dependencies || conflicts || requires) {
+      const moduleInfo: any = { type: "ModuleInfo" };
+      if (dependencies !== undefined) moduleInfo.dependencies = dependencies;
+      if (conflicts !== undefined) moduleInfo.conflicts = conflicts;
+      if (version !== undefined) moduleInfo.version = version;
+      if (requires !== undefined) moduleInfo.requires = requires;
+      result.moduleInfo = moduleInfo;
+    }
+    if (ext.length > 0) result.extends = ext[0];
+    if (inc.length > 0) result.includes = inc[0];
+
+    return result;
+  }
+
+  // A full `.tpeg` file: zero or more import statements followed by a single
+  // (possibly modular) grammar block - mirrors grammar.ts's tpegModuleFile.
+  tpegFileNode = imports:(interWs importStatementNode)* grammar:modularGrammarBlockNode {
+    return { imports: imports.map((i: any) => i[1]), grammar };
+  }
+}

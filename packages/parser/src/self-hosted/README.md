@@ -13,7 +13,7 @@ hand-written parser remains the one actually used by `tpeg-parser`/`tpeg-cli`.
 
 ## Layout
 
-- `grammar-source/*.tpeg` - the self-hosted grammar, built up in four layers
+- `grammar-source/*.tpeg` - the self-hosted grammar, built up in five layers
   (each one is a complete, standalone grammar - not a diff on the previous
   layer - so each can be regenerated and tested independently):
   1. `01-leaf.tpeg` - string literals, character classes, identifiers,
@@ -25,6 +25,15 @@ hand-written parser remains the one actually used by `tpeg-parser`/`tpeg-cli`.
   4. `04-grammar.tpeg` - everything in `03`, plus rule definitions and plain
      `grammar Name { ... }` blocks with `@key: value`/`@flag` annotations and
      `//` comments.
+  5. `05-full.tpeg` - everything in `04`, plus the module system
+     (`import`/`export`, `extends`/`includes`, `@dependencies`/`@conflicts`/
+     `@requires`) and `transforms Name@language { ... }` definitions - see
+     "Module system and transforms" below. Kept as its own layer rather than
+     extending `04-grammar.tpeg` in place: plain `grammarDefinition` drops
+     exports/extends/includes entirely, so any grammar exercising those needs
+     `modularGrammarDefinition` as its oracle instead, and touching
+     `04-grammar.tpeg`'s rules in place would invalidate its own 11 existing
+     comparison cases for no reason - `04-grammar.tpeg` stays frozen.
 - `generated/*.ts` - each layer's generated TypeScript, produced by running
   `bun run packages/cli/src/cli.ts <file>.tpeg -o generated/<name>.ts` from
   the repo root. Regenerate after editing a `.tpeg` source.
@@ -34,16 +43,88 @@ hand-written parser remains the one actually used by `tpeg-parser`/`tpeg-cli`.
 
 ## What's excluded from this PoC
 
-Scoped out entirely - none of it is exercised by any `.tpeg` file here:
-
-- The **module system**: `import`/`export`, `extends`/`includes`,
-  `@dependencies`/`@conflicts`/`@requires` (`module.ts`, ~200 lines of
-  `grammar.ts`).
-- **Transform function definitions** (`transforms Name@language { ... }`,
-  `transforms.ts`).
 - **Documentation comment collection** (`///` comments attached to a rule's
-  `documentation` field) - plain `//` comments are supported and ignored,
-  matching the hand-written parser's behavior for those.
+  `documentation` field) is **not applicable, not merely unimplemented**:
+  `grammar.ts`'s `ruleDefinition` calls `createRuleDefinition(name, pattern)`
+  with only two arguments, and its `grammarItem` choice tries
+  `singleLineComment` (`literal("//")`) *before* `documentationComment`
+  (`literal("///")`) - a `///` line matches `singleLineComment` first (its
+  `zeroOrMore(nonNewlineChar)` happily consumes the leftover third `/` as
+  ordinary content) and `///` never reaches `documentationComment` at all.
+  `RuleDefinition.documentation` has no producer anywhere in
+  `packages/parser/src/*.ts` outside test fixtures - grep
+  `createRuleDefinition\(` across the package and every real call site passes
+  exactly two arguments. So there is no upstream behavior to model: this PoC
+  (see `05-full.tpeg`'s `singleLineCommentNode`) accepts and discards a `///`
+  line exactly like a `//` line, which already matches the hand-written
+  parser's actual behavior byte-for-byte (`full.compare.spec.ts` has a case
+  proving it). Populating `RuleDefinition.documentation` for real would be a
+  production change to `grammar.ts` (reorder that `choice`, thread a doc-
+  comment array through to `createRuleDefinition`) plus every consumer of
+  `RuleDefinition` (codegen, type inference, etc.) - out of scope here since
+  it isn't a self-hosted-grammar task at all.
+- **`@memoize` rule-level annotations** remain out of scope, same as they
+  were for `04-grammar.tpeg` (untouched by this layer) - `grammarItemNode`
+  here still treats every `@key` uniformly as a generic annotation.
+
+The module system and `transforms` definitions - previously excluded here -
+are now covered by `05-full.tpeg`; see below.
+
+## Module system and transforms (`05-full.tpeg`)
+
+`05-full.tpeg` extends `04-grammar.tpeg`'s grammar-block layer with three
+additional top-level rules, each compared against a different
+hand-written-parser oracle in `full.compare.spec.ts`:
+
+- `transformDefinitionNode` vs. `transforms.ts`'s `transformDefinition` -
+  `transforms Name@language { fn(param: Type) -> ReturnType { ...body... } }`,
+  including object-literal parameter/return types and generic return types
+  (`-> Result<Node>`).
+- `modularGrammarBlockNode` vs. `grammar.ts`'s `modularGrammarDefinition` -
+  a full `grammar Name [extends Other] [includes A, B] { ...items... }`
+  block, including `@export`, `@dependencies`/`@conflicts`/`@requires`, and
+  embedded `transforms` blocks.
+- `tpegFileNode` vs. `grammar.ts`'s `tpegModuleFile` - zero or more `import`
+  statements (simple/selective/versioned) followed by a modular grammar
+  block. Note this oracle returns a plain `{ imports, grammar }` object, not
+  an AST node with its own `type` field.
+
+A handful of hand-written-parser quirks had to be reproduced exactly (not
+"corrected") for these to compare equal:
+
+- `@namespace` is **not** wired into `ModuleInfo.namespace` by
+  `modularGrammarDefinition` despite `module.ts`'s own module doc comment
+  listing it as a planned annotation - it lands in `annotations` like any
+  other unrecognized `@key`, and nowhere else. `05-full.tpeg` does the same.
+- `moduleInfoLists`/`moduleInfoRecords` (`@dependencies`/`@conflicts` and
+  `@requires`) **accumulate** across repeated annotations with the same key
+  (list concatenation, record spread) rather than the last one winning.
+- `@export: [...]` only produces an `exports` field when the list is
+  non-empty; `@export: []` yields no `exports` field at all
+  (`exportedRules.length > 0` in `grammar.ts`).
+- `transformFunctions` requires **at least one** function -
+  `transforms T@typescript { }` fails on both sides.
+- `targetLanguage`'s "not a prefix of a longer identifier" guard
+  (`transforms.ts`) only excludes a following `[a-zA-Z0-9]`, not `_` - so
+  `typescript_x` still resolves to language `typescript` on both sides, not
+  a parse failure, matching that guard's actual (not fully identifier-aware)
+  regex.
+- **A rule immediately followed by a `transforms` block in the same grammar
+  block fails on both sides.** `grammar.ts`'s `grammarRuleExpression`
+  (the hand-rolled rule-boundary scanner described below) doesn't treat the
+  `transforms` keyword as a rule/block boundary - only `"identifier <same-
+  line-ws> ="` and a bare `}` are recognized boundaries - so it greedily
+  scans the `transforms` block into the *preceding* rule's own pattern
+  slice, hits `expression()` failing partway in (a bare `T@typescript`
+  contains a `@`, which nothing in `expression()`'s grammar accepts), and
+  the whole grammar block parse fails. `05-full.tpeg`'s `sequenceContinuation`
+  hits the analogous failure for a structurally different reason (`identifier
+  sameLineWs "="` doesn't match `transforms T@typescript`'s shape either, so
+  it's accepted into the sequence and then chokes on the same `@`). This
+  PoC reproduces the failure rather than working around it - see
+  `full.compare.spec.ts`'s last `modularGrammarBlockNode` case - since
+  `transforms` blocks that appear anywhere else (first item, or after any
+  other item) work correctly on both sides.
 
 ## The key finding: no bounded pre-scan needed
 
@@ -111,16 +192,17 @@ destructuring the labels an action's code actually references.
 ## Regenerating
 
 ```bash
-bun run packages/cli/src/cli.ts packages/parser/src/self-hosted/grammar-source/04-grammar.tpeg \
-  -o packages/parser/src/self-hosted/generated/grammar.generated.ts
+bun run packages/cli/src/cli.ts packages/parser/src/self-hosted/grammar-source/05-full.tpeg \
+  -o packages/parser/src/self-hosted/generated/full.generated.ts
 ```
 
 (the `.generated.ts` suffix matches this repo's `vite.config.ts` `fmt`/`lint`
 ignore patterns, so the machine-generated output - which uses `Parser<any>`
 throughout and would otherwise fail lint - is exempted from formatting/lint
-checks.)
+checks. It is **not** exempt from typechecking - run `bun run typecheck`
+after regenerating.)
 
-(repeat for `01`-`03` against their respective output files), then:
+(repeat for `01`-`04` against their respective output files), then:
 
 ```bash
 bunx vp test packages/parser/src/self-hosted/
