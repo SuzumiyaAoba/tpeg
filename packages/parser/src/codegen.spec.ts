@@ -9,6 +9,7 @@ import {
   createCharRange,
   createCharacterClass,
   createChoice,
+  createCut,
   createGrammarDefinition,
   createGroup,
   createIdentifier,
@@ -1200,5 +1201,77 @@ describe("generateTypeScriptParser rejects unbounded repetition over a nullable 
       ],
     );
     expect(() => generateTypeScriptParser(grammar)).not.toThrow();
+  });
+});
+
+/**
+ * `collectUsedCombinators` must import exactly the combinators
+ * `generateExpression`'s own generated code actually calls -- these
+ * regression tests target three previously-mismatched shapes (see this
+ * function's own comments): a Cut-then-single-element Sequence (bare
+ * passthrough, no `sequence(...)` call at all), a Quantified whose
+ * `{n,m}` shape doesn't need EVERY repetition combinator, and a grammar
+ * with no `tpeg-core` combinator usage at all (an all-external-reference
+ * grammar), which used to emit an empty `import {  } from ...` line.
+ */
+describe("generateTypeScriptParser: import precision (regression)", () => {
+  test("a Cut-then-single-element sequence does not import 'sequence' (bare passthrough)", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([createCut(), createStringLiteral("a", '"')]),
+        ),
+      ],
+    );
+
+    const result = generateTypeScriptParser(grammar, { includeImports: true });
+    expect(result.code).not.toContain('"sequence"');
+    expect(result.imports.join(" ")).not.toMatch(/\bsequence\b/);
+    expect(result.code).toContain("commitAtTopLevel(literal");
+  });
+
+  test("a two-element sequence still imports 'sequence' (control case)", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([
+            createStringLiteral("a", '"'),
+            createStringLiteral("b", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const result = generateTypeScriptParser(grammar, { includeImports: true });
+    expect(result.imports.join(" ")).toMatch(/\bsequence\b/);
+  });
+
+  test("a grammar with no tpeg-core combinator usage emits no empty tpeg-core import line", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [createRuleDefinition("start", createIdentifier("externalParser"))],
+    );
+
+    const result = generateTypeScriptParser(grammar, { includeImports: true });
+    expect(result.code).not.toContain("import {  }");
+    // `import type { Parser } from "@suzumiyaaoba/tpeg-core";` is still
+    // expected (always emitted under `includeImports: true`) -- what
+    // must be ABSENT is the separate, non-type combinator import line
+    // (`import { <combinators> } from ...`), since there are none to
+    // import here.
+    expect(
+      result.imports.some(
+        (line) =>
+          !line.startsWith("import type") &&
+          line.includes('from "@suzumiyaaoba/tpeg-core";'),
+      ),
+    ).toBe(false);
   });
 });

@@ -564,12 +564,21 @@ export class OptimizedTPEGCodeGenerator {
       bindings.push(...combinatorPackageImports);
     }
 
-    // Generate optimized combinator import
+    // Generate optimized combinator import. Guarded on `length > 0` --
+    // unlike `combinatorPackageImports` above, which was already guarded
+    // -- a grammar whose every rule is a bare external-parser reference
+    // (see `generateIdentifierCode`'s "external parser" escape hatch)
+    // needs no `tpeg-core` combinator at all, and an unconditional push
+    // here emitted `import {  } from "@suzumiyaaoba/tpeg-core";` (valid
+    // but pointless) in that case. Mirrors `codegen.ts`'s identical guard
+    // on its own equivalent import line.
     const combinators = Array.from(usedCombinators).sort();
-    imports.push(
-      `import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`,
-    );
-    bindings.push(...combinators);
+    if (combinators.length > 0) {
+      imports.push(
+        `import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`,
+      );
+      bindings.push(...combinators);
+    }
 
     return { lines: imports, bindings };
   }
@@ -615,12 +624,23 @@ export class OptimizedTPEGCodeGenerator {
         }
         break;
       }
-      case "Sequence":
-        combinators.add(
-          collectTopLevelLabels(expr).length > 0
-            ? "captureSequence"
-            : "sequence",
-        );
+      case "Sequence": {
+        // Mirrors `generateOptimizedSequence`'s own decision exactly
+        // (both its early no-cut shortcut and its later general-case
+        // one boil down to the same rule: a sequence with exactly one
+        // SURVIVING, non-`Cut` element and no label is returned bare,
+        // never passed through `sequence(...)`/`captureSequence(...)`)
+        // -- see the identical fix/comment in `codegen.ts`'s own
+        // `collectUsedCombinators` for the concrete unused-import shape
+        // this avoids (e.g. `~ "a"`, a Cut-then-single-element sequence).
+        const hasLabel = collectTopLevelLabels(expr).length > 0;
+        const nonCutElementCount = expr.elements.filter(
+          (el) => el.type !== "Cut",
+        ).length;
+        const isBareSinglePassthrough = nonCutElementCount === 1 && !hasLabel;
+        if (!isBareSinglePassthrough) {
+          combinators.add(hasLabel ? "captureSequence" : "sequence");
+        }
         // Mirrors codegen.ts's identical guard: when this IS the start
         // rule's own top-level Sequence, OR a Cut here was marked
         // `global: true` by `promoteGlobalCuts`, it emits
@@ -640,15 +660,27 @@ export class OptimizedTPEGCodeGenerator {
           this.collectUsedCombinators(element, combinators, currentRuleIndex);
         }
         break;
+      }
       case "Choice":
-        combinators.add("choice");
-        // Whether this *particular* Choice ends up eligible for
-        // `predictiveChoice` depends on FIRST-set analysis this pass
-        // doesn't have (it only walks the raw AST) -- import it
-        // whenever the option is on and there's more than one
+        // Mirrors `generateOptimizedChoice`'s own single-alternative
+        // shortcut: exactly one alternative is returned bare (that
+        // alternative's own generated code, unwrapped), never passed
+        // through `choice(...)` at all -- unlike the multi-alternative
+        // case just below, this one is unconditional (independent of
+        // `enablePredictiveDispatch`/FIRST-set analysis), so it's worth
+        // getting exactly right rather than leaving imprecise.
+        if (expr.alternatives.length !== 1) {
+          combinators.add("choice");
+        }
+        // Whether this *particular* multi-alternative Choice ends up
+        // eligible for `predictiveChoice` depends on FIRST-set analysis
+        // this pass doesn't have (it only walks the raw AST) -- import
+        // it whenever the option is on and there's more than one
         // alternative, rather than duplicating that analysis here. An
-        // unused import in the rare all-unknown-FIRST-set case is
-        // harmless in generated code.
+        // unused `choice`/`predictiveChoice` import in the rare
+        // all-unknown-FIRST-set case is a DELIBERATE tradeoff (unlike
+        // the single-alternative case above, which needs no such
+        // analysis to get right), not an oversight.
         if (
           this.options.enablePredictiveDispatch &&
           expr.alternatives.length > 1
@@ -746,13 +778,6 @@ export class OptimizedTPEGCodeGenerator {
         break;
       case "Quantified": {
         const quantified = expr as Quantified;
-        // Add the quantified combinator for quantified expressions
-        combinators.add("quantified");
-        // Also add basic combinators that might be used as fallbacks
-        combinators.add("zeroOrMore");
-        combinators.add("oneOrMore");
-        combinators.add("optional");
-        combinators.add("choice");
         // {0,}/{1,} over a bare CharacterClass collapses to
         // `charClassRun` instead (mirrors `generateQuantifiedCode`'s
         // decision exactly, via the same call) -- add its import, and
@@ -769,6 +794,33 @@ export class OptimizedTPEGCodeGenerator {
         if (usesRun) {
           combinators.add("charClassRun");
         } else {
+          // Mirrors `generateQuantifiedCode`'s (codegen.ts) branches
+          // exactly, rather than adding every combinator it could ever
+          // possibly emit for SOME `Quantified` shape: that used to add
+          // `quantified`/`zeroOrMore`/`oneOrMore`/`optional`/`choice`
+          // unconditionally, every one of them unused except whichever
+          // single branch this specific `min`/`max` pair actually takes
+          // (and `choice` is never emitted by `generateQuantifiedCode`
+          // for ANY shape -- it was always dead weight here).
+          if (quantified.max === undefined) {
+            combinators.add(
+              quantified.min === 0
+                ? "zeroOrMore"
+                : quantified.min === 1
+                  ? "oneOrMore"
+                  : "quantified",
+            );
+          } else if (quantified.min === quantified.max) {
+            // `{n}`: `{1}` returns the inner code bare (no combinator of
+            // its own); every other `n` (including `{0}`) uses `quantified`.
+            if (quantified.min !== 1) {
+              combinators.add("quantified");
+            }
+          } else if (quantified.min === 0 && quantified.max === 1) {
+            combinators.add("optional");
+          } else {
+            combinators.add("quantified");
+          }
           this.collectUsedCombinators(
             quantified.expression,
             combinators,

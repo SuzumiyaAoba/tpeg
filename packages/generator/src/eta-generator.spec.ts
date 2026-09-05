@@ -9,6 +9,7 @@ import {
 } from "./eta-generator";
 
 // Import test utilities from core
+import type { Cut } from "@suzumiyaaoba/tpeg-core";
 import type {
   CharacterClass,
   Choice,
@@ -94,6 +95,10 @@ function createChoice(alternatives: Expression[]): Choice {
     type: "Choice",
     alternatives,
   };
+}
+
+function createCut(): Cut {
+  return { type: "Cut" };
 }
 
 function createStar(expression: Expression): Star {
@@ -1170,5 +1175,71 @@ describe("EtaTPEGCodeGenerator: grammar validation", () => {
       namePrefix: "g_",
     });
     expect(result.code).toContain("g_class");
+  });
+});
+
+/**
+ * `collectUsedCombinators` must import exactly the combinators
+ * `generateExpressionCode`'s own generated code actually calls -- see
+ * the identical regression coverage in `packages/parser/src/codegen.spec.ts`
+ * for the shapes this targets (a Cut-then-single-element Sequence and a
+ * single-alternative Choice, both bare passthroughs with no matching
+ * combinator call; and a grammar with no `tpeg-core` combinator usage at
+ * all, which used to emit an empty `import {  } from ...` line).
+ */
+describe("EtaTPEGCodeGenerator: import precision (regression)", () => {
+  it("a Cut-then-single-element sequence does not import 'sequence' (bare passthrough)", async () => {
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([createCut(), createStringLiteral("a")]),
+        ),
+      ],
+    );
+
+    const result = await generateEtaTypeScriptParser(grammar, {
+      includeImports: true,
+      optimize: false,
+    });
+    expect(result.imports.join(" ")).not.toMatch(/\bsequence\b/);
+    expect(result.code).toContain("commit(literal");
+  });
+
+  it("a single-alternative choice does not import 'choice' (bare passthrough)", async () => {
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [createRuleDefinition("start", createChoice([createStringLiteral("a")]))],
+    );
+
+    const result = await generateEtaTypeScriptParser(grammar, {
+      includeImports: true,
+      optimize: false,
+    });
+    expect(result.imports.join(" ")).not.toMatch(/\bchoice\b/);
+  });
+
+  it("a grammar with no tpeg-core combinator usage emits no empty tpeg-core import line", async () => {
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [createRuleDefinition("start", createIdentifier("externalParser"))],
+    );
+
+    const result = await generateEtaTypeScriptParser(grammar, {
+      includeImports: true,
+      optimize: false,
+    });
+    expect(result.code).not.toContain("import {  }");
+    expect(
+      result.imports.some(
+        (line) =>
+          !line.startsWith("import type") &&
+          line.includes('from "@suzumiyaaoba/tpeg-core";'),
+      ),
+    ).toBe(false);
   });
 });

@@ -465,6 +465,23 @@ export const generateIdentifierCode = (
  * (e.g. `math.expr`, a reference to a rule exported from another module -
  * see `namespace-manager.ts`'s import resolution). Shared between
  * `codegen.ts` and `codegen-optimized.ts`.
+ *
+ * Emitted VERBATIM as `module.name`, with no accompanying `import`
+ * statement generated for `module` -- this is the `QualifiedIdentifier`
+ * counterpart of `generateIdentifierCode`'s "external parser" escape
+ * hatch for a bare `Identifier` that names no local rule (see that
+ * function's own doc comment): the consumer of the generated code is
+ * expected to supply a binding for `module` themselves (e.g. a real
+ * `import` added by hand, or a value passed into a `new Function(...)`
+ * scope), exactly as they already must for an unresolved bare
+ * `Identifier`. `codegen.ts`/`codegen-optimized.ts`/
+ * `@suzumiyaaoba/tpeg-generator`'s Eta generator have no integration
+ * with the module-resolution system (`module-resolver.ts`'s
+ * `resolveQualifiedIdentifier`, `namespace-manager.ts`'s
+ * `resolveQualifiedName`) today -- nothing in this repo currently
+ * resolves a `QualifiedIdentifier` and rewrites the grammar's AST
+ * before code generation, so this reference always reaches codegen
+ * unresolved and is always emitted this way, not auto-imported.
  */
 export const generateQualifiedIdentifierCode = (
   expr: QualifiedIdentifier,
@@ -1034,12 +1051,28 @@ export class TPEGCodeGenerator {
         }
         break;
       }
-      case "Sequence":
-        combinators.add(
-          collectTopLevelLabels(expr).length > 0
-            ? "captureSequence"
-            : "sequence",
-        );
+      case "Sequence": {
+        // Mirrors `generateSequence`'s own decision exactly: a sequence
+        // with exactly one surviving (non-`Cut`) element and no label is
+        // returned BARE (that element's own generated code, unwrapped --
+        // see that function's doc comment for why, tied to the Capture
+        // Structure Reference Table), never passed through
+        // `sequence(...)`/`captureSequence(...)` at all. Adding the
+        // import unconditionally here left it unused whenever a rule's
+        // pattern reduced to exactly that shape (e.g. `~ "a"`, where the
+        // Cut is dropped and "a" is the sole remaining element) --
+        // `codegen.ts`'s own doc comments (further down) call out
+        // keeping saved generated output `tsc --noEmit`-clean under
+        // `noUnusedLocals` as a real, checked property, which this
+        // violated.
+        const hasLabel = collectTopLevelLabels(expr).length > 0;
+        const nonCutElementCount = expr.elements.filter(
+          (el) => el.type !== "Cut",
+        ).length;
+        const isBareSinglePassthrough = nonCutElementCount === 1 && !hasLabel;
+        if (!isBareSinglePassthrough) {
+          combinators.add(hasLabel ? "captureSequence" : "sequence");
+        }
         // A Sequence can contain at most one Cut in practice (see
         // ast-optimize.ts), but this checks every one found, mirroring
         // generateSequence's per-cut `.global` decision rather than
@@ -1057,6 +1090,7 @@ export class TPEGCodeGenerator {
           this.collectUsedCombinators(element, combinators, currentRuleIndex);
         }
         break;
+      }
       case "Choice":
         combinators.add("choice");
         for (const alternative of expr.alternatives) {

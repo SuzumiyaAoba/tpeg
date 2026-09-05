@@ -19,6 +19,7 @@ import {
   createCharRange,
   createCharacterClass,
   createChoice,
+  createCut,
   createGrammarDefinition,
   createIdentifier,
   createLabeledExpression,
@@ -1084,5 +1085,150 @@ describe("generateOptimizedTypeScriptParser rejects unbounded repetition over a 
         enableRegexFusion: false,
       }),
     ).toThrow(/rule 'r'/);
+  });
+});
+
+/**
+ * `collectUsedCombinators` must import exactly the combinators
+ * `generateOptimizedExpression`'s own generated code actually calls --
+ * these regression tests target four previously-mismatched shapes: a
+ * Cut-then-single-element Sequence (bare passthrough), a single-
+ * alternative Choice (also bare passthrough), a Quantified whose
+ * `{n,m}` shape doesn't need every repetition combinator this generator
+ * used to add unconditionally (`quantified`/`zeroOrMore`/`oneOrMore`/
+ * `optional`/`choice`, regardless of which one the shape actually
+ * needed), and a grammar with no `tpeg-core` combinator usage at all
+ * (an all-external-reference grammar), which used to emit an empty
+ * `import {  } from ...` line.
+ */
+describe("generateOptimizedTypeScriptParser: import precision (regression)", () => {
+  it("a Cut-then-single-element sequence does not import 'sequence' (bare passthrough)", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([createCut(), createStringLiteral("a", '"')]),
+        ),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      language: "typescript",
+      includeImports: true,
+    });
+    expect(result.imports.join(" ")).not.toMatch(/\bsequence\b/);
+    expect(result.code).toContain("commitAtTopLevel(literal");
+  });
+
+  it("a single-alternative choice does not import 'choice' (bare passthrough)", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createChoice([createStringLiteral("a", '"')]),
+        ),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      language: "typescript",
+      includeImports: true,
+      enablePredictiveDispatch: false,
+    });
+    expect(result.imports.join(" ")).not.toMatch(/\bchoice\b/);
+  });
+
+  it("a two-alternative choice still imports 'choice' (control case)", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createChoice([
+            createStringLiteral("a", '"'),
+            createStringLiteral("b", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      language: "typescript",
+      includeImports: true,
+      enablePredictiveDispatch: false,
+    });
+    expect(result.imports.join(" ")).toMatch(/\bchoice\b/);
+  });
+
+  it("imports only the combinator each quantifier shape actually needs, not every possible one", () => {
+    const cases: Array<{
+      min: number;
+      max: number | undefined;
+      expected: string;
+    }> = [
+      { min: 2, max: undefined, expected: "quantified" },
+      { min: 1, max: undefined, expected: "oneOrMore" },
+      { min: 0, max: undefined, expected: "zeroOrMore" },
+      { min: 3, max: 3, expected: "quantified" },
+      { min: 2, max: 5, expected: "quantified" },
+      { min: 0, max: 1, expected: "optional" },
+    ];
+    const others = [
+      "quantified",
+      "zeroOrMore",
+      "oneOrMore",
+      "optional",
+      "choice",
+    ];
+
+    for (const { min, max, expected } of cases) {
+      const grammar = createGrammarDefinition(
+        "T",
+        [],
+        [
+          createRuleDefinition(
+            "start",
+            createQuantified(createStringLiteral("x", '"'), min, max),
+          ),
+        ],
+      );
+
+      const result = generateOptimizedTypeScriptParser(grammar, {
+        language: "typescript",
+        includeImports: true,
+        enableCharClassRun: false,
+      });
+      const importedLine = result.imports.join(" ");
+      expect(importedLine).toMatch(new RegExp(`\\b${expected}\\b`));
+      for (const other of others.filter((n) => n !== expected)) {
+        expect(importedLine).not.toMatch(new RegExp(`\\b${other}\\b`));
+      }
+    }
+  });
+
+  it("a grammar with no tpeg-core combinator usage emits no empty tpeg-core import line", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [createRuleDefinition("start", createIdentifier("externalParser"))],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      language: "typescript",
+      includeImports: true,
+    });
+    expect(result.code).not.toContain("import {  }");
+    expect(
+      result.imports.some(
+        (line) =>
+          !line.startsWith("import type") &&
+          line.includes('from "@suzumiyaaoba/tpeg-core";'),
+      ),
+    ).toBe(false);
   });
 });

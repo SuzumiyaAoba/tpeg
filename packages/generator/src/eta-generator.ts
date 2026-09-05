@@ -369,12 +369,19 @@ export class EtaTPEGCodeGenerator {
         bindings.push("memoize");
       }
 
-      // Generate combinator import
+      // Generate combinator import. Guarded on `length > 0` -- a grammar
+      // whose every rule is a bare external-parser reference (see
+      // `generateIdentifierCode`'s "external parser" escape hatch) needs
+      // no `tpeg-core` combinator at all, and an unconditional push here
+      // emitted `import {  } from "@suzumiyaaoba/tpeg-core";` (valid but
+      // pointless) in that case. Mirrors `codegen.ts`'s identical guard.
       const combinators = Array.from(usedCombinators).sort();
-      imports.push(
-        `import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`,
-      );
-      bindings.push(...combinators);
+      if (combinators.length > 0) {
+        imports.push(
+          `import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`,
+        );
+        bindings.push(...combinators);
+      }
     }
 
     return { lines: imports, bindings };
@@ -430,15 +437,21 @@ export class EtaTPEGCodeGenerator {
         }
         break;
       }
-      case "Sequence":
-        combinators.add("sequence");
-        // Mirrors `generateSequence`'s own choice between `sequence()` and
-        // `captureSequence()`: without this, a labeled multi-element
-        // Sequence would emit a call to `captureSequence` with no matching
-        // import, a ReferenceError at runtime whenever `includeImports` is
-        // left at its default of `true`.
-        if (collectTopLevelLabels(expr).length > 0) {
-          combinators.add("captureSequence");
+      case "Sequence": {
+        // Mirrors `generateSequence`'s own single-surviving-element
+        // shortcut: with exactly one non-`Cut` element and no label, that
+        // element's own generated code is returned bare, never passed
+        // through `sequence(...)`/`captureSequence(...)` at all (e.g.
+        // `~ "a"`, where the Cut is dropped and "a" is the sole remaining
+        // element) -- see the identical fix/comment in
+        // `packages/parser/src/codegen.ts`'s own `collectUsedCombinators`.
+        const hasLabel = collectTopLevelLabels(expr).length > 0;
+        const nonCutElementCount = (expr as Sequence).elements.filter(
+          (el) => el.type !== "Cut",
+        ).length;
+        const isBareSinglePassthrough = nonCutElementCount === 1 && !hasLabel;
+        if (!isBareSinglePassthrough) {
+          combinators.add(hasLabel ? "captureSequence" : "sequence");
         }
         for (const element of (expr as Sequence).elements) {
           if (element.type === "Cut") {
@@ -451,10 +464,16 @@ export class EtaTPEGCodeGenerator {
           this.collectUsedCombinators(element, combinators, currentRuleIndex);
         }
         break;
+      }
       case "Cut":
         break;
       case "Choice":
-        combinators.add("choice");
+        // Mirrors `generateChoice`'s own single-alternative shortcut:
+        // exactly one alternative is returned bare, never passed through
+        // `choice(...)` at all.
+        if ((expr as Choice).alternatives.length !== 1) {
+          combinators.add("choice");
+        }
         for (const alternative of (expr as Choice).alternatives) {
           this.collectUsedCombinators(
             alternative,

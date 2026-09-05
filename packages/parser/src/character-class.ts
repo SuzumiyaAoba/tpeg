@@ -91,7 +91,7 @@ const charClassChar: Parser<string> = choice(
   // character classes are already differentially tested at the
   // combinator layer (`core/combinator-oracle.spec.ts`'s astral
   // char-class ranges).
-  charClass(["", "\u{10ffff}"]),
+  charClass(["\u{0080}", "\u{10ffff}"]),
 );
 
 /**
