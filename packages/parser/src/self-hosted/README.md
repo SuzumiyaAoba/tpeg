@@ -98,7 +98,18 @@ A handful of hand-written-parser quirks had to be reproduced exactly (not
   other unrecognized `@key`, and nowhere else. `05-full.tpeg` does the same.
 - `moduleInfoLists`/`moduleInfoRecords` (`@dependencies`/`@conflicts` and
   `@requires`) **accumulate** across repeated annotations with the same key
-  (list concatenation, record spread) rather than the last one winning.
+  (list concatenation, record spread) rather than the last one winning -
+  `full.compare.spec.ts` repeats all three keys (not just `@dependencies`)
+  so a regression in any one key's merge logic would be caught.
+- A comment (`//`, `///`, or `/* ... */`) is tolerated in the same three
+  header positions `grammar.ts` tolerates one: before the `import`/`grammar`
+  keyword (`leadingContent`), and between a grammar block's
+  name/`extends`/`includes` clauses and its opening `{`
+  (`optionalWhitespaceOrComment`) - `05-full.tpeg`'s `leadingContent` rule
+  covers both. Plain whitespace-only skipping at these positions would parse
+  strictly less than the hand-written parser does (a leading comment before
+  `grammar`, or a trailing one before `{`, would fail here but succeed
+  there) - `full.compare.spec.ts` has a case for each position.
 - `@export: [...]` only produces an `exports` field when the list is
   non-empty; `@export: []` yields no `exports` field at all
   (`exportedRules.length > 0` in `grammar.ts`).
@@ -124,7 +135,13 @@ A handful of hand-written-parser quirks had to be reproduced exactly (not
   PoC reproduces the failure rather than working around it - see
   `full.compare.spec.ts`'s last `modularGrammarBlockNode` case - since
   `transforms` blocks that appear anywhere else (first item, or after any
-  other item) work correctly on both sides.
+  other item) work correctly on both sides. This is a genuine production
+  parse failure for any real `.tpeg` file shaped that way, with an
+  unhelpful error message (`Unexpected content after rule expression:
+  "@typescript { f() ->"`, pointing at the wrong construct entirely) - it
+  would be worth its own tracked issue against `grammar.ts`'s
+  `grammarRuleExpression` rather than staying documented only here, but
+  fixing it is a production change outside this PoC's scope.
 
 ## The key finding: no bounded pre-scan needed
 
@@ -191,7 +208,18 @@ destructuring the labels an action's code actually references.
 
 ## Regenerating
 
+Regenerate a layer's output after editing its `.tpeg` source with
+`bun run packages/cli/src/cli.ts <source> -o <output>`, one line per layer:
+
 ```bash
+bun run packages/cli/src/cli.ts packages/parser/src/self-hosted/grammar-source/01-leaf.tpeg \
+  -o packages/parser/src/self-hosted/generated/leaf.generated.ts
+bun run packages/cli/src/cli.ts packages/parser/src/self-hosted/grammar-source/02-action.tpeg \
+  -o packages/parser/src/self-hosted/generated/action.generated.ts
+bun run packages/cli/src/cli.ts packages/parser/src/self-hosted/grammar-source/03-composition.tpeg \
+  -o packages/parser/src/self-hosted/generated/composition.generated.ts
+bun run packages/cli/src/cli.ts packages/parser/src/self-hosted/grammar-source/04-grammar.tpeg \
+  -o packages/parser/src/self-hosted/generated/grammar.generated.ts
 bun run packages/cli/src/cli.ts packages/parser/src/self-hosted/grammar-source/05-full.tpeg \
   -o packages/parser/src/self-hosted/generated/full.generated.ts
 ```
@@ -200,9 +228,7 @@ bun run packages/cli/src/cli.ts packages/parser/src/self-hosted/grammar-source/0
 ignore patterns, so the machine-generated output - which uses `Parser<any>`
 throughout and would otherwise fail lint - is exempted from formatting/lint
 checks. It is **not** exempt from typechecking - run `bun run typecheck`
-after regenerating.)
-
-(repeat for `01`-`04` against their respective output files), then:
+after regenerating.) Then:
 
 ```bash
 bunx vp test packages/parser/src/self-hosted/

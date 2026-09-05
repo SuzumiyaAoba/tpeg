@@ -725,24 +725,7 @@ export const ruleDefinitionNode: Parser<any> = (input, pos) => {
   };
 };
 
-export const annotationValueQuoted: Parser<any> = (input, pos) => {
-  const __base = (capture("s", stringLiteralNode));
-  const __result = __base(input, pos);
-  if (!__result.success) return __result;
-  const __val = (() => {
-    const $$: any = __result.val;
-    const { s } = $$;
- return s.value; 
-  })();
-  return {
-    success: true,
-    val: __val,
-    current: __result.current,
-    next: __result.next,
-  };
-};
-
-export const annotationValue: Parser<any> = choice(annotationValueQuoted, identifierName);
+export const annotationValue: Parser<any> = choice(lazy(() => quotedStringValue), identifierName);
 
 export const keyValueAnnotation: Parser<any> = (input, pos) => {
   const __base = (captureSequence(interWs, literal("@"), capture("key", identifierName), interWs, literal(":"), interWs, capture("value", annotationValue)));
@@ -814,6 +797,10 @@ export const blockCommentNode: Parser<any> = (input, pos) => {
   };
 };
 
+export const leadingContentUnit: Parser<any> = choice(blockCommentNode, singleLineCommentNode, interWsPlus);
+
+export const leadingContent: Parser<any> = zeroOrMore(leadingContentUnit);
+
 export const quotedStringValue: Parser<any> = (input, pos) => {
   const __base = (capture("s", stringLiteralNode));
   const __result = __base(input, pos);
@@ -848,17 +835,34 @@ export const importAlias: Parser<any> = (input, pos) => {
   };
 };
 
+export const identifierCommaList: Parser<any> = (input, pos) => {
+  const __base = (captureSequence(capture("first", identifierName), capture("rest", zeroOrMore(sequence(interWs, literal(","), interWs, identifierName)))));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { first, rest } = $$;
+
+    return [first, ...rest.map((r: any) => r[3])];
+  
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+};
+
 export const selectiveImportList: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(literal("{"), interWs, capture("items", optional(sequence(identifierName, zeroOrMore(sequence(interWs, literal(","), interWs, identifierName))))), interWs, literal("}")));
+  const __base = (captureSequence(literal("{"), interWs, capture("items", optional(identifierCommaList)), interWs, literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
     const { items } = $$;
 
-    if (items.length === 0) return [];
-    const [first, rest] = items[0];
-    return [first, ...rest.map((r: any) => r[3])];
+    return items.length === 0 ? [] : items[0];
   
   })();
   return {
@@ -929,16 +933,14 @@ export const versionedImportNode: Parser<any> = (input, pos) => {
 export const importStatementNode: Parser<any> = choice(versionedImportNode, selectiveImportNode, simpleImportNode);
 
 export const exportRuleList: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(literal("["), interWs, capture("items", optional(sequence(identifierName, zeroOrMore(sequence(interWs, literal(","), interWs, identifierName))))), interWs, literal("]")));
+  const __base = (captureSequence(literal("["), interWs, capture("items", optional(identifierCommaList)), interWs, literal("]")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
     const { items } = $$;
 
-    if (items.length === 0) return [];
-    const [first, rest] = items[0];
-    return [first, ...rest.map((r: any) => r[3])];
+    return items.length === 0 ? [] : items[0];
   
   })();
   return {
@@ -1575,32 +1577,28 @@ export const grammarItemsNode: Parser<any> = (input, pos) => {
 };
 
 export const modularGrammarBlockNode: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(interWs, literal("grammar"), interWsPlus, capture("name", dottedGrammarName), interWs, capture("ext", optional(grammarExtendsClause)), interWs, capture("inc", optional(grammarIncludesClause)), interWs, literal("{"), capture("items", grammarItemsNode), interWs, literal("}")));
+  const __base = (captureSequence(leadingContent, literal("grammar"), interWsPlus, capture("name", dottedGrammarName), interWs, capture("ext", optional(grammarExtendsClause)), interWs, capture("inc", optional(grammarIncludesClause)), leadingContent, literal("{"), capture("items", grammarItemsNode), interWs, literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
     const { name, ext, inc, items } = $$;
 
-    const annotations = items.filter((i: any) => i.kind === "annotation").map((i: any) => i.value);
-    const rules = items.filter((i: any) => i.kind === "rule").map((i: any) => i.value);
-    const transforms = items.filter((i: any) => i.kind === "transform").map((i: any) => i.value);
-
+    const annotations: any[] = [];
+    const rules: any[] = [];
+    const transforms: any[] = [];
     const exportedRules: string[] = [];
-    for (const i of items) {
-      if (i.kind === "export") exportedRules.push(...i.value.rules);
-    }
-
     const moduleInfoLists: Record<string, string[]> = {};
-    for (const i of items) {
-      if (i.kind === "moduleInfoList") {
-        moduleInfoLists[i.key] = [...(moduleInfoLists[i.key] ?? []), ...i.values];
-      }
-    }
-
     const moduleInfoRecords: Record<string, Record<string, string>> = {};
+
     for (const i of items) {
-      if (i.kind === "moduleInfoRecord") {
+      if (i.kind === "annotation") annotations.push(i.value);
+      else if (i.kind === "rule") rules.push(i.value);
+      else if (i.kind === "transform") transforms.push(i.value);
+      else if (i.kind === "export") exportedRules.push(...i.value.rules);
+      else if (i.kind === "moduleInfoList") {
+        moduleInfoLists[i.key] = [...(moduleInfoLists[i.key] ?? []), ...i.values];
+      } else if (i.kind === "moduleInfoRecord") {
         moduleInfoRecords[i.key] = { ...moduleInfoRecords[i.key], ...i.values };
       }
     }
@@ -1638,7 +1636,7 @@ export const modularGrammarBlockNode: Parser<any> = (input, pos) => {
 };
 
 export const tpegFileNode: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(capture("imports", zeroOrMore(sequence(interWs, importStatementNode))), capture("grammar", modularGrammarBlockNode)));
+  const __base = (captureSequence(capture("imports", zeroOrMore(sequence(leadingContent, importStatementNode))), capture("grammar", modularGrammarBlockNode)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {

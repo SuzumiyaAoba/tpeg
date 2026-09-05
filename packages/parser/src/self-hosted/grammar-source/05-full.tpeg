@@ -138,9 +138,7 @@ grammar SelfHostFull {
     return { type: "RuleDefinition", name, pattern };
   }
 
-  annotationValueQuoted = s:stringLiteralNode { return s.value; }
-
-  annotationValue = annotationValueQuoted / identifierName
+  annotationValue = quotedStringValue / identifierName
 
   keyValueAnnotation = interWs "@" key:identifierName interWs ":" interWs value:annotationValue {
     return { type: "GrammarAnnotation", key, value };
@@ -156,6 +154,17 @@ grammar SelfHostFull {
 
   blockCommentNode = "/*" chars:blockCommentChar* "*/" { return { kind: "comment" }; }
 
+  // A run of whitespace and/or `//`/`///`/`/* */` comments, tolerant the
+  // same way grammar.ts's `leadingContent` (before `import`/`grammar`
+  // keywords) and `optionalWhitespaceOrComment` (between a grammar block's
+  // header clauses and its opening "{") are - unlike interWs, which only
+  // skips whitespace. Used at positions that aren't grammar items in their
+  // own right (grammarItemNode's own comment alternatives cover the
+  // between-items case), just skippable filler before a keyword/brace.
+  leadingContentUnit = blockCommentNode / singleLineCommentNode / interWsPlus
+
+  leadingContent = leadingContentUnit*
+
   // ---- Module system: import / export / extends / includes / @dependencies /
   // @conflicts / @requires (docs/peg-grammar.md; packages/parser/src/module.ts,
   // grammar.ts's modularGrammarDefinition/tpegModuleFile) ----
@@ -164,10 +173,15 @@ grammar SelfHostFull {
 
   importAlias = interWsPlus "as" interWsPlus name:identifierName { return name; }
 
-  selectiveImportList = "{" interWs items:(identifierName (interWs "," interWs identifierName)*)? interWs "}" {
-    if (items.length === 0) return [];
-    const [first, rest] = items[0];
+  // Shared comma-separated-identifier-list core, reused (with a different
+  // pair of surrounding brackets) by both selectiveImportList ("{...}") and
+  // exportRuleList ("[...]") below.
+  identifierCommaList = first:identifierName rest:(interWs "," interWs identifierName)* {
     return [first, ...rest.map((r: any) => r[3])];
+  }
+
+  selectiveImportList = "{" interWs items:identifierCommaList? interWs "}" {
+    return items.length === 0 ? [] : items[0];
   }
 
   simpleImportNode = "import" interWsPlus path:quotedStringValue alias:importAlias? {
@@ -188,10 +202,8 @@ grammar SelfHostFull {
   // "version ..."/"{ ... }" as unparsed trailing content.
   importStatementNode = versionedImportNode / selectiveImportNode / simpleImportNode
 
-  exportRuleList = "[" interWs items:(identifierName (interWs "," interWs identifierName)*)? interWs "]" {
-    if (items.length === 0) return [];
-    const [first, rest] = items[0];
-    return [first, ...rest.map((r: any) => r[3])];
+  exportRuleList = "[" interWs items:identifierCommaList? interWs "]" {
+    return items.length === 0 ? [] : items[0];
   }
 
   // Matches the literal key "export" only (not any "@key: [...]"), same as
@@ -327,26 +339,22 @@ grammar SelfHostFull {
 
   grammarItemsNode = interWs items:grammarItemWithWs* { return items.map((i: any) => i[0]); }
 
-  modularGrammarBlockNode = interWs "grammar" interWsPlus name:dottedGrammarName interWs ext:grammarExtendsClause? interWs inc:grammarIncludesClause? interWs "{" items:grammarItemsNode interWs "}" {
-    const annotations = items.filter((i: any) => i.kind === "annotation").map((i: any) => i.value);
-    const rules = items.filter((i: any) => i.kind === "rule").map((i: any) => i.value);
-    const transforms = items.filter((i: any) => i.kind === "transform").map((i: any) => i.value);
-
+  modularGrammarBlockNode = leadingContent "grammar" interWsPlus name:dottedGrammarName interWs ext:grammarExtendsClause? interWs inc:grammarIncludesClause? leadingContent "{" items:grammarItemsNode interWs "}" {
+    const annotations: any[] = [];
+    const rules: any[] = [];
+    const transforms: any[] = [];
     const exportedRules: string[] = [];
-    for (const i of items) {
-      if (i.kind === "export") exportedRules.push(...i.value.rules);
-    }
-
     const moduleInfoLists: Record<string, string[]> = {};
-    for (const i of items) {
-      if (i.kind === "moduleInfoList") {
-        moduleInfoLists[i.key] = [...(moduleInfoLists[i.key] ?? []), ...i.values];
-      }
-    }
-
     const moduleInfoRecords: Record<string, Record<string, string>> = {};
+
     for (const i of items) {
-      if (i.kind === "moduleInfoRecord") {
+      if (i.kind === "annotation") annotations.push(i.value);
+      else if (i.kind === "rule") rules.push(i.value);
+      else if (i.kind === "transform") transforms.push(i.value);
+      else if (i.kind === "export") exportedRules.push(...i.value.rules);
+      else if (i.kind === "moduleInfoList") {
+        moduleInfoLists[i.key] = [...(moduleInfoLists[i.key] ?? []), ...i.values];
+      } else if (i.kind === "moduleInfoRecord") {
         moduleInfoRecords[i.key] = { ...moduleInfoRecords[i.key], ...i.values };
       }
     }
@@ -377,7 +385,7 @@ grammar SelfHostFull {
 
   // A full `.tpeg` file: zero or more import statements followed by a single
   // (possibly modular) grammar block - mirrors grammar.ts's tpegModuleFile.
-  tpegFileNode = imports:(interWs importStatementNode)* grammar:modularGrammarBlockNode {
+  tpegFileNode = imports:(leadingContent importStatementNode)* grammar:modularGrammarBlockNode {
     return { imports: imports.map((i: any) => i[1]), grammar };
   }
 }
