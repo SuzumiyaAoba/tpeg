@@ -429,6 +429,51 @@ describe("TPEG Code Generation", () => {
         "export const main: Parser<any> = math.expr;",
       );
       expect(result.exports).toEqual(["main"]);
+      // No import is generated for `math` (see `generateQualifiedIdentifierCode`'s
+      // doc comment) -- codegen instead surfaces this as a non-fatal
+      // warning, so the caller of `generateTypeScriptParser` (in turn,
+      // `tpeg-cli`) can report it instead of the consumer only finding out
+      // via an unlabeled `ReferenceError` at load time.
+      expect(result.warnings).toEqual([
+        expect.stringContaining('"main" references "math.expr"'),
+      ]);
+    });
+
+    test("does not duplicate an identical QualifiedIdentifier warning for the same rule", () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "main",
+            createChoice([
+              createQualifiedIdentifier("math", "expr"),
+              createQualifiedIdentifier("math", "expr"),
+            ]),
+          ),
+        ],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      const result = generator.generateGrammar(grammar);
+
+      expect(result.code).toContain("choice(math.expr, math.expr)");
+      expect(result.warnings).toEqual([
+        expect.stringContaining('"main" references "math.expr"'),
+      ]);
+    });
+
+    test("grammar with no QualifiedIdentifier reference has no warnings", () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition("main", createStringLiteral("x"))],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      const result = generator.generateGrammar(grammar);
+
+      expect(result.warnings).toEqual([]);
     });
 
     test("should handle complex nested expressions", () => {

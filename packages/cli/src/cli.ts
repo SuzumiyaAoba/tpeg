@@ -366,6 +366,15 @@ export function run(argv: string[]): number {
     return 1;
   }
 
+  // Non-fatal generation warnings (e.g. an unresolved `QualifiedIdentifier`
+  // reference -- see `buildQualifiedIdentifierWarnings`'s doc comment)
+  // always go to stderr, never stdout: stdout is reserved for the
+  // generated code itself when no `--output` is given (`tpeg g.tpeg |
+  // some-tool` must not see a warning line mixed into the piped source).
+  for (const warning of generated.warnings) {
+    process.stderr.write(`warning: ${warning}\n`);
+  }
+
   if (options.output) {
     try {
       writeFileSync(options.output, generated.code, "utf8");

@@ -334,6 +334,9 @@ describe("EtaTPEGCodeGenerator", () => {
       expect(result.code).toContain(
         "export const main: Parser<any> = math.expr;",
       );
+      expect(result.warnings).toEqual([
+        expect.stringContaining('"main" references "math.expr"'),
+      ]);
     });
   });
 

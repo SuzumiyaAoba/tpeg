@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  buildQualifiedIdentifierWarnings,
   collectTopLevelLabels,
   filterReferencedLabels,
   generateCharacterClassCode,
@@ -303,6 +304,7 @@ export class EtaTPEGCodeGenerator {
       code,
       imports,
       exports,
+      warnings: buildQualifiedIdentifierWarnings(grammar),
       performance: {
         estimatedComplexity: performanceAnalysis.estimatedParseComplexity,
         optimizationSuggestions: performanceAnalysis.optimizationSuggestions,

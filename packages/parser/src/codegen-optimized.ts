@@ -32,6 +32,7 @@ import type {
 
 import type { CharSet } from "./char-set";
 import {
+  buildQualifiedIdentifierWarnings,
   collectTopLevelLabels,
   collectTransformFunctions,
   filterReferencedLabels,
@@ -195,6 +196,10 @@ export interface OptimizedGeneratedCode {
   imports: string[];
   /** Export declarations */
   exports: string[];
+  /** Non-fatal generation warnings (e.g. an unresolved `QualifiedIdentifier`
+   * reference -- see `buildQualifiedIdentifierWarnings`). Empty when there
+   * is nothing to report. */
+  warnings: string[];
   /** Performance analysis */
   performance: {
     estimatedComplexity: "low" | "medium" | "high";
@@ -470,6 +475,7 @@ export class OptimizedTPEGCodeGenerator {
       code: codeBuilder.join(""),
       imports,
       exports,
+      warnings: buildQualifiedIdentifierWarnings(grammar),
       performance: {
         estimatedComplexity: performanceAnalysis.estimatedParseComplexity,
         optimizationSuggestions: performanceAnalysis.optimizationSuggestions,

@@ -15,6 +15,7 @@ import { generateTypeScriptParser } from "./codegen";
 import { generateOptimizedTypeScriptParser } from "./codegen-optimized";
 import { grammarDefinition } from "./grammar";
 import {
+  findQualifiedIdentifierReferences,
   validateGeneratedIdentifiers,
   validateGrammar,
 } from "./grammar-validation";
@@ -390,6 +391,65 @@ describe("validateGrammar: QualifiedIdentifier / local-rule-name collisions", ()
         includeTypes: false,
       }),
     ).toThrow(/undefined rule/i);
+  });
+});
+
+// `findQualifiedIdentifierReferences` backs the non-fatal generation
+// warning codegen emits for a genuine (non-colliding) `QualifiedIdentifier`
+// reference -- unlike `collectQualifiedIdentifierCollisions` above, it
+// reports EVERY reference, not just ones colliding with a local rule name.
+describe("findQualifiedIdentifierReferences", () => {
+  it("finds a QualifiedIdentifier reference nested inside a sequence/choice/group", () => {
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createChoice([
+            createStringLiteral("a", '"'),
+            createQualifiedIdentifier("math", "expr"),
+          ]),
+        ),
+      ],
+    );
+
+    expect(findQualifiedIdentifierReferences(grammar)).toEqual([
+      { ruleName: "start", module: "math", name: "expr" },
+    ]);
+  });
+
+  it("returns an empty array for a grammar with no QualifiedIdentifier reference", () => {
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [createRuleDefinition("start", createStringLiteral("a", '"'))],
+    );
+
+    expect(findQualifiedIdentifierReferences(grammar)).toEqual([]);
+  });
+
+  it("does not filter out a QualifiedIdentifier whose module collides with a local rule name", () => {
+    // Collision filtering is `collectQualifiedIdentifierCollisions`'s job
+    // (feeding `validateGrammar`'s throw) -- this function reports every
+    // reference unconditionally, since it backs a non-fatal warning, not
+    // a hard rejection.
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createQualifiedIdentifier("word", "suffix"),
+        ),
+        createRuleDefinition("word", createStringLiteral("a", '"')),
+        createRuleDefinition("suffix", createStringLiteral("b", '"')),
+      ],
+    );
+
+    expect(findQualifiedIdentifierReferences(grammar)).toEqual([
+      { ruleName: "start", module: "word", name: "suffix" },
+    ]);
   });
 });
 

@@ -129,6 +129,27 @@ describe("tpeg CLI", () => {
     expect(stderr).not.toContain("\r");
   });
 
+  it("warns on stderr (not stdout) about an unresolved QualifiedIdentifier reference, but still exits 0", () => {
+    // A `QualifiedIdentifier` (`module.rule`) is an intentional escape
+    // hatch for binding a hand-written parser from another module -- not
+    // rejected outright (see `generateQualifiedIdentifierCode`'s doc
+    // comment, `packages/parser/src/codegen.ts`) -- but codegen never
+    // resolves or imports `module`, so this is surfaced as a warning
+    // instead of silence.
+    const inputPath = join(dir, "qualified.tpeg");
+    writeFileSync(
+      inputPath,
+      'grammar T {\n  start = math.expr "x"\n}\n',
+      "utf8",
+    );
+
+    const { exitCode, stdout, stderr } = captureOutput(() => run([inputPath]));
+    expect(exitCode).toBe(0);
+    expect(stderr).toContain("warning:");
+    expect(stderr).toContain('"start" references "math.expr"');
+    expect(stdout).not.toContain("warning:");
+  });
+
   it("rejects a grammar file with unparsed trailing content instead of silently discarding it", () => {
     // `parse()` only requires matching a PREFIX of the input -- without an
     // explicit full-consumption check, a second (malformed) block after a

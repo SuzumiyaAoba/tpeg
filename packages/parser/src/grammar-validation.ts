@@ -359,6 +359,79 @@ const findQualifiedIdentifierCollisions = (
   return found;
 };
 
+/** One `QualifiedIdentifier` reference found while walking a rule's
+ * pattern -- see {@link findQualifiedIdentifierReferences}. */
+export interface QualifiedIdentifierReference {
+  ruleName: string;
+  module: string;
+  name: string;
+}
+
+/** Walks `expr`'s subtree collecting every `QualifiedIdentifier` node
+ * (module and name unchanged, no collision filtering -- that's
+ * {@link collectQualifiedIdentifierCollisions}'s job). Structurally
+ * identical to that function's traversal; kept as a separate walk rather
+ * than folded into it because the two have different outputs (a filtered
+ * collision list vs. every reference unconditionally) and different
+ * callers (`validateGrammar`, thrown on, vs. codegen's non-fatal
+ * warning collection). */
+const collectQualifiedIdentifierReferences = (
+  expr: Expression,
+  ruleName: string,
+  out: QualifiedIdentifierReference[],
+): void => {
+  switch (expr.type) {
+    case "QualifiedIdentifier":
+      out.push({ ruleName, module: expr.module, name: expr.name });
+      return;
+    case "Sequence":
+      for (const el of expr.elements) {
+        collectQualifiedIdentifierReferences(el, ruleName, out);
+      }
+      return;
+    case "Choice":
+      for (const alt of expr.alternatives) {
+        collectQualifiedIdentifierReferences(alt, ruleName, out);
+      }
+      return;
+    case "Group":
+    case "LabeledExpression":
+    case "ActionExpression":
+    case "Star":
+    case "Plus":
+    case "Optional":
+    case "Quantified":
+    case "PositiveLookahead":
+    case "NegativeLookahead":
+      collectQualifiedIdentifierReferences(expr.expression, ruleName, out);
+      return;
+    default:
+      return;
+  }
+};
+
+/**
+ * Every `QualifiedIdentifier` reference (e.g. `math.expr`) anywhere in
+ * `grammar`, regardless of whether its `module` part collides with a
+ * local rule name. Used by `codegen.ts`/`codegen-optimized.ts` to emit a
+ * non-fatal generation warning: a `QualifiedIdentifier` is always emitted
+ * verbatim with no accompanying `import` (see `generateQualifiedIdentifierCode`'s
+ * doc comment for why this is an intentional escape hatch, not rejected
+ * outright), so the caller of the generated code must supply a binding
+ * for each `module` named here themselves -- otherwise the generated
+ * code throws an unhelpful `ReferenceError` at load time with no
+ * indication of which name is missing or why.
+ */
+export const findQualifiedIdentifierReferences = (
+  grammar: GrammarDefinition,
+): QualifiedIdentifierReference[] => {
+  const found: QualifiedIdentifierReference[] = [];
+  for (const rule of grammar.rules) {
+    collectQualifiedIdentifierReferences(rule.pattern, rule.name, found);
+  }
+  return found;
+};
+
 /**
  * Validates `grammar` for structural problems that have no well-defined
  * PEG semantics at all, throwing on the first category found. Must run

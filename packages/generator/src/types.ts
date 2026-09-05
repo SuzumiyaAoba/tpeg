@@ -139,6 +139,11 @@ export interface GeneratedCode {
   imports: string[];
   /** Export declarations */
   exports: string[];
+  /** Non-fatal generation warnings (e.g. an unresolved `QualifiedIdentifier`
+   * reference -- see `@suzumiyaaoba/tpeg-parser`'s
+   * `findQualifiedIdentifierReferences`). Empty when there is nothing to
+   * report. */
+  warnings: string[];
   /** Performance analysis */
   performance: {
     estimatedComplexity: "low" | "medium" | "high";

@@ -8,6 +8,7 @@
 import { escapeStringLiteral } from "./constants";
 import { analyzeFirstSets, assertNoNullableRepetition } from "./first-sets";
 import {
+  findQualifiedIdentifierReferences,
   validateGeneratedIdentifiers,
   validateGrammar,
 } from "./grammar-validation";
@@ -489,6 +490,44 @@ export const generateQualifiedIdentifierCode = (
 ): string => intern(`${expr.module}.${expr.name}`);
 
 /**
+ * Builds one non-fatal warning per DISTINCT (rule, module, name) triple
+ * found anywhere in `grammar` (see `generateQualifiedIdentifierCode`'s
+ * doc comment for why these are never rejected outright), so a caller of
+ * `generateTypeScriptParser`/`generateOptimizedTypeScriptParser` -- and,
+ * in turn, `tpeg-cli` -- can surface the "you must supply this binding
+ * yourself" requirement instead of the consumer only finding out via an
+ * unlabeled `ReferenceError` at load time. Shared between `codegen.ts`
+ * and `codegen-optimized.ts` so the message text can't drift between the
+ * two generators.
+ *
+ * De-duplicated by triple (not just by `module`) so a rule referencing
+ * the same qualified name twice (`start = math.expr math.expr`) doesn't
+ * print an identical line twice, while two DIFFERENT rules referencing
+ * the same module each still get their own warning -- that spread across
+ * rules is itself useful information, not noise.
+ */
+export const buildQualifiedIdentifierWarnings = (
+  grammar: GrammarDefinition,
+): string[] => {
+  const seen = new Set<string>();
+  const warnings: string[] = [];
+  for (const { ruleName, module, name } of findQualifiedIdentifierReferences(
+    grammar,
+  )) {
+    const key = `${ruleName}\0${module}\0${name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    warnings.push(
+      `rule "${ruleName}" references "${module}.${name}" as an external module reference -- ` +
+        `codegen does not resolve or import "${module}"; the generated code expects the ` +
+        `caller to supply that binding themselves (e.g. a hand-written \`import\`, or a value ` +
+        `passed into the scope the generated code runs in).`,
+    );
+  }
+  return warnings;
+};
+
+/**
  * Generates the combinator call for a `Quantified` node, given its
  * already-generated inner expression. Identical between the base and
  * optimized generators (only how `inner` itself was produced differs), so
@@ -591,6 +630,10 @@ export interface GeneratedCode {
   imports: string[];
   /** Export declarations */
   exports: string[];
+  /** Non-fatal generation warnings (e.g. an unresolved `QualifiedIdentifier`
+   * reference -- see `buildQualifiedIdentifierWarnings`). Empty when there
+   * is nothing to report. */
+  warnings: string[];
 }
 
 /**
@@ -765,6 +808,7 @@ export class TPEGCodeGenerator {
       code,
       imports,
       exports,
+      warnings: buildQualifiedIdentifierWarnings(grammar),
     };
   }
 

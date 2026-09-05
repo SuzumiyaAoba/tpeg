@@ -62,6 +62,7 @@ export {
   collectTopLevelLabels,
   filterReferencedLabels,
   wrapWithAction,
+  buildQualifiedIdentifierWarnings,
 } from "./codegen";
 export { escapeStringLiteral } from "./constants";
 
@@ -103,8 +104,12 @@ export { analyzeReentrancy, type ReentrancyAnalysis } from "./reentrancy";
 export {
   validateGrammar,
   validateGeneratedIdentifiers,
+  findQualifiedIdentifierReferences,
 } from "./grammar-validation";
-export type { GeneratedIdentifierCheckOptions } from "./grammar-validation";
+export type {
+  GeneratedIdentifierCheckOptions,
+  QualifiedIdentifierReference,
+} from "./grammar-validation";
 
 // Export the reference PEG interpreter -- a differential-testing oracle,
 // independent of codegen, used by `codegen-differential.spec.ts`. See
