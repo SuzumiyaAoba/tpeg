@@ -219,6 +219,23 @@ export class EtaTPEGCodeGenerator {
       grammar,
       performanceAnalysis,
     );
+    // `generatePerformanceImports()` (below) contributes its own binding,
+    // `globalPerformanceMonitor`, whenever monitoring is on -- but only
+    // gets CALLED later, inside the `this.options.optimize` branch that
+    // builds `templateData`, well after this check used to run. A rule
+    // actually named `globalPerformanceMonitor` slipped through this
+    // validation as a result, producing generated code with both
+    // `import { globalPerformanceMonitor } from "@suzumiyaaoba/tpeg-
+    // generator";` and `export const globalPerformanceMonitor = ...;` --
+    // a duplicate-export `SyntaxError`/bundler failure this check exists
+    // specifically to catch. Reserving the name here unconditionally
+    // (rather than only under the same `optimize && includeMonitoring`
+    // gate that actually emits the import below) costs nothing -- no
+    // real grammar names a rule after this package's own monitor -- and
+    // stays correct even if that gate's shape changes later.
+    const importedBindingsWithPerformance = this.options.includeMonitoring
+      ? [...importedBindings, "globalPerformanceMonitor"]
+      : importedBindings;
     // Reject a rule name, capture label, or transform parameter name
     // that would generate to a reserved word, an internal codegen name,
     // or one of the bindings `imports` above actually declares -- see
@@ -234,7 +251,7 @@ export class EtaTPEGCodeGenerator {
     // pre-existing duplication this fix doesn't revisit.
     validateGeneratedIdentifiers(grammar, {
       namePrefix: this.options.namePrefix,
-      importedBindings,
+      importedBindings: importedBindingsWithPerformance,
     });
     const exports: string[] = [];
     const rules: RuleTemplateData[] = [];

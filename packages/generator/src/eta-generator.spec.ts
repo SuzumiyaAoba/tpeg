@@ -1090,6 +1090,37 @@ describe("EtaTPEGCodeGenerator: grammar validation", () => {
     );
   });
 
+  it("rejects a rule named after the monitoring import instead of generating a duplicate-export SyntaxError (regression: validateGeneratedIdentifiers ran before generatePerformanceImports contributed its binding)", async () => {
+    // `optimize: true` + `includeMonitoring: true` emits both
+    // `import { globalPerformanceMonitor } from "@suzumiyaaoba/tpeg-
+    // generator";` and, at the end, `export { globalPerformanceMonitor };`
+    // (see `generatePerformanceImports`/`generateFooter`). A rule
+    // literally named `globalPerformanceMonitor` used to slip past
+    // `validateGeneratedIdentifiers` (which only saw `generateImports`'s
+    // bindings, computed and checked before the performance import
+    // existed) and generate a file `export const
+    // globalPerformanceMonitor = ...;` colliding with both the import and
+    // the later re-export -- a duplicate-declaration/duplicate-export
+    // error from `tsc`/any bundler, not caught at generation time.
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        createRuleDefinition(
+          "globalPerformanceMonitor",
+          createStringLiteral("x"),
+        ),
+      ],
+    );
+
+    await expect(
+      generateEtaTypeScriptParser(grammar, {
+        optimize: true,
+        includeMonitoring: true,
+      }),
+    ).rejects.toThrow(/globalPerformanceMonitor/);
+  });
+
   it("rejects a rule body that is nothing but `~`", async () => {
     const grammar = createGrammarDefinition(
       "TestGrammar",
