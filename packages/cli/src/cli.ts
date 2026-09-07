@@ -34,12 +34,14 @@ Options:
                              left-factor shared alternative prefixes, merge
                              adjacent character classes, and degenerate
                              "!x ." negative-lookahead pairs into a negated
-                             character class. Off by default because left-
-                             factoring's safety check does not look past an
-                             ancestor rule's own semantic action reading the
-                             factored rule's value shape -- review generated
-                             output for grammars with actions before relying
-                             on this in production.
+                             character class. Off by default because both
+                             left-factoring and negative-lookahead
+                             degeneration can change a rule's captured
+                             .val shape (not just what a semantic action
+                             computes from it, but also what a label
+                             (name:expr) captures) -- review generated
+                             output for grammars with actions or labels
+                             before relying on this in production.
       --regex-fusion         Compile non-terminal-free rules to a single
                              regexFused(...) call instead of a combinator
                              tree (see packages/core/src/regex-fused.ts).

@@ -77,6 +77,22 @@
  * clause 1, `bVal` alone for clause 2), so both use the same
  * `isShapeSensitiveRule` gate `leftFactorChoices` uses (see
  * `ast-optimize.ts`'s module doc comment).
+ *
+ * Unlike `leftFactorChoices`, this pass is NOT additionally gated on
+ * `containsLabel`: a label (`name:expr`) directly wrapping the
+ * `[NegativeLookahead, b]` pair stays exactly where it is in the tree --
+ * this rewrite never demotes a label the way factoring can (see
+ * `leftFactorChoices`'s own doc comment for why *that* rewrite needs the
+ * extra check). What DOES change, same as for an action/transform, is
+ * the VALUE the label now captures: `x:(!a b)` captures `[undefined,
+ * bVal]` before this rewrite and `bVal` alone (clause 1: the matched
+ * character) or `bVal` (clause 2) after. `isShapeSensitiveRule`'s gate
+ * only excludes rules an ACTION or TRANSFORM reads `.val` from -- a rule
+ * that merely labels the pair for an ANCESTOR rule's action to read is
+ * not excluded, since that dependency isn't visible locally. Treat
+ * `--ast-optimize` as narrowly-scoped for label-bearing grammars for the
+ * same reason `leftFactorChoices`'s doc comment already gives for
+ * action-bearing ones.
  */
 
 import { isShapeSensitiveRule } from "./ast-optimize-shared";
