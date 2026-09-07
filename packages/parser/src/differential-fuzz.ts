@@ -113,7 +113,7 @@ export const genExpr = (
   const atom = () => pick(rng, allowRuleRef ? [...LEAVES, ...refs] : LEAVES);
   if (depth <= 0) return atom();
   const next = () => genExpr(rng, depth - 1, allowRuleRef, refs);
-  switch (Math.floor(rng() * 33)) {
+  switch (Math.floor(rng() * 35)) {
     case 0:
       return atom();
     case 1:
@@ -290,6 +290,34 @@ export const genExpr = (
       // a REPETITION's own backtracking exhausts itself, not just after
       // one match.
       return `(${atom()}* !${atom()})`;
+    case 32: {
+      // A Choice with two alternatives sharing a leading atom, plus a
+      // TRAILING single-element alternative that does NOT share it --
+      // `leftFactorChoices` (`ast-optimize-left-factor.ts`) used to treat
+      // any remainder-length-0 trailing alternative as if it were
+      // necessarily the shared prefix itself, folding it into an empty-
+      // `Sequence` alternative of the newly-factored inner Choice and
+      // silently dropping this branch from the recognized language
+      // entirely. Neither case 2 nor case 8's independently-random
+      // alternatives reliably produce a *shared* leading atom, so this
+      // shape was structurally unreachable from this generator before
+      // this case existed -- the bug went uncaught by
+      // `codegen-differential.spec.ts` despite it running
+      // `applyAstOptimizations` on every generated grammar.
+      const shared = atom();
+      return `(${shared} ${next()} / ${shared} ${next()} / ${atom()})`;
+    }
+    case 33: {
+      // Same shared-prefix shape as case 32, but the trailing single-
+      // element alternative IS the shared prefix this time (the case
+      // `leftFactorChoices` legitimately folds into `prefix (inner /
+      // ())`) -- paired with case 32 so the fuzzer keeps exercising the
+      // *sound* trailing-bare-alternative fold alongside the mismatched
+      // one, rather than only ever generating the shape that used to
+      // trigger the bug.
+      const shared = atom();
+      return `(${shared} ${next()} / ${shared} ${next()} / ${shared})`;
+    }
     default:
       return `(${next()} ~ ${next()})`;
   }

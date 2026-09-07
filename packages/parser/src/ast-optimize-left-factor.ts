@@ -123,6 +123,22 @@ const tryLeftFactorChoice = (choice: Choice): Expression => {
     return choice;
   }
 
+  // The trailing bare alternative (if any) must itself BE the shared
+  // prefix -- the fold below (see "Trailing bare-prefix alternative"
+  // just under this function) replaces it with an empty `Sequence([])`
+  // alternative, on the assumption that reaching that empty alternative
+  // is equivalent to the bare alternative having matched. That's only
+  // true when the bare alternative's one element IS `prefix`: without
+  // this check, `"a" "b" / "a" "c" / "x"` silently became
+  // `"a" ("b" / "c" / ())`, dropping the `"x"` alternative entirely
+  // (found via `ast-optimize.spec.ts`-style differential testing) --
+  // `()` only stands in for a bare `"a"`, never for an unrelated
+  // trailing alternative like `"x"`.
+  if (bareIndices.length === 1) {
+    const bareParts = partsList[bareIndices[0] as number] as Expression[];
+    if (!prefixesEqual(bareParts[0] as Expression, prefix)) return choice;
+  }
+
   const innerAlternatives = groupedParts.map((parts) =>
     toSingleExpression(parts.slice(1)),
   );

@@ -306,6 +306,98 @@ describe("leftFactorChoices", () => {
     );
   });
 
+  it("does not factor when the trailing bare alternative is NOT the shared prefix (regression: used to silently drop it)", () => {
+    // `"a" "b" / "a" "c" / "x"` -- the trailing bare alternative is "x",
+    // not the shared prefix "a". An earlier version of this rewrite
+    // treated ANY remainder-length-0 alternative as if it were the bare
+    // shared prefix, folding it into an empty-`Sequence` alternative of
+    // the inner Choice -- which silently dropped the "x" branch
+    // entirely, changing the recognized language (see this module's doc
+    // comment for the full failure mode and how it was found).
+    const pattern = createChoice([
+      createSequence([
+        createStringLiteral("a", '"'),
+        createStringLiteral("b", '"'),
+      ]),
+      createSequence([
+        createStringLiteral("a", '"'),
+        createStringLiteral("c", '"'),
+      ]),
+      createStringLiteral("x", '"'),
+    ]);
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [createRuleDefinition("A", pattern)],
+    );
+
+    const factored = leftFactorChoices(grammar);
+    expect(factored.rules[0]?.pattern).toEqual(pattern);
+  });
+
+  it("still factors when the trailing bare alternative IS the shared prefix (no regression from the fix above)", () => {
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "A",
+          createChoice([
+            createSequence([
+              createStringLiteral("a", '"'),
+              createStringLiteral("b", '"'),
+            ]),
+            createSequence([
+              createStringLiteral("a", '"'),
+              createStringLiteral("c", '"'),
+            ]),
+            createStringLiteral("a", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const factored = leftFactorChoices(grammar);
+    const aRule = factored.rules.find((r) => r.name === "A");
+    expect(aRule?.pattern.type).toBe("Sequence");
+    if (aRule?.pattern.type !== "Sequence") return;
+    expect(aRule.pattern.elements).toHaveLength(2);
+    const [prefix, innerChoice] = aRule.pattern.elements;
+    expect(prefix).toEqual(createStringLiteral("a", '"'));
+    expect(innerChoice?.type).toBe("Choice");
+    if (innerChoice?.type === "Choice") {
+      const lastAlt =
+        innerChoice.alternatives[innerChoice.alternatives.length - 1];
+      expect(lastAlt).toEqual(createSequence([]));
+    }
+  });
+
+  it("does not factor when the trailing bare alternative (a Sequence([x])) is NOT the shared prefix", () => {
+    // Same failure mode as the two-test regression above, but with the
+    // trailing bare alternative written as a 1-element `Sequence` rather
+    // than a bare node -- `partsOf` flattens both to the same
+    // remainder-length-0 shape, so this must be guarded identically.
+    const pattern = createChoice([
+      createSequence([
+        createStringLiteral("a", '"'),
+        createStringLiteral("b", '"'),
+      ]),
+      createSequence([
+        createStringLiteral("a", '"'),
+        createStringLiteral("c", '"'),
+      ]),
+      createSequence([createStringLiteral("x", '"')]),
+    ]);
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [createRuleDefinition("A", pattern)],
+    );
+
+    const factored = leftFactorChoices(grammar);
+    expect(factored.rules[0]?.pattern).toEqual(pattern);
+  });
+
   it("does not factor when more than one alternative is the bare prefix", () => {
     const grammar = createGrammarDefinition(
       "Test",
