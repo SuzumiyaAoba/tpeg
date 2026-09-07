@@ -287,9 +287,23 @@ const labelOf = (expr: Expression): string | undefined => {
 export const collectTopLevelLabels = (expr: Expression): string[] => {
   const unwrapped = expr.type === "Group" ? (expr as Group).expression : expr;
   if (unwrapped.type === "Sequence") {
-    return (unwrapped as Sequence).elements
-      .map(labelOf)
-      .filter((label): label is string => label !== undefined);
+    // Deduplicated via a `Set`, same as the `Choice` branch below --
+    // two elements of one `Sequence` reusing the same label name (e.g.
+    // `a:"x" a:"y"`) merge into a SINGLE `a` key at runtime
+    // (`mergeCaptures`'s `Object.assign`, last write wins), so a caller
+    // destructuring `$$` only ever sees one `a` binding to declare. This
+    // function's own doc comment promises the label set returned here
+    // "always matches the keys actually present on the merged value at
+    // runtime" -- without dedup, `wrapWithAction` (below) emitted
+    // `const { a, a } = $$;`, a duplicate-binding `SyntaxError` in the
+    // generated file, for every rule whose action reused a label name.
+    return [
+      ...new Set(
+        (unwrapped as Sequence).elements
+          .map(labelOf)
+          .filter((label): label is string => label !== undefined),
+      ),
+    ];
   }
   if (unwrapped.type === "Choice") {
     const seen = new Set<string>();

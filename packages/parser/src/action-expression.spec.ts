@@ -383,6 +383,55 @@ describe("ActionExpression code generation (runtime)", () => {
     if (parsed.success) expect(parsed.val).toBe("a-b");
   });
 
+  test("an action on a Sequence that reuses the same label twice compiles and runs, last capture winning (regression: collectTopLevelLabels didn't dedupe a Sequence's own labels)", async () => {
+    // `mergeCaptures` (tpeg-core's capture.ts) merges a Sequence's labeled
+    // captures via `Object.assign`, so two elements sharing one label name
+    // collapse to a SINGLE key at runtime -- the second capture overwrites
+    // the first. `collectTopLevelLabels`'s own doc comment promises the
+    // label list it returns "always matches the keys actually present on
+    // the merged value at runtime"; previously its `Sequence` branch (unlike
+    // its `Choice` branch, which already deduped via a `Set`) returned the
+    // label once per occurrence, so `wrapWithAction` emitted
+    // `const { a, a } = $$;` -- a duplicate-binding `SyntaxError` in the
+    // generated file, not merely a runtime bug.
+    const core = await import("@suzumiyaaoba/tpeg-core");
+
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createActionExpression(
+            createSequence([
+              createLabeledExpression("a", createStringLiteral("x")),
+              createLabeledExpression("a", createStringLiteral("y")),
+            ]),
+            "return a;",
+          ),
+        ),
+      ],
+    );
+
+    const result = generateTypeScriptParser(grammar, {
+      includeImports: false,
+      includeTypes: false,
+    });
+    expect(result.code).toContain("const { a } = $$;");
+    expect(result.code).not.toContain("const { a, a } = $$;");
+
+    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+    const moduleFactory = new Function(
+      ...Object.keys(core),
+      `${body}\nreturn { start };`,
+    );
+    const { start } = moduleFactory(...Object.values(core));
+
+    const parsed = start("xy", 0);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.val).toBe("y");
+  });
+
   test("the optimized code generator also destructures labels through a Choice (shares collectTopLevelLabels with the base generator)", async () => {
     const core = await import("@suzumiyaaoba/tpeg-core");
 
