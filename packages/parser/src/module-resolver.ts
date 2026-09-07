@@ -411,45 +411,52 @@ export function createModuleResolver(baseDir: string): ModuleResolver {
 /**
  * Resolve qualified identifier to module and rule name
  *
+ * `fromModule` is the module the `QualifiedIdentifier` reference actually
+ * appears in -- its own `imports` are the ONLY place `qualifiedId.module`
+ * (an import alias) can mean anything, since import aliases are local to
+ * the module that declares them. An earlier version of this function
+ * searched every resolved module in `context.cache` for ANY import whose
+ * alias matched, regardless of which module the reference came from: if
+ * two different modules in the same dependency graph happen to import
+ * different targets under the same alias name, that scan would resolve to
+ * whichever one the cache happened to iterate to first -- silently wrong
+ * for the other -- rather than reporting an ambiguity or simply asking the
+ * one module that actually knows.
+ *
  * @param qualifiedId - The qualified identifier to resolve
+ * @param fromModule - The already-resolved module `qualifiedId` was referenced from
  * @param context - Module resolution context
  * @returns Promise<{module: ResolvedModule, ruleName: string}> Resolved reference
  */
 export async function resolveQualifiedIdentifier(
   qualifiedId: QualifiedIdentifier,
+  fromModule: ResolvedModule,
   context: ModuleResolutionContext,
 ): Promise<{ module: ResolvedModule; ruleName: string }> {
-  // Find the module that exports the referenced rule
-  for (const [, module] of context.cache) {
-    if (module.resolved) {
-      // Check if this module has the alias that matches the qualified identifier
-      for (const importStmt of module.content.imports) {
-        if (importStmt.alias === qualifiedId.module) {
-          // Resolve the imported module
-          const resolver = new ModuleResolver(
-            context.baseDir,
-            context.fileSystem,
+  for (const importStmt of fromModule.content.imports) {
+    if (importStmt.alias === qualifiedId.module) {
+      // Resolve the imported module, relative to the REFERENCING module's
+      // own directory -- matching `extractDependencies`'s own relative-path
+      // handling above.
+      const resolver = new ModuleResolver(context.baseDir, context.fileSystem);
+      resolver.context = context;
+      const importedPath = importStmt.modulePath.startsWith("/")
+        ? importStmt.modulePath
+        : context.fileSystem.resolve(
+            dirname(fromModule.filePath),
+            importStmt.modulePath,
           );
-          resolver.context = context;
-          const importedPath = importStmt.modulePath.startsWith("/")
-            ? importStmt.modulePath
-            : context.fileSystem.resolve(
-                dirname(module.filePath),
-                importStmt.modulePath,
-              );
-          const importedModule = await resolver.resolveModule(importedPath);
+      const importedModule = await resolver.resolveModule(importedPath);
 
-          return {
-            module: importedModule,
-            ruleName: qualifiedId.name,
-          };
-        }
-      }
+      return {
+        module: importedModule,
+        ruleName: qualifiedId.name,
+      };
     }
   }
 
   throw new ModuleResolutionError(
-    `Cannot resolve qualified identifier: ${qualifiedId.module}.${qualifiedId.name}`,
+    `Cannot resolve qualified identifier: ${qualifiedId.module}.${qualifiedId.name} (referenced from ${fromModule.filePath})`,
     qualifiedId.module,
   );
 }

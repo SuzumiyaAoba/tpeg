@@ -3,7 +3,11 @@ import type { ModuleFile } from "@suzumiyaaoba/tpeg-core";
 const VERSION_PREFIX_RE = /^v/;
 const SEMVER_RE =
   /^(0|[1-9]\d*)(?:\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?)?(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
-const CONSTRAINT_OPERATOR_RE = /^(>=|<=|>|<|\^|~|=)?(.+)$/;
+// `\s*` between the operator and the version tolerates a constraint written
+// with a space after the operator (e.g. ">= 1.0.0") -- a common, valid way
+// to write a version range that this regex used to reject outright (the
+// leftover leading space made the version half fail `SEMVER_RE`).
+const CONSTRAINT_OPERATOR_RE = /^(>=|<=|>|<|\^|~|=)?\s*(.+)$/;
 const NUMERIC_IDENTIFIER_RE = /^\d+$/;
 
 /**
@@ -96,6 +100,18 @@ export interface VersionConstraint {
   operator: "=" | ">=" | "<=" | ">" | "<" | "^" | "~" | "*";
   version: SemanticVersion;
   additional?: VersionConstraint[];
+  /**
+   * How many components of the constraint's version string were explicitly
+   * given: `"major"` for a bare `"1"`, `"minor"` for `"1.2"`, `"patch"` for
+   * a fully-specified `"1.2.3"`. `parseVersion` defaults an omitted minor/
+   * patch to `0`, which loses exactly the information `~`/`^` matching
+   * needs: standard semver gives `~1` (major only) and `^0.0` (minor
+   * explicit, major/minor both zero) wider matching ranges than the
+   * fully-pinned `~1.0.0`/`^0.0.0` would -- see `satisfiesConstraint`'s
+   * `~`/`^` cases below for exactly where this makes a difference. Not
+   * meaningful for any other operator.
+   */
+  precision?: "major" | "minor" | "patch";
 }
 
 /**
@@ -208,7 +224,29 @@ export class VersionManager {
     return {
       operator,
       version: this.parseVersion(versionString),
+      precision: this.versionPrecision(versionString),
     };
+  }
+
+  /**
+   * How many components `versionString` (already isolated from its
+   * operator/prefix by `parseSingleVersionConstraint`) explicitly
+   * specifies -- see `VersionConstraint.precision`'s doc comment for why
+   * this can't be recovered from `parseVersion`'s own return value once it
+   * has defaulted an omitted minor/patch to `0`. Re-matches `SEMVER_RE`
+   * directly rather than threading extra state through `parseVersion`
+   * (called far more often, and from far more places, than this) --
+   * cheap and only ever called once per constraint parse.
+   */
+  private versionPrecision(versionString: string): "major" | "minor" | "patch" {
+    const cleanVersion = versionString.replace(VERSION_PREFIX_RE, "");
+    const match = cleanVersion.match(SEMVER_RE);
+    // Unreachable in practice: `parseVersion`, called immediately above
+    // with the same string, already throws on a format `SEMVER_RE` rejects.
+    if (!match) return "patch";
+    if (match[3] !== undefined) return "patch";
+    if (match[2] !== undefined) return "minor";
+    return "major";
   }
 
   /**
@@ -281,15 +319,38 @@ export class VersionManager {
         if (constraint.version.major > 0) {
           return true;
         }
+        // major === 0 from here on: npm semver narrows the allowed range
+        // as fewer components stay unpinned. `"^0"` (major-only) allows
+        // any 0.x.y; `"^0.0"` (minor explicit, patch defaulted) allows any
+        // 0.0.x; only a fully-specified `"^0.0.3"` pins the patch exactly.
+        // `constraint.version.minor`/`.patch` alone can't tell these apart
+        // from each other once `parseVersion` has defaulted an omitted
+        // component to `0` -- that's what `precision` (set by
+        // `parseSingleVersionConstraint`, absent on a hand-built
+        // `VersionConstraint`) recovers.
+        if (constraint.precision === "major") {
+          return true;
+        }
         if (constraint.version.minor > 0) {
           return version.minor === constraint.version.minor;
+        }
+        if (constraint.precision === "minor") {
+          return version.minor === 0;
         }
         return (
           version.minor === 0 && version.patch === constraint.version.patch
         );
       }
       case "~":
-        // Compatible within minor version
+        // Compatible within minor version -- EXCEPT a major-only
+        // constraint (`"~1"`, `precision === "major"`), which npm semver
+        // gives the *wider* `>=1.0.0 <2.0.0` range (same as `^1`), unlike
+        // the minor-locked `"~1.0"`/`"~1.0.0"` handled by the fallback
+        // below. `constraint.version.minor` alone can't distinguish "~1"
+        // from "~1.0": `parseVersion` defaults both to `minor: 0`.
+        if (constraint.precision === "major") {
+          return version.major === constraint.version.major && comparison >= 0;
+        }
         return (
           version.major === constraint.version.major &&
           version.minor === constraint.version.minor &&

@@ -175,6 +175,7 @@ describe("VersionManager", () => {
       expect(manager.parseVersionConstraint("^1.0")).toEqual({
         operator: "^",
         version: { major: 1, minor: 0, patch: 0 },
+        precision: "minor",
       });
     });
 
@@ -236,6 +237,20 @@ describe("VersionManager", () => {
     it("should default to exact match without operator", () => {
       const constraint = manager.parseVersionConstraint("1.2.3");
       expect(constraint.operator).toBe("=");
+    });
+
+    it("should tolerate whitespace between the operator and the version", () => {
+      // Regression test: the operator/version split used to forward the
+      // leftover leading space straight into `parseVersion`, which
+      // `SEMVER_RE` rejects -- so a perfectly ordinary constraint like
+      // ">= 1.0.0" threw `VersionParseError` where the equivalent
+      // ">=1.0.0" (no space) parsed fine.
+      const constraint = manager.parseVersionConstraint(">= 1.0.0");
+      expect(constraint.operator).toBe(">=");
+      expect(constraint.version).toEqual({ major: 1, minor: 0, patch: 0 });
+
+      expect(manager.checkCompatibility("m", ">= 1.0.0", "1.2.3")).toBe(true);
+      expect(manager.checkCompatibility("m", ">= 1.0.0", "0.9.0")).toBe(false);
     });
   });
 
@@ -497,6 +512,103 @@ describe("VersionManager", () => {
         manager.satisfiesConstraint(
           { major: 1, minor: 2, patch: 2 },
           constraint,
+        ),
+      ).toBe(false);
+    });
+
+    it("should widen a major-only tilde constraint to any version under that major", () => {
+      // Regression test: standard semver gives a bare "~1" the same range
+      // as "^1" (>=1.0.0 <2.0.0) -- wider than "~1.0"/"~1.0.0", which lock
+      // the minor version. `parseVersion` defaults an omitted minor to 0,
+      // so distinguishing "~1" from "~1.0" requires the constraint's
+      // `precision` (set by `parseVersionConstraint`), not just its
+      // (already-defaulted) `version.minor`.
+      const constraint = manager.parseVersionConstraint("~1");
+      expect(
+        manager.satisfiesConstraint(
+          { major: 1, minor: 1, patch: 0 },
+          constraint,
+        ),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 1, minor: 9, patch: 9 },
+          constraint,
+        ),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 2, minor: 0, patch: 0 },
+          constraint,
+        ),
+      ).toBe(false);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 0, minor: 9, patch: 0 },
+          constraint,
+        ),
+      ).toBe(false);
+
+      // A minor-locked "~1.2" is unaffected by this change.
+      const minorLocked = manager.parseVersionConstraint("~1.2");
+      expect(
+        manager.satisfiesConstraint(
+          { major: 1, minor: 2, patch: 9 },
+          minorLocked,
+        ),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 1, minor: 3, patch: 0 },
+          minorLocked,
+        ),
+      ).toBe(false);
+    });
+
+    it("should widen a caret constraint with an unpinned zero major/minor the same way", () => {
+      // Regression test: mirrors the tilde case above for "^" -- "^0"
+      // (major only) allows any 0.x.y, and "^0.0" (minor explicit, patch
+      // defaulted) allows any 0.0.x, unlike the fully-pinned "^0.0.0".
+      const majorOnly = manager.parseVersionConstraint("^0");
+      expect(
+        manager.satisfiesConstraint(
+          { major: 0, minor: 5, patch: 3 },
+          majorOnly,
+        ),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 1, minor: 0, patch: 0 },
+          majorOnly,
+        ),
+      ).toBe(false);
+
+      const minorOnly = manager.parseVersionConstraint("^0.0");
+      expect(
+        manager.satisfiesConstraint(
+          { major: 0, minor: 0, patch: 9 },
+          minorOnly,
+        ),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 0, minor: 1, patch: 0 },
+          minorOnly,
+        ),
+      ).toBe(false);
+
+      // A fully-specified "^0.0.3" is unaffected by this change.
+      const fullyPinned = manager.parseVersionConstraint("^0.0.3");
+      expect(
+        manager.satisfiesConstraint(
+          { major: 0, minor: 0, patch: 3 },
+          fullyPinned,
+        ),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 0, minor: 0, patch: 4 },
+          fullyPinned,
         ),
       ).toBe(false);
     });

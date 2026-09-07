@@ -192,11 +192,64 @@ describe("Module Resolution Engine", () => {
         new Set(["/test/nested/child.tpeg", "/test/nested/leaf.tpeg"]),
       );
 
+      // "leaf" is an alias declared by child.tpeg, not main.tpeg -- the
+      // reference must be resolved from child.tpeg's own imports.
+      const childModule = resolver.context.cache.get("/test/nested/child.tpeg");
+      if (!childModule) throw new Error("child.tpeg should be cached");
       const qualified = await resolveQualifiedIdentifier(
         { type: "QualifiedIdentifier", module: "leaf", name: "value" },
+        childModule,
         resolver.context,
       );
       expect(qualified.module.filePath).toBe("/test/nested/leaf.tpeg");
+    });
+
+    it("should resolve an alias against the referencing module, not whichever module the cache visits first", async () => {
+      // Regression test: main.tpeg and b_importer.tpeg both use the SAME
+      // alias name ("shared") for two DIFFERENT modules. Resolving
+      // "shared.value" from b_importer.tpeg's own imports must always find
+      // b.tpeg, never a.tpeg -- regardless of dependency-resolution order.
+      mockFs.addFile(
+        "/test/main.tpeg",
+        `
+          import "a.tpeg" as shared
+          import "b_importer.tpeg" as b
+          grammar Main { start = shared.value }
+        `,
+      );
+      mockFs.addFile("/test/a.tpeg", `grammar A { value = "from-a" }`);
+      mockFs.addFile(
+        "/test/b_importer.tpeg",
+        `
+          import "b.tpeg" as shared
+          grammar BImporter { start = shared.value }
+        `,
+      );
+      mockFs.addFile("/test/b.tpeg", `grammar B { value = "from-b" }`);
+
+      await resolver.resolveModule("main.tpeg");
+
+      const bImporterModule = resolver.context.cache.get(
+        "/test/b_importer.tpeg",
+      );
+      if (!bImporterModule) throw new Error("b_importer.tpeg should be cached");
+
+      const qualified = await resolveQualifiedIdentifier(
+        { type: "QualifiedIdentifier", module: "shared", name: "value" },
+        bImporterModule,
+        resolver.context,
+      );
+      expect(qualified.module.filePath).toBe("/test/b.tpeg");
+
+      // main.tpeg's own "shared" alias must still resolve to a.tpeg.
+      const mainModule = resolver.context.cache.get("/test/main.tpeg");
+      if (!mainModule) throw new Error("main.tpeg should be cached");
+      const qualifiedFromMain = await resolveQualifiedIdentifier(
+        { type: "QualifiedIdentifier", module: "shared", name: "value" },
+        mainModule,
+        resolver.context,
+      );
+      expect(qualifiedFromMain.module.filePath).toBe("/test/a.tpeg");
     });
 
     it("should cache resolved modules", async () => {
