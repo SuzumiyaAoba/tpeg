@@ -24,6 +24,7 @@ import {
   isFatalFailure,
   materializeParseError,
   mergeFailureWatermark,
+  renameWatermarkExpectation,
   resetFailureWatermark,
   restoreFailureWatermark,
   snapshotFailureWatermark,
@@ -298,6 +299,57 @@ describe("mergeFailureWatermark", () => {
     const error = materializeParseError(false);
     expect(error.pos).toBe(0);
     expect(error.expected).toBe("new");
+  });
+});
+
+describe("renameWatermarkExpectation", () => {
+  // `@suzumiyaaoba/tpeg-combinator`'s `withDetailedError` (`named`/
+  // `token`/etc.) is the intended caller: it relabels a failure that
+  // ALREADY recorded itself via `fail()` at its point of origin, so this
+  // must update that entry in place rather than append a second one --
+  // see this function's own doc comment for the full failure mode it
+  // closes (`choice`'s `tryOrderedCandidates` re-forwarding a renamed
+  // failure as a spurious second expectation).
+  it("updates an existing entry's parserName in place, without adding a second entry", () => {
+    fail("abcdef", 2, { label: "digit", parserName: "literal" });
+    renameWatermarkExpectation("abcdef", 2, "digit", "rule");
+    const error = materializeParseError(false);
+    expect(error.expected).toBe("digit");
+    expect(error.parserName).toBe("rule");
+  });
+
+  it("is a no-op when the position no longer matches the current watermark", () => {
+    fail("abcdef", 4, { label: "far", parserName: "a" });
+    // A stale rename targeting an earlier position that's no longer the
+    // watermark's -- must not resurrect or otherwise disturb it.
+    renameWatermarkExpectation("abcdef", 2, "far", "b");
+    const error = materializeParseError(false);
+    expect(error.pos).toBe(4);
+    expect(error.parserName).toBe("a");
+  });
+
+  it("is a no-op when the input no longer matches the current watermark", () => {
+    fail("abcdef", 2, { label: "digit", parserName: "a" });
+    renameWatermarkExpectation("different-input", 2, "digit", "b");
+    const error = materializeParseError(false);
+    expect(error.parserName).toBe("a");
+  });
+
+  it("is a no-op when no entry has a matching label", () => {
+    fail("abcdef", 2, { label: "digit", parserName: "a" });
+    renameWatermarkExpectation("abcdef", 2, "letter", "b");
+    const error = materializeParseError(false);
+    expect(error.expected).toBe("digit");
+    expect(error.parserName).toBe("a");
+  });
+
+  it("only renames the matching label, leaving a tied sibling expectation untouched", () => {
+    fail("abcdef", 2, { label: "digit", parserName: "a" });
+    fail("abcdef", 2, { label: "letter", parserName: "b" });
+    renameWatermarkExpectation("abcdef", 2, "digit", "renamed");
+    const error = materializeParseError(false);
+    expect(error.expected).toEqual(["digit", "letter"]);
+    expect(error.parserName).toBeUndefined();
   });
 });
 

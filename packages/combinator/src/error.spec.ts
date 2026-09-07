@@ -72,6 +72,42 @@ describe("error combinators", () => {
       const withFallback = choice(parser, literal("def"));
       expect(parse(withFallback)("def").success).toBe(false);
     });
+
+    it("does not duplicate the expected label or drop parserName when the wrapped parser is one alternative of a choice (regression: renaming an already-recorded failure looked, to `choice`, like a second independent expectation)", () => {
+      // `seq(literal("ab"), literal("cd"))` failing on "cd" already
+      // records `{label: '"cd"', parserName: "literal"}` in the shared
+      // farthest-failure watermark via `literal`'s own `fail()` call.
+      // `withDetailedError` then RENAMES that failure's `parserName` to
+      // "MyParser" for its own returned value -- but before
+      // `renameWatermarkExpectation` existed, that rename only touched a
+      // local copy: the watermark itself still held the old entry, and
+      // because this parser is `choice`'s FIRST alternative,
+      // `tryOrderedCandidates` (`packages/core/src/combinators.ts`) saw
+      // the renamed failure as a "concrete" (no longer the `FAIL`
+      // singleton) result and re-forwarded it into the watermark as a
+      // SECOND entry -- same label, different `parserName`. Two
+      // watermark entries "the same label but different `parserName`"
+      // is deliberately NOT deduplicated elsewhere (see
+      // `failure.spec.ts`'s "treats equal label with different
+      // parserName as distinct expectations" -- that's correct for two
+      // genuinely independent parsers coincidentally sharing label text)
+      // -- the actual bug was `withDetailedError` creating that second,
+      // spurious entry for what both entries are really the SAME
+      // underlying failure. The visible symptom: "Expected \"cd\" or
+      // \"cd\"" instead of "Expected \"cd\"", and `parserName` silently
+      // dropped (`materializeParseError` only reports one when every
+      // tied expectation agrees).
+      const inner = seq(literal("ab"), literal("cd"));
+      const parser = withDetailedError(inner, "MyParser");
+      const result = parse(choice(parser, literal("zz")))("abXX");
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.expected).toBe('"cd"');
+        expect(result.error.message).not.toContain(" or ");
+        expect(result.error.parserName).toBe("MyParser");
+      }
+    });
   });
 
   describe("labeled", () => {

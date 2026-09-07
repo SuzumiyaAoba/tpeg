@@ -338,3 +338,43 @@ export const mergeFailureWatermark = (
     }
   }
 };
+
+/**
+ * Relabels an already-recorded watermark expectation matching `input`/
+ * `pos` and `label` to a new `parserName`, IN PLACE -- unlike calling
+ * `fail()` again with the same `label` but a different `parserName`,
+ * which `expectationSeen` deliberately treats as a second, independent
+ * expectation (see its doc comment: that's correct for two genuinely
+ * different named parsers that happen to expect the same label text, and
+ * `failure.spec.ts` pins exactly that case).
+ *
+ * `@suzumiyaaoba/tpeg-combinator`'s `withDetailedError` (`named`/`token`/
+ * etc.) is a DIFFERENT case: it relabels a failure that already recorded
+ * ITSELF via `fail()` at its point of origin -- the exact same underlying
+ * failure event, not a second one. Without a way to update that entry in
+ * place, `withDetailedError` had to return a plain object carrying the
+ * new `parserName` (no longer the `FAIL` singleton, since a per-call
+ * decoration can't be baked into a shared singleton), which made
+ * `choice`'s `tryOrderedCandidates` (`./combinators.ts`) treat it as an
+ * unrecorded, freshly-built `ParseError` (indistinguishable, from there,
+ * from a hand-written parser's own `createFailure` call) and re-forward
+ * it into the watermark as an ADDITIONAL entry -- same label, new
+ * `parserName`. That doubled the resulting message ("Expected X or X")
+ * and, since `materializeParseError` only reports a `parserName` when
+ * every tied expectation agrees on one, silently dropped it entirely.
+ *
+ * A no-op if `input`/`pos` no longer match the current watermark (this
+ * failure is no longer the farthest one recorded, so there is nothing
+ * live to rename) or no entry has a matching `label`.
+ */
+export const renameWatermarkExpectation = (
+  input: string,
+  pos: number,
+  label: string,
+  parserName: string,
+): void => {
+  if (input !== watermarkInput || pos !== watermarkPos) return;
+  watermarkExpected = watermarkExpected.map((e) =>
+    e.label === label ? { label, parserName } : e,
+  );
+};
