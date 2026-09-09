@@ -662,6 +662,109 @@ describe("VersionManager", () => {
         ),
       ).toBe(true);
     });
+
+    describe("prerelease gate (npm semver semantics)", () => {
+      // A prerelease version satisfies a range only if some comparator in
+      // the range shares its exact [major, minor, patch] tuple AND itself
+      // carries a prerelease tag -- npm semver's rule, not a plain
+      // `compareVersions` ordering check.
+      it("rejects a prerelease version against a caret constraint with no prerelease of its own", () => {
+        const prereleaseVersion: SemanticVersion = {
+          major: 1,
+          minor: 5,
+          patch: 0,
+          prerelease: "beta",
+        };
+        const constraint: VersionConstraint = {
+          operator: "^",
+          version: { major: 1, minor: 0, patch: 0 },
+        };
+        expect(manager.satisfiesConstraint(prereleaseVersion, constraint)).toBe(
+          false,
+        );
+      });
+
+      it("rejects a prerelease version against a >= constraint with no prerelease of its own", () => {
+        const prereleaseVersion: SemanticVersion = {
+          major: 2,
+          minor: 0,
+          patch: 0,
+          prerelease: "beta",
+        };
+        const constraint: VersionConstraint = {
+          operator: ">=",
+          version: { major: 1, minor: 0, patch: 0 },
+        };
+        expect(manager.satisfiesConstraint(prereleaseVersion, constraint)).toBe(
+          false,
+        );
+      });
+
+      it("rejects a prerelease version against a tilde constraint whose tuple it doesn't share", () => {
+        const prereleaseVersion: SemanticVersion = {
+          major: 1,
+          minor: 0,
+          patch: 1,
+          prerelease: "alpha",
+        };
+        const constraint: VersionConstraint = {
+          operator: "~",
+          version: { major: 1, minor: 0, patch: 0 },
+        };
+        expect(manager.satisfiesConstraint(prereleaseVersion, constraint)).toBe(
+          false,
+        );
+      });
+
+      it("accepts a prerelease version against a caret constraint sharing its tuple and carrying its own prerelease", () => {
+        const prereleaseVersion: SemanticVersion = {
+          major: 1,
+          minor: 0,
+          patch: 0,
+          prerelease: "beta",
+        };
+        const constraint: VersionConstraint = {
+          operator: "^",
+          version: { major: 1, minor: 0, patch: 0, prerelease: "alpha" },
+        };
+        expect(manager.satisfiesConstraint(prereleaseVersion, constraint)).toBe(
+          true,
+        );
+      });
+
+      it("accepts a prerelease version against a compound range where only ONE comparator shares its tuple", () => {
+        // ">=1.0.0-alpha, <2.0.0" -- the second comparator ("<2.0.0") has
+        // no prerelease and a different tuple, but the gate must be
+        // evaluated over the WHOLE comparator set, not per comparator, so
+        // this compound range still accepts "1.0.0-beta" via the first
+        // comparator alone.
+        const prereleaseVersion: SemanticVersion = {
+          major: 1,
+          minor: 0,
+          patch: 0,
+          prerelease: "beta",
+        };
+        const constraint = manager.parseVersionConstraint(
+          ">=1.0.0-alpha, <2.0.0",
+        );
+        expect(manager.satisfiesConstraint(prereleaseVersion, constraint)).toBe(
+          true,
+        );
+      });
+
+      it("does not gate an ordinary, non-prerelease version", () => {
+        const constraint: VersionConstraint = {
+          operator: "^",
+          version: { major: 1, minor: 0, patch: 0 },
+        };
+        expect(
+          manager.satisfiesConstraint(
+            { major: 1, minor: 5, patch: 0 },
+            constraint,
+          ),
+        ).toBe(true);
+      });
+    });
   });
 
   describe("registerModule", () => {

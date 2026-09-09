@@ -332,6 +332,44 @@ describe("charClassRun", () => {
       expect(viaRun.next).toBe(6); // 3 astral chars * 2 code units each
     }
   });
+
+  describe("out-of-bounds pos (matches makeCharClassParser's own guard)", () => {
+    // `charCodeAt`/`codePointAt` at a negative index return `NaN`/
+    // `undefined`, which a NEGATED run's `matchesSpecsSlow(...) !== true`
+    // check would otherwise treat as a "match" -- walking `offset` further
+    // negative and returning a garbage slice. `charClass`/`negatedCharClass`
+    // (the plain, non-run leaf parsers over the same specs) already guard
+    // against this; this pins `charClassRun` to the same behavior.
+    it("fails (min=1) rather than matching past a negative pos, negated", () => {
+      const result = charClassRun([["0", "9"]], 1, true)("abc", -1);
+      expect(result.success).toBe(false);
+    });
+
+    it("succeeds with an empty array (min=0) rather than matching past a negative pos, negated", () => {
+      const result = charClassRun([["0", "9"]], 0, true)("abc", -1);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual([]);
+        expect(result.next).toBe(-1);
+      }
+    });
+
+    it("fails (min=1) rather than matching past a negative pos, non-negated", () => {
+      const result = charClassRun([["0", "9"]], 1)("123", -1);
+      expect(result.success).toBe(false);
+    });
+
+    it("agrees with charClass/negatedCharClass at pos === input.length", () => {
+      const viaRun = charClassRun([["0", "9"]], 0, true)("abc", 3);
+      const viaLeaf = negatedCharClass(["0", "9"])("abc", 3);
+      expect(viaRun.success).toBe(true);
+      expect(viaLeaf.success).toBe(false);
+      if (viaRun.success) {
+        expect(viaRun.val).toEqual([]);
+        expect(viaRun.next).toBe(3);
+      }
+    });
+  });
 });
 
 describe("negatedCharClass", () => {

@@ -280,6 +280,49 @@ describe("TypeInferenceEngine", () => {
       expect(result.ruleTypes.get("a")?.typeString).toBe("unknown");
       expect(result.ruleTypes.get("b")?.typeString).toBe("unknown");
     });
+
+    it("reports one mutual-recursion cycle exactly once, not once per participating rule", () => {
+      // expr -> term -> factor -> expr: a single 3-rule cycle. Inferring
+      // each rule's type independently (starting from its own fresh
+      // `ruleStack`) rediscovers this same cycle from three different
+      // starting points -- ["expr","term","factor"], ["term","factor","expr"],
+      // and ["factor","expr","term"] are all rotations of the SAME cycle,
+      // not three distinct ones.
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition("expr", createIdentifier("term")),
+          createRuleDefinition("term", createIdentifier("factor")),
+          createRuleDefinition("factor", createIdentifier("expr")),
+        ],
+      );
+
+      const result = engine.inferGrammarTypes(grammar);
+
+      expect(result.circularDependencies.length).toBe(1);
+      expect(result.warnings.length).toBe(1);
+      expect(new Set(result.circularDependencies[0])).toEqual(
+        new Set(["expr", "term", "factor"]),
+      );
+    });
+
+    it("reports two independent cycles as two, not merged or over-counted", () => {
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition("a", createIdentifier("b")),
+          createRuleDefinition("b", createIdentifier("a")),
+          createRuleDefinition("x", createIdentifier("y")),
+          createRuleDefinition("y", createIdentifier("x")),
+        ],
+      );
+
+      const result = engine.inferGrammarTypes(grammar);
+
+      expect(result.circularDependencies.length).toBe(2);
+    });
   });
 
   describe("Type Inference Options", () => {

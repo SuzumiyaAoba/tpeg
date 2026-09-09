@@ -286,19 +286,62 @@ export class VersionManager {
 
   /**
    * Checks whether a version satisfies a constraint.
+   *
+   * A prerelease version needs an extra gate ON TOP OF the ordinary
+   * per-comparator checks below: per npm semver, a prerelease version
+   * satisfies a range only if at least one comparator in the WHOLE
+   * comparator set (this constraint plus every comma-separated
+   * `additional` one -- `parseVersionConstraint` ANDs them together, there
+   * is no OR here) shares its exact `[major, minor, patch]` tuple AND
+   * itself carries a prerelease tag. Without this, `"1.5.0-beta"` would
+   * satisfy `"^1.0.0"` and `"2.0.0-beta"` would satisfy `">=1.0.0"` --
+   * neither of which npm semver allows, since a prerelease is only ever
+   * meant to be reachable by a constraint that was written expecting one.
+   *
+   * This MUST be evaluated once over the full comparator set, not inside
+   * a single comparator's own check: a compound range like
+   * `">=1.0.0-alpha, <2.0.0"` must still accept `"1.0.0-beta"` even though
+   * the `"<2.0.0"` comparator alone doesn't share the `(1,0,0)` tuple --
+   * gating each comparator independently would reject that compound range
+   * outright, which is wrong (see this method's own tests).
    */
   satisfiesConstraint(
     version: SemanticVersion,
     constraint: VersionConstraint,
   ): boolean {
+    // `additional` entries are always leaf comparators themselves (only
+    // `parseVersionConstraint`'s first part ever sets `.additional`), so
+    // this one level of flattening covers every comparator in the range.
+    const comparators = [constraint, ...(constraint.additional ?? [])];
+
     if (
-      constraint.additional?.some(
-        (additional) => !this.satisfiesConstraint(version, additional),
+      version.prerelease !== undefined &&
+      !comparators.some(
+        (c) =>
+          c.version.prerelease !== undefined &&
+          c.version.major === version.major &&
+          c.version.minor === version.minor &&
+          c.version.patch === version.patch,
       )
     ) {
       return false;
     }
 
+    return comparators.every((c) => this.satisfiesSingleConstraint(version, c));
+  }
+
+  /**
+   * The ordinary per-comparator half of {@link satisfiesConstraint}: one
+   * operator/version pair, with no awareness of `additional` or the
+   * prerelease gate (both handled by the caller). Not exported --
+   * `additional` and the prerelease gate are both necessary parts of
+   * checking a full constraint, so a caller should never invoke this
+   * directly on a single comparator.
+   */
+  private satisfiesSingleConstraint(
+    version: SemanticVersion,
+    constraint: VersionConstraint,
+  ): boolean {
     const comparison = this.compareVersions(version, constraint.version);
 
     switch (constraint.operator) {

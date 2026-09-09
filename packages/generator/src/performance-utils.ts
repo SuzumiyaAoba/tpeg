@@ -207,6 +207,16 @@ export function analyzeGrammarPerformance(
 
 /**
  * Collect the names of rules directly referenced from an expression
+ *
+ * This is a hand-maintained duplicate of `packages/parser/src/
+ * performance-utils.ts`'s function of the same name (see this package's
+ * `grammar-validation.ts` module doc comment for why the duplication
+ * exists at all) -- keep the `ActionExpression` case below in sync if
+ * either changes; there is no automated check tying the two together.
+ * A missing `ActionExpression` case here previously made a rule reference
+ * reachable only through a semantic action invisible to
+ * `findRecursiveRuleNames`, undercounting recursion; the identical gap
+ * was found and fixed independently in the `tpeg-parser` copy.
  */
 function collectRuleDependencies(
   expr: Expression,

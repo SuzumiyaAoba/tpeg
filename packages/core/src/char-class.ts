@@ -280,6 +280,22 @@ export const charClassRun = (
   const expectation: Expectation = { label: expected, parserName };
 
   return (input: string, pos: number) => {
+    // Same bounds guard as `makeCharClassParser` above (see its own
+    // comment): `(pos >>> 0)` folds a negative `pos` into a huge unsigned
+    // value, always >= any real `input.length`. Without this, a negative
+    // `pos` would reach the `while` loop below with `offset < input.length`
+    // vacuously true, and `charCodeAt`/`codePointAt` at a negative index
+    // return `NaN`/`undefined` -- which, under `negated = true`, satisfies
+    // `matchesSpecsSlow(undefined, ...) !== true` as a "match", walking
+    // `offset` further negative and returning garbage from
+    // `input.slice(pos, ...)`. Unreachable via the public `parse()` entry
+    // point (which never calls a parser with `pos < 0`), but every other
+    // leaf parser in this file enforces it regardless of caller.
+    if (pos >>> 0 >= input.length) {
+      if (min === 1) return fail(input, pos, expectation);
+      return { success: true, val: [], current: pos, next: pos };
+    }
+
     // Pass 1: scan to find the run's end offset and code-point count.
     // Touches no heap at all -- pure index arithmetic over `input`, one
     // `charCodeAt`/`codePointAt` per code point, no intermediate string.

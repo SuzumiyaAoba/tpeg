@@ -10,10 +10,15 @@
  */
 
 import { describe, expect, it } from "vite-plus/test";
-import { analyzeGrammarPerformance } from "./performance-utils";
 import {
+  analyzeExpressionComplexity,
+  analyzeGrammarPerformance,
+} from "./performance-utils";
+import {
+  createActionExpression,
   createChoice,
   createGrammarDefinition,
+  createGroup,
   createIdentifier,
   createRuleDefinition,
   createSequence,
@@ -76,6 +81,38 @@ describe("analyzeGrammarPerformance recursion detection", () => {
 
     expect(analysis.ruleComplexity.get("Digit")?.hasRecursion).toBe(false);
     expect(analysis.ruleComplexity.get("Number")?.hasRecursion).toBe(false);
+  });
+
+  it("flags a rule whose only self-reference sits inside a semantic action", () => {
+    // a = ("(" a ")") { return $$; } / "x" -- the recursive reference to
+    // `a` is reachable only through the ActionExpression's own wrapped
+    // expression, not directly under the rule's pattern.
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [
+        createRuleDefinition(
+          "a",
+          createChoice([
+            createActionExpression(
+              createGroup(
+                createSequence([
+                  createStringLiteral("(", '"'),
+                  createIdentifier("a"),
+                  createStringLiteral(")", '"'),
+                ]),
+              ),
+              " return $$; ",
+            ),
+            createStringLiteral("x", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const analysis = analyzeGrammarPerformance(grammar);
+
+    expect(analysis.ruleComplexity.get("a")?.hasRecursion).toBe(true);
   });
 
   it("surfaces a memoization suggestion only for the genuinely recursive rule", () => {
@@ -206,5 +243,28 @@ describe("left recursion: end-to-end behavior", () => {
         includeTypes: false,
       }),
     ).toThrow(/left-recursive/i);
+  });
+});
+
+describe("analyzeExpressionComplexity: ActionExpression traversal", () => {
+  it("counts nodes inside a semantic action's wrapped expression", () => {
+    // Without descending into the ActionExpression, `nodeCount` would stop
+    // at the action node itself (1) instead of also counting the Group,
+    // Sequence, and two StringLiterals it wraps.
+    const wrapped = createGroup(
+      createSequence([
+        createStringLiteral("(", '"'),
+        createStringLiteral(")", '"'),
+      ]),
+    );
+    const action = createActionExpression(wrapped, " return $$; ");
+
+    const withAction = analyzeExpressionComplexity(action);
+    const withoutAction = analyzeExpressionComplexity(wrapped);
+
+    // The action node itself adds exactly one to whatever its wrapped
+    // expression alone counts as.
+    expect(withAction.nodeCount).toBe(withoutAction.nodeCount + 1);
+    expect(withAction.depth).toBe(withoutAction.depth + 1);
   });
 });

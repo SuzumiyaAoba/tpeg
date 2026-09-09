@@ -243,11 +243,46 @@ export class TypeInferenceError extends Error {
     message: string,
     public readonly expression?: Expression,
     public readonly ruleName?: string,
+    /**
+     * The full rule-reference path of a circular-dependency error (e.g.
+     * `["expr", "term", "factor", "expr"]`), captured at THROW time.
+     * `inferGrammarTypes` uses this rather than re-reading
+     * `context.ruleStack` from its `catch` block: once
+     * `inferIdentifierType`'s `push`/`pop` is wrapped in `try/finally` (so
+     * a thrown error can never leave a stale entry on `ruleStack`), the
+     * stack has already unwound back to just the starting rule's name by
+     * the time the exception reaches that `catch` -- the cycle path has to
+     * travel WITH the error, not be read back out of mutable state after
+     * the fact. Only ever set for a circular-dependency
+     * `TypeInferenceError` (see `inferIdentifierType`); absent otherwise.
+     */
+    public readonly cycle?: readonly string[],
   ) {
     super(message);
     this.name = "TypeInferenceError";
   }
 }
+
+/**
+ * Rotates `cycle` so it starts at its lexicographically smallest element,
+ * giving the same canonical key to every rotation of the same cycle (e.g.
+ * `["expr","term","factor"]`, `["term","factor","expr"]`, and
+ * `["factor","expr","term"]` all normalize to the same key) -- used to
+ * de-duplicate a single circular dependency that `inferGrammarTypes`
+ * would otherwise discover once per rule participating in it, since it
+ * infers each rule's type starting from a fresh `ruleStack`. `" -> "`
+ * joins the rotated names since a TPEG identifier is always
+ * `[a-zA-Z_][a-zA-Z0-9_]*` (`packages/parser/src/identifier.ts`) and can
+ * never contain a space, so this can't collide across different cycles.
+ */
+const normalizeCycleKey = (cycle: readonly string[]): string => {
+  if (cycle.length === 0) return "";
+  let minIndex = 0;
+  for (let i = 1; i < cycle.length; i++) {
+    if ((cycle[i] as string) < (cycle[minIndex] as string)) minIndex = i;
+  }
+  return [...cycle.slice(minIndex), ...cycle.slice(0, minIndex)].join(" -> ");
+};
 
 /**
  * Peels away transparent `Group` wrappers to see if `expr` is (or wraps)
@@ -357,6 +392,15 @@ export class TypeInferenceEngine {
       },
     };
 
+    // Tracks which distinct circular dependencies have already been
+    // recorded, keyed by `normalizeCycleKey` -- this loop infers each
+    // rule's type starting from its own fresh `ruleStack`, so a single
+    // cycle spanning N rules is independently rediscovered once per
+    // participating rule (as a different rotation of the same rule-name
+    // sequence). Without this, `result.circularDependencies`/`.warnings`
+    // would carry N near-identical entries for one real cycle.
+    const seenCycles = new Set<string>();
+
     // Infer types for each rule
     for (const rule of grammar.rules) {
       try {
@@ -371,14 +415,27 @@ export class TypeInferenceEngine {
         result.imports.push(...inferredType.imports);
       } catch (error) {
         if (error instanceof TypeInferenceError) {
-          result.warnings.push(error.message);
-
           // Handle circular dependencies
           if (
             this.options.detectCircularDependencies &&
             error.message.includes("Circular dependency")
           ) {
-            result.circularDependencies.push([...this.context.ruleStack]);
+            // `error.cycle` was captured at THROW time (see
+            // `TypeInferenceError`'s own doc comment) -- `ruleStack` itself
+            // can no longer be read back here for this, now that
+            // `inferIdentifierType`'s `push`/`pop` is properly `finally`-
+            // guarded and has already unwound to just this rule's name by
+            // the time the exception reaches this `catch`. Falls back to
+            // this rule's own name only in the [in-practice unreachable]
+            // case of a `TypeInferenceError` thrown some other way with a
+            // message that happens to contain "Circular dependency".
+            const cycle = error.cycle ?? [rule.name];
+            const key = normalizeCycleKey(cycle);
+            if (!seenCycles.has(key)) {
+              seenCycles.add(key);
+              result.circularDependencies.push([...cycle]);
+              result.warnings.push(error.message);
+            }
 
             // Use a placeholder type for circular dependencies
             result.ruleTypes.set(rule.name, {
@@ -390,6 +447,7 @@ export class TypeInferenceEngine {
               documentation: `Circular dependency detected in rule ${rule.name}`,
             });
           } else {
+            result.warnings.push(error.message);
             // For other errors, use a more specific error type
             result.ruleTypes.set(rule.name, {
               typeString: "unknown",
@@ -404,7 +462,16 @@ export class TypeInferenceEngine {
           error instanceof Error &&
           error.message.includes("Circular dependency")
         ) {
-          result.circularDependencies.push([...this.context.ruleStack]);
+          // Same de-duplication as above, for the [equally unreachable in
+          // practice] case of a plain `Error` rather than a
+          // `TypeInferenceError` -- no `.cycle` to key on here, so this
+          // falls back to the rule's own name.
+          const key = normalizeCycleKey([rule.name]);
+          if (!seenCycles.has(key)) {
+            seenCycles.add(key);
+            result.circularDependencies.push([rule.name]);
+            result.warnings.push(error.message);
+          }
           // Use a placeholder type for circular dependencies
           result.ruleTypes.set(rule.name, {
             typeString: "unknown",
@@ -639,10 +706,20 @@ export class TypeInferenceEngine {
       this.options.detectCircularDependencies &&
       this.context.ruleStack.includes(ruleName)
     ) {
+      // `cycle` (the array attached to the error, and later stored in
+      // `GrammarTypeInference.circularDependencies`) deliberately does NOT
+      // repeat `ruleName` at the end -- it lists each participating rule
+      // exactly once, matching the pre-existing `[...ruleStack]` shape
+      // this replaces. The MESSAGE below repeats it once more for
+      // readability (`"a -> b -> a"` reads as a cycle; `"a -> b"` alone
+      // doesn't make the closure obvious), but that's a display-only
+      // concern separate from the stored array's shape.
+      const cycle = [...this.context.ruleStack];
       throw new TypeInferenceError(
-        `Circular dependency detected: ${this.context.ruleStack.join(" -> ")} -> ${ruleName}`,
+        `Circular dependency detected: ${cycle.join(" -> ")} -> ${ruleName}`,
         expression,
         this.context.currentRule,
+        cycle,
       );
     }
 
@@ -661,10 +738,22 @@ export class TypeInferenceEngine {
       };
     }
 
-    // Recursively infer type for referenced rule
+    // Recursively infer type for referenced rule. The `pop()` MUST happen
+    // even if `inferExpressionType` throws (a nested circular-dependency
+    // detection further down the recursion, or any other error) --
+    // otherwise `ruleStack` is left with this rule's name still on it.
+    // `inferGrammarTypes` currently resets `ruleStack` at the start of
+    // every rule's own inference call, which happens to mask this for that
+    // one caller, but nothing about `inferExpressionType`/
+    // `inferIdentifierType`'s own contract should depend on a caller
+    // always doing that reset.
     this.context.ruleStack.push(ruleName);
-    const inferredType = this.inferExpressionType(rule.pattern);
-    this.context.ruleStack.pop();
+    let inferredType: InferredType;
+    try {
+      inferredType = this.inferExpressionType(rule.pattern);
+    } finally {
+      this.context.ruleStack.pop();
+    }
 
     return {
       ...inferredType,

@@ -113,6 +113,17 @@ export function analyzeExpressionComplexity(
       case "Quantified":
         analyze(expr.expression, depth + 1);
         break;
+      case "ActionExpression":
+        // A rule reference reachable only through a semantic action's own
+        // wrapped expression (e.g. `x = ( y ) { ... }`) must still count
+        // toward this rule's complexity -- omitting this case undercounts
+        // `nodeCount`/`depth` for every action-bearing rule. Mirrors
+        // `packages/generator/src/performance-utils.ts`'s identical case
+        // (see that file's own comment for the gap this closes) and
+        // `packages/type-inference/src/type-integration.ts`'s
+        // `analyzeDependencies`, which fixed the same gap for its own walk.
+        analyze(expr.expression, depth + 1);
+        break;
     }
   }
 
@@ -227,6 +238,12 @@ export function analyzeGrammarPerformance(grammar: GrammarDefinition): {
 
 /**
  * Collect rule dependencies from an expression
+ *
+ * `packages/generator/src/performance-utils.ts` hand-maintains a duplicate
+ * of this function (that package's `grammar-validation.ts` module doc
+ * comment explains why the duplication exists at all) -- keep the
+ * `ActionExpression` case below in sync if either changes; there is no
+ * automated check tying the two together.
  */
 function collectRuleDependencies(
   expr: Expression,
@@ -260,6 +277,20 @@ function collectRuleDependencies(
       collectRuleDependencies(expr.expression, dependencies);
       break;
     case "Quantified":
+      collectRuleDependencies(expr.expression, dependencies);
+      break;
+    case "ActionExpression":
+      // Traversed into (not treated as a leaf) for the same reason
+      // `analyzeExpressionComplexity`'s `analyze` above does: a rule
+      // reference reachable only through a semantic action's own wrapped
+      // expression (e.g. `x = ( y ) { ... }`) is a real dependency for
+      // `findRecursiveRuleNames` below -- omitting this case made every
+      // such reference invisible, so a genuinely recursive rule whose only
+      // self-reference sits inside an action silently reported
+      // `hasRecursion: false`. Mirrors
+      // `packages/generator/src/performance-utils.ts`'s identical case and
+      // `packages/type-inference/src/type-integration.ts`'s
+      // `analyzeDependencies`, which fixed the same gap for its own walk.
       collectRuleDependencies(expr.expression, dependencies);
       break;
   }
@@ -322,6 +353,14 @@ function collectLeftmostRuleDependencies(
       collectLeftmostRuleDependencies(expr.expression, dependencies);
       break;
     case "Quantified":
+      collectLeftmostRuleDependencies(expr.expression, dependencies);
+      break;
+    case "ActionExpression":
+      // Same reasoning as `collectRuleDependencies` above: a self-reference
+      // reachable only through a semantic action's wrapped expression is
+      // still tried at the same starting position (the action itself
+      // consumes no input of its own), so it must be visible to
+      // left-recursion detection too.
       collectLeftmostRuleDependencies(expr.expression, dependencies);
       break;
   }
