@@ -47,6 +47,65 @@ import type {
 } from "@suzumiyaaoba/tpeg-core";
 
 /**
+ * Escapes a grammar `StringLiteral`'s decoded value for embedding as a
+ * TypeScript string-literal TYPE (`"..."`, e.g. `export type X =
+ * "a\\b";`) -- used by `inferStringLiteralType` below.
+ *
+ * Intentionally duplicates `packages/parser/src/constants.ts`'s
+ * `escapeStringLiteral` rather than importing it: this package
+ * (`tpeg-type-inference`) depends only on `@suzumiyaaoba/tpeg-core`, not
+ * `@suzumiyaaoba/tpeg-parser`, so the two escapers can't share code
+ * without introducing that dependency. Keep this in sync BY HAND with
+ * `constants.ts`'s version if either changes; there is no automated check
+ * tying the two together (same caveat `grammar-validation.ts`'s own
+ * doc comment gives for its similarly-duplicated nullability logic).
+ *
+ * Escaping only `"` (a bare `.replace(/"/g, '\\"')`, this function's
+ * predecessor) is not enough: a decoded value containing a literal
+ * backslash re-escapes to an odd number of trailing backslashes ahead of
+ * the closing quote (e.g. value `a\` -> `"a\"`, where the `\"` is read as
+ * an escaped quote, not a closing one -- an unterminated string, invalid
+ * TypeScript), and a value containing an actual control byte (a real
+ * newline/tab, not the two source characters `\`+`n`) emits as a raw
+ * byte inside the `"..."` literal, equally invalid.
+ */
+const NAMED_CONTROL_CHAR_ESCAPES: Readonly<Record<string, string>> = {
+  "\n": "\\n",
+  "\r": "\\r",
+  "\t": "\\t",
+  "\b": "\\b",
+  "\f": "\\f",
+  "\v": "\\v",
+  "\0": "\\0",
+};
+
+const escapeStringLiteralType = (value: string): string => {
+  let result = "";
+  for (const char of value) {
+    if (char === "\\") {
+      result += "\\\\";
+      continue;
+    }
+    if (char === '"') {
+      result += '\\"';
+      continue;
+    }
+    const namedEscape = NAMED_CONTROL_CHAR_ESCAPES[char];
+    if (namedEscape) {
+      result += namedEscape;
+      continue;
+    }
+    const code = char.codePointAt(0) ?? 0;
+    if (code < 0x20 || code === 0x7f) {
+      result += `\\x${code.toString(16).padStart(2, "0")}`;
+      continue;
+    }
+    result += char;
+  }
+  return result;
+};
+
+/**
  * Represents an inferred TypeScript type for a parser result
  *
  * This interface provides comprehensive type information including the TypeScript
@@ -524,8 +583,7 @@ export class TypeInferenceEngine {
    * @returns Inferred type for string literal
    */
   private inferStringLiteralType(expression: StringLiteral): InferredType {
-    // Escape quotes in the type string
-    const escapedValue = expression.value.replace(/"/g, '\\"');
+    const escapedValue = escapeStringLiteralType(expression.value);
     const result: InferredType = {
       typeString: `"${escapedValue}"`,
       nullable: false,

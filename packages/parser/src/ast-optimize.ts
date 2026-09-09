@@ -42,12 +42,19 @@
  *
  *   sum = product (("+" sum) / ("-" sum) / ())
  *
- * parses the shared prefix once. This is sound because every parser this
- * codebase generates is a pure, deterministic function of (input,
- * position) -- calling `product` twice at the same position is
- * guaranteed to reproduce the same result, so replacing "parse it twice"
- * with "parse it once and reuse the result" cannot change which inputs
- * are accepted or where a resulting parse stops.
+ * parses the shared prefix once. This is sound in RECOGNITION terms
+ * because every parser this codebase generates is a pure, deterministic
+ * function of (input, position) -- calling `product` twice at the same
+ * position is guaranteed to reproduce the same result, so replacing
+ * "parse it twice" with "parse it once and reuse the result" cannot
+ * change which inputs are accepted or where a successful parse stops --
+ * PROVIDED the prefix cannot itself fail fatally (reach a `Cut`/`~`).
+ * Hoisting the prefix out of the `Choice` also hoists it out of that
+ * `Choice`'s fatal-failure-absorption boundary, so a prefix that CAN fail
+ * fatally is refused as a factoring candidate outright, not merely
+ * shape-gated -- see `ast-optimize-left-factor.ts`'s module doc comment,
+ * "Fatal failures and hoisted prefixes" section, for the full argument
+ * and a worked counterexample.
  *
  * ## Soundness restrictions (deliberately conservative)
  *

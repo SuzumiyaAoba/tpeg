@@ -387,6 +387,27 @@ describe("Grammar Definition Block Tests", () => {
       }
     });
 
+    test("should not mistake a '}' inside a backtick (template-literal) action string for the rule's closing brace (regression: grammarRuleExpression's string-skip only recognized '\"'/\"'\", not '`')", () => {
+      // `brace-scanner.ts`'s `scanBalancedBraces` (which parses the action
+      // block's actual `{ ... }` content) already skips backtick strings
+      // via `skipStringLiteral` -- but `grammarRuleExpression` here (which
+      // finds where the RULE itself ends, ahead of that) only recognized
+      // '"'/"'" as string delimiters. A '}' inside a template literal used
+      // to be miscounted as closing the action block early, desyncing
+      // `activeBraceDepth` and corrupting the rest of the rule/grammar
+      // parse.
+      const input =
+        'grammar X {\n  start = "a" { return `x}y`; }\n  other = "b"\n}';
+
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules).toHaveLength(2);
+        expect(result.val.rules[0]?.name).toBe("start");
+        expect(result.val.rules[1]?.name).toBe("other");
+      }
+    });
+
     test("should not mistake a same-line grammar-block-closing '}' for part of the rule (regression: used to only recognize a '}' reached by crossing a line break)", () => {
       // `grammarRuleExpression` used to require `crossedLineBreak` before
       // treating a bare "}" as the enclosing grammar block's own close --

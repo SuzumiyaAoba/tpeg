@@ -17,6 +17,7 @@ import {
   createGrammarDefinition,
   createGroup,
   createLabeledExpression,
+  createNegativeLookahead,
   createPlus,
   createRuleDefinition,
   createSequence,
@@ -345,6 +346,66 @@ describe("ActionExpression code generation (runtime)", () => {
     if (parsedB.success) expect(parsedB.val).toBe("B");
   });
 
+  test("an action on a Choice where only SOME alternatives carry the label doesn't crash on the unlabeled winner (regression: `const { a } = $$;` threw when $$ wasn't a capture object)", async () => {
+    // docs/peg-grammar.md's "Capture Inference": `a:first / b:second ->
+    // captures: { a?: T1, b?: T2 }` -- every label is OPTIONAL, because
+    // only ONE alternative's captures ever end up in `$$`. `choice()`
+    // (tpeg-core) passes whichever alternative actually matched through
+    // unchanged, so an alternative that isn't itself a capture (here,
+    // `notPredicate`'s `val: undefined`) leaves `$$` non-object. Before
+    // this fix, `wrapWithAction` destructured directly off `$$`
+    // (`const { a } = $$;`), which throws
+    // "Cannot destructure property 'a' from null or undefined value"
+    // instead of leaving `a` `undefined` as the spec promises.
+    const core = await import("@suzumiyaaoba/tpeg-core");
+
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createActionExpression(
+            createGroup(
+              createChoice([
+                createLabeledExpression("a", createStringLiteral("x")),
+                createNegativeLookahead(createStringLiteral("y")),
+              ]),
+            ),
+            "return a;",
+          ),
+        ),
+      ],
+    );
+
+    for (const generate of [
+      generateTypeScriptParser,
+      generateOptimizedTypeScriptParser,
+    ]) {
+      const result = generate(grammar, {
+        includeImports: false,
+        includeTypes: false,
+      });
+      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+      const moduleFactory = new Function(
+        ...Object.keys(core),
+        `${body}\nreturn { start };`,
+      );
+      const { start } = moduleFactory(...Object.values(core));
+
+      const matched = start("x", 0);
+      expect(matched.success).toBe(true);
+      if (matched.success) expect(matched.val).toBe("x");
+
+      // The second alternative (`!"y"`) wins on "z" -- its match value is
+      // `undefined`, not a capture object, so `a` must come back
+      // `undefined` rather than throwing.
+      const unmatched = start("z", 0);
+      expect(unmatched.success).toBe(true);
+      if (unmatched.success) expect(unmatched.val).toBeUndefined();
+    }
+  });
+
   test("an action on a parenthesized (grouped) labeled Sequence can reference each label (regression: collectTopLevelLabels didn't unwrap Group before checking Sequence)", async () => {
     const core = await import("@suzumiyaaoba/tpeg-core");
 
@@ -417,8 +478,8 @@ describe("ActionExpression code generation (runtime)", () => {
       includeImports: false,
       includeTypes: false,
     });
-    expect(result.code).toContain("const { a } = $$;");
-    expect(result.code).not.toContain("const { a, a } = $$;");
+    expect(result.code).toContain("const { a } = ($$ ?? {});");
+    expect(result.code).not.toContain("const { a, a } = ($$ ?? {});");
 
     const body = result.code.replace(/^export const (\w+)/gm, "const $1");
     const moduleFactory = new Function(

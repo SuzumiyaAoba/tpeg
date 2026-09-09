@@ -5,6 +5,7 @@
  */
 
 import type {
+  ActionExpression,
   Choice,
   Expression,
   ExpressionComplexity,
@@ -106,6 +107,18 @@ export function analyzeExpressionComplexity(
         break;
       case "NegativeLookahead":
         analyze((expression as NegativeLookahead).expression, currentDepth + 1);
+        break;
+      case "ActionExpression":
+        // An action's own wrapped expression counts toward complexity
+        // just like any other nesting -- omitting this case (as an
+        // earlier version of this function did) undercounted `nodeCount`/
+        // `depth` for every rule with a semantic action, treating the
+        // whole action-wrapped subtree as a single depth-0 leaf. See
+        // `collectRuleDependencies`'s identical case below and
+        // `packages/type-inference/src/type-integration.ts`'s
+        // `analyzeDependencies`, which fixed the same gap for its own
+        // (separate) dependency walk.
+        analyze((expression as ActionExpression).expression, currentDepth + 1);
         break;
     }
   }
@@ -221,6 +234,20 @@ function collectRuleDependencies(
     case "NegativeLookahead":
     case "LabeledExpression":
     case "Quantified":
+    case "ActionExpression":
+      // `ActionExpression` traversed into (not treated as a leaf) for the
+      // same reason `analyzeExpressionComplexity`'s `analyze` above does:
+      // a rule reference reachable only through a semantic action's own
+      // wrapped expression (e.g. `x = ( y ) { ... }`) is a real
+      // dependency for `findRecursiveRuleNames` below -- omitting this
+      // case (as an earlier version of this function did) made every
+      // such reference invisible, so a genuinely recursive rule whose
+      // only self-reference sits inside an action silently reported
+      // `hasRecursion: false`, which both `shouldMemoize` and the
+      // `memoize` import decision (`eta-generator.ts`) rely on. See
+      // `packages/type-inference/src/type-integration.ts`'s
+      // `analyzeDependencies`, which fixed the identical gap for its own
+      // dependency walk.
       collectRuleDependencies(
         (
           expr as
@@ -232,6 +259,7 @@ function collectRuleDependencies(
             | NegativeLookahead
             | LabeledExpression
             | Quantified
+            | ActionExpression
         ).expression,
         dependencies,
       );

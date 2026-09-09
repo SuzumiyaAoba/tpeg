@@ -1319,4 +1319,110 @@ describe("generateTypeScriptParser: import precision (regression)", () => {
       ),
     ).toBe(false);
   });
+
+  test("a trailing Cut with nothing after it (\"a\" ~) does not import 'commit' or 'commitAtTopLevel' (regression: collectUsedCombinators/containsGlobalCut only checked 'a Cut exists', not whether generateSequence actually emits a call for it)", () => {
+    // `generateSequence` only wraps elements AFTER a Cut in
+    // `commit(...)`/`commitAtTopLevel(...)` -- a trailing `~` (as the
+    // START rule's own top-level Sequence, so `commitAtTopLevel` is the
+    // candidate here) has nothing after it, so no such call is ever
+    // emitted. `sequenceHasCutFollowedByElement` exists specifically to
+    // get this right instead of the old bare `elements.some(el => el.type
+    // === "Cut")` check.
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([createStringLiteral("a", '"'), createCut()]),
+        ),
+      ],
+    );
+
+    const result = generateTypeScriptParser(grammar, { includeImports: true });
+    expect(result.imports.join(" ")).not.toMatch(/\bcommit\b/);
+    expect(result.imports.join(" ")).not.toMatch(/\bcommitAtTopLevel\b/);
+    expect(result.code).toContain('literal("a")');
+    expect(result.code).not.toContain("commit(");
+    expect(result.code).not.toContain("commitAtTopLevel(");
+  });
+
+  test("a trailing Cut inside a NON-start rule (referenced from elsewhere) does not import 'commit' either", () => {
+    // Same shape as above, but the Cut-bearing rule is a plain reference
+    // target, not the start rule -- exercises the ordinary (non-top-level)
+    // `commit` import path in `collectUsedCombinators`'s Sequence case,
+    // not the `commitAtTopLevel`-specific start-rule check.
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([
+            createStringLiteral("z", '"'),
+            createIdentifier("helper"),
+          ]),
+        ),
+        createRuleDefinition(
+          "helper",
+          createSequence([createStringLiteral("a", '"'), createCut()]),
+        ),
+      ],
+    );
+
+    const result = generateTypeScriptParser(grammar, { includeImports: true });
+    expect(result.imports.join(" ")).not.toMatch(/\bcommit\b/);
+    expect(result.imports.join(" ")).not.toMatch(/\bcommitAtTopLevel\b/);
+    expect(result.code).not.toContain("commit(");
+    expect(result.code).not.toContain("commitAtTopLevel(");
+  });
+
+  test("a trailing Cut marked global: true (by promoteGlobalCuts) does not import 'commitAtTopLevel' either (regression: containsGlobalCut only checked 'a global Cut exists', not whether a following element exists)", () => {
+    // Same shape as the plain-trailing-Cut regressions above, but for the
+    // `containsGlobalCut`/`grammarHasGlobalCut` path specifically: a Cut
+    // reachable ANYWHERE in the grammar with `global: true` (as
+    // `promoteGlobalCuts`, ast-optimize-cut-promotion.ts, would mark a
+    // hand-written trailing `~` that's otherwise provably safe) used to
+    // trigger the `commitAtTopLevel` import unconditionally, even though
+    // a trailing Cut with nothing after it never actually emits a
+    // `commitAtTopLevel(...)` call.
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([
+            createStringLiteral("a", '"'),
+            { ...createCut(), global: true },
+          ]),
+        ),
+      ],
+    );
+
+    const result = generateTypeScriptParser(grammar, { includeImports: true });
+    expect(result.imports.join(" ")).not.toMatch(/\bcommitAtTopLevel\b/);
+    expect(result.code).not.toContain("commitAtTopLevel(");
+  });
+
+  test("a mid-sequence Cut still imports and emits 'commitAtTopLevel' (control case for the trailing-Cut fix above)", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([
+            createStringLiteral("a", '"'),
+            createCut(),
+            createStringLiteral("b", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const result = generateTypeScriptParser(grammar, { includeImports: true });
+    expect(result.imports.join(" ")).toMatch(/\bcommitAtTopLevel\b/);
+    expect(result.code).toContain('commitAtTopLevel(literal("b"))');
+  });
 });

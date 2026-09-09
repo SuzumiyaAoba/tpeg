@@ -13,6 +13,65 @@
  * factoring", "Soundness restrictions", and "Alternative shapes handled"
  * sections) for the full soundness argument and shape-sensitivity caveats
  * this rewrite is gated on.
+ *
+ * ## Fatal failures and hoisted prefixes
+ *
+ * Hoisting the shared prefix `P` OUT of the `Choice` does not merely
+ * change value shape (the concern the rest of this module's doc comment
+ * and `ast-optimize.ts`'s cover) -- it also removes a failure-absorption
+ * boundary. In the original grammar, every occurrence of `P` sits INSIDE
+ * one alternative of the enclosing `Choice`; if `P` fails FATALLY (it
+ * reaches a `Cut`/`~`, directly or through a referenced rule), the
+ * enclosing `choice`/`captureChoice` (`packages/core/src/combinators.ts`,
+ * `tryOrderedCandidates`) absorbs that fatal failure at ITS OWN boundary
+ * and returns an ordinary (non-fatal) failure to whatever encloses the
+ * `Choice`. After factoring, `P` is hoisted to the front of an ordinary
+ * `Sequence` (`Sequence(P, Choice(inner...))`) with no `Choice` wrapping
+ * it any more -- so a fatal failure from `P` now propagates straight out
+ * of the rule unabsorbed, changing observable behavior for anything
+ * enclosing this rule (an `Optional`/`Star`/`Plus` around a reference to
+ * it, in particular, treats a fatal failure differently from an ordinary
+ * one -- see `commit`'s doc comment). Concretely: `sub "a" / sub "d" /
+ * sub` with `sub = "b" ~ "c"`, on input `"b"`, fails ordinarily before
+ * factoring (the enclosing `choice` absorbed `sub`'s fatal failure) and
+ * fails FATALLY after -- a real behavior change, not just a shape change,
+ * found via `codegen-differential.spec.ts`'s fuzzing harness.
+ *
+ * `isFactorablePrefixType` below restricts a factorable prefix to
+ * `StringLiteral`/`CharacterClass`/`AnyChar`/`Identifier`/
+ * `QualifiedIdentifier`. The first three are terminal leaf nodes that can
+ * never contain a `Cut`, so they're always safe on this axis. Only
+ * `Identifier` (a same-grammar rule reference, which can transitively
+ * reach a `Cut` through the rules it references) and `QualifiedIdentifier`
+ * (a cross-module reference, entirely unresolvable here) need an
+ * additional check, consulted by `tryLeftFactorChoice` before accepting
+ * either as a factoring prefix. A `QualifiedIdentifier` prefix is always
+ * refused (the same conservative "unresolvable -> assume the worst"
+ * direction `first-sets.ts` takes for FIRST sets), and an `Identifier`
+ * prefix is refused whenever `computeFatalReachability` below says the
+ * referenced rule can reach a `Cut`.
+ *
+ * `computeFatalReachability` is a whole-grammar iterative fixpoint --
+ * the same shape `first-sets.ts`'s `computeNullableRules` uses -- rather
+ * than a per-call recursive walk with a "cycle -> refuse" guard. A naive
+ * DFS guard would mark every rule in a `Cut`-free MUTUALLY RECURSIVE
+ * cycle (e.g. a typical `sum`/`product`/`atom` expression-grammar
+ * hierarchy, exactly `ast-optimize.ts`'s own motivating example) as "can
+ * fail fatally" the instant the walk revisits any rule already on its own
+ * call stack, even though nothing in the cycle ever reaches a `Cut` --
+ * which would make this rewrite refuse to factor virtually every
+ * recursive-descent-shaped grammar, the primary case it exists for. A
+ * fixpoint instead only marks a rule `true` once something it can
+ * actually reach is independently known to reach a `Cut` (or is
+ * unresolvable), converging to `false` for every rule in a genuinely
+ * `Cut`-free cycle.
+ *
+ * This does NOT contradict this file's claim (echoed in
+ * `ast-optimize.ts`'s module doc comment) that factoring "preserves the
+ * language accepted and the stop position" for a prefix that can only
+ * fail ordinarily -- that claim was never true for a prefix that can fail
+ * fatally, and is now enforced by construction rather than merely
+ * asserted.
  */
 
 import { containsLabel, isShapeSensitiveRule } from "./ast-optimize-shared";
@@ -28,6 +87,102 @@ import type {
   StringLiteral,
 } from "./types";
 import { createChoice, createSequence } from "./types";
+
+/**
+ * Structural, single-rule-body walk (does NOT follow `Identifier`
+ * references) that reports whether `expr` directly contains a `Cut` or a
+ * `QualifiedIdentifier` (cross-module, unresolvable here -- treated the
+ * same as a `Cut` for this purpose, since this module can't prove it
+ * DOESN'T reach one), while collecting every `Identifier` name referenced
+ * anywhere in `expr` into `refs`. The two are computed together so
+ * `computeFatalReachability`'s fixpoint below only needs one walk per
+ * rule. Every element/alternative is walked regardless of what an earlier
+ * one already found, so every `Identifier` reference is collected --
+ * not just the ones before the first `Cut`/`QualifiedIdentifier`.
+ */
+const collectOwnFatalSignal = (
+  expr: Expression,
+  refs: Set<string>,
+): boolean => {
+  switch (expr.type) {
+    case "Cut":
+    case "QualifiedIdentifier":
+      return true;
+    case "Identifier":
+      refs.add(expr.name);
+      return false;
+    case "Sequence":
+      return expr.elements.reduce(
+        (acc, el) => collectOwnFatalSignal(el, refs) || acc,
+        false,
+      );
+    case "Choice":
+      return expr.alternatives.reduce(
+        (acc, alt) => collectOwnFatalSignal(alt, refs) || acc,
+        false,
+      );
+    case "Group":
+    case "Star":
+    case "Plus":
+    case "Optional":
+    case "Quantified":
+    case "PositiveLookahead":
+    case "NegativeLookahead":
+    case "LabeledExpression":
+    case "ActionExpression":
+      return collectOwnFatalSignal(expr.expression, refs);
+    default:
+      return false;
+  }
+};
+
+/**
+ * For every rule in `grammar`, `true` if that rule's pattern can, directly
+ * or by following `Identifier` references (transitively, to whatever
+ * depth, including through a mutual-recursion cycle), reach a `Cut` or an
+ * unresolvable `QualifiedIdentifier` -- i.e. is a rule this module must
+ * never treat as safe to hoist OUT of a `Choice`'s fatal-absorption
+ * boundary (see the module doc comment's "Fatal failures and hoisted
+ * prefixes" section). See the module doc comment for why this is a
+ * fixpoint rather than a per-call recursive walk.
+ */
+const computeFatalReachability = (
+  grammar: GrammarDefinition,
+): ReadonlyMap<string, boolean> => {
+  const referencedBy = new Map<string, ReadonlySet<string>>();
+  const result = new Map<string, boolean>();
+  for (const rule of grammar.rules) {
+    const refs = new Set<string>();
+    result.set(rule.name, collectOwnFatalSignal(rule.pattern, refs));
+    referencedBy.set(rule.name, refs);
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const rule of grammar.rules) {
+      if (result.get(rule.name)) continue;
+      const refs = referencedBy.get(rule.name);
+      // An `Identifier` this grammar has no rule for (`?? true`) is an
+      // externally-supplied parser reference -- unresolvable here, so
+      // conservatively assume it could fail fatally, the same direction
+      // `first-sets.ts`'s `isNullable` takes for an unresolved reference.
+      if (refs && [...refs].some((name) => result.get(name) ?? true)) {
+        result.set(rule.name, true);
+        changed = true;
+      }
+    }
+  }
+  return result;
+};
+
+/** Shared, per-`leftFactorChoices`-call state threaded through the
+ * recursive rewrite so every `Choice` in the grammar consults the same,
+ * once-computed `fatalReachability` map instead of recomputing it per
+ * rule or per candidate prefix. */
+interface FactorContext {
+  readonly fatalReachability: ReadonlyMap<string, boolean>;
+}
 
 /** Node types that cannot themselves embed an `ActionExpression` or
  * `LabeledExpression`, so a single-type check on the node itself
@@ -90,7 +245,10 @@ const toSingleExpression = (parts: Expression[]): Expression =>
  * Attempts to left-factor a single `Choice` node. Returns the original
  * node unchanged if the safety/shape conditions above aren't met.
  */
-const tryLeftFactorChoice = (choice: Choice): Expression => {
+const tryLeftFactorChoice = (
+  choice: Choice,
+  ctx: FactorContext,
+): Expression => {
   const { alternatives } = choice;
   if (alternatives.length < 2) return choice;
   if (containsLabel(choice)) return choice;
@@ -115,6 +273,18 @@ const tryLeftFactorChoice = (choice: Choice): Expression => {
   const groupedParts = partsList.slice(0, groupedCount);
   const prefix = groupedParts[0]?.[0];
   if (!prefix || !isFactorablePrefixType(prefix)) return choice;
+  // A prefix that can fail FATALLY must never be hoisted out of this
+  // `Choice` -- see the module doc comment's "Fatal failures and hoisted
+  // prefixes" section. `StringLiteral`/`CharacterClass`/`AnyChar` are leaf
+  // nodes and can never reach a `Cut`, so only `Identifier`/
+  // `QualifiedIdentifier` need the check.
+  if (prefix.type === "QualifiedIdentifier") return choice;
+  if (
+    prefix.type === "Identifier" &&
+    (ctx.fatalReachability.get(prefix.name) ?? true)
+  ) {
+    return choice;
+  }
   if (
     !groupedParts.every((parts) =>
       prefixesEqual(parts[0] as Expression, prefix),
@@ -179,32 +349,34 @@ const tryLeftFactorChoice = (choice: Choice): Expression => {
 /** Recursively applies `tryLeftFactorChoice` to every `Choice` reachable
  * from `expr`, bottom-up (children first, so a factored inner choice is
  * itself eligible to be the target of an outer factoring). */
-const leftFactorExpression = (expr: Expression): Expression => {
+const leftFactorExpression = (
+  expr: Expression,
+  ctx: FactorContext,
+): Expression => {
   switch (expr.type) {
     case "Sequence":
-      return createSequence(expr.elements.map(leftFactorExpression));
+      return createSequence(
+        expr.elements.map((el) => leftFactorExpression(el, ctx)),
+      );
     case "Choice": {
-      const factoredAlternatives = expr.alternatives.map(leftFactorExpression);
-      return tryLeftFactorChoice(createChoice(factoredAlternatives));
+      const factoredAlternatives = expr.alternatives.map((alt) =>
+        leftFactorExpression(alt, ctx),
+      );
+      return tryLeftFactorChoice(createChoice(factoredAlternatives), ctx);
     }
     case "Group":
-      return { ...expr, expression: leftFactorExpression(expr.expression) };
     case "Star":
-      return { ...expr, expression: leftFactorExpression(expr.expression) };
     case "Plus":
-      return { ...expr, expression: leftFactorExpression(expr.expression) };
     case "Optional":
-      return { ...expr, expression: leftFactorExpression(expr.expression) };
     case "Quantified":
-      return { ...expr, expression: leftFactorExpression(expr.expression) };
     case "PositiveLookahead":
-      return { ...expr, expression: leftFactorExpression(expr.expression) };
     case "NegativeLookahead":
-      return { ...expr, expression: leftFactorExpression(expr.expression) };
     case "LabeledExpression":
-      return { ...expr, expression: leftFactorExpression(expr.expression) };
     case "ActionExpression":
-      return { ...expr, expression: leftFactorExpression(expr.expression) };
+      return {
+        ...expr,
+        expression: leftFactorExpression(expr.expression, ctx),
+      };
     default:
       return expr;
   }
@@ -218,10 +390,17 @@ const leftFactorExpression = (expr: Expression): Expression => {
 export const leftFactorChoices = (
   grammar: GrammarDefinition,
 ): GrammarDefinition => {
+  // Computed once, from the ORIGINAL (pre-rewrite) grammar, and reused for
+  // every rule's rewrite -- "can this rule ever fail fatally, considering
+  // every rule it can reach" is a fixed, whole-grammar fact, independent
+  // of which alternative asks (see `FactorContext`'s doc comment).
+  const ctx: FactorContext = {
+    fatalReachability: computeFatalReachability(grammar),
+  };
   const rules: RuleDefinition[] = grammar.rules.map((rule) =>
     isShapeSensitiveRule(grammar, rule)
       ? rule
-      : { ...rule, pattern: leftFactorExpression(rule.pattern) },
+      : { ...rule, pattern: leftFactorExpression(rule.pattern, ctx) },
   );
 
   return { ...grammar, rules };

@@ -1234,4 +1234,83 @@ describe("generateOptimizedTypeScriptParser: import precision (regression)", () 
       ),
     ).toBe(false);
   });
+
+  it("a trailing Cut with nothing after it (\"a\" ~) does not import 'commit' or 'commitAtTopLevel' (regression: same fix as codegen.ts's collectUsedCombinators/containsGlobalCut)", () => {
+    // `generateOptimizedSequence` only wraps elements AFTER a Cut in
+    // `commit(...)`/`commitAtTopLevel(...)`, exactly like the base
+    // generator -- see `sequenceHasCutFollowedByElement`'s doc comment
+    // in `codegen.ts`, reused here.
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([createStringLiteral("a", '"'), createCut()]),
+        ),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      language: "typescript",
+      includeImports: true,
+    });
+    expect(result.imports.join(" ")).not.toMatch(/\bcommit\b/);
+    expect(result.imports.join(" ")).not.toMatch(/\bcommitAtTopLevel\b/);
+    expect(result.code).not.toContain("commit(");
+    expect(result.code).not.toContain("commitAtTopLevel(");
+  });
+
+  it("a trailing Cut inside a NON-start rule (referenced from elsewhere) does not import 'commit' either", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([
+            createStringLiteral("z", '"'),
+            createIdentifier("helper"),
+          ]),
+        ),
+        createRuleDefinition(
+          "helper",
+          createSequence([createStringLiteral("a", '"'), createCut()]),
+        ),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      language: "typescript",
+      includeImports: true,
+    });
+    expect(result.imports.join(" ")).not.toMatch(/\bcommit\b/);
+    expect(result.imports.join(" ")).not.toMatch(/\bcommitAtTopLevel\b/);
+    expect(result.code).not.toContain("commit(");
+    expect(result.code).not.toContain("commitAtTopLevel(");
+  });
+
+  it("a mid-sequence Cut still imports and emits 'commitAtTopLevel' (control case for the trailing-Cut fix above)", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([
+            createStringLiteral("a", '"'),
+            createCut(),
+            createStringLiteral("b", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      language: "typescript",
+      includeImports: true,
+    });
+    expect(result.imports.join(" ")).toMatch(/\bcommitAtTopLevel\b/);
+    expect(result.code).toContain('commitAtTopLevel(literal("b"))');
+  });
 });

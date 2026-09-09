@@ -49,7 +49,10 @@ import {
   wrapWithMemoize,
   wrapWithTransform,
 } from "./codegen";
-import { grammarHasGlobalCut } from "./codegen";
+import {
+  grammarHasGlobalCut,
+  sequenceHasCutFollowedByElement,
+} from "./codegen";
 import type { GrammarFirstSetAnalysis } from "./first-sets";
 import {
   analyzeFirstSets,
@@ -558,7 +561,7 @@ export class OptimizedTPEGCodeGenerator {
     if (
       (this.startRuleIsSafeForCommitAtTopLevel &&
         startRule?.pattern.type === "Sequence" &&
-        startRule.pattern.elements.some((el) => el.type === "Cut")) ||
+        sequenceHasCutFollowedByElement(startRule.pattern.elements)) ||
       grammarHasGlobalCut(grammar)
     ) {
       combinatorPackageImports.push("commitAtTopLevel");
@@ -653,13 +656,29 @@ export class OptimizedTPEGCodeGenerator {
         // `commitAtTopLevel` (tpeg-combinator) instead of `commit`
         // (tpeg-core) -- see generateOptimizedSequence -- so `commit`
         // must not be added to the tpeg-core import set in that case.
-        if (
-          expr.elements.some(
-            (el) =>
-              el.type === "Cut" && !isStartRuleTopLevel && el.global !== true,
-          )
-        ) {
-          combinators.add("commit");
+        // Also mirrors codegen.ts's fix for a trailing (or otherwise
+        // follower-less) Cut: `commit(...)` is only ever emitted for a
+        // non-`Cut` element that comes AFTER a qualifying Cut, so "a
+        // qualifying Cut exists somewhere" alone isn't enough -- see
+        // codegen.ts's identical `collectUsedCombinators` fix for the
+        // concrete unused-import shape (e.g. `"a" ~`) this avoids.
+        {
+          let committed = false;
+          let committingCutIsGlobal = false;
+          let needsOrdinaryCommit = false;
+          for (const el of expr.elements) {
+            if (el.type === "Cut") {
+              committed = true;
+              committingCutIsGlobal = el.global === true;
+              continue;
+            }
+            if (committed && !isStartRuleTopLevel && !committingCutIsGlobal) {
+              needsOrdinaryCommit = true;
+            }
+          }
+          if (needsOrdinaryCommit) {
+            combinators.add("commit");
+          }
         }
         for (const element of expr.elements) {
           if (element.type === "Cut") continue;

@@ -520,7 +520,13 @@ describe("leftFactorChoices", () => {
     expect(factored.rules[0]?.pattern.type).toBe("Sequence");
   });
 
-  it("factors a QualifiedIdentifier shared prefix", () => {
+  it("refuses to factor a QualifiedIdentifier shared prefix (cross-module reference, unresolvable here -- see ast-optimize-left-factor.ts's module doc comment)", () => {
+    // A `QualifiedIdentifier` names a rule in ANOTHER module's grammar,
+    // which this module never sees -- there is no way to check whether
+    // that rule can fail fatally (reach a `Cut`), so hoisting it out of
+    // its enclosing `Choice`'s fatal-absorption boundary is never provably
+    // safe. Refused unconditionally, the same conservative direction
+    // `first-sets.ts` takes for an unresolvable FIRST set.
     const grammar = createGrammarDefinition(
       "Test",
       [],
@@ -542,7 +548,7 @@ describe("leftFactorChoices", () => {
     );
 
     const factored = leftFactorChoices(grammar);
-    expect(factored.rules[0]?.pattern.type).toBe("Sequence");
+    expect(factored.rules[0]?.pattern).toEqual(grammar.rules[0]?.pattern);
   });
 
   it("recurses into nested expressions (e.g. inside a Star)", () => {
@@ -565,6 +571,13 @@ describe("leftFactorChoices", () => {
             ]),
           ),
         ),
+        // `x` must resolve to an actual (Cut-free) rule of this grammar --
+        // an Identifier this grammar has no rule for is treated as an
+        // unresolvable external reference and conservatively refused as a
+        // factoring prefix (see ast-optimize-left-factor.ts's
+        // `computeFatalReachability`), which would defeat this test's own
+        // purpose of exercising factoring inside a nested Star.
+        createRuleDefinition("x", createStringLiteral("x", '"')),
       ],
     );
 
@@ -642,6 +655,124 @@ describe("leftFactorChoices", () => {
         expect(factoredResult.next).toBe(expectNext);
       }
     }
+  });
+
+  // Regression: found via `codegen-differential.spec.ts`'s fuzzing harness
+  // (`TPEG_DIFF_SEED=11 TPEG_FUZZ_SCALE=8`). Hoisting an `Identifier`
+  // prefix OUT of a `Choice` removes the `choice`/`captureChoice` boundary
+  // that used to absorb a FATAL failure from that prefix (see
+  // `ast-optimize-left-factor.ts`'s module doc comment, "Fatal failures and
+  // hoisted prefixes"). Both cases below share one grammar shape --
+  // `sub "a" / sub "d" / sub` -- with the `Cut` in `sub` at a different
+  // position, since a leading vs. trailing `~` exercises a different path
+  // through `expressionCanFailFatally`.
+  it("refuses to factor an Identifier prefix whose referenced rule can fail fatally (trailing Cut)", async () => {
+    const source = `
+grammar TrailingCutSub {
+  start = sub "a" / sub "d" / sub
+  sub = "b" ~ "c"
+}
+`;
+    const parsed = grammarDefinition(source, ORIGIN);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const factored = leftFactorChoices(parsed.val);
+    const startRule = factored.rules.find((r) => r.name === "start");
+    // Refused: the pattern is untouched (still the flat, unfactored Choice).
+    expect(startRule?.pattern).toEqual(
+      parsed.val.rules.find((r) => r.name === "start")?.pattern,
+    );
+
+    const original = await compileRuleFor(parsed.val, "start");
+    const factoredParser = await compileRuleFor(factored, "start");
+
+    // "b" makes `sub` match "b" then fail on the missing "c" -- fatally,
+    // once the cut has fired. The original grammar's enclosing `choice`
+    // absorbs that into an ordinary (non-fatal) failure; factoring must
+    // not change that.
+    const originalResult = original("b", ORIGIN);
+    const factoredResult = factoredParser("b", ORIGIN);
+    expect(originalResult.success).toBe(false);
+    expect(factoredResult.success).toBe(false);
+    if (!originalResult.success && !factoredResult.success) {
+      expect(originalResult.error.fatal).toBeFalsy();
+      expect(factoredResult.error.fatal).toBeFalsy();
+    }
+  });
+
+  it("refuses to factor an Identifier prefix whose referenced rule can fail fatally (leading Cut)", async () => {
+    const source = `
+grammar LeadingCutSub {
+  start = sub "a" / sub "d" / sub
+  sub = ~ x:"b"
+}
+`;
+    const parsed = grammarDefinition(source, ORIGIN);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const factored = leftFactorChoices(parsed.val);
+    const startRule = factored.rules.find((r) => r.name === "start");
+    expect(startRule?.pattern).toEqual(
+      parsed.val.rules.find((r) => r.name === "start")?.pattern,
+    );
+
+    const original = await compileRuleFor(parsed.val, "start");
+    const factoredParser = await compileRuleFor(factored, "start");
+
+    // "c" makes `sub`'s leading cut fire immediately (zero-width), then
+    // fail fatally on the "b" mismatch.
+    const originalResult = original("c", ORIGIN);
+    const factoredResult = factoredParser("c", ORIGIN);
+    expect(originalResult.success).toBe(false);
+    expect(factoredResult.success).toBe(false);
+    if (!originalResult.success && !factoredResult.success) {
+      expect(originalResult.error.fatal).toBeFalsy();
+      expect(factoredResult.error.fatal).toBeFalsy();
+    }
+  });
+
+  it("still factors an Identifier prefix whose referenced rule contains no Cut anywhere it can reach (no over-conservatism)", async () => {
+    const source = `
+grammar NoCutSub {
+  start = sub "a" / sub "d" / sub
+  sub = "b" "c"
+}
+`;
+    const parsed = grammarDefinition(source, ORIGIN);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const factored = leftFactorChoices(parsed.val);
+    const startRule = factored.rules.find((r) => r.name === "start");
+    expect(startRule?.pattern.type).toBe("Sequence");
+  });
+
+  it("refuses to factor a QualifiedIdentifier prefix (cross-module reference, unresolvable here)", () => {
+    const grammar = createGrammarDefinition(
+      "QualifiedPrefix",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createChoice([
+            createSequence([
+              createQualifiedIdentifier("mod", "sub"),
+              createStringLiteral("a", '"'),
+            ]),
+            createSequence([
+              createQualifiedIdentifier("mod", "sub"),
+              createStringLiteral("d", '"'),
+            ]),
+            createQualifiedIdentifier("mod", "sub"),
+          ]),
+        ),
+      ],
+    );
+
+    const factored = leftFactorChoices(grammar);
+    expect(factored.rules[0]?.pattern).toEqual(grammar.rules[0]?.pattern);
   });
 });
 

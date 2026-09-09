@@ -139,17 +139,48 @@ ${transformFn.body}
 
 /**
  * Does `expr` contain a `Cut` marked `global: true` (by `promoteGlobalCuts`,
- * `packages/parser/src/ast-optimize.ts`)
- * anywhere in its subtree? Used to decide whether `commitAtTopLevel`
- * (`@suzumiyaaoba/tpeg-combinator`) needs importing beyond the existing
- * start-rule-top-level-Sequence case this module already handles.
+ * `packages/parser/src/ast-optimize.ts`) in a position where
+ * `generateSequence`/`generateOptimizedSequence` will actually emit a
+ * `commitAtTopLevel(...)` call for it? Used to decide whether
+ * `commitAtTopLevel` (`@suzumiyaaoba/tpeg-combinator`) needs importing
+ * beyond the existing start-rule-top-level-Sequence case this module
+ * already handles.
+ *
+ * A `global: true` `Cut` alone is NOT enough: both sequence generators
+ * only wrap elements AFTER a `Cut` in `commitAtTopLevel(...)`/`commit(...)`
+ * -- a `Cut` with nothing non-`Cut` after it in its own `Sequence` (a
+ * trailing `~`, e.g. hand-written `"a" ~` promoted to global) contributes
+ * no `commitAtTopLevel(...)` call to the generated code at all, so
+ * treating "a global Cut exists somewhere" as sufficient left an unused
+ * import behind for that shape -- the same class of bug the ordinary
+ * (non-global) `commit` import check below was already fixed for.
  */
 const containsGlobalCut = (expr: Expression): boolean => {
   switch (expr.type) {
     case "Cut":
-      return expr.global === true;
-    case "Sequence":
-      return expr.elements.some(containsGlobalCut);
+      // A bare Cut reached directly (not via the Sequence case below,
+      // which is the only place that can tell whether a following
+      // element exists) has nothing after it either way.
+      return false;
+    case "Sequence": {
+      // Mirrors `generateSequence`'s `committingCutIsGlobal` state
+      // exactly: REASSIGNED (not OR'd) on every `Cut` encountered, so
+      // only the MOST RECENT `Cut` before an element decides whether
+      // that element gets wrapped in `commitAtTopLevel(...)` -- matters
+      // when a `Sequence` somehow carries more than one `Cut`.
+      let committingCutIsGlobal = false;
+      let committed = false;
+      for (const el of expr.elements) {
+        if (el.type === "Cut") {
+          committed = true;
+          committingCutIsGlobal = el.global === true;
+          continue;
+        }
+        if (committed && committingCutIsGlobal) return true;
+        if (containsGlobalCut(el)) return true;
+      }
+      return false;
+    }
     case "Choice":
       return expr.alternatives.some(containsGlobalCut);
     case "Group":
@@ -172,6 +203,32 @@ const containsGlobalCut = (expr: Expression): boolean => {
  * check. */
 export const grammarHasGlobalCut = (grammar: GrammarDefinition): boolean =>
   grammar.rules.some((rule) => containsGlobalCut(rule.pattern));
+
+/**
+ * `true` iff `elements` (a `Sequence`'s own elements) contains a `Cut`
+ * with at least one non-`Cut` element after it -- i.e. the shape
+ * `generateSequence`/`generateOptimizedSequence` actually emits a
+ * `commit(...)`/`commitAtTopLevel(...)` call for. Used at the
+ * start-rule-top-level-Sequence check (where every `Cut`, global or not,
+ * gets wrapped in `commitAtTopLevel(...)` because `isStartRuleTopLevel`
+ * is true) instead of a bare "does a Cut exist" test, which -- for a
+ * trailing `~` with nothing after it -- would add the `commitAtTopLevel`
+ * import for a call that's never actually generated. Exported for reuse
+ * by `codegen-optimized.ts`, which needs the identical check.
+ */
+export const sequenceHasCutFollowedByElement = (
+  elements: readonly Expression[],
+): boolean => {
+  let committed = false;
+  for (const el of elements) {
+    if (el.type === "Cut") {
+      committed = true;
+      continue;
+    }
+    if (committed) return true;
+  }
+  return false;
+};
 
 /** Does `expr` contain an `Identifier`/`QualifiedIdentifier` naming
  * `ruleName` anywhere in its subtree? Used by
@@ -366,8 +423,24 @@ export const wrapWithAction = (
   const captureBinding = needsCaptureValue
     ? `    const $$${includeTypes ? ": any" : ""} = __result.val;\n`
     : "";
+  // `labels` is computed from the LABELED side of a `Choice` alternative
+  // (`collectTopLevelLabels`'s `Choice` case unions every alternative's own
+  // labels, per `docs/peg-grammar.md`'s "Capture Inference": `a:first /
+  // b:second` -> `{a?: T1, b?: T2}`, each label OPTIONAL). Whichever
+  // alternative actually matched at runtime is exactly the value in `$$` --
+  // an alternative that carries none of these labels (a bare
+  // `notPredicate`/`andPredicate`, an unlabeled literal, an action
+  // returning `undefined`, ...) leaves `$$` as `undefined` or some
+  // non-capture value, not the merged capture object every `label` name is
+  // expected to be a property of. A plain `const { a } = $$;` throws
+  // ("Cannot destructure property 'a' from null or undefined value")
+  // instead of leaving `a` `undefined` as the spec promises -- destructure
+  // from `($$ ?? {})` so a missing/non-object match value degrades to every
+  // label being `undefined`, never a runtime crash.
   const destructure =
-    labels.length > 0 ? `    const { ${labels.join(", ")} } = $$;\n` : "";
+    labels.length > 0
+      ? `    const { ${labels.join(", ")} } = ($$ ?? {});\n`
+      : "";
   return `(input, pos) => {
   const __base = (${parserCode});
   const __result = __base(input, pos);
@@ -760,7 +833,7 @@ export class TPEGCodeGenerator {
       if (
         (startRuleIsSafeForCommitAtTopLevel &&
           startRule?.pattern.type === "Sequence" &&
-          startRule.pattern.elements.some((el) => el.type === "Cut")) ||
+          sequenceHasCutFollowedByElement(startRule.pattern.elements)) ||
         grammarHasGlobalCut(grammar)
       ) {
         combinatorPackageImports.push("commitAtTopLevel");
@@ -1131,17 +1204,38 @@ export class TPEGCodeGenerator {
         if (!isBareSinglePassthrough) {
           combinators.add(hasLabel ? "captureSequence" : "sequence");
         }
-        // A Sequence can contain at most one Cut in practice (see
-        // ast-optimize.ts), but this checks every one found, mirroring
-        // generateSequence's per-cut `.global` decision rather than
-        // assuming there's exactly one.
-        if (
-          expr.elements.some(
-            (el) =>
-              el.type === "Cut" && !isStartRuleTopLevel && el.global !== true,
-          )
-        ) {
-          combinators.add("commit");
+        // Mirrors `generateSequence`'s actual per-element decision exactly
+        // (not just "a non-global Cut exists somewhere in this Sequence"):
+        // `commit(...)` is only ever emitted for a non-`Cut` element that
+        // comes AFTER a (non-start-rule-top-level, non-global) `Cut` -- a
+        // `Cut` with nothing non-`Cut` after it (e.g. a trailing `~`, or
+        // one immediately followed only by another `Cut`) contributes no
+        // `commit(...)` call to the generated code at all. Adding the
+        // import on "a qualifying Cut exists" alone left an unused
+        // `commit` import behind for that shape (e.g. `"a" ~`) -- the
+        // same `noUnusedLocals`-clean invariant this file's other doc
+        // comments (above, and `wrapWithAction`'s) already call out and
+        // check for. A Sequence can contain at most one Cut in practice
+        // (see ast-optimize.ts), but this loop mirrors
+        // `generateSequence`'s state machine exactly rather than assuming
+        // that.
+        {
+          let committed = false;
+          let committingCutIsGlobal = false;
+          let needsOrdinaryCommit = false;
+          for (const el of expr.elements) {
+            if (el.type === "Cut") {
+              committed = true;
+              committingCutIsGlobal = el.global === true;
+              continue;
+            }
+            if (committed && !isStartRuleTopLevel && !committingCutIsGlobal) {
+              needsOrdinaryCommit = true;
+            }
+          }
+          if (needsOrdinaryCommit) {
+            combinators.add("commit");
+          }
         }
         for (const element of expr.elements) {
           if (element.type === "Cut") continue;

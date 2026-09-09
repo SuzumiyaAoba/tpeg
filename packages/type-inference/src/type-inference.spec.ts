@@ -47,6 +47,34 @@ describe("TypeInferenceEngine", () => {
       expect(result.isArray).toBe(false);
     });
 
+    it("escapes a backslash in a string literal's value, not just double-quotes (regression: emitted an unterminated type string for a value ending in '\\\\')", () => {
+      // A decoded literal value of `a\` (one backslash, no following
+      // escapable character) used to escape to `"a\"` -- `\"` reads as an
+      // escaped quote, not a closing one, so the emitted type string
+      // (`export type X = "a\";`) was unterminated, invalid TypeScript.
+      // `inferStringLiteralType` must escape the backslash itself first,
+      // the same order `packages/parser/src/constants.ts`'s
+      // `escapeStringLiteral` uses.
+      const literal = createStringLiteral("a\\", '"');
+      const result = engine.inferExpressionType(literal);
+
+      expect(result.typeString).toBe('"a\\\\"');
+      // The emitted type string, embedded in an actual type alias
+      // declaration, must be a syntactically closed string literal --
+      // i.e. contain the closing quote as its own token, not as part of
+      // a `\"` escape sequence.
+      expect(`export type X = ${result.typeString};`).toBe(
+        'export type X = "a\\\\";',
+      );
+    });
+
+    it("escapes control characters (an actual newline/tab byte, not the two source characters) in a string literal's value", () => {
+      const literal = createStringLiteral("a\nb\tc", '"');
+      const result = engine.inferExpressionType(literal);
+
+      expect(result.typeString).toBe('"a\\nb\\tc"');
+    });
+
     it("should infer character class types as string", () => {
       const charClass = createCharacterClass([createCharRange("a", "z")]);
       const result = engine.inferExpressionType(charClass);

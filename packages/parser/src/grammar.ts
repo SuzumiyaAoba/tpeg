@@ -145,7 +145,17 @@ const grammarRuleExpression: Parser<Expression> = (
   while (endPos < input.length && !foundEnd) {
     const char = input[endPos];
 
-    if (char === '"' || char === "'") {
+    if (char === '"' || char === "'" || char === "`") {
+      // A template literal in an action/transform body embeds arbitrary
+      // TypeScript source verbatim -- `brace-scanner.ts`'s
+      // `scanBalancedBraces` (which actually parses the action's `{ ... }`
+      // block once this scanner has found the rule's end) already skips
+      // backtick strings via this same `skipStringLiteral` helper. Without
+      // this branch, a `}` inside a backtick string (e.g. `` `x}y` ``) was
+      // miscounted as closing the action block early, desynchronizing
+      // `activeBraceDepth` from the actual brace depth and corrupting
+      // every following whitespace-boundary check in this rule -- and
+      // often the parse of the rest of the file.
       endPos = skipStringLiteral(input, endPos, char);
       continue;
     }
