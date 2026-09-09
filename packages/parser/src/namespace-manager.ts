@@ -180,8 +180,18 @@ export class NamespaceManager {
       );
     }
 
-    // Extract the module name from the path
-    const targetModule = this.extractModuleName(targetModulePath);
+    // Resolve the module name it was actually REGISTERED under -- not
+    // necessarily `extractModuleName(targetModulePath)` alone, since a
+    // module with an explicit `@namespace` differing from its own
+    // basename is registered under that namespace instead (see
+    // `resolveRegisteredModuleName`'s doc comment).
+    const targetModule = this.resolveRegisteredModuleName(targetModulePath);
+    if (!targetModule) {
+      throw new QualifiedNameResolutionError(
+        `${qualifiedId.module}.${qualifiedId.name}`,
+        `Module '${this.extractModuleName(targetModulePath)}' is not registered`,
+      );
+    }
 
     // Get the rule from the target module
     const targetRules = this.moduleRules.get(targetModule);
@@ -276,7 +286,8 @@ export class NamespaceManager {
     const ruleToModules = new Map<string, Set<string>>();
 
     for (const [, modulePath] of scope.imports) {
-      const targetModuleName = this.extractModuleName(modulePath);
+      const targetModuleName = this.resolveRegisteredModuleName(modulePath);
+      if (!targetModuleName) continue;
       const targetScope = this.scopes.get(targetModuleName);
       if (!targetScope) continue;
 
@@ -312,8 +323,10 @@ export class NamespaceManager {
 
     // Exported rules of imported modules
     for (const [alias, modulePath] of scope.imports) {
-      const targetModuleName = this.extractModuleName(modulePath);
-      const targetScope = this.scopes.get(targetModuleName);
+      const targetModuleName = this.resolveRegisteredModuleName(modulePath);
+      const targetScope = targetModuleName
+        ? this.scopes.get(targetModuleName)
+        : undefined;
       if (targetScope) {
         available.set(alias, new Set(targetScope.exports));
       }
@@ -344,6 +357,43 @@ export class NamespaceManager {
   }
 
   /**
+   * Resolves an import's `modulePath` to the module name it was actually
+   * REGISTERED under. `registerModule` registers a module under its
+   * explicit `@namespace` when given one, and only falls back to
+   * `extractModuleName(filePath)` (the basename) otherwise -- so an
+   * importer referring to that module by its (basename-derived) path
+   * can't just call `extractModuleName(modulePath)` and look it up
+   * directly whenever the target was registered under a DIFFERENT,
+   * explicit namespace. This class has no `baseDir`/`FileSystemInterface`
+   * to resolve `modulePath` (typically relative, e.g. `"lib/helpers.tpeg"`)
+   * against a registered `filePath` (typically the absolute path
+   * `ModuleResolver` supplies) directly, so instead of path resolution,
+   * this falls back to scanning `moduleFilePaths` (moduleName -> filePath,
+   * populated by `registerModule`) for the registered entry whose OWN
+   * filePath shares `modulePath`'s basename -- purely local, no path
+   * resolution needed, and preserves `extractModuleName`'s own doc
+   * comment premise that a short, caller-facing module name is always a
+   * basename (explicit or derived), never a resolved path.
+   *
+   * Returns `undefined` when no registered module matches by either
+   * name, exactly like `extractModuleName(modulePath)` failing to find an
+   * entry in `moduleRules`/`scopes` used to (callers already handle that
+   * as "not registered").
+   */
+  private resolveRegisteredModuleName(modulePath: string): string | undefined {
+    const basename = this.extractModuleName(modulePath);
+    if (this.moduleRules.has(basename)) {
+      return basename;
+    }
+    for (const [moduleName, filePath] of this.moduleFilePaths) {
+      if (this.extractModuleName(filePath) === basename) {
+        return moduleName;
+      }
+    }
+    return undefined;
+  }
+
+  /**
    * Gets a namespace scope.
    */
   getScope(moduleName: string): NamespaceScope | undefined {
@@ -363,5 +413,13 @@ export class NamespaceManager {
   clear(): void {
     this.scopes.clear();
     this.moduleRules.clear();
+    // `moduleFilePaths` (see its own doc comment above) must be cleared
+    // too, or `registerModule`'s collision guard keeps comparing against
+    // filePaths from a "cleared" namespace: a caller that clears and then
+    // re-registers a DIFFERENT file under the same derived module name
+    // (e.g. re-resolving a fresh module graph after this one was torn
+    // down) would be wrongly rejected with a `ModuleNameCollisionError`
+    // even though `getRegisteredModules()` reports nothing registered.
+    this.moduleFilePaths.clear();
   }
 }

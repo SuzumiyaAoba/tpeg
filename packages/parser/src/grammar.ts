@@ -59,6 +59,7 @@ import {
   grammarBlockWhitespace,
   optionalWhitespace,
   optionalWhitespaceOrComment,
+  requiredWhitespaceOrComment,
   whitespace,
 } from "./whitespace-utils";
 
@@ -296,11 +297,34 @@ const grammarRuleExpression: Parser<Expression> = (
             break;
           }
 
-          // Same-line whitespace only: "identifier\n=" isn't recognized as
-          // the next rule's start, matching the original implementation.
+          // Same-line whitespace (plus an optional block comment) only:
+          // "identifier\n=" still isn't recognized as the next rule's
+          // start, matching the original implementation -- but
+          // "identifier /* c */ = ..." now is (docs/peg-grammar.md's
+          // Comments section: a comment is accepted in every position
+          // that separates two syntactic elements, and `ruleDefinition`
+          // itself, `./grammar.ts`, already accepts exactly this shape
+          // via `optionalWhitespaceOrComment` between a rule's name and
+          // its "="). Without this, `identifier /* c */ = ...` parsed
+          // fine as a STANDALONE rule, but failed whenever a preceding
+          // rule existed: this scan never recognized the comment as part
+          // of the boundary, so the preceding rule's `grammarRuleExpression`
+          // silently absorbed the comment and the whole next rule into its
+          // own slice instead of stopping here. Deliberately only
+          // block comments, not `//` line comments -- a line comment
+          // necessarily runs to end-of-line, which would cross the same
+          // line boundary this check exists to respect.
           let afterIdent = identEnd;
-          while (afterIdent < input.length && isSpaceOrTab(input[afterIdent])) {
-            afterIdent++;
+          while (afterIdent < input.length) {
+            if (isSpaceOrTab(input[afterIdent])) {
+              afterIdent++;
+              continue;
+            }
+            if (input[afterIdent] === "/" && input[afterIdent + 1] === "*") {
+              afterIdent = skipBlockComment(input, afterIdent);
+              continue;
+            }
+            break;
           }
 
           // "=" means a rule definition follows ("name = pattern"). Note
@@ -490,7 +514,13 @@ const keyValueAnnotation: Parser<GrammarAnnotation> = map(
     identifier,
     optionalWhitespace,
     literal(GRAMMAR_SYMBOLS.LABEL_SEPARATOR),
-    optionalWhitespace,
+    // Comment-tolerant (see `optionalWhitespaceOrComment`'s doc comment,
+    // `./whitespace-utils.ts`): a comment between the ":" and the value
+    // (e.g. `@memoize: /* c */ 4`, `@version: /* c */ "1.0"`) is a
+    // legitimate position for one per docs/peg-grammar.md's Comments
+    // section, same as any other position separating two syntactic
+    // elements.
+    optionalWhitespaceOrComment,
     annotationValue,
   ),
   (results) => createGrammarAnnotation(results[2].name, results[6]),
@@ -540,7 +570,15 @@ export const ruleDefinition: Parser<RuleDefinition> = map(
     // one narrow gap right at the rule's own header.
     optionalWhitespaceOrComment,
     literal(GRAMMAR_SYMBOLS.RULE_ASSIGNMENT),
-    optionalWhitespace,
+    // Comment-tolerant for the same reason as the whitespace above (docs/
+    // peg-grammar.md's Comments section: a comment is accepted in every
+    // position that separates two syntactic elements, including right
+    // after "="): the whitespace immediately after "=" used to be plain
+    // `optionalWhitespace`, the one asymmetric gap left after
+    // `optionalWhitespaceOrComment` was added between the rule name and
+    // "=" -- `r = /* c */ "a"` failed to parse even though `r /* c */ =
+    // "a"` (a comment on the OTHER side of "=") already worked.
+    optionalWhitespaceOrComment,
     grammarRuleExpression,
   ),
   (results) => createRuleDefinition(results[1].name, results[5]),
@@ -581,7 +619,9 @@ const memoizeAnnotation: Parser<GrammarAnnotation> = map(
       sequence(
         optionalWhitespace,
         literal(GRAMMAR_SYMBOLS.LABEL_SEPARATOR),
-        optionalWhitespace,
+        // Comment-tolerant, matching keyValueAnnotation's own ":" handling
+        // above (`@memoize: /* c */ 4`).
+        optionalWhitespaceOrComment,
         integerLiteral,
       ),
     ),
@@ -604,8 +644,25 @@ const memoizeAnnotation: Parser<GrammarAnnotation> = map(
  * block-level annotation first.
  */
 const annotatedRuleDefinition: Parser<RuleDefinition> = map(
-  sequence(oneOrMore(memoizeAnnotation), ruleDefinition),
-  ([annotations, rule]) => ({ ...rule, annotations }),
+  sequence(
+    oneOrMore(memoizeAnnotation),
+    // Comment-tolerant: a comment between the last `@memoize` annotation
+    // and the rule it attaches to (e.g. `@memoize: 4\n  /* c */\n  a =
+    // "x"`) is a legitimate position for one, same as everywhere else in
+    // this file. `ruleDefinition`'s own leading `optionalWhitespace`
+    // (plain, not comment-aware) already covers the no-comment gap here,
+    // so without this a comment in that gap made `ruleDefinition` fail to
+    // find its leading identifier, failing `annotatedRuleDefinition` as a
+    // whole -- `grammarItem` then fell back to parsing just "@memoize"
+    // (or "@memoize: N") as a standalone GENERIC annotation via
+    // `grammarAnnotation`, which can't represent a numeric memoize value
+    // at all (`annotationValue` only accepts a quoted string or a bare
+    // identifier), producing a confusing downstream parse error instead
+    // of the rule's memoize annotation working as intended.
+    optionalWhitespaceOrComment,
+    ruleDefinition,
+  ),
+  ([annotations, , rule]) => ({ ...rule, annotations }),
 );
 
 /**
@@ -855,7 +912,15 @@ const grammarBlock: Parser<{
   sequence(
     leadingContent,
     literal(GRAMMAR_KEYWORDS.GRAMMAR),
-    whitespace,
+    // Comment-tolerant (see `requiredWhitespaceOrComment`'s doc comment,
+    // `./whitespace-utils.ts`): a comment between the "grammar" keyword
+    // and the grammar's own name (e.g. `grammar /* c */ G {`) is a
+    // legitimate position for one per docs/peg-grammar.md's Comments
+    // section, same as every other header position below -- this is the
+    // one MANDATORY separator among them (unlike the `optionalWhitespace`/
+    // `optionalWhitespaceOrComment` calls that follow, which sit between
+    // optional clauses), so it can't simply become `optionalWhitespace`.
+    requiredWhitespaceOrComment,
     dottedGrammarName,
     optionalWhitespace,
     optional(grammarExtendsClause),

@@ -505,5 +505,88 @@ describe("NamespaceManager", () => {
       expect(scope).toBeDefined();
       expect(scope?.currentModule).toBe("test");
     });
+
+    it("allows registering a DIFFERENT file under the same derived module name after clear() (regression: clear() didn't reset moduleFilePaths, so registerModule's collision guard kept comparing against a stale filePath from before the clear and wrongly rejected the new registration)", () => {
+      const rule = createRule("rule");
+      const grammar = createGrammar("Grammar", [rule]);
+      manager.registerModule(createModuleFile("libA/utils.tpeg", [grammar]));
+
+      manager.clear();
+      expect(manager.getRegisteredModules()).toEqual([]);
+
+      // Same derived module name ("utils"), a DIFFERENT file -- must not
+      // throw ModuleNameCollisionError, since the manager was cleared in
+      // between.
+      expect(() =>
+        manager.registerModule(createModuleFile("libB/utils.tpeg", [grammar])),
+      ).not.toThrow();
+      expect(manager.getRegisteredModules()).toEqual(["utils"]);
+    });
+  });
+
+  describe("explicit @namespace differing from the module's basename", () => {
+    it("resolves a qualified reference through an import to a module registered under an explicit @namespace (regression: resolveQualifiedName always looked modules up by import-path basename, never finding one registered under a different explicit namespace)", () => {
+      const helperRule = createRule("foo");
+      const helperGrammar = createModularGrammar("G", [helperRule], {
+        type: "ExportDeclaration",
+        rules: ["foo"],
+      });
+      manager.registerModule(
+        createModuleFile("lib/helpers.tpeg", [helperGrammar], [], {
+          type: "ModuleInfo",
+          namespace: "MyNs",
+        }),
+      );
+      manager.registerModule(
+        createModuleFile(
+          "main.tpeg",
+          [createGrammar("Main", [])],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "lib/helpers.tpeg",
+              alias: "h",
+            },
+          ],
+        ),
+      );
+
+      const resolved = manager.resolveQualifiedName(
+        createQualifiedId("h", "foo"),
+        "main",
+      );
+      expect(resolved.moduleName).toBe("MyNs");
+      expect(resolved.rule.name).toBe("foo");
+    });
+
+    it("includes the namespaced module's exports in getAvailableRules (regression: silently missing before the fix, no error either)", () => {
+      const helperRule = createRule("foo");
+      const helperGrammar = createModularGrammar("G", [helperRule], {
+        type: "ExportDeclaration",
+        rules: ["foo"],
+      });
+      manager.registerModule(
+        createModuleFile("lib/helpers.tpeg", [helperGrammar], [], {
+          type: "ModuleInfo",
+          namespace: "MyNs",
+        }),
+      );
+      manager.registerModule(
+        createModuleFile(
+          "main.tpeg",
+          [createGrammar("Main", [])],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "lib/helpers.tpeg",
+              alias: "h",
+            },
+          ],
+        ),
+      );
+
+      const available = manager.getAvailableRules("main");
+      expect(available.get("h")).toEqual(new Set(["foo"]));
+    });
   });
 });

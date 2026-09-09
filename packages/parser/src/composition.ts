@@ -26,7 +26,6 @@ import {
   createFailure,
   literal,
   map,
-  optional,
   seq,
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
@@ -195,27 +194,77 @@ const actionBlock: Parser<string> = (input, pos) => {
 };
 
 /**
+ * Content of a `{ ... }` block that is exactly what a quantifier's braced
+ * argument looks like -- a positive integer, optionally followed by a
+ * comma and a second (possibly absent) positive integer: `"2"` (`{n}`),
+ * `"2,"` (`{n,}`), `"2,3"` (`{n,m}`). Used by {@link withOptionalAction} to
+ * reject `expr {2}` (a SPACE before `{`) as ambiguous rather than silently
+ * accepting it as a semantic action -- see that function's doc comment.
+ * Deliberately narrower than `repetition.ts`'s
+ * `LOOKS_LIKE_MALFORMED_QUANTIFIER` (which also matches malformed/empty
+ * shapes for a DIFFERENT, no-space check): this only matches content that
+ * would be a genuinely VALID `quantifiedOperator` argument, so real action
+ * code (which essentially always contains a keyword, an operator, a
+ * string, or at least a semicolon) is never misidentified.
+ */
+const QUANTIFIER_SHAPED_ACTION_BODY = /^\d+(,\d*)?$/;
+
+/**
  * Parses an optional trailing semantic action attached to an alternative:
  * `{ ... }` immediately (modulo whitespace) after the expression, e.g.
  * `digits:[0-9]+ { return parseInt(digits.join("")); }`. Brace matching is
  * string/comment-aware (see `brace-scanner.ts`), since the action's code can
  * itself contain `}` inside string literals or comments.
+ *
+ * `expr{n}`/`expr{n,m}`/`expr{n,}` with NO space before `{` is a quantifier,
+ * handled entirely by `withRepetition` (`repetition.ts`) before this ever
+ * runs -- this function only ever sees a `{` that either has a space before
+ * it, or didn't parse as a valid repetition operator. A `{` WITH a
+ * preceding space whose content is quantifier-shaped
+ * (`QUANTIFIER_SHAPED_ACTION_BODY`) is a common typo for the no-space form
+ * (a stray space before `{n}`), not a meaningful semantic action (its body
+ * has no `return`, so it always evaluates to `undefined` at runtime) --
+ * silently accepting it as an ActionExpression changes the recognized
+ * language with no diagnostic anywhere. Rejected here as an explicit parse
+ * error instead.
  */
 const withOptionalAction = (parser: Parser<Expression>): Parser<Expression> => {
-  return map(
-    seq(parser, optional(seq(whitespace, actionBlock))),
-    ([expr, action]): Expression => {
-      if (action.length === 0) {
-        return expr;
-      }
-      const [, code] = action[0];
+  return (input: string, pos: number) => {
+    const exprResult = parser(input, pos);
+    if (!exprResult.success) {
+      return exprResult;
+    }
+
+    const actionResult = seq(whitespace, actionBlock)(input, exprResult.next);
+    if (!actionResult.success) {
       return {
+        success: true,
+        val: exprResult.val,
+        current: exprResult.current,
+        next: exprResult.next,
+      };
+    }
+
+    const [, code] = actionResult.val;
+    if (QUANTIFIER_SHAPED_ACTION_BODY.test(code.trim())) {
+      return createFailure(
+        `Ambiguous "{${code}}" after an expression: this is a quantifier only when written with no space before "{" (e.g. "expr{${code}}"). Remove the space, or write an explicit semantic action body (e.g. "{ return ${code}; }") if a semantic action was intended.`,
+        exprResult.next,
+        { parserName: "withOptionalAction" },
+      );
+    }
+
+    return {
+      success: true,
+      val: {
         type: "ActionExpression",
-        expression: expr,
+        expression: exprResult.val,
         code,
-      } as ActionExpression;
-    },
-  );
+      } as ActionExpression,
+      current: exprResult.current,
+      next: actionResult.next,
+    };
+  };
 };
 
 /**

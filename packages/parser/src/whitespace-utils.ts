@@ -8,6 +8,7 @@
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   choice,
+  createFailure,
   literal,
   map,
   oneOrMore,
@@ -78,6 +79,33 @@ export const optionalWhitespaceOrComment: Parser<void> = (input, pos) => {
     break;
   }
   return { success: true, val: undefined, current: pos, next: i };
+};
+
+/**
+ * Like {@link optionalWhitespaceOrComment}, but requires consuming at
+ * least one character (whitespace or comment) -- for the one grammar-
+ * header position (`grammar.ts`'s `dottedGrammarDefinitionHeader`,
+ * between the "grammar" keyword and the grammar's own name) that is a
+ * MANDATORY separator: unlike every other header position (already
+ * comment-tolerant via `optionalWhitespaceOrComment` above, since those
+ * are all optional separators bracketed by punctuation), a bare
+ * `optionalWhitespaceOrComment` here would let "grammarG {" (no
+ * separator at all) parse, silently merging the keyword and the name.
+ */
+export const requiredWhitespaceOrComment: Parser<void> = (input, pos) => {
+  // `optionalWhitespaceOrComment` always succeeds (see its own doc
+  // comment), so `result.next` is always defined here -- narrowed
+  // explicitly since its return type is the general `ParseResult<void>`
+  // union.
+  const result = optionalWhitespaceOrComment(input, pos);
+  if (!result.success || result.next === pos) {
+    return createFailure("Expected whitespace or a comment", pos, {
+      expected: [" ", "\t", "\n", "//", "/*"],
+      found: input[pos] ?? "end of input",
+      parserName: "requiredWhitespaceOrComment",
+    });
+  }
+  return result;
 };
 
 /**

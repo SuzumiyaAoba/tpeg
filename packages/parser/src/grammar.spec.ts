@@ -919,5 +919,143 @@ describe("Grammar Definition Block Tests", () => {
     test("a block comment immediately followed by a choice on the next line still parses", () => {
       fullyParses('grammar G {\n  r = "a" /* c */ / "b" / "c"\n}');
     });
+
+    // The positions below used to fail (regression tests for the fix):
+    // `ruleDefinition`'s "=" and `keyValueAnnotation`/`memoizeAnnotation`'s
+    // ":" only had comment tolerance on ONE side, and `grammar` NAME's
+    // separator, and the identifier/"=" rule-boundary lookahead used by
+    // `grammarRuleExpression` when a PRECEDING rule exists, had none at
+    // all.
+
+    test("block comment right after a rule's '=' (the other side of the '=' from the case above)", () => {
+      fullyParses('grammar G {\n  r = /* c */ "a"\n}');
+    });
+
+    test("block comment right after '=' with no space on either side", () => {
+      fullyParses('grammar G {\n  r =/* c */ "a"\n}');
+    });
+
+    test("block comment between the 'grammar' keyword and the grammar's name", () => {
+      fullyParses('grammar /* c */ G {\n  r = "a"\n}');
+    });
+
+    test("block comment between a rule's name and '=' when a PRECEDING rule exists (regression: grammarRuleExpression's boundary scan didn't recognize this as the next rule's start, so the preceding rule silently absorbed it)", () => {
+      fullyParses('grammar G {\n  a = "y"\n  r /* c */ = "a"\n}');
+    });
+
+    test("block comment right after '@key:' in a generic annotation", () => {
+      fullyParses('grammar G {\n  @version: /* c */ "1.0"\n  r = "a"\n}');
+    });
+
+    test("block comment right after '@memoize:'", () => {
+      fullyParses('grammar G {\n  @memoize: /* c */ 4\n  r = "a"\n}');
+    });
+
+    test("block comment between '@memoize: N' and the rule it attaches to (regression: annotatedRuleDefinition had no comment-tolerant gap between the annotation and ruleDefinition, so a comment there made the whole annotated-rule alternative fail and fall back to a generic annotation that can't represent a numeric memoize value)", () => {
+      const result = fullyParses(
+        'grammar G {\n  @memoize: 4\n  /* c */\n  r = "a"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.val.rules[0]?.annotations).toContainEqual(
+        expect.objectContaining({ key: "memoize", value: "4" }),
+      );
+    });
+
+    test("block comment between a bare '@memoize' flag and the rule it attaches to", () => {
+      fullyParses('grammar G {\n  @memoize\n  /* c */\n  r = "a"\n}');
+    });
+
+    test("the full docs/peg-grammar.md Comments-section example parses verbatim", () => {
+      fullyParses(
+        `/* Header comment before the grammar keyword */
+grammar Example {
+  @version: "1.0" // trailing line comment
+  /* a block comment standing between two grammar items */
+  rule_a /* between a rule's name and its "=" */ = "a" /* between a
+    choice's alternatives */ / "b" /* between a sequence's elements */ "c"
+  rule_b = ( /* inside a group */ "d" )
+}`,
+      );
+    });
+
+    // Metamorphic property: inserting a block comment at an arbitrary
+    // space in a valid grammar must never change the parsed AST, as long
+    // as the insertion point doesn't merge with an adjacent "/" (which
+    // would form "//", a line comment -- a real, documented meaning
+    // change per docs/peg-grammar.md's Comments section, not a bug).
+    // Uses the same deterministic LCG grammar generator as the
+    // differential-fuzzing suite (`differential-fuzz.ts`) rather than a
+    // fresh generator, so this exercises the same wide shape coverage
+    // (cuts, lookaheads, quantifiers, labels, nested choices, ...)
+    // without a second, potentially-diverging grammar generator.
+    test("inserting a block comment at any space in a valid grammar never changes the parsed AST (metamorphic property)", async () => {
+      const { makeRng, genGrammarSource } = await import("./differential-fuzz");
+      const rng = makeRng(2024);
+      let tested = 0;
+      for (let i = 0; i < 300; i++) {
+        const src = genGrammarSource(rng);
+        const base = testParse(grammarDefinition, src);
+        if (!base.success) continue;
+        const baseJson = JSON.stringify(base.val);
+        tested++;
+
+        const spacePositions: number[] = [];
+        for (let j = 0; j < src.length; j++) {
+          if (src[j] === " ") spacePositions.push(j);
+        }
+        for (let k = 0; k < 5; k++) {
+          if (spacePositions.length === 0) break;
+          const at =
+            spacePositions[Math.floor(rng() * spacePositions.length)] ?? 0;
+          // Skip insertion points that would form "//" with the
+          // preceding character -- see this test's own doc comment.
+          if (src[at - 1] === "/") continue;
+          const mutated = `${src.slice(0, at)}/* c */${src.slice(at)}`;
+          const mutatedResult = testParse(grammarDefinition, mutated);
+          expect(mutatedResult.success).toBe(true);
+          if (mutatedResult.success) {
+            expect(JSON.stringify(mutatedResult.val)).toBe(baseJson);
+          }
+        }
+      }
+      // Sanity check that the generator actually produced parseable
+      // grammars (otherwise this test would trivially pass on 0 cases).
+      expect(tested).toBeGreaterThan(200);
+    });
+
+    // Companion baseline: inserting plain horizontal whitespace (not a
+    // comment) at any space must ALSO never change the parsed AST -- this
+    // has no "//"-formation exception, since two spaces never combine
+    // into anything meaningful.
+    test("inserting extra horizontal whitespace at any space in a valid grammar never changes the parsed AST (baseline property)", async () => {
+      const { makeRng, genGrammarSource } = await import("./differential-fuzz");
+      const rng = makeRng(4242);
+      let tested = 0;
+      for (let i = 0; i < 200; i++) {
+        const src = genGrammarSource(rng);
+        const base = testParse(grammarDefinition, src);
+        if (!base.success) continue;
+        const baseJson = JSON.stringify(base.val);
+        tested++;
+
+        const spacePositions: number[] = [];
+        for (let j = 0; j < src.length; j++) {
+          if (src[j] === " ") spacePositions.push(j);
+        }
+        for (let k = 0; k < 5; k++) {
+          if (spacePositions.length === 0) break;
+          const at =
+            spacePositions[Math.floor(rng() * spacePositions.length)] ?? 0;
+          const mutated = `${src.slice(0, at)}  ${src.slice(at)}`;
+          const mutatedResult = testParse(grammarDefinition, mutated);
+          expect(mutatedResult.success).toBe(true);
+          if (mutatedResult.success) {
+            expect(JSON.stringify(mutatedResult.val)).toBe(baseJson);
+          }
+        }
+      }
+      expect(tested).toBeGreaterThan(150);
+    });
   });
 });

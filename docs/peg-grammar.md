@@ -138,6 +138,14 @@ _bounded_ range (`expr{2,5}`, `expr{3,3}`) has well-defined semantics
 regardless of whether `expr` is nullable, since the repetition count itself
 already bounds how many times it can run, and is never rejected.
 
+The `{n}`/`{n,m}`/`{n,}` form is a quantifier only when written with **no
+space** before `{` (`expr{3}`). A **space** before `{` (`expr {3}`) is
+ambiguous with a [semantic action](#semantic-actions) block whose body
+happens to be a bare number, so it is rejected as a parse error rather than
+silently reinterpreted as either one - remove the space to write a
+quantifier, or write an explicit action body (e.g. `expr { return 3; }`) if
+a semantic action was actually intended.
+
 ## Lookahead Operators
 
 ```tpeg
@@ -337,6 +345,13 @@ value with whatever the action returns.
 ```tpeg
 number = digits:[0-9]+ { return parseInt(digits.join(""), 10); }
 ```
+
+A `{...}` immediately after an expression with **no preceding space** and
+shaped exactly like `{n}`/`{n,m}`/`{n,}` (only digits and a comma) is instead
+parsed as a [quantifier](#repetition-operators), never as an action - and a
+**space** before such a digits-only `{...}` is rejected as an ambiguous
+parse rather than silently treated as either one; see that section for
+details.
 
 ### Scope Inside an Action
 

@@ -115,6 +115,70 @@ describe("ActionExpression parsing", () => {
   });
 });
 
+describe("Quantifier vs action-block ambiguity (regression)", () => {
+  // `expr{n}`/`expr{n,m}`/`expr{n,}` with NO space before "{" is always a
+  // quantifier (`withRepetition`, repetition.ts) -- this suite is only
+  // about the WITH-a-space form, which used to be silently misread as a
+  // semantic action whose body evaluates to nothing useful (see
+  // `withOptionalAction`'s doc comment, composition.ts).
+
+  test('"x"{2} with no space is a Quantified node, not an action', () => {
+    const result = testParse(expression(), '"x"{2}');
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.val.type).toBe("Quantified");
+  });
+
+  test('"x" {2} with a space is rejected as an ambiguous quantifier/action', () => {
+    const result = testParse(expression(), '"x" {2}');
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.message).toContain("Ambiguous");
+    expect(result.error.message).toContain("{2}");
+  });
+
+  test('"x" {2,3} with a space is rejected the same way', () => {
+    const result = testParse(expression(), '"x" {2,3}');
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.message).toContain("Ambiguous");
+  });
+
+  test('"x" {2,} with a space is rejected the same way', () => {
+    const result = testParse(expression(), '"x" {2,}');
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.message).toContain("Ambiguous");
+  });
+
+  test("a genuine semantic action with a space is unaffected", () => {
+    const result = testParse(expression(), '"x" { return 2; }');
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.val.type).toBe("ActionExpression");
+    expect((result.val as ActionExpression).code.trim()).toBe("return 2;");
+  });
+
+  test("an empty action block with a space is unaffected", () => {
+    const result = testParse(expression(), '"x" {}');
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.val.type).toBe("ActionExpression");
+  });
+
+  test("a malformed quantifier attempt with a space still falls through to an action (unchanged, pre-existing behavior)", () => {
+    // `withRepetition`'s own doc comment (repetition.ts) already documents
+    // this: a leading space reads more like "this really was meant as an
+    // action" than "this was meant as {n,m}" for a shape that ISN'T even
+    // a valid quantifier body (missing the minimum). Only WELL-FORMED
+    // quantifier bodies are rejected by the new check above.
+    const result = testParse(expression(), '"x" {,3}');
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.val.type).toBe("ActionExpression");
+  });
+});
+
 describe("ActionExpression inside a full grammar block", () => {
   test("parses a rule with a multi-line action without truncating the rule or the block", () => {
     const source = `grammar Foo {
