@@ -49,7 +49,7 @@ export const EndOfLine = choice(lit("\r\n"), lit("\n"), lit("\r"));
  * Space <- ' ' / '\t' / EndOfLine
  * ```
  */
-export const Space = choice(lit(" "), lit("\r"), EndOfLine);
+export const Space = choice(lit(" "), lit("\t"), EndOfLine);
 
 /**
  * Comment parser.
