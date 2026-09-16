@@ -430,6 +430,8 @@ export const interWsPlus: Parser<any> = charClassRun([" ", "\t", "\n", "\r"], 1)
 
 export const wsAndComments: Parser<any> = zeroOrMore(choice(charClass(" ", "\t", "\n", "\r"), actionLineComment, actionBlockComment));
 
+export const wsAndCommentsPlus: Parser<any> = oneOrMore(choice(charClass(" ", "\t", "\n", "\r"), actionLineComment, actionBlockComment));
+
 export const group: Parser<any> = (input, pos) => {
   const __base = (captureSequence(literal("("), interWs, capture("expr", lazy(() => choiceExpr)), interWs, literal(")")));
   const __result = __base(input, pos);
@@ -821,7 +823,7 @@ export const quotedStringValue: Parser<any> = (input, pos) => {
 };
 
 export const importAlias: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(interWsPlus, literal("as"), interWsPlus, capture("name", identifierName)));
+  const __base = (captureSequence(wsAndCommentsPlus, literal("as"), wsAndCommentsPlus, capture("name", identifierName)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -838,7 +840,7 @@ export const importAlias: Parser<any> = (input, pos) => {
 };
 
 export const identifierCommaList: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(capture("first", identifierName), capture("rest", zeroOrMore(sequence(interWs, literal(","), interWs, identifierName)))));
+  const __base = (captureSequence(capture("first", identifierName), capture("rest", zeroOrMore(sequence(wsAndComments, literal(","), wsAndComments, identifierName)))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -857,7 +859,7 @@ export const identifierCommaList: Parser<any> = (input, pos) => {
 };
 
 export const selectiveImportList: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(literal("{"), interWs, capture("items", optional(identifierCommaList)), interWs, literal("}")));
+  const __base = (captureSequence(literal("{"), wsAndComments, capture("items", optional(identifierCommaList)), wsAndComments, literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -876,7 +878,7 @@ export const selectiveImportList: Parser<any> = (input, pos) => {
 };
 
 export const simpleImportNode: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(literal("import"), interWsPlus, capture("path", quotedStringValue), capture("alias", optional(importAlias))));
+  const __base = (captureSequence(literal("import"), wsAndCommentsPlus, capture("path", quotedStringValue), capture("alias", optional(importAlias))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -895,7 +897,7 @@ export const simpleImportNode: Parser<any> = (input, pos) => {
 };
 
 export const selectiveImportNode: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(literal("import"), interWsPlus, capture("path", quotedStringValue), interWsPlus, capture("selective", selectiveImportList)));
+  const __base = (captureSequence(literal("import"), wsAndCommentsPlus, capture("path", quotedStringValue), wsAndCommentsPlus, capture("selective", selectiveImportList)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -914,7 +916,7 @@ export const selectiveImportNode: Parser<any> = (input, pos) => {
 };
 
 export const versionedImportNode: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(literal("import"), interWsPlus, capture("path", quotedStringValue), interWsPlus, literal("version"), interWsPlus, capture("version", quotedStringValue), capture("alias", optional(importAlias))));
+  const __base = (captureSequence(literal("import"), wsAndCommentsPlus, capture("path", quotedStringValue), wsAndCommentsPlus, literal("version"), wsAndCommentsPlus, capture("version", quotedStringValue), capture("alias", optional(importAlias))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -935,7 +937,7 @@ export const versionedImportNode: Parser<any> = (input, pos) => {
 export const importStatementNode: Parser<any> = choice(versionedImportNode, selectiveImportNode, simpleImportNode);
 
 export const exportRuleList: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(literal("["), interWs, capture("items", optional(identifierCommaList)), interWs, literal("]")));
+  const __base = (captureSequence(literal("["), wsAndComments, capture("items", optional(identifierCommaList)), wsAndComments, literal("]")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -954,7 +956,7 @@ export const exportRuleList: Parser<any> = (input, pos) => {
 };
 
 export const exportDeclarationNode: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(interWs, literal("@export"), interWs, literal(":"), interWs, capture("rules", exportRuleList)));
+  const __base = (captureSequence(interWs, literal("@export"), wsAndComments, literal(":"), wsAndComments, capture("rules", exportRuleList)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -973,7 +975,7 @@ export const exportDeclarationNode: Parser<any> = (input, pos) => {
 };
 
 export const quotedStringList: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(literal("["), interWs, capture("items", optional(sequence(stringLiteralNode, zeroOrMore(sequence(interWs, literal(","), interWs, stringLiteralNode))))), interWs, literal("]")));
+  const __base = (captureSequence(literal("["), wsAndComments, capture("items", optional(sequence(stringLiteralNode, zeroOrMore(sequence(wsAndComments, literal(","), wsAndComments, stringLiteralNode))))), wsAndComments, literal("]")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -994,7 +996,7 @@ export const quotedStringList: Parser<any> = (input, pos) => {
 };
 
 export const moduleInfoListAnnotationNode: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(interWs, literal("@"), capture("key", identifierName), interWs, literal(":"), interWs, capture("values", quotedStringList)));
+  const __base = (captureSequence(interWs, literal("@"), capture("key", identifierName), wsAndComments, literal(":"), wsAndComments, capture("values", quotedStringList)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -1013,7 +1015,7 @@ export const moduleInfoListAnnotationNode: Parser<any> = (input, pos) => {
 };
 
 export const quotedStringRecordEntry: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(capture("key", stringLiteralNode), interWs, literal(":"), interWs, capture("value", stringLiteralNode)));
+  const __base = (captureSequence(capture("key", stringLiteralNode), wsAndComments, literal(":"), wsAndComments, capture("value", stringLiteralNode)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -1030,7 +1032,7 @@ export const quotedStringRecordEntry: Parser<any> = (input, pos) => {
 };
 
 export const quotedStringRecord: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(literal("{"), interWs, capture("items", optional(sequence(quotedStringRecordEntry, zeroOrMore(sequence(interWs, literal(","), interWs, quotedStringRecordEntry))))), interWs, literal("}")));
+  const __base = (captureSequence(literal("{"), wsAndComments, capture("items", optional(sequence(quotedStringRecordEntry, zeroOrMore(sequence(wsAndComments, literal(","), wsAndComments, quotedStringRecordEntry))))), wsAndComments, literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -1051,7 +1053,7 @@ export const quotedStringRecord: Parser<any> = (input, pos) => {
 };
 
 export const moduleInfoRecordAnnotationNode: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(interWs, literal("@"), capture("key", identifierName), interWs, literal(":"), interWs, capture("values", quotedStringRecord)));
+  const __base = (captureSequence(interWs, literal("@"), capture("key", identifierName), wsAndComments, literal(":"), wsAndComments, capture("values", quotedStringRecord)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {

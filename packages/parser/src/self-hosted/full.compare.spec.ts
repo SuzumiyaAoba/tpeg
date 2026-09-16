@@ -247,6 +247,31 @@ grammar G {
   r = "x"
 }`,
 
+      // comments inside an import statement's own separator positions -
+      // after "import", around "as"/"version", and inside the "{...}"/"[...]"
+      // lists - all comment-tolerant via wsAndComments(Plus)
+      `import /* c */ "a.tpeg" /* c */ as a
+grammar G {
+  r = "x"
+}`,
+      `import "a.tpeg" as /* c */ a
+grammar G {
+  r = "x"
+}`,
+      `import "a.tpeg" version /* c */ "^1.0" as a
+grammar G {
+  r = "x"
+}`,
+      `import "a.tpeg" /* c */ { a /* c */, b }
+grammar G {
+  r = "x"
+}`,
+      `grammar G {
+  @export /* c */ : [a /* c */, b]
+  a = "x"
+  b = "y"
+}`,
+
       // no imports at all - a bare modular grammar block is still a valid file
       `grammar G {
   r = "x"

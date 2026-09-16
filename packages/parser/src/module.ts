@@ -35,7 +35,10 @@ import {
 import { GRAMMAR_SYMBOLS } from "./constants";
 import { identifier } from "./identifier";
 import { stringLiteral } from "./string-literal";
-import { optionalWhitespace, whitespace } from "./whitespace-utils";
+import {
+  optionalWhitespaceOrComment,
+  requiredWhitespaceOrComment,
+} from "./whitespace-utils";
 
 // ============================================================================
 // Basic Module System Parsers
@@ -85,11 +88,15 @@ const moduleAlias: Parser<string> = map(identifier, (id) => id.name);
 
 /**
  * Parse selective import list: { rule1, rule2, rule3 }
+ *
+ * Comment-tolerant throughout (docs/peg-grammar.md's Comments section: a
+ * comment is accepted between any two syntactic elements) --
+ * `{ a <block-comment>, b }` parses the same as `{ a, b }`.
  */
 const selectiveImportList: Parser<string[]> = map(
   sequence(
     literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_OPEN),
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     optional(
       map(
         sequence(
@@ -97,9 +104,9 @@ const selectiveImportList: Parser<string[]> = map(
           zeroOrMore(
             map(
               sequence(
-                optionalWhitespace,
+                optionalWhitespaceOrComment,
                 literal(","),
-                optionalWhitespace,
+                optionalWhitespaceOrComment,
                 identifier,
               ),
               ([, , , id]) => id.name,
@@ -109,7 +116,7 @@ const selectiveImportList: Parser<string[]> = map(
         ([first, rest]) => [first, ...rest],
       ),
     ),
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_CLOSE),
   ),
   ([, , rules, ,]) => rules?.[0] ?? [],
@@ -117,15 +124,27 @@ const selectiveImportList: Parser<string[]> = map(
 
 /**
  * Parse simple import: import "module.tpeg" as alias
+ *
+ * Every separator position is comment-tolerant (requiredWhitespaceOrComment
+ * is still a REQUIRED separator -- `import"x"` stays invalid -- it just also
+ * accepts a comment as that separator): `import /* c *\/ "a.tpeg" as x`,
+ * `import "a.tpeg" /* c *\/ as x`, and `import "a.tpeg" as /* c *\/ x` all
+ * parse with the alias attached, instead of the comment being left as
+ * trailing content that silently drops the `as` clause.
  */
 const simpleImport: Parser<ImportStatement> = map(
   sequence(
     importKeyword,
-    whitespace,
+    requiredWhitespaceOrComment,
     modulePath,
     optional(
       map(
-        sequence(whitespace, asKeyword, whitespace, moduleAlias),
+        sequence(
+          requiredWhitespaceOrComment,
+          asKeyword,
+          requiredWhitespaceOrComment,
+          moduleAlias,
+        ),
         ([, , , alias]) => alias,
       ),
     ),
@@ -139,9 +158,9 @@ const simpleImport: Parser<ImportStatement> = map(
 const selectiveImport: Parser<ImportStatement> = map(
   sequence(
     importKeyword,
-    whitespace,
+    requiredWhitespaceOrComment,
     modulePath,
-    whitespace,
+    requiredWhitespaceOrComment,
     selectiveImportList,
   ),
   ([, , path, , selective]) =>
@@ -154,15 +173,20 @@ const selectiveImport: Parser<ImportStatement> = map(
 const versionedImport: Parser<ImportStatement> = map(
   sequence(
     importKeyword,
-    whitespace,
+    requiredWhitespaceOrComment,
     modulePath,
-    whitespace,
+    requiredWhitespaceOrComment,
     versionKeyword,
-    whitespace,
+    requiredWhitespaceOrComment,
     versionConstraint,
     optional(
       map(
-        sequence(whitespace, asKeyword, whitespace, moduleAlias),
+        sequence(
+          requiredWhitespaceOrComment,
+          asKeyword,
+          requiredWhitespaceOrComment,
+          moduleAlias,
+        ),
         ([, , , alias]) => alias,
       ),
     ),
@@ -190,7 +214,7 @@ export const importStatement: Parser<ImportStatement> = choice(
 const exportRuleList: Parser<string[]> = map(
   sequence(
     literal("["),
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     optional(
       map(
         sequence(
@@ -198,9 +222,9 @@ const exportRuleList: Parser<string[]> = map(
           zeroOrMore(
             map(
               sequence(
-                optionalWhitespace,
+                optionalWhitespaceOrComment,
                 literal(","),
-                optionalWhitespace,
+                optionalWhitespaceOrComment,
                 identifier,
               ),
               ([, , , id]) => id.name,
@@ -210,7 +234,7 @@ const exportRuleList: Parser<string[]> = map(
         ([first, rest]) => [first, ...rest],
       ),
     ),
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     literal("]"),
   ),
   ([, , rules, ,]) => rules?.[0] ?? [],
@@ -222,9 +246,9 @@ const exportRuleList: Parser<string[]> = map(
 export const exportDeclaration: Parser<ExportDeclaration> = map(
   sequence(
     literal("@export"),
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     literal(":"),
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     exportRuleList,
   ),
   ([, , , , rules]) => createExportDeclaration(rules),
@@ -254,7 +278,7 @@ export interface ModuleInfoListAnnotation {
 const quotedStringList: Parser<string[]> = map(
   sequence(
     literal("["),
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     optional(
       map(
         sequence(
@@ -262,9 +286,9 @@ const quotedStringList: Parser<string[]> = map(
           zeroOrMore(
             map(
               sequence(
-                optionalWhitespace,
+                optionalWhitespaceOrComment,
                 literal(","),
-                optionalWhitespace,
+                optionalWhitespaceOrComment,
                 stringLiteral,
               ),
               ([, , , str]) => str.value,
@@ -274,7 +298,7 @@ const quotedStringList: Parser<string[]> = map(
         ([first, rest]) => [first.value, ...rest],
       ),
     ),
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     literal("]"),
   ),
   ([, , values, ,]) => values?.[0] ?? [],
@@ -288,9 +312,9 @@ export const moduleInfoListAnnotation: Parser<ModuleInfoListAnnotation> = map(
   sequence(
     literal("@"),
     identifier,
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     literal(":"),
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     quotedStringList,
   ),
   ([, key, , , , values]) => ({
@@ -321,9 +345,9 @@ export interface ModuleInfoRecordAnnotation {
 const quotedStringRecordEntry: Parser<[string, string]> = map(
   sequence(
     stringLiteral,
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     literal(":"),
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     stringLiteral,
   ),
   ([key, , , , value]) => [key.value, value.value],
@@ -335,7 +359,7 @@ const quotedStringRecordEntry: Parser<[string, string]> = map(
 const quotedStringRecord: Parser<Record<string, string>> = map(
   sequence(
     literal("{"),
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     optional(
       map(
         sequence(
@@ -343,9 +367,9 @@ const quotedStringRecord: Parser<Record<string, string>> = map(
           zeroOrMore(
             map(
               sequence(
-                optionalWhitespace,
+                optionalWhitespaceOrComment,
                 literal(","),
-                optionalWhitespace,
+                optionalWhitespaceOrComment,
                 quotedStringRecordEntry,
               ),
               ([, , , entry]) => entry,
@@ -355,7 +379,7 @@ const quotedStringRecord: Parser<Record<string, string>> = map(
         ([first, rest]) => [first, ...rest],
       ),
     ),
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     literal("}"),
   ),
   ([, , entries]) => Object.fromEntries(entries?.[0] ?? []),
@@ -369,9 +393,9 @@ export const moduleInfoRecordAnnotation: Parser<ModuleInfoRecordAnnotation> =
     sequence(
       literal("@"),
       identifier,
-      optionalWhitespace,
+      optionalWhitespaceOrComment,
       literal(":"),
-      optionalWhitespace,
+      optionalWhitespaceOrComment,
       quotedStringRecord,
     ),
     ([, key, , , , values]) => ({
@@ -448,7 +472,7 @@ export const qualifiedIdentifier: Parser<QualifiedIdentifier> = (
 export const extendsClause: Parser<string> = map(
   sequence(
     extendsKeyword,
-    whitespace,
+    requiredWhitespaceOrComment,
     choice(
       map(qualifiedIdentifier, (qid) => `${qid.module}.${qid.name}`),
       map(identifier, (id) => id.name),

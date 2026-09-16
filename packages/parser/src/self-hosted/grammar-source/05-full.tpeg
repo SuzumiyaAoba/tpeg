@@ -85,6 +85,12 @@ grammar SelfHostFull {
   // sequence continuations).
   wsAndComments = ([ \t\n\r] / actionLineComment / actionBlockComment)*
 
+  // Required variant (requiredWhitespaceOrComment): at least one
+  // whitespace/comment char -- a comment alone satisfies it, matching
+  // the hand-written parser's separator positions (after "import",
+  // around "as", ...).
+  wsAndCommentsPlus = ([ \t\n\r] / actionLineComment / actionBlockComment)+
+
   group = "(" interWs expr:choiceExpr interWs ")" { return { type: "Group", expression: expr }; }
 
   primary = group / basicSyntax
@@ -183,28 +189,28 @@ grammar SelfHostFull {
 
   quotedStringValue = s:stringLiteralNode { return s.value; }
 
-  importAlias = interWsPlus "as" interWsPlus name:identifierName { return name; }
+  importAlias = wsAndCommentsPlus "as" wsAndCommentsPlus name:identifierName { return name; }
 
   // Shared comma-separated-identifier-list core, reused (with a different
   // pair of surrounding brackets) by both selectiveImportList ("{...}") and
   // exportRuleList ("[...]") below.
-  identifierCommaList = first:identifierName rest:(interWs "," interWs identifierName)* {
+  identifierCommaList = first:identifierName rest:(wsAndComments "," wsAndComments identifierName)* {
     return [first, ...rest.map((r: any) => r[3])];
   }
 
-  selectiveImportList = "{" interWs items:identifierCommaList? interWs "}" {
+  selectiveImportList = "{" wsAndComments items:identifierCommaList? wsAndComments "}" {
     return items.length === 0 ? [] : items[0];
   }
 
-  simpleImportNode = "import" interWsPlus path:quotedStringValue alias:importAlias? {
+  simpleImportNode = "import" wsAndCommentsPlus path:quotedStringValue alias:importAlias? {
     return { type: "ImportStatement", modulePath: path, alias: alias[0] };
   }
 
-  selectiveImportNode = "import" interWsPlus path:quotedStringValue interWsPlus selective:selectiveImportList {
+  selectiveImportNode = "import" wsAndCommentsPlus path:quotedStringValue wsAndCommentsPlus selective:selectiveImportList {
     return { type: "ImportStatement", modulePath: path, selective };
   }
 
-  versionedImportNode = "import" interWsPlus path:quotedStringValue interWsPlus "version" interWsPlus version:quotedStringValue alias:importAlias? {
+  versionedImportNode = "import" wsAndCommentsPlus path:quotedStringValue wsAndCommentsPlus "version" wsAndCommentsPlus version:quotedStringValue alias:importAlias? {
     return { type: "ImportStatement", modulePath: path, alias: alias[0], version };
   }
 
@@ -214,18 +220,18 @@ grammar SelfHostFull {
   // "version ..."/"{ ... }" as unparsed trailing content.
   importStatementNode = versionedImportNode / selectiveImportNode / simpleImportNode
 
-  exportRuleList = "[" interWs items:identifierCommaList? interWs "]" {
+  exportRuleList = "[" wsAndComments items:identifierCommaList? wsAndComments "]" {
     return items.length === 0 ? [] : items[0];
   }
 
   // Matches the literal key "export" only (not any "@key: [...]"), same as
   // grammar.ts's exportDeclaration - this is why it must be tried before
   // moduleInfoListAnnotationNode below, which accepts any key.
-  exportDeclarationNode = interWs "@export" interWs ":" interWs rules:exportRuleList {
+  exportDeclarationNode = interWs "@export" wsAndComments ":" wsAndComments rules:exportRuleList {
     return { type: "ExportDeclaration", rules };
   }
 
-  quotedStringList = "[" interWs items:(stringLiteralNode (interWs "," interWs stringLiteralNode)*)? interWs "]" {
+  quotedStringList = "[" wsAndComments items:(stringLiteralNode (wsAndComments "," wsAndComments stringLiteralNode)*)? wsAndComments "]" {
     if (items.length === 0) return [];
     const [first, rest] = items[0];
     return [first.value, ...rest.map((r: any) => r[3].value)];
@@ -236,13 +242,13 @@ grammar SelfHostFull {
   // grammarAnnotationNode (whose keyValueAnnotation alternative would
   // otherwise fail on the "[" value and fall through to flagAnnotation,
   // wrongly matching just "@key" and leaving ": [...]" dangling).
-  moduleInfoListAnnotationNode = interWs "@" key:identifierName interWs ":" interWs values:quotedStringList {
+  moduleInfoListAnnotationNode = interWs "@" key:identifierName wsAndComments ":" wsAndComments values:quotedStringList {
     return { type: "ModuleInfoListAnnotation", key, values };
   }
 
-  quotedStringRecordEntry = key:stringLiteralNode interWs ":" interWs value:stringLiteralNode { return [key.value, value.value]; }
+  quotedStringRecordEntry = key:stringLiteralNode wsAndComments ":" wsAndComments value:stringLiteralNode { return [key.value, value.value]; }
 
-  quotedStringRecord = "{" interWs items:(quotedStringRecordEntry (interWs "," interWs quotedStringRecordEntry)*)? interWs "}" {
+  quotedStringRecord = "{" wsAndComments items:(quotedStringRecordEntry (wsAndComments "," wsAndComments quotedStringRecordEntry)*)? wsAndComments "}" {
     if (items.length === 0) return {};
     const [first, rest] = items[0];
     return Object.fromEntries([first, ...rest.map((r: any) => r[3])]);
@@ -250,7 +256,7 @@ grammar SelfHostFull {
 
   // Generic "@key: { \"a\": \"b\" }" annotation (@requires) - same ordering
   // rationale as moduleInfoListAnnotationNode above.
-  moduleInfoRecordAnnotationNode = interWs "@" key:identifierName interWs ":" interWs values:quotedStringRecord {
+  moduleInfoRecordAnnotationNode = interWs "@" key:identifierName wsAndComments ":" wsAndComments values:quotedStringRecord {
     return { type: "ModuleInfoRecordAnnotation", key, values };
   }
 

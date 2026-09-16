@@ -87,6 +87,78 @@ describe("Module System Parsers", () => {
         expect(result.val.alias).toBeUndefined();
       }
     });
+
+    it("should accept a comment between 'import' and the path", () => {
+      const result = importStatement('import /* c */ "a.tpeg" as x', 0);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.modulePath).toBe("a.tpeg");
+        expect(result.val.alias).toBe("x");
+        expect(result.next).toBe(28);
+      }
+    });
+
+    it("should accept a comment between the path and 'as' without dropping the alias", () => {
+      const result = importStatement('import "a.tpeg" /* c */ as x', 0);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.alias).toBe("x");
+        expect(result.next).toBe(28);
+      }
+    });
+
+    it("should accept a comment between 'as' and the alias", () => {
+      const result = importStatement('import "a.tpeg" as /* c */ x', 0);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.alias).toBe("x");
+        expect(result.next).toBe(28);
+      }
+    });
+
+    it("should accept a comment-only separator (no whitespace) around 'as'", () => {
+      const result = importStatement('import "a.tpeg"/* c */as/* c */x', 0);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.alias).toBe("x");
+        expect(result.next).toBe(32);
+      }
+    });
+
+    it("should accept comments inside a selective import list", () => {
+      const result = importStatement(
+        'import "a.tpeg" /* c */ { a /* c */, b }',
+        0,
+      );
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.selective).toEqual(["a", "b"]);
+      }
+    });
+
+    it("should accept comments around 'version' in a versioned import", () => {
+      const result = importStatement(
+        'import "a.tpeg" version /* c */ "^1.0" /* c */ as x',
+        0,
+      );
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.version).toBe("^1.0");
+        expect(result.val.alias).toBe("x");
+      }
+    });
+
+    it("should still require a separator after 'import'", () => {
+      const result = importStatement('import"a.tpeg"', 0);
+
+      expect(result.success).toBe(false);
+    });
   });
 
   describe("exportDeclaration", () => {
