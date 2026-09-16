@@ -65,13 +65,60 @@ grammar SelfHostFull {
 
   actionBlockComment = "/*" chars:blockCommentChar* "*/" { return "/*" + chars.join("") + "*/"; }
 
-  nestedActionBlock = inner:actionBlock { return "{" + inner + "}"; }
+  // Regex literals (e.g. `/}/`, `/"/g`) inside action code, mirroring
+  // brace-scanner.ts's scanRegexLiteral + exprExpected heuristic: a `/`
+  // opens a regex only where a value is expected. Since a PEG cannot look
+  // back at the previous token, each "value expected" context folds its
+  // optional regex into a single item (actionOpRegex / actionKwRegex /
+  // nestedActionBlock's tail / actionBlock's first), so a `/` reached at
+  // an item boundary is always a division operator or comment.
+
+  actionRegexEscaped = "\\" . { return "\\" + $$[1]; }
+
+  actionRegexClassChar = actionRegexEscaped / !("]" / "\n" / "\r") c:. { return c; }
+
+  actionRegexClass = "[" chars:actionRegexClassChar* "]" { return "[" + chars.join("") + "]"; }
+
+  actionRegexBodyChar = actionRegexEscaped / actionRegexClass / !("/" / "[" / "\n" / "\r") c:. { return c; }
+
+  // The `/` opening a regex can't be followed by `/` or `*` (those start
+  // comments, which are checked before regexes -- same ordering as the
+  // hand-written scanner).
+  actionRegexLiteral = "/" !("/" / "*") body:actionRegexBodyChar* "/" flags:[a-z]* { return "/" + body.join("") + "/" + flags.join(""); }
+
+  // Keywords after which a value -- and therefore a regex -- can start.
+  // "instanceof" precedes "in" so the longer keyword wins the ordered
+  // choice.
+  actionRegexKeyword = "instanceof" / "await" / "case" / "default" / "delete" / "do" / "else" / "in" / "new" / "of" / "return" / "throw" / "typeof" / "void" / "yield"
+
+  // A punctuator that can't end an operand: `)`/`]` end operands, quotes
+  // start strings, `/` is handled by the comment/regex rules, `{`/`}` are
+  // blocks, and identifier/digit/whitespace chars are covered elsewhere.
+  actionOpChar = !(")" / "]" / "{" / "}" / "\"" / "'" / "`" / "/" / [A-Za-z0-9_$] / [ \t\n\r]) c:. { return c; }
+
+  // Postfix `++`/`--` end an operand, so a following `/` is division.
+  actionPostfix = "++" / "--"
+
+  actionKwRegex = kw:actionRegexKeyword ![A-Za-z0-9_$] w:wsAndComments re:actionRegexLiteral { return kw + w.join("") + re; }
+
+  actionOpRegex = op:actionOpChar w:wsAndComments re:actionRegexLiteral { return op + w.join("") + re; }
+
+  // A nested `{ ... }` block ends a statement, so it may be followed by a
+  // regex literal (matching the hand-written scanner's `}` -> value
+  // expected rule).
+  nestedActionBlock = inner:actionBlock tail:(w:wsAndComments re:actionRegexLiteral)? { return "{" + inner + "}" + (tail.length ? tail[0].w.join("") + tail[0].re : ""); }
+
+  // Whole identifiers are consumed atomically so a keyword can't match
+  // mid-word (e.g. the "return" inside "xreturn").
+  actionIdentifier = h:[A-Za-z_$] t:[A-Za-z0-9_$]* { return h + t.join(""); }
 
   actionPlainChar = !("{" / "}") c:. { return c; }
 
-  actionContent = nestedActionBlock / actionStringLiteral / actionLineComment / actionBlockComment / actionPlainChar
+  actionContent = nestedActionBlock / actionStringLiteral / actionLineComment / actionBlockComment / actionPostfix / actionKwRegex / actionOpRegex / actionIdentifier / actionPlainChar
 
-  actionBlock = "{" parts:actionContent* "}" { return parts.join(""); }
+  // At the start of a block a value is expected, so a leading regex is
+  // allowed (`{ /re/.test(x) }`).
+  actionBlock = "{" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionContent* "}" { return (first.length ? first[0].w.join("") + first[0].re : "") + parts.join(""); }
 
   // ---- Composition operators (same as 04-grammar.tpeg) ----
 

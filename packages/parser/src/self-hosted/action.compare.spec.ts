@@ -18,6 +18,25 @@ describe("self-hosted action-block grammar vs brace-scanner.ts", () => {
     '{ return "\\"}\\""; }',
     "no brace here",
     "{ unterminated",
+    // Regex literals: `}` or a quote inside a `/.../ ` must not be
+    // miscounted (issue #51) -- and a `/` after an operand is division.
+    "{ return /}/.test('a'); }",
+    "{ return s.replace(/\"/g, 'x'); }",
+    "{ const re = /}/; return re.test('a'); }",
+    "{ return /[}]/.test('a'); }",
+    "{ return s.replace(/\\}/g, 'x'); }",
+    "{ return a / b / c; }",
+    "{ return arr[i] / 2; }",
+    '{ if (a) { return /}/; } return /"/.test(b); }',
+    "{ /re/g.test(x) }",
+    "{ x = {a:1} /re/; }",
+    "{ y = x++ / 2; z = a-- / 3; }",
+    "{ xreturn /re/; }",
+    "{ a = b /* c */ /d/; }",
+    "{ x = () => /}/; }",
+    "{ for (const m of s.matchAll(/}/g)) {} }",
+    "{ if (x) /re/; }",
+    "{ x = /unterminated\n }",
   ];
 
   for (const input of cases) {

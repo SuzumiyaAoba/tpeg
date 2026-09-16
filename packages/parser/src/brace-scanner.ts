@@ -50,6 +50,80 @@ export const skipLineComment = (input: string, start: number): number => {
   return newlineIndex === -1 ? input.length : newlineIndex;
 };
 
+/** Identifier-start characters in the JavaScript source embedded in action/transform bodies. */
+export const JS_IDENTIFIER_START = /[a-zA-Z_$]/;
+
+/** Identifier-continuation characters in embedded JavaScript source. */
+export const JS_IDENTIFIER_CONT = /[a-zA-Z0-9_$]/;
+
+/**
+ * Keywords after which a value -- and therefore a regex literal -- can
+ * start (`return /re/`, `case /x/:`, `x instanceof /re/`...). A `/`
+ * following any other identifier is a division operator instead.
+ */
+export const REGEX_PREFIX_KEYWORDS: ReadonlySet<string> = new Set([
+  "await",
+  "case",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "in",
+  "instanceof",
+  "new",
+  "of",
+  "return",
+  "throw",
+  "typeof",
+  "void",
+  "yield",
+]);
+
+/**
+ * Advances past a regex literal starting at `start` (which must point at
+ * the opening `/`), honoring `\` escapes and `[...]` character classes (a
+ * `/` inside a class does not end the pattern). Returns the index just
+ * past the closing `/` and any trailing flag letters, or -1 when the text
+ * starting at `start` is not a well-formed regex literal -- a regex cannot
+ * contain an unescaped line break, so hitting one (or the end of input)
+ * means the `/` was actually a division operator or something else.
+ */
+export const scanRegexLiteral = (input: string, start: number): number => {
+  let i = start + 1;
+  let inClass = false;
+  while (i < input.length) {
+    const ch = input[i];
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
+    if (ch === "\n" || ch === "\r") {
+      return -1;
+    }
+    if (inClass) {
+      if (ch === "]") {
+        inClass = false;
+      }
+      i++;
+      continue;
+    }
+    if (ch === "[") {
+      inClass = true;
+      i++;
+      continue;
+    }
+    if (ch === "/") {
+      i++;
+      while (i < input.length && input[i] >= "a" && input[i] <= "z") {
+        i++;
+      }
+      return i;
+    }
+    i++;
+  }
+  return -1;
+};
+
 /** Advances past a `/* ... *\/` block comment starting at `start`. See {@link skipStringLiteral}. */
 export const skipBlockComment = (input: string, start: number): number => {
   const endIndex = input.indexOf("*/", start + 2);
@@ -59,7 +133,13 @@ export const skipBlockComment = (input: string, start: number): number => {
 /**
  * Parses a `{ ... }` block starting at (or after) `pos`, returning the raw
  * text between the braces. Braces, quotes, and comments inside string
- * literals/comments are ignored when counting depth.
+ * literals/comments are ignored when counting depth. Regex literals are
+ * recognized via the standard regex-vs-division heuristic: a `/` opens a
+ * regex only where a value/expression is expected (after an operator,
+ * `(`, `,`, `;`, a keyword like `return`, the start of a block, ...).
+ * `)`/`]` count as operand ends, so `if (x) /re/` scans the `/` as
+ * division -- a documented limitation shared with the self-hosted
+ * grammar's `actionBlock` rule.
  */
 export const scanBalancedBraces: Parser<string> = (
   input: string,
@@ -77,18 +157,26 @@ export const scanBalancedBraces: Parser<string> = (
   let braceCount = 0;
   let closeBracePos = -1;
   let i = openBracePos;
+  // Whether a `/` here could open a regex literal -- i.e. a value or
+  // expression is expected at this point rather than a binary operator.
+  let exprExpected = true;
 
   while (i < input.length) {
     const ch = input[i];
 
     if (ch === "{") {
       braceCount++;
+      exprExpected = true;
       i++;
       continue;
     }
     if (ch === "}") {
       braceCount--;
       i++;
+      // A `}` inside the body ends a statement or object literal; treating
+      // it as "value expected" matches the self-hosted grammar, which folds
+      // an optional trailing regex into its nested-block rule.
+      exprExpected = true;
       if (braceCount === 0) {
         closeBracePos = i - 1;
         break;
@@ -97,6 +185,7 @@ export const scanBalancedBraces: Parser<string> = (
     }
     if (ch === '"' || ch === "'" || ch === "`") {
       i = skipStringLiteral(input, i, ch);
+      exprExpected = false;
       continue;
     }
     if (ch === "/" && input[i + 1] === "/") {
@@ -107,6 +196,53 @@ export const scanBalancedBraces: Parser<string> = (
       i = skipBlockComment(input, i);
       continue;
     }
+    if (ch === "/" && exprExpected) {
+      const regexEnd = scanRegexLiteral(input, i);
+      if (regexEnd !== -1) {
+        i = regexEnd;
+        exprExpected = false;
+        continue;
+      }
+      // Not a well-formed regex -- a division operator, which expects an
+      // operand next.
+      exprExpected = true;
+      i++;
+      continue;
+    }
+    if (JS_IDENTIFIER_START.test(ch)) {
+      let wordEnd = i + 1;
+      while (
+        wordEnd < input.length &&
+        JS_IDENTIFIER_CONT.test(input[wordEnd])
+      ) {
+        wordEnd++;
+      }
+      exprExpected = REGEX_PREFIX_KEYWORDS.has(input.slice(i, wordEnd));
+      i = wordEnd;
+      continue;
+    }
+    if (ch >= "0" && ch <= "9") {
+      exprExpected = false;
+      i++;
+      continue;
+    }
+    if (ch === ")" || ch === "]") {
+      exprExpected = false;
+      i++;
+      continue;
+    }
+    if ((ch === "+" || ch === "-") && input[i + 1] === ch) {
+      // Postfix `++`/`--` ends an operand.
+      exprExpected = false;
+      i += 2;
+      continue;
+    }
+    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") {
+      i++;
+      continue;
+    }
+    // Any other punctuator cannot end an operand, so a value is expected.
+    exprExpected = true;
     i++;
   }
 

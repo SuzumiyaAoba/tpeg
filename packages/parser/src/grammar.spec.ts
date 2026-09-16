@@ -425,6 +425,53 @@ describe("Grammar Definition Block Tests", () => {
       }
     });
 
+    test("should not mistake a '}' inside a regex literal in an action body for the block's closing brace (regression: scanBalancedBraces and grammarRuleExpression's depth tracking skipped strings/comments but not regex literals)", () => {
+      const input = 'grammar G { r = "x" { return /}/.test("a"); } }';
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules).toHaveLength(1);
+      }
+    });
+
+    test("should not mistake a quote inside a regex literal for a string delimiter", () => {
+      const input = 'grammar G { r = "x" { return s.replace(/"/g, "x"); } }';
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules).toHaveLength(1);
+      }
+    });
+
+    test("should still treat a '/' after an operand as division, not a regex literal", () => {
+      const input =
+        'grammar G {\n  r = "x" { return a / b / c; }\n  s = "y"\n}';
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules.map((r) => r.name)).toEqual(["r", "s"]);
+      }
+    });
+
+    test("regex literals work in all value-expected positions inside action bodies", () => {
+      const cases = [
+        '{ const re = /}/; return re.test("a"); }',
+        '{ return /[}]/.test("a"); }',
+        '{ return s.replace(/\\}/g, "x"); }',
+        '{ if (a) { return /}/; } return /"/.test(b); }',
+        "{ x = {a:1} /re/; return x; }",
+        "{ while (m = /}/g.exec(s)) { log(m); } }",
+      ];
+      for (const body of cases) {
+        const input = `grammar G {\n  r = "x" ${body}\n  s = "y"\n}`;
+        const result = testParse(grammarDefinition, input);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.val.rules.map((r) => r.name)).toEqual(["r", "s"]);
+        }
+      }
+    });
+
     test("should treat a trailing '@annotation' right after a rule as a separate grammar item, not part of the rule's own body", () => {
       // Regression: without an explicit "@" boundary case, an annotation
       // separated from the preceding rule by only whitespace/a comment
