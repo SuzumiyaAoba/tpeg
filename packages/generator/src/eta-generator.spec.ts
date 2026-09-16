@@ -1256,6 +1256,68 @@ describe("EtaTPEGCodeGenerator: import precision (regression)", () => {
     expect(result.imports.join(" ")).not.toMatch(/\bchoice\b/);
   });
 
+  it("a trailing Cut with nothing after it (\"a\" ~) does not import 'commit' (regression: the import was keyed on a Cut existing, not on a commit() call being emitted)", async () => {
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([createStringLiteral("a"), createCut()]),
+        ),
+      ],
+    );
+
+    const result = await generateEtaTypeScriptParser(grammar, {
+      includeImports: true,
+      optimize: false,
+    });
+    expect(result.imports.join(" ")).not.toMatch(/\bcommit\b/);
+    expect(result.code).not.toContain("commit(");
+  });
+
+  it("a mid-sequence Cut still imports 'commit' (control case)", async () => {
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([
+            createStringLiteral("a"),
+            createCut(),
+            createStringLiteral("b"),
+          ]),
+        ),
+      ],
+    );
+
+    const result = await generateEtaTypeScriptParser(grammar, {
+      includeImports: true,
+      optimize: false,
+    });
+    expect(result.imports.join(" ")).toMatch(/\bcommit\b/);
+    expect(result.code).toContain('commit(literal("b"))');
+  });
+
+  it("emits each import statement on its own line (regression: Eta's nl autoTrim ate the newline after each `<%= imp %>`)", async () => {
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [createRuleDefinition("start", createStringLiteral("a"))],
+    );
+
+    const result = await generateEtaTypeScriptParser(grammar, {
+      includeImports: true,
+      optimize: false,
+    });
+    const lines = result.code.split("\n");
+    expect(lines[0]).toBe(
+      'import type { Parser } from "@suzumiyaaoba/tpeg-core";',
+    );
+    expect(lines[1]).toBe('import { literal } from "@suzumiyaaoba/tpeg-core";');
+  });
+
   it("a grammar with no tpeg-core combinator usage emits no empty tpeg-core import line", async () => {
     const grammar = createGrammarDefinition(
       "TestGrammar",

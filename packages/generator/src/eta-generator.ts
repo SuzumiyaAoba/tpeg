@@ -472,15 +472,26 @@ export class EtaTPEGCodeGenerator {
         if (!isBareSinglePassthrough) {
           combinators.add(hasLabel ? "captureSequence" : "sequence");
         }
-        for (const element of (expr as Sequence).elements) {
-          if (element.type === "Cut") {
-            // Dropped from the emitted sequence() call itself (see
-            // `generateSequence`); every element after it is wrapped in
-            // `commit(...)` instead, so that import is needed here too.
-            combinators.add("commit");
-            continue;
+        // `commit(...)` is only ever emitted for a non-`Cut` element that
+        // comes AFTER a `Cut` (see `generateSequence`): a `Cut` with
+        // nothing non-`Cut` after it -- a trailing `~`, or one followed
+        // only by more `Cut`s -- contributes no `commit(...)` call at
+        // all, so keying the import on "a Cut exists" left an unused
+        // `commit` import behind for that shape (e.g. `"a" ~`). Mirrors
+        // the identical fix in `packages/parser/src/codegen.ts`'s own
+        // `collectUsedCombinators`.
+        {
+          let committed = false;
+          for (const element of (expr as Sequence).elements) {
+            if (element.type === "Cut") {
+              committed = true;
+              continue;
+            }
+            if (committed) {
+              combinators.add("commit");
+            }
+            this.collectUsedCombinators(element, combinators, currentRuleIndex);
           }
-          this.collectUsedCombinators(element, combinators, currentRuleIndex);
         }
         break;
       }

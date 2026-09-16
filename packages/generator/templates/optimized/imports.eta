@@ -1,13 +1,11 @@
 <% if (it.imports && it.imports.length > 0) { %>
 <% it.imports.forEach(function(imp) { %>
-<%= imp %>
+<%~ imp + "\n" %>
 <% }) %>
-
 <% } %>
 <% if (it.performanceImports && it.performanceImports.length > 0) { %>
 // Performance optimizations
 <% it.performanceImports.forEach(function(imp) { %>
-<%= imp %>
+<%~ imp + "\n" %>
 <% }) %>
-
 <% } %>
