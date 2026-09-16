@@ -88,6 +88,16 @@ describe("self-hosted transformDefinitionNode vs transforms.ts's transformDefini
       // functions at all (transformFunctions requires at least one)
       `transforms T@ruby { f() -> X { return 1; } }`,
       `transforms T@typescript { }`,
+
+      // garbage between the return type and the body, and a missing body
+      // must both be rejected (issue #53) -- comments in the same spot are
+      // still trivia and parse fine
+      `transforms T@typescript { f() -> X GARBAGE { return 1; } }`,
+      `transforms T@typescript {
+  f() -> X
+  g() -> X { return 1; }
+}`,
+      `transforms T@typescript { f() -> X /* c */ { return 1; } }`,
     ],
     handTransformDefinition,
     genTransformDefinition,

@@ -440,8 +440,24 @@ const returnTypeSpec: Parser<TransformReturnType> = map(
  * `}`, skipping over string/comment contents so an embedded `}` doesn't
  * close the block early. See `brace-scanner.ts` for the shared scanner
  * (also used by the semantic action block parser in `composition.ts`).
+ *
+ * The `{` must be the very next character after the signature's trailing
+ * trivia: `scanBalancedBraces` alone forward-searches for the next `{`
+ * anywhere in the remaining input, which would silently swallow garbage
+ * between the return type and the body -- and a missing body would
+ * mis-parse against the NEXT function's `{`. Gating on the character
+ * here (like `composition.ts`'s `actionBlock`) rejects both cleanly.
  */
-const functionBody: Parser<string> = scanBalancedBraces;
+const functionBody: Parser<string> = (input, pos) => {
+  if (input[pos] !== "{") {
+    return createFailure("Expected opening brace '{'", pos, {
+      expected: ["{"],
+      found: input[pos] ?? "",
+      parserName: "functionBody",
+    });
+  }
+  return scanBalancedBraces(input, pos);
+};
 
 // ============================================================================
 // Transform Function Parser

@@ -238,6 +238,40 @@ describe("transformFunction", () => {
       expect(result.val.body).toContain("parseInt");
     }
   });
+
+  it("should reject garbage between the return type and the body (#53)", () => {
+    const result = parse(transformFunction)(
+      "f(captures: string) -> number GARBAGE { return 1; }",
+    );
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.pos).toBe(30);
+    }
+  });
+
+  it("should fail cleanly at the next declaration when the body is missing (#53)", () => {
+    const input = [
+      "f(captures: string) -> number",
+      "g(captures: string) -> number { return 1; }",
+    ].join("\n");
+    const result = parse(transformFunction)(input);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.pos).toBe(30);
+      expect(result.error.message).toContain("{");
+    }
+  });
+
+  it("should accept comments between the return type and the body", () => {
+    const blockComment = parse(transformFunction)(
+      "f(captures: string) -> number /* c */ { return 1; }",
+    );
+    expect(blockComment.success).toBe(true);
+    const lineComment = parse(transformFunction)(
+      "f(captures: string) -> number // c\n{ return 1; }",
+    );
+    expect(lineComment.success).toBe(true);
+  });
 });
 
 describe("transformSet", () => {
