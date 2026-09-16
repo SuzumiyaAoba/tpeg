@@ -289,21 +289,57 @@ grammar SelfHostFull {
 
   transformSetName = name:identifierName interWs "@" interWs lang:targetLanguageNode { return { name, language: lang }; }
 
-  // Mirrors transforms.ts's complexType: outside braces only TYPE_CHAR-like
-  // characters are captured; once a "{" is seen, everything up to its
-  // matching "}" is captured verbatim (arbitrary object-type syntax).
-  typeChar = [a-zA-Z0-9_] / "<" / ">" / "[" / "]"
+  // ---- Type expressions in transform signatures (transforms.ts's
+  // typeExpression): a union/intersection of postfix types; a postfix type
+  // is a primary plus `[]` markers; a primary is an object-literal type
+  // ("{...}" -- actionContent already skips strings/comments/nested braces,
+  // same as transforms.ts's scanObjectType), a parenthesized type, or a
+  // named type with optional `<args...>` (nested and multi-argument
+  // generics included). Every rule returns `{ text, head? }`: `text` is the
+  // exact source slice (inner whitespace preserved via the typeWs
+  // captures), and `head` is set only when the whole type is exactly
+  // `Name` or `Name<args>`, so returnTypeSpec keeps emitting
+  // `{ type: "Result", generic: "number" }` for the common `Result<T>`
+  // shape while unions/arrays/multi-arg generics are no longer truncated.
+  typeWs = chars:[ \t\n\r]* { return chars.join(""); }
 
-  typeBraceContentChar = !("{" / "}") c:. { return c; }
+  typeObject = "{" parts:actionContent* "}" { return { text: "{" + parts.join("") + "}" }; }
 
-  typeBraceContent = parts:(typeBraceBlock / typeBraceContentChar)* { return parts.join(""); }
+  typeParen = "(" w1:typeWs inner:typeUnion w2:typeWs ")" {
+    return { text: "(" + w1 + inner.text + w2 + ")" };
+  }
 
-  typeBraceBlock = "{" inner:typeBraceContent "}" { return "{" + inner + "}"; }
+  // The `~` cut after "<" mirrors the hand parser: once a `<` follows the
+  // name, a malformed argument list fails the whole type (fatal) rather
+  // than backtracking to a bare `Name` that leaves "<" dangling. Every
+  // element inside the group is labeled so the captured object keeps the
+  // whitespace pieces needed to rebuild the raw `generic` text (unlabeled
+  // elements don't survive captureSequence's label merge).
+  typeNamed = n:identifierName g:(w1:typeWs "<" ~ w2:typeWs a1:typeUnion arest:(c1:typeWs "," c2:typeWs a:typeUnion)* w3:typeWs ">")? {
+    if (g.length === 0) return { text: n, head: { name: n } };
+    const p = g[0];
+    let inner = p.w2 + p.a1.text;
+    for (const r of p.arest) inner += r.c1 + "," + r.c2 + r.a.text;
+    inner += p.w3;
+    return { text: n + p.w1 + "<" + inner + ">", head: { name: n, generic: inner } };
+  }
 
-  complexTypeNode = parts:(typeBraceBlock / typeChar)+ { return parts.join(""); }
+  typePrimary = typeObject / typeParen / typeNamed
 
-  parameterType = name:identifierName interWs ":" interWs type:complexTypeNode {
-    return { name, type, optional: false };
+  typePostfix = p:typePrimary arr:(typeWs "[" typeWs "]")* {
+    let text = p.text;
+    for (const a of arr) text += a[0] + "[" + a[2] + "]";
+    return arr.length === 0 && p.head ? { text, head: p.head } : { text };
+  }
+
+  typeUnion = typeWs first:typePostfix rest:(typeWs ("|" / "&") typeWs typePostfix)* {
+    let text = first.text;
+    for (const r of rest) text += r[0] + r[1] + r[2] + r[3].text;
+    return rest.length === 0 && first.head ? { text, head: first.head } : { text };
+  }
+
+  parameterType = name:identifierName interWs ":" interWs t:typeUnion {
+    return { name, type: t.text, optional: false };
   }
 
   parameterList = "(" interWs items:(parameterType (interWs "," interWs parameterType)*)? interWs ")" {
@@ -312,10 +348,10 @@ grammar SelfHostFull {
     return [first, ...rest.map((r: any) => r[3])];
   }
 
-  genericTypeParam = "<" name:identifierName ">" { return name; }
-
-  returnTypeSpec = interWs "->" interWs base:identifierName generic:genericTypeParam? {
-    return generic.length > 0 ? { type: base, generic: generic[0] } : { type: base };
+  returnTypeSpec = interWs "->" interWs t:typeUnion {
+    return t.head
+      ? (t.head.generic !== undefined ? { type: t.head.name, generic: t.head.generic } : { type: t.head.name })
+      : { type: t.text };
   }
 
   transformFunctionNode = interWs name:identifierName interWs params:parameterList ret:returnTypeSpec interWs body:actionBlock {

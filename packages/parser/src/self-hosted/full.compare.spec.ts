@@ -49,6 +49,17 @@ describe("self-hosted transformDefinitionNode vs transforms.ts's transformDefini
   parse(input: { raw: string, pos: number }) -> Result<Node> { return input; }
 }`,
 
+      // richer signature types: unions, intersections, multi-argument and
+      // nested generics, T[] markers, object-literal and parenthesized
+      // types -- all preserved verbatim instead of silently truncating
+      `transforms T@typescript { f(a: string) -> string | number { return 1; } }`,
+      `transforms T@typescript { f(a: string) -> A & B { return 1; } }`,
+      `transforms T@typescript { f(a: Map<string, number>) -> Result<Array<number>> { return 1; } }`,
+      `transforms T@typescript { f(a: string) -> number[][] { return 1; } }`,
+      `transforms T@typescript { f(a: string) -> { x: number } { return 1; } }`,
+      `transforms T@typescript { f(a: (A | B)[]) -> (X | Y) { return 1; } }`,
+      `transforms T@typescript { f(a: Map < string , number >) -> Result < number > { return 1; } }`,
+
       // language names that share a prefix must still resolve to the
       // longest/correct one, and a longer identifier must not be mistaken
       // for a shorter language name

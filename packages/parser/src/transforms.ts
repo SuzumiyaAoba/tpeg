@@ -14,13 +14,19 @@
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   choice,
+  createFailure,
   literal,
   map,
   seq as sequence,
   star,
   star as zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
-import { scanBalancedBraces } from "./brace-scanner";
+import {
+  scanBalancedBraces,
+  skipBlockComment,
+  skipLineComment,
+  skipStringLiteral,
+} from "./brace-scanner";
 import {
   GRAMMAR_KEYWORDS,
   SUPPORTED_LANGUAGES,
@@ -139,63 +145,204 @@ const transformBlockClose: Parser<string> = literal(
 // ============================================================================
 
 /**
- * Parse complex type (including object types)
- * This is a simplified parser that captures type strings including braces
+ * A parsed transform-signature type expression: the raw source `text`, plus
+ * `head` when the whole type is exactly a named type (`Name`) or a single
+ * generic application (`Name<args...>`) -- `head.generic` then holds the raw
+ * text between the outer `<`/`>`, so `returnTypeSpec` keeps producing
+ * `{ type: "Result", generic: "number" }` for the common `Result<T>` shape.
+ * For every other shape (unions/intersections, `T[]`, object-literal and
+ * parenthesized types, `Name<T>[]`, ...) `head` is absent and `text` is the
+ * full type as written -- nothing is silently truncated to a
+ * wrong-but-plausible prefix the way the old TYPE_CHAR scanner and
+ * `identifier<identifier>` return-type pair did (e.g. `string | number`
+ * becoming `{ type: "string" }`, or `Map<K, V>` failing outright).
  */
-const TYPE_CHAR = /[a-zA-Z0-9_<>[\]]/;
+interface ParsedTypeExpression {
+  text: string;
+  head?: { name: string; generic?: string };
+}
 
-const complexType: Parser<string> = (input: string, pos: number) => {
-  let currentPos = pos;
-  let braceCount = 0;
+const TYPE_IDENT_START = /[a-zA-Z_]/;
+const TYPE_IDENT_CONT = /[a-zA-Z0-9_]/;
 
-  while (currentPos < input.length) {
-    const char = input[currentPos];
+const isTypeWhitespace = (char: string | undefined): boolean =>
+  char === " " || char === "\t" || char === "\n" || char === "\r";
 
-    if (!char) {
-      break;
+const skipTypeWhitespace = (input: string, pos: number): number => {
+  let i = pos;
+  while (isTypeWhitespace(input[i])) i++;
+  return i;
+};
+
+/**
+ * Scan a `{...}` object-literal type starting at `pos` (which must be `{`),
+ * skipping string literals and comments so a `}` inside e.g. a literal
+ * member type doesn't close the type early. Returns the offset just past
+ * the matching `}`, or -1 if unterminated.
+ */
+const scanObjectType = (input: string, pos: number): number => {
+  let depth = 0;
+  let i = pos;
+  while (i < input.length) {
+    const ch = input[i];
+    if (ch === "{") {
+      depth++;
+      i++;
+      continue;
     }
-
-    if (char === "{") {
-      braceCount++;
-      currentPos++;
-    } else if (char === "}") {
-      braceCount--;
-      currentPos++;
-      if (braceCount === 0) {
-        break;
-      }
-    } else if (braceCount > 0) {
-      // Inside braces, capture everything
-      currentPos++;
-    } else if (TYPE_CHAR.test(char)) {
-      // Outside braces, capture identifier-like characters
-      currentPos++;
-    } else {
-      // Stop at other characters
-      break;
+    if (ch === "}") {
+      depth--;
+      i++;
+      if (depth === 0) return i;
+      continue;
     }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      i = skipStringLiteral(input, i, ch);
+      continue;
+    }
+    if (ch === "/" && input[i + 1] === "/") {
+      i = skipLineComment(input, i);
+      continue;
+    }
+    if (ch === "/" && input[i + 1] === "*") {
+      i = skipBlockComment(input, i);
+      continue;
+    }
+    i++;
   }
+  return -1;
+};
 
-  const result = input.slice(pos, currentPos);
+/** A matched type fragment: `end` offset, plus `named` info when the
+ *  fragment is exactly `Name` or `Name<args...>` (see ParsedTypeExpression). */
+interface TypeMatch {
+  end: number;
+  named?: { name: string; generic?: string };
+}
 
-  if (result.length === 0) {
-    return {
-      success: false,
-      error: {
-        message: "Expected type",
-        pos,
-        expected: ["type"],
-        found: input[pos] || "",
-        parserName: "complexType",
-      },
-    };
+/**
+ * Parse a named type (`Name`, optionally followed by `<args...>`). Generic
+ * arguments are full union types separated by commas, so nested and
+ * multi-parameter generics (`Map<K, V>`, `Result<Array<number>>`) work.
+ * Returns null when no identifier starts at (post-whitespace) `pos`, or the
+ * `<...>` list is malformed -- in which case nothing is consumed.
+ */
+const parseNamedType = (input: string, pos: number): TypeMatch | null => {
+  const nameStart = skipTypeWhitespace(input, pos);
+  if (!TYPE_IDENT_START.test(input[nameStart] ?? "")) return null;
+  let i = nameStart + 1;
+  while (TYPE_IDENT_CONT.test(input[i] ?? "")) i++;
+  const name = input.slice(nameStart, i);
+
+  const open = skipTypeWhitespace(input, i);
+  if (input[open] !== "<") return { end: i, named: { name } };
+
+  const argsStart = open + 1;
+  let argEnd = parseUnionType(input, argsStart);
+  if (!argEnd) return null;
+  let j = argEnd.end;
+  for (;;) {
+    j = skipTypeWhitespace(input, j);
+    if (input[j] === ">") {
+      return {
+        end: j + 1,
+        named: { name, generic: input.slice(argsStart, j) },
+      };
+    }
+    if (input[j] !== ",") return null;
+    argEnd = parseUnionType(input, j + 1);
+    if (!argEnd) return null;
+    j = argEnd.end;
   }
+};
 
+/**
+ * Parse one primary type: an object-literal type `{...}`, a parenthesized
+ * type `( T )`, or a named type.
+ */
+const parseTypePrimary = (input: string, pos: number): TypeMatch | null => {
+  const start = skipTypeWhitespace(input, pos);
+  const ch = input[start];
+  if (ch === "{") {
+    const end = scanObjectType(input, start);
+    return end === -1 ? null : { end };
+  }
+  if (ch === "(") {
+    const inner = parseUnionType(input, start + 1);
+    if (!inner) return null;
+    const close = skipTypeWhitespace(input, inner.end);
+    return input[close] === ")" ? { end: close + 1 } : null;
+  }
+  return parseNamedType(input, pos);
+};
+
+/**
+ * Parse a postfix type: a primary type followed by any number of `[]`
+ * array markers (`number[]`, `T[][]`). A `[` not followed by `]` (e.g. a
+ * tuple type `[A, B]`, which this syntax doesn't support) is left
+ * unconsumed rather than silently absorbed.
+ */
+const parsePostfixType = (input: string, pos: number): TypeMatch | null => {
+  const primary = parseTypePrimary(input, pos);
+  if (!primary) return null;
+  let end = primary.end;
+  let named = primary.named;
+  for (;;) {
+    const i = skipTypeWhitespace(input, end);
+    if (input[i] !== "[") break;
+    const close = skipTypeWhitespace(input, i + 1);
+    if (input[close] !== "]") break;
+    end = close + 1;
+    named = undefined;
+  }
+  return named ? { end, named } : { end };
+};
+
+/**
+ * Parse a union/intersection type: postfix types separated by `|` or `&`.
+ * A trailing separator with no following member is left unconsumed.
+ */
+const parseUnionType = (input: string, pos: number): TypeMatch | null => {
+  const first = parsePostfixType(input, pos);
+  if (!first) return null;
+  let end = first.end;
+  let named = first.named;
+  for (;;) {
+    const i = skipTypeWhitespace(input, end);
+    if (input[i] !== "|" && input[i] !== "&") break;
+    const member = parsePostfixType(input, i + 1);
+    if (!member) break;
+    end = member.end;
+    named = undefined;
+  }
+  return named ? { end, named } : { end };
+};
+
+/**
+ * Parse a transform-signature type expression (parameters and `->` return
+ * types share this grammar). Fails only when no type starts at `pos`;
+ * unsupported-but-partial forms (tuple types, function types) stop at the
+ * token they can't consume, leaving it for the caller's next expected token
+ * to reject -- the type text is never silently truncated.
+ */
+const typeExpression: Parser<ParsedTypeExpression> = (
+  input: string,
+  pos: number,
+) => {
+  const match = parseUnionType(input, pos);
+  if (!match) {
+    return createFailure("Expected type", pos, {
+      expected: ["type"],
+      found: input[pos] ?? "end of input",
+      parserName: "typeExpression",
+    });
+  }
+  const text = input.slice(skipTypeWhitespace(input, pos), match.end);
   return {
     success: true,
-    val: result,
+    val: match.named ? { text, head: match.named } : { text },
     current: pos,
-    next: currentPos,
+    next: match.end,
   };
 };
 
@@ -209,7 +356,7 @@ const parameterType: Parser<{ name: string; type: string }> = map(
     optionalWhitespace,
     literal(TRANSFORM_SYMBOLS.TYPE_SEPARATOR),
     optionalWhitespace,
-    complexType, // Use complexType instead of identifier
+    map(typeExpression, (t) => t.text),
   ),
   (results) => ({
     name: results[0].name,
@@ -262,42 +409,22 @@ const parameterList: Parser<TransformParameter[]> = map(
 );
 
 /**
- * Parse generic type parameter
- * Format: <type>
- */
-const genericTypeParam: Parser<string> = map(
-  sequence(literal("<"), identifier, literal(">")),
-  (results) => results[1].name,
-);
-
-/**
  * Parse return type specification
- * Format: -> ReturnType or -> ReturnType<GenericType>
+ * Format: -> ReturnType, -> ReturnType<GenericType, ...>, or any other
+ * type expression (`-> string | number`, `-> number[]`, `-> { x: number }`)
  */
 const returnTypeSpec: Parser<TransformReturnType> = map(
   sequence(
     optionalWhitespace,
     literal(TRANSFORM_SYMBOLS.RETURN_TYPE_SEPARATOR),
     optionalWhitespace,
-    identifier,
-    choice(
-      // With generic type parameter
-      map(genericTypeParam, (generic) => ({ hasGeneric: true, generic })),
-      // Without generic type parameter
-      map(optionalWhitespace, () => ({
-        hasGeneric: false,
-        generic: undefined,
-      })),
-    ),
+    typeExpression,
   ),
   (results) => {
-    const baseType = results[3].name;
-    const genericResult = results[4];
-
-    if (genericResult.hasGeneric && genericResult.generic) {
-      return createTransformReturnType(baseType, genericResult.generic);
-    }
-    return createTransformReturnType(baseType);
+    const parsed = results[3];
+    return parsed.head
+      ? createTransformReturnType(parsed.head.name, parsed.head.generic)
+      : createTransformReturnType(parsed.text);
   },
 );
 

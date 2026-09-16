@@ -131,6 +131,24 @@ describe("parameterList", () => {
       expect(result.val[1]?.type).toBe("number");
     }
   });
+
+  it("should parse a parameter with a multi-argument generic type", () => {
+    const result = parse(parameterList)("(a: Map<string, number>)");
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toHaveLength(1);
+      expect(result.val[0]?.type).toBe("Map<string, number>");
+    }
+  });
+
+  it("should parse a parameter with a union type", () => {
+    const result = parse(parameterList)("(a: string | number, b: boolean)");
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val[0]?.type).toBe("string | number");
+      expect(result.val[1]?.type).toBe("boolean");
+    }
+  });
 });
 
 describe("returnTypeSpec", () => {
@@ -148,6 +166,57 @@ describe("returnTypeSpec", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.val.type).toBe("string");
+    }
+  });
+
+  it("should keep a union type intact instead of truncating to its first member", () => {
+    const result = parse(returnTypeSpec)("-> string | number");
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.type).toBe("string | number");
+      expect(result.next).toBe("-> string | number".length);
+    }
+  });
+
+  it("should keep an intersection type intact", () => {
+    const result = parse(returnTypeSpec)("-> A & B");
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.type).toBe("A & B");
+    }
+  });
+
+  it("should keep multi-argument generic parameters", () => {
+    const result = parse(returnTypeSpec)("-> Map<string, number>");
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.type).toBe("Map");
+      expect(result.val.generic).toBe("string, number");
+    }
+  });
+
+  it("should keep nested generic arguments", () => {
+    const result = parse(returnTypeSpec)("-> Result<Array<number>>");
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.type).toBe("Result");
+      expect(result.val.generic).toBe("Array<number>");
+    }
+  });
+
+  it("should keep array suffixes", () => {
+    const result = parse(returnTypeSpec)("-> number[]");
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.type).toBe("number[]");
+    }
+  });
+
+  it("should keep an object-literal return type", () => {
+    const result = parse(returnTypeSpec)("-> { x: number }");
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.type).toBe("{ x: number }");
     }
   });
 });

@@ -1237,16 +1237,14 @@ export const transformSetName: Parser<any> = (input, pos) => {
   };
 };
 
-export const typeChar: Parser<any> = choice(charClass(["a", "z"], ["A", "Z"], ["0", "9"], "_"), literal("<"), literal(">"), literal("["), literal("]"));
-
-export const typeBraceContentChar: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(notPredicate(choice(literal("{"), literal("}"))), capture("c", anyChar())));
+export const typeWs: Parser<any> = (input, pos) => {
+  const __base = (capture("chars", charClassRun([" ", "\t", "\n", "\r"], 0)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { c } = ($$ ?? {});
- return c; 
+    const { chars } = ($$ ?? {});
+ return chars.join(""); 
   })();
   return {
     success: true,
@@ -1256,14 +1254,14 @@ export const typeBraceContentChar: Parser<any> = (input, pos) => {
   };
 };
 
-export const typeBraceContent: Parser<any> = (input, pos) => {
-  const __base = (capture("parts", zeroOrMore(choice(lazy(() => typeBraceBlock), typeBraceContentChar))));
+export const typeObject: Parser<any> = (input, pos) => {
+  const __base = (captureSequence(literal("{"), capture("parts", zeroOrMore(actionContent)), literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
     const { parts } = ($$ ?? {});
- return parts.join(""); 
+ return { text: "{" + parts.join("") + "}" }; 
   })();
   return {
     success: true,
@@ -1273,14 +1271,16 @@ export const typeBraceContent: Parser<any> = (input, pos) => {
   };
 };
 
-export const typeBraceBlock: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(literal("{"), capture("inner", typeBraceContent), literal("}")));
+export const typeParen: Parser<any> = (input, pos) => {
+  const __base = (captureSequence(literal("("), capture("w1", typeWs), capture("inner", lazy(() => typeUnion)), capture("w2", typeWs), literal(")")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { inner } = ($$ ?? {});
- return "{" + inner + "}"; 
+    const { w1, inner, w2 } = ($$ ?? {});
+
+    return { text: "(" + w1 + inner.text + w2 + ")" };
+  
   })();
   return {
     success: true,
@@ -1290,14 +1290,65 @@ export const typeBraceBlock: Parser<any> = (input, pos) => {
   };
 };
 
-export const complexTypeNode: Parser<any> = (input, pos) => {
-  const __base = (capture("parts", oneOrMore(choice(typeBraceBlock, typeChar))));
+export const typeNamed: Parser<any> = (input, pos) => {
+  const __base = (captureSequence(capture("n", identifierName), capture("g", optional(captureSequence(capture("w1", typeWs), literal("<"), commit(capture("w2", typeWs)), commit(capture("a1", lazy(() => typeUnion))), commit(capture("arest", zeroOrMore(captureSequence(capture("c1", typeWs), literal(","), capture("c2", typeWs), capture("a", lazy(() => typeUnion)))))), commit(capture("w3", typeWs)), commit(literal(">")))))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { parts } = ($$ ?? {});
- return parts.join(""); 
+    const { n, g } = ($$ ?? {});
+
+    if (g.length === 0) return { text: n, head: { name: n } };
+    const p = g[0];
+    let inner = p.w2 + p.a1.text;
+    for (const r of p.arest) inner += r.c1 + "," + r.c2 + r.a.text;
+    inner += p.w3;
+    return { text: n + p.w1 + "<" + inner + ">", head: { name: n, generic: inner } };
+  
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+};
+
+export const typePrimary: Parser<any> = choice(typeObject, typeParen, typeNamed);
+
+export const typePostfix: Parser<any> = (input, pos) => {
+  const __base = (captureSequence(capture("p", typePrimary), capture("arr", zeroOrMore(sequence(typeWs, literal("["), typeWs, literal("]"))))));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { p, arr } = ($$ ?? {});
+
+    let text = p.text;
+    for (const a of arr) text += a[0] + "[" + a[2] + "]";
+    return arr.length === 0 && p.head ? { text, head: p.head } : { text };
+  
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+};
+
+export const typeUnion: Parser<any> = (input, pos) => {
+  const __base = (captureSequence(typeWs, capture("first", typePostfix), capture("rest", zeroOrMore(sequence(typeWs, choice(literal("|"), literal("&")), typeWs, typePostfix)))));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { first, rest } = ($$ ?? {});
+
+    let text = first.text;
+    for (const r of rest) text += r[0] + r[1] + r[2] + r[3].text;
+    return rest.length === 0 && first.head ? { text, head: first.head } : { text };
+  
   })();
   return {
     success: true,
@@ -1308,14 +1359,14 @@ export const complexTypeNode: Parser<any> = (input, pos) => {
 };
 
 export const parameterType: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(capture("name", identifierName), interWs, literal(":"), interWs, capture("type", complexTypeNode)));
+  const __base = (captureSequence(capture("name", identifierName), interWs, literal(":"), interWs, capture("t", typeUnion)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { name, type } = ($$ ?? {});
+    const { name, t } = ($$ ?? {});
 
-    return { name, type, optional: false };
+    return { name, type: t.text, optional: false };
   
   })();
   return {
@@ -1347,32 +1398,17 @@ export const parameterList: Parser<any> = (input, pos) => {
   };
 };
 
-export const genericTypeParam: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(literal("<"), capture("name", identifierName), literal(">")));
-  const __result = __base(input, pos);
-  if (!__result.success) return __result;
-  const __val = (() => {
-    const $$: any = __result.val;
-    const { name } = ($$ ?? {});
- return name; 
-  })();
-  return {
-    success: true,
-    val: __val,
-    current: __result.current,
-    next: __result.next,
-  };
-};
-
 export const returnTypeSpec: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(interWs, literal("->"), interWs, capture("base", identifierName), capture("generic", optional(genericTypeParam))));
+  const __base = (captureSequence(interWs, literal("->"), interWs, capture("t", typeUnion)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { base, generic } = ($$ ?? {});
+    const { t } = ($$ ?? {});
 
-    return generic.length > 0 ? { type: base, generic: generic[0] } : { type: base };
+    return t.head
+      ? (t.head.generic !== undefined ? { type: t.head.name, generic: t.head.generic } : { type: t.head.name })
+      : { type: t.text };
   
   })();
   return {
