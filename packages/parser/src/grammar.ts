@@ -840,6 +840,7 @@ const separateGrammarItems = (
   rules: RuleDefinition[];
   transforms: TransformDefinition[];
   exportedRules: string[];
+  hasExportDeclaration: boolean;
   moduleInfoLists: Map<string, string[]>;
   moduleInfoRecords: Map<string, Record<string, string>>;
 } => {
@@ -847,6 +848,12 @@ const separateGrammarItems = (
   const rules: RuleDefinition[] = [];
   const transforms: TransformDefinition[] = [];
   const exportedRules: string[] = [];
+  // Whether an `@export: [...]` declaration was present at all -- an
+  // explicit `@export: []` produces no exportedRules but still counts as
+  // "exports declared" (meaning "export nothing"), whereas no `@export`
+  // at all means the documented default of "all rules are exported"
+  // (see `modularGrammarDefinition` and `NamespaceManager.registerModule`).
+  let hasExportDeclaration = false;
   const moduleInfoLists = new Map<string, string[]>();
   const moduleInfoRecords = new Map<string, Record<string, string>>();
 
@@ -854,6 +861,7 @@ const separateGrammarItems = (
     if (item.type === "annotation") {
       annotations.push(item.value);
     } else if (item.type === "export") {
+      hasExportDeclaration = true;
       exportedRules.push(...item.value.rules);
     } else if (item.type === "moduleInfoList") {
       moduleInfoLists.set(item.key, [
@@ -878,6 +886,7 @@ const separateGrammarItems = (
     rules,
     transforms,
     exportedRules,
+    hasExportDeclaration,
     moduleInfoLists,
     moduleInfoRecords,
   };
@@ -1056,6 +1065,7 @@ export const modularGrammarDefinition: Parser<ModularGrammarDefinition> = map(
       rules,
       transforms,
       exportedRules,
+      hasExportDeclaration,
       moduleInfoLists,
       moduleInfoRecords,
     } = separateGrammarItems(items);
@@ -1070,7 +1080,7 @@ export const modularGrammarDefinition: Parser<ModularGrammarDefinition> = map(
       rules,
       transforms,
       undefined,
-      exportedRules.length > 0
+      hasExportDeclaration
         ? { type: "ExportDeclaration", rules: exportedRules }
         : undefined,
       version || dependencies || conflicts || requires

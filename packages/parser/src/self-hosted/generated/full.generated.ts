@@ -1784,6 +1784,7 @@ export const modularGrammarBlockNode: Parser<any> = (input, pos) => {
     const rules: any[] = [];
     const transforms: any[] = [];
     const exportedRules: string[] = [];
+    let hasExport = false;
     const moduleInfoLists: Record<string, string[]> = {};
     const moduleInfoRecords: Record<string, Record<string, string>> = {};
 
@@ -1791,7 +1792,7 @@ export const modularGrammarBlockNode: Parser<any> = (input, pos) => {
       if (i.kind === "annotation") annotations.push(i.value);
       else if (i.kind === "rule") rules.push(i.value);
       else if (i.kind === "transform") transforms.push(i.value);
-      else if (i.kind === "export") exportedRules.push(...i.value.rules);
+      else if (i.kind === "export") { hasExport = true; exportedRules.push(...i.value.rules); }
       else if (i.kind === "moduleInfoList") {
         moduleInfoLists[i.key] = [...(moduleInfoLists[i.key] ?? []), ...i.values];
       } else if (i.kind === "moduleInfoRecord") {
@@ -1806,7 +1807,7 @@ export const modularGrammarBlockNode: Parser<any> = (input, pos) => {
 
     const result: any = { type: "ModularGrammarDefinition", name, annotations, rules, transforms };
 
-    if (exportedRules.length > 0) {
+    if (hasExport) {
       result.exports = { type: "ExportDeclaration", rules: exportedRules };
     }
     if (version || dependencies || conflicts || requires) {

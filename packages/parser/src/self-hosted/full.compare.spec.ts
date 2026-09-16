@@ -143,8 +143,10 @@ grammar G {
   r = "x"
 }`,
 
-      // @export, including the empty-list case (no `exports` field at all,
-      // since grammar.ts only sets it when exportedRules.length > 0)
+      // @export, including the empty-list case -- which still produces an
+      // `exports` field (rules: []) since the declaration was present; only
+      // a grammar with NO @export at all leaves `exports` undefined, the
+      // documented "all rules are exported" default (issue #56)
       `grammar G {
   @export: [a, b]
   a = "x"

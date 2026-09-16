@@ -142,13 +142,25 @@ export class NamespaceManager {
         rules.set(rule.name, rule);
       }
 
-      // For a modular grammar, process its exports
-      if (grammar.type === "ModularGrammarDefinition") {
-        const modularGrammar = grammar as ModularGrammarDefinition;
-        if (modularGrammar.exports) {
-          for (const ruleName of modularGrammar.exports.rules) {
-            scope.exports.add(ruleName);
-          }
+      // A grammar's exports: an explicit `@export: [...]` declaration lists
+      // exactly the exported rules (including the `@export: []` "export
+      // nothing" case -- `exports` is present but empty). With NO `@export`
+      // at all the documented default applies -- "default: all rules are
+      // exported" (docs/peg-grammar.md) -- so every rule of the grammar is
+      // exported; previously `undefined` was wrongly treated as "export
+      // nothing" instead (issue #56). Plain (non-modular) grammars have no
+      // way to declare exports, so the same default covers them.
+      const exports =
+        grammar.type === "ModularGrammarDefinition"
+          ? (grammar as ModularGrammarDefinition).exports
+          : undefined;
+      if (exports) {
+        for (const ruleName of exports.rules) {
+          scope.exports.add(ruleName);
+        }
+      } else {
+        for (const rule of grammar.rules) {
+          scope.exports.add(rule.name);
         }
       }
     }

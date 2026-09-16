@@ -263,10 +263,16 @@ describe("NamespaceManager", () => {
     });
 
     it("should throw error for non-exported rule", () => {
+      // A rule omitted from an explicit @export list is not exported (a
+      // module with no @export at all exports ALL of its rules -- see the
+      // "documented default" describe below).
       const privateRule = createRule("privateRule");
-      const privateGrammar = createModularGrammar("PrivateGrammar", [
-        privateRule,
-      ]);
+      const publicRule = createRule("publicRule");
+      const privateGrammar = createModularGrammar(
+        "PrivateGrammar",
+        [privateRule, publicRule],
+        { type: "ExportDeclaration", rules: ["publicRule"] },
+      );
       const privateModule = createModuleFile("private.tpeg", [privateGrammar]);
       manager.registerModule(privateModule);
 
@@ -698,6 +704,95 @@ describe("NamespaceManager", () => {
       expect(() =>
         manager.resolveQualifiedName(createQualifiedId("x", "r"), "main"),
       ).toThrow(/ambiguous/);
+    });
+  });
+
+  describe("documented default: a module with no @export exports all rules", () => {
+    // Regression for issue #56: docs/peg-grammar.md documents "(default:
+    // all rules are exported)", but `exports === undefined` was treated as
+    // "export nothing", so every qualified reference into a module without
+    // an @export declaration failed with "is not exported".
+    it("resolves a qualified reference into a module that has no @export declaration", () => {
+      const rule = createRule("number");
+      manager.registerModule(
+        createModuleFile("/m/base.tpeg", [
+          createModularGrammar("base", [rule]),
+        ]),
+      );
+      manager.registerModule(
+        createModuleFile(
+          "/m/main.tpeg",
+          [createGrammar("Main", [])],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "./base.tpeg",
+              alias: "b",
+            },
+          ],
+        ),
+      );
+
+      const resolved = manager.resolveQualifiedName(
+        createQualifiedId("b", "number"),
+        "main",
+      );
+      expect(resolved.rule.name).toBe("number");
+      expect(resolved.isExported).toBe(true);
+    });
+
+    it("an explicit empty @export still exports nothing", () => {
+      const rule = createRule("hidden");
+      manager.registerModule(
+        createModuleFile("/m/sealed.tpeg", [
+          createModularGrammar("sealed", [rule], {
+            type: "ExportDeclaration",
+            rules: [],
+          }),
+        ]),
+      );
+      manager.registerModule(
+        createModuleFile(
+          "/m/main.tpeg",
+          [createGrammar("Main", [])],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "./sealed.tpeg",
+              alias: "s",
+            },
+          ],
+        ),
+      );
+
+      expect(() =>
+        manager.resolveQualifiedName(createQualifiedId("s", "hidden"), "main"),
+      ).toThrow(/not exported/);
+    });
+
+    it("getAvailableRules lists every rule of a no-@export import", () => {
+      manager.registerModule(
+        createModuleFile("/m/base.tpeg", [
+          createModularGrammar("base", [createRule("a"), createRule("b")]),
+        ]),
+      );
+      manager.registerModule(
+        createModuleFile(
+          "/m/main.tpeg",
+          [createGrammar("Main", [])],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "./base.tpeg",
+              alias: "b",
+            },
+          ],
+        ),
+      );
+
+      expect(manager.getAvailableRules("main").get("b")).toEqual(
+        new Set(["a", "b"]),
+      );
     });
   });
 });
