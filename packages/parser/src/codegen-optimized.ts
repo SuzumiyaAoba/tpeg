@@ -423,6 +423,16 @@ export class OptimizedTPEGCodeGenerator {
       this.ruleIndex.set(rule.name, index);
     });
 
+    // `includeMonitoring` appends a module-scope `const
+    // performanceMonitor` plus `export { performanceMonitor }` (see
+    // `generateMonitoringCode`) -- not an import, but a top-level
+    // declaration a rule named `performanceMonitor` would collide with
+    // (duplicate `const`), so it joins the checked bindings exactly like
+    // an imported name.
+    const monitoringBindings = this.options.includeMonitoring
+      ? ["performanceMonitor"]
+      : [];
+
     // Add optimized imports based on usage analysis
     if (this.options.includeImports) {
       const { lines, bindings } = this.generateOptimizedImports(grammar);
@@ -434,12 +444,12 @@ export class OptimizedTPEGCodeGenerator {
       // (`grammar-validation.ts`) for the concrete failure modes.
       validateGeneratedIdentifiers(grammar, {
         namePrefix: this.options.namePrefix,
-        importedBindings: bindings,
+        importedBindings: [...bindings, ...monitoringBindings],
       });
     } else {
       validateGeneratedIdentifiers(grammar, {
         namePrefix: this.options.namePrefix,
-        importedBindings: [],
+        importedBindings: monitoringBindings,
       });
     }
 

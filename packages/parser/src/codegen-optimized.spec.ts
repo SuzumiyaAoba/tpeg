@@ -1314,3 +1314,44 @@ describe("generateOptimizedTypeScriptParser: import precision (regression)", () 
     expect(result.code).toContain('commitAtTopLevel(literal("b"))');
   });
 });
+
+describe("includeMonitoring", () => {
+  it("rejects a rule named performanceMonitor (would collide with the emitted monitor const)", () => {
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "performanceMonitor",
+          createStringLiteral("a", '"'),
+        ),
+        createRuleDefinition("m", createStringLiteral("b", '"')),
+      ],
+    );
+
+    // The monitoring block declares a module-scope `const
+    // performanceMonitor` -- a rule of the same name would emit a
+    // duplicate `const` in the generated file.
+    expect(() =>
+      generateOptimizedTypeScriptParser(grammar, { includeMonitoring: true }),
+    ).toThrow(/performanceMonitor/);
+  });
+
+  it("accepts a rule named performanceMonitor when monitoring is off", () => {
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "performanceMonitor",
+          createStringLiteral("a", '"'),
+        ),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      includeMonitoring: false,
+    });
+    expect(result.code).toContain("export const performanceMonitor");
+  });
+});
