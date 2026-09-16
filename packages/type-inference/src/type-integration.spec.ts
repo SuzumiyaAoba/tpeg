@@ -409,6 +409,44 @@ describe("TypeIntegrationEngine", () => {
       // With strict types, we shouldn't see 'any' or 'unknown' unless necessary
       expect(typedGrammar.typeDefinitions).not.toContain("any");
     });
+
+    it("rejects rules whose pascalCased names collide instead of emitting duplicate type aliases (regression)", () => {
+      const engine = new TypeIntegrationEngine({
+        strictTypes: true,
+        generateTypeGuards: true,
+      });
+
+      // `foo`, `Foo`, and `foo_bar` all pascalCase to `Foo`/`FooBar`
+      // variants -- `foo` + `Foo` alone already collide on `FooResult`.
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition("foo", createStringLiteral("a", '"')),
+          createRuleDefinition("Foo", createStringLiteral("b", '"')),
+          createRuleDefinition("foo_bar", createStringLiteral("c", '"')),
+        ],
+      );
+
+      expect(() => engine.createTypedGrammar(grammar)).toThrow(
+        /PascalCase collision/,
+      );
+    });
+
+    it("accepts rules with distinct generated names (control case)", () => {
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition("foo", createStringLiteral("a", '"')),
+          createRuleDefinition("bar_baz", createStringLiteral("b", '"')),
+        ],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+      expect(typedGrammar.typeDefinitions).toContain("FooResult");
+      expect(typedGrammar.typeDefinitions).toContain("BarBazResult");
+    });
   });
 
   describe("Utility Methods", () => {

@@ -243,6 +243,33 @@ export class TypeIntegrationEngine {
   ): string {
     const typeDefinitions: string[] = [];
 
+    // Distinct rule names can collapse to the same PascalCase identifier
+    // (`foo` vs `Foo`, `foo_bar` vs `fooBar`, ...), which would emit two
+    // `<Name>Result` type aliases and two `is<Name>Result` guards under
+    // one name -- uncompilable TypeScript, produced with no diagnostic.
+    // Reject instead of silently disambiguating (a `FooResult2` renames
+    // the type out from under the grammar author, the same reason
+    // `validateGeneratedIdentifiers` in tpeg-parser rejects rather than
+    // renames). Only DISTINCT rule names count: two rules literally
+    // named the same are a duplicate-rule-name problem, not a
+    // pascalCase collision.
+    {
+      const rulesByGeneratedName = new Map<string, Set<string>>();
+      for (const rule of typedRules) {
+        const generated = this.pascalCase(rule.name);
+        const names = rulesByGeneratedName.get(generated) ?? new Set();
+        names.add(rule.name);
+        rulesByGeneratedName.set(generated, names);
+      }
+      for (const [generated, names] of rulesByGeneratedName) {
+        if (names.size > 1) {
+          throw new Error(
+            `Rules ${[...names].map((n) => `"${n}"`).join(", ")} all generate the type name "${generated}Result" (PascalCase collision) -- rename the rules so their generated names are distinct.`,
+          );
+        }
+      }
+    }
+
     // Add namespace if specified
     if (this.options.typeNamespace) {
       typeDefinitions.push(`export namespace ${this.options.typeNamespace} {`);
