@@ -1,5 +1,5 @@
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
-import { anyChar, capture, captureSequence, charClass, charClassRun, choice, lazy, literal, negatedCharClass, notPredicate, oneOrMore, optional, sequence, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
+import { anyChar, capture, captureSequence, charClass, charClassRun, choice, commit, lazy, literal, negatedCharClass, notPredicate, oneOrMore, optional, sequence, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
 
 export const escapeChar: Parser<any> = sequence(literal("\\"), charClass("n", "r", "t", "\\", "\"", "'"));
 
@@ -41,7 +41,7 @@ export const doubleQuotedString: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { chars } = $$;
+    const { chars } = ($$ ?? {});
  return { type: "StringLiteral", value: chars.join(""), quote: '"' }; 
   })();
   return {
@@ -58,7 +58,7 @@ export const singleQuotedString: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { chars } = $$;
+    const { chars } = ($$ ?? {});
  return { type: "StringLiteral", value: chars.join(""), quote: "'" }; 
   })();
   return {
@@ -111,7 +111,7 @@ export const charRangePair: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { start, end } = $$;
+    const { start, end } = ($$ ?? {});
  return { start, end }; 
   })();
   return {
@@ -128,7 +128,7 @@ export const charRangeSingle: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { start } = $$;
+    const { start } = ($$ ?? {});
  return { start }; 
   })();
   return {
@@ -147,7 +147,7 @@ export const characterClassBrackets: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { negation, ranges } = $$;
+    const { negation, ranges } = ($$ ?? {});
  return { type: "CharacterClass", ranges, negated: negation.length > 0 }; 
   })();
   return {
@@ -187,7 +187,7 @@ export const identifierName: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { start, rest } = $$;
+    const { start, rest } = ($$ ?? {});
  return start + rest.join(""); 
   })();
   return {
@@ -204,7 +204,7 @@ export const identifierNode: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { name } = $$;
+    const { name } = ($$ ?? {});
  return { type: "Identifier", name }; 
   })();
   return {
@@ -216,12 +216,12 @@ export const identifierNode: Parser<any> = (input, pos) => {
 };
 
 export const qualifiedIdentifierNode: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(capture("module", identifierName), literal("."), capture("name", identifierName)));
+  const __base = (captureSequence(capture("module", identifierName), literal("."), capture("name", identifierName), commit(notPredicate(sequence(literal("."), identStart)))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { module, name } = $$;
+    const { module, name } = ($$ ?? {});
  return { type: "QualifiedIdentifier", module, name }; 
   })();
   return {
@@ -256,7 +256,7 @@ export const doubleQuotedActionString: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { chars } = $$;
+    const { chars } = ($$ ?? {});
  return '"' + chars.join("") + '"'; 
   })();
   return {
@@ -273,7 +273,7 @@ export const singleQuotedActionString: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { chars } = $$;
+    const { chars } = ($$ ?? {});
  return "'" + chars.join("") + "'"; 
   })();
   return {
@@ -290,7 +290,7 @@ export const templateActionString: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { chars } = $$;
+    const { chars } = ($$ ?? {});
  return "`" + chars.join("") + "`"; 
   })();
   return {
@@ -309,7 +309,7 @@ export const lineCommentChar: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { c } = $$;
+    const { c } = ($$ ?? {});
  return c; 
   })();
   return {
@@ -326,7 +326,7 @@ export const blockCommentChar: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { c } = $$;
+    const { c } = ($$ ?? {});
  return c; 
   })();
   return {
@@ -343,7 +343,7 @@ export const actionLineComment: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { chars } = $$;
+    const { chars } = ($$ ?? {});
  return "//" + chars.join(""); 
   })();
   return {
@@ -360,7 +360,7 @@ export const actionBlockComment: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { chars } = $$;
+    const { chars } = ($$ ?? {});
  return "/*" + chars.join("") + "*/"; 
   })();
   return {
@@ -377,7 +377,7 @@ export const nestedActionBlock: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { inner } = $$;
+    const { inner } = ($$ ?? {});
  return "{" + inner + "}"; 
   })();
   return {
@@ -394,7 +394,7 @@ export const actionPlainChar: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { c } = $$;
+    const { c } = ($$ ?? {});
  return c; 
   })();
   return {
@@ -413,7 +413,7 @@ export const actionBlock: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { parts } = $$;
+    const { parts } = ($$ ?? {});
  return parts.join(""); 
   })();
   return {
@@ -436,7 +436,7 @@ export const group: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { expr } = $$;
+    const { expr } = ($$ ?? {});
  return { type: "Group", expression: expr }; 
   })();
   return {
@@ -455,7 +455,7 @@ export const integer: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { digits } = $$;
+    const { digits } = ($$ ?? {});
  return parseInt(digits.join(""), 10); 
   })();
   return {
@@ -472,7 +472,7 @@ export const quantifiedRange: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { min, max } = $$;
+    const { min, max } = ($$ ?? {});
  return { min, max }; 
   })();
   return {
@@ -489,7 +489,7 @@ export const quantifiedMin: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { min } = $$;
+    const { min } = ($$ ?? {});
  return { min, max: undefined }; 
   })();
   return {
@@ -506,7 +506,7 @@ export const quantifiedExact: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { n } = $$;
+    const { n } = ($$ ?? {});
  return { min: n, max: n }; 
   })();
   return {
@@ -525,7 +525,7 @@ export const starOp: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { expr } = $$;
+    const { expr } = ($$ ?? {});
  return { type: "Star", expression: expr }; 
   })();
   return {
@@ -542,7 +542,7 @@ export const plusOp: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { expr } = $$;
+    const { expr } = ($$ ?? {});
  return { type: "Plus", expression: expr }; 
   })();
   return {
@@ -559,7 +559,7 @@ export const optionalOp: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { expr } = $$;
+    const { expr } = ($$ ?? {});
  return { type: "Optional", expression: expr }; 
   })();
   return {
@@ -576,7 +576,7 @@ export const quantOp: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { expr, q } = $$;
+    const { expr, q } = ($$ ?? {});
  return { type: "Quantified", expression: expr, min: q.min, max: q.max }; 
   })();
   return {
@@ -595,7 +595,7 @@ export const positiveLookahead: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { expr } = $$;
+    const { expr } = ($$ ?? {});
  return { type: "PositiveLookahead", expression: expr }; 
   })();
   return {
@@ -612,7 +612,7 @@ export const negativeLookahead: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { expr } = $$;
+    const { expr } = ($$ ?? {});
  return { type: "NegativeLookahead", expression: expr }; 
   })();
   return {
@@ -631,7 +631,7 @@ export const labeled: Parser<any> = choice((input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { label, expr } = $$;
+    const { label, expr } = ($$ ?? {});
  return { type: "LabeledExpression", label, expression: expr }; 
   })();
   return {
@@ -652,7 +652,7 @@ export const sequenceBase: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { first, rest } = $$;
+    const { first, rest } = ($$ ?? {});
 
     if (rest.length === 0) return first;
     const elements = [first, ...rest.map((r: any) => r[2])];
@@ -673,7 +673,7 @@ export const alternative: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { base, act } = $$;
+    const { base, act } = ($$ ?? {});
 
     if (act.length === 0) return base;
     return { type: "ActionExpression", expression: base, code: act[0][1] };
@@ -693,7 +693,7 @@ export const choiceExpr: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { first, rest } = $$;
+    const { first, rest } = ($$ ?? {});
 
     if (rest.length === 0) return first;
     const alternatives = [first, ...rest.map((r: any) => r[3])];
@@ -714,7 +714,7 @@ export const ruleDefinitionNode: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { name, pattern } = $$;
+    const { name, pattern } = ($$ ?? {});
 
     return { type: "RuleDefinition", name, pattern };
   
@@ -735,7 +735,7 @@ export const keyValueAnnotation: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { key, value } = $$;
+    const { key, value } = ($$ ?? {});
 
     return { type: "GrammarAnnotation", key, value };
   
@@ -754,7 +754,7 @@ export const flagAnnotation: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { key } = $$;
+    const { key } = ($$ ?? {});
 
     return { type: "GrammarAnnotation", key, value: "" };
   
@@ -809,7 +809,7 @@ export const quotedStringValue: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { s } = $$;
+    const { s } = ($$ ?? {});
  return s.value; 
   })();
   return {
@@ -826,7 +826,7 @@ export const importAlias: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { name } = $$;
+    const { name } = ($$ ?? {});
  return name; 
   })();
   return {
@@ -843,7 +843,7 @@ export const identifierCommaList: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { first, rest } = $$;
+    const { first, rest } = ($$ ?? {});
 
     return [first, ...rest.map((r: any) => r[3])];
   
@@ -862,7 +862,7 @@ export const selectiveImportList: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { items } = $$;
+    const { items } = ($$ ?? {});
 
     return items.length === 0 ? [] : items[0];
   
@@ -881,7 +881,7 @@ export const simpleImportNode: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { path, alias } = $$;
+    const { path, alias } = ($$ ?? {});
 
     return { type: "ImportStatement", modulePath: path, alias: alias[0] };
   
@@ -900,7 +900,7 @@ export const selectiveImportNode: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { path, selective } = $$;
+    const { path, selective } = ($$ ?? {});
 
     return { type: "ImportStatement", modulePath: path, selective };
   
@@ -919,7 +919,7 @@ export const versionedImportNode: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { path, version, alias } = $$;
+    const { path, version, alias } = ($$ ?? {});
 
     return { type: "ImportStatement", modulePath: path, alias: alias[0], version };
   
@@ -940,7 +940,7 @@ export const exportRuleList: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { items } = $$;
+    const { items } = ($$ ?? {});
 
     return items.length === 0 ? [] : items[0];
   
@@ -959,7 +959,7 @@ export const exportDeclarationNode: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { rules } = $$;
+    const { rules } = ($$ ?? {});
 
     return { type: "ExportDeclaration", rules };
   
@@ -978,7 +978,7 @@ export const quotedStringList: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { items } = $$;
+    const { items } = ($$ ?? {});
 
     if (items.length === 0) return [];
     const [first, rest] = items[0];
@@ -999,7 +999,7 @@ export const moduleInfoListAnnotationNode: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { key, values } = $$;
+    const { key, values } = ($$ ?? {});
 
     return { type: "ModuleInfoListAnnotation", key, values };
   
@@ -1018,7 +1018,7 @@ export const quotedStringRecordEntry: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { key, value } = $$;
+    const { key, value } = ($$ ?? {});
  return [key.value, value.value]; 
   })();
   return {
@@ -1035,7 +1035,7 @@ export const quotedStringRecord: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { items } = $$;
+    const { items } = ($$ ?? {});
 
     if (items.length === 0) return {};
     const [first, rest] = items[0];
@@ -1056,7 +1056,7 @@ export const moduleInfoRecordAnnotationNode: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { key, values } = $$;
+    const { key, values } = ($$ ?? {});
 
     return { type: "ModuleInfoRecordAnnotation", key, values };
   
@@ -1075,7 +1075,7 @@ export const dottedGrammarName: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { first, rest } = $$;
+    const { first, rest } = ($$ ?? {});
 
     return [first, ...rest.map((r: any) => r[1])].join(".");
   
@@ -1094,7 +1094,7 @@ export const grammarExtendsClause: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { name } = $$;
+    const { name } = ($$ ?? {});
  return name; 
   })();
   return {
@@ -1111,7 +1111,7 @@ export const grammarIncludesClause: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { first, rest } = $$;
+    const { first, rest } = ($$ ?? {});
 
     return [first, ...rest.map((r: any) => r[3])];
   
@@ -1130,7 +1130,7 @@ export const targetLanguageNode: Parser<any> = choice((input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { lang } = $$;
+    const { lang } = ($$ ?? {});
  return lang; 
   })();
   return {
@@ -1145,7 +1145,7 @@ export const targetLanguageNode: Parser<any> = choice((input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { lang } = $$;
+    const { lang } = ($$ ?? {});
  return lang; 
   })();
   return {
@@ -1160,7 +1160,7 @@ export const targetLanguageNode: Parser<any> = choice((input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { lang } = $$;
+    const { lang } = ($$ ?? {});
  return lang; 
   })();
   return {
@@ -1175,7 +1175,7 @@ export const targetLanguageNode: Parser<any> = choice((input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { lang } = $$;
+    const { lang } = ($$ ?? {});
  return lang; 
   })();
   return {
@@ -1190,7 +1190,7 @@ export const targetLanguageNode: Parser<any> = choice((input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { lang } = $$;
+    const { lang } = ($$ ?? {});
  return lang; 
   })();
   return {
@@ -1205,7 +1205,7 @@ export const targetLanguageNode: Parser<any> = choice((input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { lang } = $$;
+    const { lang } = ($$ ?? {});
  return lang; 
   })();
   return {
@@ -1224,7 +1224,7 @@ export const transformSetName: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { name, lang } = $$;
+    const { name, lang } = ($$ ?? {});
  return { name, language: lang }; 
   })();
   return {
@@ -1243,7 +1243,7 @@ export const typeBraceContentChar: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { c } = $$;
+    const { c } = ($$ ?? {});
  return c; 
   })();
   return {
@@ -1260,7 +1260,7 @@ export const typeBraceContent: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { parts } = $$;
+    const { parts } = ($$ ?? {});
  return parts.join(""); 
   })();
   return {
@@ -1277,7 +1277,7 @@ export const typeBraceBlock: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { inner } = $$;
+    const { inner } = ($$ ?? {});
  return "{" + inner + "}"; 
   })();
   return {
@@ -1294,7 +1294,7 @@ export const complexTypeNode: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { parts } = $$;
+    const { parts } = ($$ ?? {});
  return parts.join(""); 
   })();
   return {
@@ -1311,7 +1311,7 @@ export const parameterType: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { name, type } = $$;
+    const { name, type } = ($$ ?? {});
 
     return { name, type, optional: false };
   
@@ -1330,7 +1330,7 @@ export const parameterList: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { items } = $$;
+    const { items } = ($$ ?? {});
 
     if (items.length === 0) return [];
     const [first, rest] = items[0];
@@ -1351,7 +1351,7 @@ export const genericTypeParam: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { name } = $$;
+    const { name } = ($$ ?? {});
  return name; 
   })();
   return {
@@ -1368,7 +1368,7 @@ export const returnTypeSpec: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { base, generic } = $$;
+    const { base, generic } = ($$ ?? {});
 
     return generic.length > 0 ? { type: base, generic: generic[0] } : { type: base };
   
@@ -1387,7 +1387,7 @@ export const transformFunctionNode: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { name, params, ret, body } = $$;
+    const { name, params, ret, body } = ($$ ?? {});
 
     return { name, parameters: params, returnType: ret, body };
   
@@ -1406,7 +1406,7 @@ export const transformFunctions: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { first, rest } = $$;
+    const { first, rest } = ($$ ?? {});
 
     return [first, ...rest.map((r: any) => r[1])];
   
@@ -1425,7 +1425,7 @@ export const transformDefinitionNode: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { info, functions } = $$;
+    const { info, functions } = ($$ ?? {});
 
     return {
       type: "TransformDefinition",
@@ -1447,7 +1447,7 @@ export const grammarItemNode: Parser<any> = choice((input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { e } = $$;
+    const { e } = ($$ ?? {});
  return { kind: "export", value: e }; 
   })();
   return {
@@ -1462,7 +1462,7 @@ export const grammarItemNode: Parser<any> = choice((input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { l } = $$;
+    const { l } = ($$ ?? {});
  return { kind: "moduleInfoList", key: l.key, values: l.values }; 
   })();
   return {
@@ -1477,7 +1477,7 @@ export const grammarItemNode: Parser<any> = choice((input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { r } = $$;
+    const { r } = ($$ ?? {});
  return { kind: "moduleInfoRecord", key: r.key, values: r.values }; 
   })();
   return {
@@ -1492,7 +1492,7 @@ export const grammarItemNode: Parser<any> = choice((input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { a } = $$;
+    const { a } = ($$ ?? {});
  return { kind: "annotation", value: a }; 
   })();
   return {
@@ -1507,7 +1507,7 @@ export const grammarItemNode: Parser<any> = choice((input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { rule } = $$;
+    const { rule } = ($$ ?? {});
  return { kind: "rule", value: rule }; 
   })();
   return {
@@ -1522,7 +1522,7 @@ export const grammarItemNode: Parser<any> = choice((input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { t } = $$;
+    const { t } = ($$ ?? {});
  return { kind: "transform", value: t }; 
   })();
   return {
@@ -1567,7 +1567,7 @@ export const grammarItemsNode: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { items } = $$;
+    const { items } = ($$ ?? {});
  return items.map((i: any) => i[0]); 
   })();
   return {
@@ -1584,7 +1584,7 @@ export const modularGrammarBlockNode: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { name, ext, inc, items } = $$;
+    const { name, ext, inc, items } = ($$ ?? {});
 
     const annotations: any[] = [];
     const rules: any[] = [];
@@ -1643,7 +1643,7 @@ export const tpegFileNode: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { imports, grammar } = $$;
+    const { imports, grammar } = ($$ ?? {});
 
     return { imports: imports.map((i: any) => i[1]), grammar };
   

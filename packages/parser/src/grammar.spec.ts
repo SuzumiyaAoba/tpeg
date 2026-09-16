@@ -689,6 +689,40 @@ describe("Grammar Definition Block Tests", () => {
         expect(result.val.rules[1]?.pattern.type).toBe("StringLiteral");
       }
     });
+
+    test("should reject a multi-dot qualified identifier (a.b.c) instead of misparsing it as qualified + AnyChar + identifier", () => {
+      const input = `grammar G { r = a.b.c }`;
+
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        // The reported position must point at the second "." segment --
+        // a fatal failure inside the rule body keeps the error there
+        // instead of being masked by a generic one at the rule's start.
+        expect(result.error.pos).toBe(19);
+      }
+    });
+
+    test("should still parse a single-dot qualified identifier", () => {
+      const input = `grammar G { r = a.b }`;
+
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules[0]?.pattern.type).toBe("QualifiedIdentifier");
+      }
+    });
+
+    test("should still parse a whitespace-separated qualified identifier + AnyChar + identifier sequence", () => {
+      const input = `grammar G { r = a.b . c }`;
+
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        const pattern = result.val.rules[0]?.pattern;
+        expect(pattern?.type).toBe("Sequence");
+      }
+    });
   });
 
   describe("modularGrammarDefinition: @dependencies/@conflicts array annotations", () => {

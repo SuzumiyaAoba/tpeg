@@ -235,6 +235,37 @@ describe("Module System Parsers", () => {
 
       expect(result.success).toBe(false);
     });
+
+    it("should reject a second dot segment (a.b.c) fatally", () => {
+      const result = qualifiedIdentifier("a.b.c", 0);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.fatal).toBe(true);
+        expect(result.error.pos).toBe(3);
+      }
+    });
+
+    it("should reject three or more dot segments fatally", () => {
+      const result = qualifiedIdentifier("a.b.d.e", 0);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.fatal).toBe(true);
+        expect(result.error.pos).toBe(3);
+      }
+    });
+
+    it("should still match a.b when the next dot is not followed by an identifier", () => {
+      const result = qualifiedIdentifier("a.b.", 0);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.module).toBe("a");
+        expect(result.val.name).toBe("b");
+        expect(result.next).toBe(3);
+      }
+    });
   });
 
   describe("extendsClause", () => {

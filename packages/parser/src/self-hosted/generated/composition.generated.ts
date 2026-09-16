@@ -1,5 +1,5 @@
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
-import { anyChar, capture, captureSequence, charClass, charClassRun, choice, lazy, literal, negatedCharClass, notPredicate, oneOrMore, optional, sequence, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
+import { anyChar, capture, captureSequence, charClass, charClassRun, choice, commit, lazy, literal, negatedCharClass, notPredicate, oneOrMore, optional, sequence, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
 
 export const escapeChar: Parser<any> = sequence(literal("\\"), charClass("n", "r", "t", "\\", "\"", "'"));
 
@@ -41,7 +41,7 @@ export const doubleQuotedString: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { chars } = $$;
+    const { chars } = ($$ ?? {});
  return { type: "StringLiteral", value: chars.join(""), quote: '"' }; 
   })();
   return {
@@ -58,7 +58,7 @@ export const singleQuotedString: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { chars } = $$;
+    const { chars } = ($$ ?? {});
  return { type: "StringLiteral", value: chars.join(""), quote: "'" }; 
   })();
   return {
@@ -111,7 +111,7 @@ export const charRangePair: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { start, end } = $$;
+    const { start, end } = ($$ ?? {});
  return { start, end }; 
   })();
   return {
@@ -128,7 +128,7 @@ export const charRangeSingle: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { start } = $$;
+    const { start } = ($$ ?? {});
  return { start }; 
   })();
   return {
@@ -147,7 +147,7 @@ export const characterClassBrackets: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { negation, ranges } = $$;
+    const { negation, ranges } = ($$ ?? {});
  return { type: "CharacterClass", ranges, negated: negation.length > 0 }; 
   })();
   return {
@@ -185,7 +185,7 @@ export const identifierName: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { start, rest } = $$;
+    const { start, rest } = ($$ ?? {});
  return start + rest.join(""); 
   })();
   return {
@@ -202,7 +202,7 @@ export const identifierNode: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { name } = $$;
+    const { name } = ($$ ?? {});
  return { type: "Identifier", name }; 
   })();
   return {
@@ -214,12 +214,12 @@ export const identifierNode: Parser<any> = (input, pos) => {
 };
 
 export const qualifiedIdentifierNode: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(capture("module", identifierName), literal("."), capture("name", identifierName)));
+  const __base = (captureSequence(capture("module", identifierName), literal("."), capture("name", identifierName), commit(notPredicate(sequence(literal("."), identStart)))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { module, name } = $$;
+    const { module, name } = ($$ ?? {});
  return { type: "QualifiedIdentifier", module, name }; 
   })();
   return {
@@ -254,7 +254,7 @@ export const doubleQuotedActionString: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { chars } = $$;
+    const { chars } = ($$ ?? {});
  return '"' + chars.join("") + '"'; 
   })();
   return {
@@ -271,7 +271,7 @@ export const singleQuotedActionString: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { chars } = $$;
+    const { chars } = ($$ ?? {});
  return "'" + chars.join("") + "'"; 
   })();
   return {
@@ -288,7 +288,7 @@ export const templateActionString: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { chars } = $$;
+    const { chars } = ($$ ?? {});
  return "`" + chars.join("") + "`"; 
   })();
   return {
@@ -307,7 +307,7 @@ export const lineCommentChar: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { c } = $$;
+    const { c } = ($$ ?? {});
  return c; 
   })();
   return {
@@ -324,7 +324,7 @@ export const blockCommentChar: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { c } = $$;
+    const { c } = ($$ ?? {});
  return c; 
   })();
   return {
@@ -341,7 +341,7 @@ export const actionLineComment: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { chars } = $$;
+    const { chars } = ($$ ?? {});
  return "//" + chars.join(""); 
   })();
   return {
@@ -358,7 +358,7 @@ export const actionBlockComment: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { chars } = $$;
+    const { chars } = ($$ ?? {});
  return "/*" + chars.join("") + "*/"; 
   })();
   return {
@@ -375,7 +375,7 @@ export const nestedActionBlock: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { inner } = $$;
+    const { inner } = ($$ ?? {});
  return "{" + inner + "}"; 
   })();
   return {
@@ -392,7 +392,7 @@ export const actionPlainChar: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { c } = $$;
+    const { c } = ($$ ?? {});
  return c; 
   })();
   return {
@@ -411,7 +411,7 @@ export const actionBlock: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { parts } = $$;
+    const { parts } = ($$ ?? {});
  return parts.join(""); 
   })();
   return {
@@ -432,7 +432,7 @@ export const group: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { expr } = $$;
+    const { expr } = ($$ ?? {});
  return { type: "Group", expression: expr }; 
   })();
   return {
@@ -451,7 +451,7 @@ export const integer: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { digits } = $$;
+    const { digits } = ($$ ?? {});
  return parseInt(digits.join(""), 10); 
   })();
   return {
@@ -468,7 +468,7 @@ export const quantifiedRange: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { min, max } = $$;
+    const { min, max } = ($$ ?? {});
  return { min, max }; 
   })();
   return {
@@ -485,7 +485,7 @@ export const quantifiedMin: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { min } = $$;
+    const { min } = ($$ ?? {});
  return { min, max: undefined }; 
   })();
   return {
@@ -502,7 +502,7 @@ export const quantifiedExact: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { n } = $$;
+    const { n } = ($$ ?? {});
  return { min: n, max: n }; 
   })();
   return {
@@ -521,7 +521,7 @@ export const starOp: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { expr } = $$;
+    const { expr } = ($$ ?? {});
  return { type: "Star", expression: expr }; 
   })();
   return {
@@ -538,7 +538,7 @@ export const plusOp: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { expr } = $$;
+    const { expr } = ($$ ?? {});
  return { type: "Plus", expression: expr }; 
   })();
   return {
@@ -555,7 +555,7 @@ export const optionalOp: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { expr } = $$;
+    const { expr } = ($$ ?? {});
  return { type: "Optional", expression: expr }; 
   })();
   return {
@@ -572,7 +572,7 @@ export const quantOp: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { expr, q } = $$;
+    const { expr, q } = ($$ ?? {});
  return { type: "Quantified", expression: expr, min: q.min, max: q.max }; 
   })();
   return {
@@ -591,7 +591,7 @@ export const positiveLookahead: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { expr } = $$;
+    const { expr } = ($$ ?? {});
  return { type: "PositiveLookahead", expression: expr }; 
   })();
   return {
@@ -608,7 +608,7 @@ export const negativeLookahead: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { expr } = $$;
+    const { expr } = ($$ ?? {});
  return { type: "NegativeLookahead", expression: expr }; 
   })();
   return {
@@ -627,7 +627,7 @@ export const labeled: Parser<any> = choice((input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { label, expr } = $$;
+    const { label, expr } = ($$ ?? {});
  return { type: "LabeledExpression", label, expression: expr }; 
   })();
   return {
@@ -648,7 +648,7 @@ export const sequenceBase: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { first, rest } = $$;
+    const { first, rest } = ($$ ?? {});
 
     if (rest.length === 0) return first;
     const elements = [first, ...rest.map((r: any) => r[2])];
@@ -669,7 +669,7 @@ export const alternative: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { base, act } = $$;
+    const { base, act } = ($$ ?? {});
 
     if (act.length === 0) return base;
     return { type: "ActionExpression", expression: base, code: act[0][1] };
@@ -689,7 +689,7 @@ export const choiceExpr: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { first, rest } = $$;
+    const { first, rest } = ($$ ?? {});
 
     if (rest.length === 0) return first;
     const alternatives = [first, ...rest.map((r: any) => r[3])];

@@ -385,10 +385,7 @@ export const moduleInfoRecordAnnotation: Parser<ModuleInfoRecordAnnotation> =
 // Qualified Identifier Parser
 // ============================================================================
 
-/**
- * Parse qualified identifier: module.rule
- */
-export const qualifiedIdentifier: Parser<QualifiedIdentifier> = map(
+const qualifiedIdentifierCore: Parser<QualifiedIdentifier> = map(
   sequence(
     map(identifier, (id) => id.name),
     literal("."),
@@ -396,6 +393,50 @@ export const qualifiedIdentifier: Parser<QualifiedIdentifier> = map(
   ),
   ([module, , name]) => createQualifiedIdentifier(module, name),
 );
+
+/**
+ * A "." immediately followed by an identifier-start character -- i.e. the
+ * start of a second "."-segment that a qualified identifier must not have.
+ */
+const QUALIFIED_EXTRA_SEGMENT = /^\.[a-zA-Z_]/;
+
+/**
+ * Parse qualified identifier: module.rule
+ *
+ * A qualified identifier has exactly ONE dot. `a.b.c` is therefore a
+ * syntax error, not `a.b` followed by an AnyChar `.` and an Identifier
+ * `c` -- which is what a plain failure here would degrade to (the
+ * enclosing `choice` would backtrack to `identifier` matching just `a`,
+ * leaving `.b.c` to parse as AnyChar+Identifier+AnyChar+Identifier).
+ * So a `.` immediately followed by an identifier-start character after
+ * a successful `a.b` match is rejected FATALLY: no backtracking into a
+ * silently wrong parse. A `.` followed by anything else (whitespace,
+ * `]`, end of input) still lets the qualified match stand on its own,
+ * leaving that `.` for a following AnyChar as before.
+ */
+export const qualifiedIdentifier: Parser<QualifiedIdentifier> = (
+  input,
+  pos,
+) => {
+  const result = qualifiedIdentifierCore(input, pos);
+  if (!result.success) return result;
+  const next = result.next;
+  if (QUALIFIED_EXTRA_SEGMENT.test(input.slice(next, next + 2))) {
+    return {
+      success: false,
+      error: {
+        message:
+          'A qualified identifier has exactly one dot ("module.rule"); a second "." segment is not allowed',
+        pos: next,
+        expected: ["end of qualified identifier"],
+        found: input.slice(next, next + 2),
+        parserName: "qualifiedIdentifier",
+        fatal: true,
+      },
+    };
+  }
+  return result;
+};
 
 // ============================================================================
 // Grammar Extension Parser

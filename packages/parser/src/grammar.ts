@@ -386,10 +386,17 @@ const grammarRuleExpression: Parser<Expression> = (
       next: pos + result.next,
     };
   }
+  // Preserve every field of the inner error -- `expected`/`found`/
+  // `parserName` and, critically, `fatal`: a fatal failure inside the
+  // rule body (e.g. `a.b.c`'s second `.`, rejected by
+  // `qualifiedIdentifier`) must stay fatal through this boundary so the
+  // enclosing grammarItem choice stops instead of backtracking into
+  // `transforms`/comment/`}` alternatives that can only mask the real
+  // error with a generic "found <rule name>" one at the rule's start.
   return {
     success: false,
     error: {
-      message: result.error.message,
+      ...result.error,
       pos: pos + result.error.pos,
     },
   };

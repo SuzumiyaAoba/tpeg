@@ -41,7 +41,7 @@ grammar SelfHostFull {
 
   identifierNode = name:identifierName { return { type: "Identifier", name }; }
 
-  qualifiedIdentifierNode = module:identifierName "." name:identifierName { return { type: "QualifiedIdentifier", module, name }; }
+  qualifiedIdentifierNode = module:identifierName "." name:identifierName ~ !("." identStart) { return { type: "QualifiedIdentifier", module, name }; }
 
   basicSyntax = stringLiteralNode / characterClassNode / qualifiedIdentifierNode / identifierNode
 

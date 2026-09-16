@@ -1,5 +1,5 @@
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
-import { capture, captureSequence, charClass, charClassRun, choice, literal, negatedCharClass, oneOrMore, optional, sequence, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
+import { capture, captureSequence, charClass, charClassRun, choice, commit, literal, negatedCharClass, notPredicate, oneOrMore, optional, sequence, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
 
 export const escapeChar: Parser<any> = sequence(literal("\\"), charClass("n", "r", "t", "\\", "\"", "'"));
 
@@ -41,7 +41,7 @@ export const doubleQuotedString: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { chars } = $$;
+    const { chars } = ($$ ?? {});
  return { type: "StringLiteral", value: chars.join(""), quote: '"' }; 
   })();
   return {
@@ -58,7 +58,7 @@ export const singleQuotedString: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { chars } = $$;
+    const { chars } = ($$ ?? {});
  return { type: "StringLiteral", value: chars.join(""), quote: "'" }; 
   })();
   return {
@@ -111,7 +111,7 @@ export const charRangePair: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { start, end } = $$;
+    const { start, end } = ($$ ?? {});
  return { start, end }; 
   })();
   return {
@@ -128,7 +128,7 @@ export const charRangeSingle: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { start } = $$;
+    const { start } = ($$ ?? {});
  return { start }; 
   })();
   return {
@@ -147,7 +147,7 @@ export const characterClassBrackets: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { negation, ranges } = $$;
+    const { negation, ranges } = ($$ ?? {});
  return { type: "CharacterClass", ranges, negated: negation.length > 0 }; 
   })();
   return {
@@ -185,7 +185,7 @@ export const identifierName: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { start, rest } = $$;
+    const { start, rest } = ($$ ?? {});
  return start + rest.join(""); 
   })();
   return {
@@ -202,7 +202,7 @@ export const identifier: Parser<any> = (input, pos) => {
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { name } = $$;
+    const { name } = ($$ ?? {});
  return { type: "Identifier", name }; 
   })();
   return {
@@ -214,12 +214,12 @@ export const identifier: Parser<any> = (input, pos) => {
 };
 
 export const qualifiedIdentifier: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(capture("module", identifierName), literal("."), capture("name", identifierName)));
+  const __base = (captureSequence(capture("module", identifierName), literal("."), capture("name", identifierName), commit(notPredicate(sequence(literal("."), identStart)))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { module, name } = $$;
+    const { module, name } = ($$ ?? {});
  return { type: "QualifiedIdentifier", module, name }; 
   })();
   return {

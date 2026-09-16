@@ -38,7 +38,7 @@ grammar SelfHostLeaf {
 
   identifier = name:identifierName { return { type: "Identifier", name }; }
 
-  qualifiedIdentifier = module:identifierName "." name:identifierName { return { type: "QualifiedIdentifier", module, name }; }
+  qualifiedIdentifier = module:identifierName "." name:identifierName ~ !("." identStart) { return { type: "QualifiedIdentifier", module, name }; }
 
   basicSyntax = stringLiteral / characterClass / qualifiedIdentifier / identifier
 }
