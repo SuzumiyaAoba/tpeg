@@ -591,13 +591,16 @@ const JS_RESERVED_WORDS: ReadonlySet<string> = new Set([
  * below in `codegen.ts`). A rule whose pattern is a bare reference to
  * ANOTHER rule sharing one of these names generates that reference as the
  * plain identifier `__base` (or `lazy(() => __base)`, or `__result`, or
- * `__val`) -- which, once emitted inside `const __base = (${that
- * reference});` in the SAME block as the sibling `const __base = ...`/
- * `const __result = ...`/`const __val = ...` declarations these wrappers
- * always emit, resolves to that sibling's own not-yet-initialized binding
- * instead of the outer top-level rule, a temporal-dead-zone
- * `ReferenceError` at the first call (confirmed: rule `__base = "a"`,
- * `m = __base { return $$; }` generates `const __base = (__base);`).
+ * `__val`, or `__transformed`) -- which, once emitted inside
+ * `const __base = (${that reference});` in the SAME block as the sibling
+ * `const __base = ...`/`const __result = ...`/`const __val = ...`/
+ * `const __transformed = ...` declarations these wrappers emit, resolves
+ * to that sibling's own not-yet-initialized binding instead of the outer
+ * top-level rule, a temporal-dead-zone `ReferenceError` at the first
+ * call (confirmed: rule `__base = "a"`, `m = __base { return $$; }`
+ * generates `const __base = (__base);`; and rule `__transformed = "a"`,
+ * `m = __transformed` under a transforms block generates
+ * `const __base = (__transformed);` before `const __transformed = ...`).
  *
  * Rejected unconditionally as a RULE name regardless of whether any
  * particular occurrence is provably reachable from an action/transform --
@@ -612,6 +615,7 @@ const JS_RESERVED_WORDS: ReadonlySet<string> = new Set([
 const RESERVED_INTERNAL_RULE_NAMES: ReadonlySet<string> = new Set([
   "__base",
   "__result",
+  "__transformed",
   "__val",
 ]);
 

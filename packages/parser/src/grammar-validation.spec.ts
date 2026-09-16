@@ -608,8 +608,8 @@ describe("validateGeneratedIdentifiers: reserved words and import collisions", (
     ).not.toThrow();
   });
 
-  it("rejects a rule name that collides with an internal codegen name (__base/__result/__val), regardless of imports", () => {
-    for (const name of ["__base", "__result", "__val"]) {
+  it("rejects a rule name that collides with an internal codegen name (__base/__result/__transformed/__val), regardless of imports", () => {
+    for (const name of ["__base", "__result", "__transformed", "__val"]) {
       const grammar = grammarFromSource(`${name} = "a"`);
       expect(() =>
         validateGeneratedIdentifiers(grammar, {
