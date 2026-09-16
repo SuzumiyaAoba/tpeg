@@ -1377,7 +1377,7 @@ export const targetLanguageNode: Parser<any> = choice((input, pos) => {
 export const langChar: Parser<any> = charClass(["a", "z"], ["A", "Z"], ["0", "9"]);
 
 export const transformSetName: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(capture("name", identifierName), interWs, literal("@"), interWs, capture("lang", targetLanguageNode)));
+  const __base = (captureSequence(capture("name", identifierName), wsAndComments, literal("@"), wsAndComments, capture("lang", targetLanguageNode)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -1576,7 +1576,7 @@ export const returnTypeSpec: Parser<any> = (input, pos) => {
 };
 
 export const transformFunctionNode: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(interWs, capture("name", identifierName), interWs, capture("params", parameterList), capture("ret", returnTypeSpec), interWs, capture("body", actionBlock)));
+  const __base = (captureSequence(wsAndComments, capture("name", identifierName), wsAndComments, capture("params", parameterList), capture("ret", returnTypeSpec), wsAndComments, capture("body", actionBlock)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -1595,7 +1595,7 @@ export const transformFunctionNode: Parser<any> = (input, pos) => {
 };
 
 export const transformFunctions: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(capture("first", transformFunctionNode), capture("rest", zeroOrMore(sequence(interWs, transformFunctionNode)))));
+  const __base = (captureSequence(capture("first", transformFunctionNode), capture("rest", zeroOrMore(sequence(wsAndComments, transformFunctionNode)))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -1614,7 +1614,7 @@ export const transformFunctions: Parser<any> = (input, pos) => {
 };
 
 export const transformDefinitionNode: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(interWs, literal("transforms"), interWsPlus, capture("info", transformSetName), interWs, literal("{"), interWs, capture("functions", transformFunctions), interWs, literal("}")));
+  const __base = (captureSequence(wsAndComments, literal("transforms"), wsAndCommentsPlus, capture("info", transformSetName), wsAndComments, literal("{"), wsAndComments, capture("functions", transformFunctions), wsAndComments, literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {

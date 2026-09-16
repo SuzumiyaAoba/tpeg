@@ -68,6 +68,22 @@ describe("self-hosted transformDefinitionNode vs transforms.ts's transformDefini
       `transforms T@java { f() -> X { return 1; } }`,
       `transforms T@cpp { f() -> X { return 1; } }`,
 
+      // comments in a transforms block's trivia positions: between
+      // functions, around the "@lang" separator and braces, and inside a
+      // signature (issue #52)
+      `transforms T@typescript {
+  f() -> X { return 1; }
+  // hi
+  g() -> X { return 2; }
+}`,
+      `transforms T@typescript {
+  f() -> X { return 1; }
+  /* hi */
+  g() -> X { return 2; }
+}`,
+      `transforms T /* c */ @typescript /* c */ { /* c */ f() -> X { return 1; } /* c */ }`,
+      `transforms T@typescript { f /* c */ () -> X /* c */ { return 1; } }`,
+
       // failure cases: an unsupported language, and a transform set with no
       // functions at all (transformFunctions requires at least one)
       `transforms T@ruby { f() -> X { return 1; } }`,

@@ -334,7 +334,7 @@ grammar SelfHostFull {
 
   langChar = [a-zA-Z0-9]
 
-  transformSetName = name:identifierName interWs "@" interWs lang:targetLanguageNode { return { name, language: lang }; }
+  transformSetName = name:identifierName wsAndComments "@" wsAndComments lang:targetLanguageNode { return { name, language: lang }; }
 
   // ---- Type expressions in transform signatures (transforms.ts's
   // typeExpression): a union/intersection of postfix types; a postfix type
@@ -401,18 +401,18 @@ grammar SelfHostFull {
       : { type: t.text };
   }
 
-  transformFunctionNode = interWs name:identifierName interWs params:parameterList ret:returnTypeSpec interWs body:actionBlock {
+  transformFunctionNode = wsAndComments name:identifierName wsAndComments params:parameterList ret:returnTypeSpec wsAndComments body:actionBlock {
     return { name, parameters: params, returnType: ret, body };
   }
 
   // At least one function is required - "transforms T@typescript { }" fails
   // in the hand-written parser (transformFunctions never accepts zero), so
   // this uses first+rest rather than a bare star().
-  transformFunctions = first:transformFunctionNode rest:(interWs transformFunctionNode)* {
+  transformFunctions = first:transformFunctionNode rest:(wsAndComments transformFunctionNode)* {
     return [first, ...rest.map((r: any) => r[1])];
   }
 
-  transformDefinitionNode = interWs "transforms" interWsPlus info:transformSetName interWs "{" interWs functions:transformFunctions interWs "}" {
+  transformDefinitionNode = wsAndComments "transforms" wsAndCommentsPlus info:transformSetName wsAndComments "{" wsAndComments functions:transformFunctions wsAndComments "}" {
     return {
       type: "TransformDefinition",
       transformSet: { name: info.name, targetLanguage: info.language, functions },

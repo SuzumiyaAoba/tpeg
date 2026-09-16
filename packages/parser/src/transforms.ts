@@ -18,7 +18,6 @@ import {
   literal,
   map,
   seq as sequence,
-  star,
   star as zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
 import {
@@ -45,7 +44,11 @@ import {
   createTransformReturnType,
   createTransformSet,
 } from "./types";
-import { optionalWhitespace, whitespace } from "./whitespace-utils";
+import {
+  optionalWhitespace,
+  optionalWhitespaceOrComment,
+  requiredWhitespaceOrComment,
+} from "./whitespace-utils";
 
 // ============================================================================
 // Basic Transform Syntax Parsers
@@ -115,9 +118,9 @@ const targetLanguage: Parser<string> = (input: string, pos: number) => {
 const transformSetName: Parser<{ name: string; language: string }> = map(
   sequence(
     identifier,
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     languageSeparator,
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     targetLanguage,
   ),
   (results) => ({
@@ -452,8 +455,8 @@ const transformFunction: Parser<TransformFunction> = (
   input: string,
   pos: number,
 ) => {
-  // optionalWhitespace
-  const whitespaceResult = optionalWhitespace(input, pos);
+  // optionalWhitespaceOrComment
+  const whitespaceResult = optionalWhitespaceOrComment(input, pos);
   let currentPos = whitespaceResult.success ? whitespaceResult.next : pos;
 
   // identifier
@@ -464,8 +467,8 @@ const transformFunction: Parser<TransformFunction> = (
 
   currentPos = identifierResult.next;
 
-  // optionalWhitespace
-  const whitespace2Result = optionalWhitespace(input, currentPos);
+  // optionalWhitespaceOrComment
+  const whitespace2Result = optionalWhitespaceOrComment(input, currentPos);
   currentPos = whitespace2Result.success ? whitespace2Result.next : currentPos;
 
   // parameterList
@@ -484,8 +487,8 @@ const transformFunction: Parser<TransformFunction> = (
 
   currentPos = returnTypeSpecResult.next;
 
-  // optionalWhitespace
-  const whitespace3Result = optionalWhitespace(input, currentPos);
+  // optionalWhitespaceOrComment
+  const whitespace3Result = optionalWhitespaceOrComment(input, currentPos);
   currentPos = whitespace3Result.success ? whitespace3Result.next : currentPos;
 
   // functionBody
@@ -521,8 +524,8 @@ const transformFunctions: Parser<TransformFunction[]> = (
   const functions: TransformFunction[] = [];
   let currentPos = pos;
 
-  // 最初の空白をスキップ
-  const whitespaceResult = star(whitespace)(input, currentPos);
+  // 最初の空白・コメントをスキップ
+  const whitespaceResult = optionalWhitespaceOrComment(input, currentPos);
   if (whitespaceResult.success) {
     currentPos = whitespaceResult.next;
   }
@@ -538,8 +541,8 @@ const transformFunctions: Parser<TransformFunction[]> = (
 
   // 残りの関数を解析
   while (currentPos < input.length) {
-    // 関数間の空白・改行をスキップ
-    const separatorResult = star(whitespace)(input, currentPos);
+    // 関数間の空白・改行・コメントをスキップ
+    const separatorResult = optionalWhitespaceOrComment(input, currentPos);
     if (separatorResult.success) {
       currentPos = separatorResult.next;
     }
@@ -576,13 +579,13 @@ const transformFunctions: Parser<TransformFunction[]> = (
 const transformSet: Parser<TransformSet> = map(
   sequence(
     transformsKeyword,
-    whitespace,
+    requiredWhitespaceOrComment,
     transformSetName,
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     transformBlockOpen,
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     transformFunctions,
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     transformBlockClose,
   ),
   (results) =>

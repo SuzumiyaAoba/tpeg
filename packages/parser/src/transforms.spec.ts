@@ -327,4 +327,49 @@ describe("transformFunctions", () => {
       expect(result.val[1]?.name).toBe("expression");
     }
   });
+
+  it("should accept a line comment between two functions (issue #52)", () => {
+    const input = `f(a: number) -> number { return a; }
+    // hi
+    g(b: number) -> number { return b; }`;
+
+    const result = parse(transformFunctions)(input);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.map((f) => f.name)).toEqual(["f", "g"]);
+    }
+  });
+
+  it("should accept a block comment between two functions", () => {
+    const input = `f(a: number) -> number { return a; }
+    /* hi */
+    g(b: number) -> number { return b; }`;
+
+    const result = parse(transformFunctions)(input);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.map((f) => f.name)).toEqual(["f", "g"]);
+    }
+  });
+
+  it("should accept comments around the transformSetName language separator and braces", () => {
+    const result = parse(transformSet)(
+      `transforms X /* c */ @typescript /* c */ { /* c */ f(a: number) -> number { return a; } /* c */ }`,
+    );
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.name).toBe("X");
+      expect(result.val.functions.map((f) => f.name)).toEqual(["f"]);
+    }
+  });
+
+  it("should accept comments inside a function signature's trivia positions", () => {
+    const result = parse(transformFunction)(
+      `f /* c */ (a: number) -> number /* c */ { return a; }`,
+    );
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.name).toBe("f");
+    }
+  });
 });
