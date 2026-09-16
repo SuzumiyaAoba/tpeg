@@ -76,7 +76,13 @@ grammar SelfHostGrammar {
 
   interWs = [ \t\n\r]*
   interWsPlus = [ \t\n\r]+
-  sameLineWs = [ \t]*
+
+  // Whitespace AND comments -- mirrors the hand-written parser's
+  // optionalWhitespaceOrComment (whitespace-utils.ts), which
+  // ruleDefinition uses between a rule's name and its "=" (so
+  // `y\n= "b"` and `y /* c */ = "b"` are both rule starts, not
+  // sequence continuations).
+  wsAndComments = ([ \t\n\r] / actionLineComment / actionBlockComment)*
 
   group = "(" interWs expr:choiceExpr interWs ")" { return { type: "Group", expression: expr }; }
 
@@ -115,7 +121,7 @@ grammar SelfHostGrammar {
   labeled = label:identifierName ":" expr:prefix { return { type: "LabeledExpression", label, expression: expr }; }
           / prefix
 
-  notNextRuleStart = !(identifierName sameLineWs "=")
+  notNextRuleStart = !(identifierName wsAndComments "=")
 
   sequenceContinuation = interWs notNextRuleStart labeled
 
@@ -141,7 +147,7 @@ grammar SelfHostGrammar {
   // transform definitions, and documentation-comment collection are
   // deliberately out of scope for this self-hosting PoC.
 
-  ruleDefinitionNode = interWs name:identifierName interWs "=" interWs pattern:choiceExpr {
+  ruleDefinitionNode = interWs name:identifierName wsAndComments "=" wsAndComments pattern:choiceExpr {
     return { type: "RuleDefinition", name, pattern };
   }
 

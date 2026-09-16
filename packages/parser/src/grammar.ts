@@ -297,27 +297,28 @@ const grammarRuleExpression: Parser<Expression> = (
             break;
           }
 
-          // Same-line whitespace (plus an optional block comment) only:
-          // "identifier\n=" still isn't recognized as the next rule's
-          // start, matching the original implementation -- but
-          // "identifier /* c */ = ..." now is (docs/peg-grammar.md's
-          // Comments section: a comment is accepted in every position
-          // that separates two syntactic elements, and `ruleDefinition`
-          // itself, `./grammar.ts`, already accepts exactly this shape
-          // via `optionalWhitespaceOrComment` between a rule's name and
-          // its "="). Without this, `identifier /* c */ = ...` parsed
-          // fine as a STANDALONE rule, but failed whenever a preceding
-          // rule existed: this scan never recognized the comment as part
-          // of the boundary, so the preceding rule's `grammarRuleExpression`
-          // silently absorbed the comment and the whole next rule into its
-          // own slice instead of stopping here. Deliberately only
-          // block comments, not `//` line comments -- a line comment
-          // necessarily runs to end-of-line, which would cross the same
-          // line boundary this check exists to respect.
+          // Everything `optionalWhitespaceOrComment` accepts --
+          // whitespace INCLUDING line breaks, `//` line comments, and
+          // `/* */` block comments -- because that is exactly the
+          // separator `ruleDefinition` puts between a rule's name and
+          // its "=". `identifier <any of those> =` is unambiguously the
+          // next rule's start: "=" can never begin an expression
+          // element, so the identifier can't be a sequence element
+          // continuing THIS rule's body either. (This used to skip only
+          // same-line space/tab plus block comments, so `y\n= "b"` -- a
+          // rule header `ruleDefinition` itself accepts -- was never
+          // detected as a boundary whenever a preceding rule existed:
+          // that rule's slice silently absorbed the whole `y\n= "b"`
+          // instead of stopping here, and the resulting error even
+          // pointed back at the PRECEDING rule.)
           let afterIdent = identEnd;
           while (afterIdent < input.length) {
-            if (isSpaceOrTab(input[afterIdent])) {
+            if (isLineBreakOrSpaceOrTab(input[afterIdent])) {
               afterIdent++;
+              continue;
+            }
+            if (input[afterIdent] === "/" && input[afterIdent + 1] === "/") {
+              afterIdent = skipLineComment(input, afterIdent);
               continue;
             }
             if (input[afterIdent] === "/" && input[afterIdent + 1] === "*") {

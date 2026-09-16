@@ -77,7 +77,13 @@ grammar SelfHostFull {
 
   interWs = [ \t\n\r]*
   interWsPlus = [ \t\n\r]+
-  sameLineWs = [ \t]*
+
+  // Whitespace AND comments -- mirrors the hand-written parser's
+  // optionalWhitespaceOrComment (whitespace-utils.ts), which
+  // ruleDefinition uses between a rule's name and its "=" (so
+  // `y\n= "b"` and `y /* c */ = "b"` are both rule starts, not
+  // sequence continuations).
+  wsAndComments = ([ \t\n\r] / actionLineComment / actionBlockComment)*
 
   group = "(" interWs expr:choiceExpr interWs ")" { return { type: "Group", expression: expr }; }
 
@@ -117,7 +123,7 @@ grammar SelfHostFull {
   // grammarRuleExpression (see packages/parser/src/self-hosted/README.md).
   // The "!identContChar" guard keeps this narrowly the whole word, not a
   // prefix, so a rule legitimately named e.g. "transformsFoo" is unaffected.
-  notNextRuleStart = !(identifierName sameLineWs "=") !("transforms" !identContChar)
+  notNextRuleStart = !(identifierName wsAndComments "=") !("transforms" !identContChar)
 
   sequenceContinuation = interWs notNextRuleStart labeled
 
@@ -140,7 +146,7 @@ grammar SelfHostFull {
 
   // ---- Rule / grammar block structure (same as 04-grammar.tpeg) ----
 
-  ruleDefinitionNode = interWs name:identifierName interWs "=" interWs pattern:choiceExpr {
+  ruleDefinitionNode = interWs name:identifierName wsAndComments "=" wsAndComments pattern:choiceExpr {
     return { type: "RuleDefinition", name, pattern };
   }
 

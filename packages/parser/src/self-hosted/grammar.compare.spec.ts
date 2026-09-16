@@ -68,6 +68,22 @@ const cases = [
   hidden = "x"
 }`,
 
+  // next rule's "=" on a different line than its name -- the boundary the
+  // wsAndComments-inclusive notNextRuleStart lookahead exists for (the
+  // hand-written grammarRuleExpression accepts the same shape via
+  // optionalWhitespaceOrComment between a rule's name and "=")
+  `grammar NewlineAssign {
+  x = "a"
+  y
+    = "b"
+}`,
+
+  // same, with a comment in the name/"=" gap
+  `grammar CommentAssign {
+  x = "a"
+  y /* c */ = "b"
+}`,
+
   `grammar Empty {
 }`,
 ];

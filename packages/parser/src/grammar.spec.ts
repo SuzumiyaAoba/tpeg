@@ -723,6 +723,64 @@ describe("Grammar Definition Block Tests", () => {
         expect(pattern?.type).toBe("Sequence");
       }
     });
+
+    test("should detect a rule boundary when the next rule's '=' is on a different line than its name", () => {
+      const input = `grammar G {
+        x = "a"
+        y
+          = "b"
+      }`;
+
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules.map((r) => r.name)).toEqual(["x", "y"]);
+      }
+    });
+
+    test("should detect a rule boundary across a line comment between the next rule's name and '='", () => {
+      const input = `grammar G {
+        x = "a"
+        y // comment
+          = "b"
+      }`;
+
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules.map((r) => r.name)).toEqual(["x", "y"]);
+      }
+    });
+
+    test("should detect a rule boundary across a block comment between the next rule's name and '='", () => {
+      const input = `grammar G {
+        x = "a"
+        y /* c */
+          = "b"
+      }`;
+
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules.map((r) => r.name)).toEqual(["x", "y"]);
+      }
+    });
+
+    test("should still treat a line-start identifier without '=' as a sequence element, not a rule boundary", () => {
+      const input = `grammar G {
+        x = "a"
+          y
+          "b"
+      }`;
+
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules).toHaveLength(1);
+        expect(result.val.rules[0]?.name).toBe("x");
+        expect(result.val.rules[0]?.pattern.type).toBe("Sequence");
+      }
+    });
   });
 
   describe("modularGrammarDefinition: @dependencies/@conflicts array annotations", () => {

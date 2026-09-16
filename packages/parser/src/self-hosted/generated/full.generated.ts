@@ -428,7 +428,7 @@ export const interWs: Parser<any> = charClassRun([" ", "\t", "\n", "\r"], 0);
 
 export const interWsPlus: Parser<any> = charClassRun([" ", "\t", "\n", "\r"], 1);
 
-export const sameLineWs: Parser<any> = charClassRun([" ", "\t"], 0);
+export const wsAndComments: Parser<any> = zeroOrMore(choice(charClass(" ", "\t", "\n", "\r"), actionLineComment, actionBlockComment));
 
 export const group: Parser<any> = (input, pos) => {
   const __base = (captureSequence(literal("("), interWs, capture("expr", lazy(() => choiceExpr)), interWs, literal(")")));
@@ -642,7 +642,7 @@ export const labeled: Parser<any> = choice((input, pos) => {
   };
 }, prefix);
 
-export const notNextRuleStart: Parser<any> = sequence(notPredicate(sequence(identifierName, sameLineWs, literal("="))), notPredicate(sequence(literal("transforms"), notPredicate(identContChar))));
+export const notNextRuleStart: Parser<any> = sequence(notPredicate(sequence(identifierName, wsAndComments, literal("="))), notPredicate(sequence(literal("transforms"), notPredicate(identContChar))));
 
 export const sequenceContinuation: Parser<any> = sequence(interWs, notNextRuleStart, labeled);
 
@@ -709,7 +709,7 @@ export const choiceExpr: Parser<any> = (input, pos) => {
 };
 
 export const ruleDefinitionNode: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(interWs, capture("name", identifierName), interWs, literal("="), interWs, capture("pattern", choiceExpr)));
+  const __base = (captureSequence(interWs, capture("name", identifierName), wsAndComments, literal("="), wsAndComments, capture("pattern", choiceExpr)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
