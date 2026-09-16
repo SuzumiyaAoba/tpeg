@@ -930,18 +930,19 @@ const grammarBlock: Parser<{
     // optional clauses), so it can't simply become `optionalWhitespace`.
     requiredWhitespaceOrComment,
     dottedGrammarName,
-    optionalWhitespace,
+    // Comment-tolerant, same as the pre-"{" position below: a comment
+    // between the grammar's name and `extends`, or between `extends` and
+    // `includes` (e.g. `grammar G /* c */ extends B {`), is a legitimate
+    // header-level position for one per docs/peg-grammar.md's Comments
+    // section -- a comment is accepted between any two syntactic
+    // elements, and these are header positions, not between-items ones
+    // (`grammarItem` below already accepts a comment as its own item
+    // for the between-items case). See `optionalWhitespaceOrComment`'s
+    // doc comment (`./whitespace-utils.ts`).
+    optionalWhitespaceOrComment,
     optional(grammarExtendsClause),
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     optional(grammarIncludesClause),
-    // Comment-tolerant (unlike the other `optionalWhitespace` calls in
-    // this sequence): a block comment between the grammar's name/
-    // extends/includes clauses and its opening "{" (e.g. `grammar G /*
-    // c */ {`) is a header-level position, not a between-items one --
-    // `grammarItem` below already accepts a comment as its own item for
-    // the BETWEEN-items case. See `optionalWhitespaceOrComment`'s doc
-    // comment (`./whitespace-utils.ts`) for why only this one position
-    // needs it.
     optionalWhitespaceOrComment,
     literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_OPEN),
     grammarItems,

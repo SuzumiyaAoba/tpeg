@@ -862,6 +862,51 @@ describe("Grammar Definition Block Tests", () => {
         expect(result.val.extends).toBeUndefined();
       }
     });
+
+    test("should accept a comment between the grammar name and 'extends'", () => {
+      const result = testParse(
+        modularGrammarDefinition,
+        `grammar G /* c */ extends B { r = "x" }`,
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.extends).toBe("B");
+      }
+    });
+
+    test("should accept a comment between 'extends' and 'includes' clauses", () => {
+      const result = testParse(
+        modularGrammarDefinition,
+        `grammar G extends B /* c */ includes I { r = "x" }`,
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.extends).toBe("B");
+        expect(result.val.includes).toEqual(["I"]);
+      }
+    });
+
+    test("should accept a comment between the grammar name and 'includes'", () => {
+      const result = testParse(
+        modularGrammarDefinition,
+        `grammar G /* c */ includes I { r = "x" }`,
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.includes).toEqual(["I"]);
+      }
+    });
+
+    test("should accept a line comment before 'extends' on the next line", () => {
+      const result = testParse(
+        modularGrammarDefinition,
+        `grammar G // note\n extends B { r = "x" }`,
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.extends).toBe("B");
+      }
+    });
   });
 
   describe("modularGrammarDefinition: @requires record annotation", () => {

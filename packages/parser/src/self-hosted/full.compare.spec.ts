@@ -145,6 +145,20 @@ grammar G {
   r = "x"
 }`,
 
+      // comments around the extends/includes clauses -- grammar.ts uses
+      // optionalWhitespaceOrComment in every header gap, so all three
+      // positions (name/extends, extends/includes, name/includes) tolerate
+      // comments
+      `grammar G /* c */ extends B {
+  r = "x"
+}`,
+      `grammar G extends B /* c */ includes I {
+  r = "x"
+}`,
+      `grammar G /* c */ includes I {
+  r = "x"
+}`,
+
       // a transforms block is preserved on GrammarDefinition too, as long as
       // it appears where grammarRuleExpression's own boundary-scan can find
       // it (see the README's "transforms after a rule" limitation below)

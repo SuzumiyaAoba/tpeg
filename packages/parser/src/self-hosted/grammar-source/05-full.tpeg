@@ -351,7 +351,7 @@ grammar SelfHostFull {
 
   grammarItemsNode = interWs items:grammarItemWithWs* { return items.map((i: any) => i[0]); }
 
-  modularGrammarBlockNode = leadingContent "grammar" interWsPlus name:dottedGrammarName interWs ext:grammarExtendsClause? interWs inc:grammarIncludesClause? leadingContent "{" items:grammarItemsNode interWs "}" {
+  modularGrammarBlockNode = leadingContent "grammar" interWsPlus name:dottedGrammarName leadingContent ext:grammarExtendsClause? leadingContent inc:grammarIncludesClause? leadingContent "{" items:grammarItemsNode interWs "}" {
     const annotations: any[] = [];
     const rules: any[] = [];
     const transforms: any[] = [];

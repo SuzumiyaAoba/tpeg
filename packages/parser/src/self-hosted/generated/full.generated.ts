@@ -1579,7 +1579,7 @@ export const grammarItemsNode: Parser<any> = (input, pos) => {
 };
 
 export const modularGrammarBlockNode: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(leadingContent, literal("grammar"), interWsPlus, capture("name", dottedGrammarName), interWs, capture("ext", optional(grammarExtendsClause)), interWs, capture("inc", optional(grammarIncludesClause)), leadingContent, literal("{"), capture("items", grammarItemsNode), interWs, literal("}")));
+  const __base = (captureSequence(leadingContent, literal("grammar"), interWsPlus, capture("name", dottedGrammarName), leadingContent, capture("ext", optional(grammarExtendsClause)), leadingContent, capture("inc", optional(grammarIncludesClause)), leadingContent, literal("{"), capture("items", grammarItemsNode), interWs, literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
