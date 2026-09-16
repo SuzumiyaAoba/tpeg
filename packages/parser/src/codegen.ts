@@ -647,13 +647,15 @@ export const generateQuantifiedCode = (
   }
 
   if (expr.min === expr.max) {
-    // {n} - exactly n
+    // {n} - exactly n. Even {1} goes through `quantified(...)`: emitting
+    // the bare inner parser would return a scalar `T` where every other
+    // repetition form (and `quantified(inner, 1, 1)` itself) produces
+    // `T[]` -- a silent shape change for consumers of `.val`.
     if (expr.min === 0) {
       // {0} always matches zero repetitions, producing an empty array --
       // not "choice()", which always fails.
       return `quantified(${inner}, 0, 0)`;
     }
-    if (expr.min === 1) return inner;
     return `quantified(${inner}, ${expr.min}, ${expr.max})`;
   }
 
@@ -1357,7 +1359,9 @@ export class TPEGCodeGenerator {
             combinators.add("quantified");
           }
         } else if (quantified.min === quantified.max) {
-          if (quantified.min !== 1) combinators.add("quantified");
+          // `{n}` uses `quantified` for every `n`, `{1}` included -- see
+          // `generateQuantifiedCode`.
+          combinators.add("quantified");
         } else {
           if (quantified.min === 0 && quantified.max === 1) {
             combinators.add("optional");

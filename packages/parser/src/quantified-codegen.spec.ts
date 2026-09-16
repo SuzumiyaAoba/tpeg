@@ -34,7 +34,7 @@ describe("quantified expression code generation", () => {
       expect(result.code).toContain('quantified(literal("a"), 3, 3)');
     });
 
-    it("should optimize {1} to direct expression", () => {
+    it("should keep {1} as quantified so the result stays T[]", () => {
       const grammar = createGrammarDefinition(
         "Test",
         [],
@@ -47,8 +47,10 @@ describe("quantified expression code generation", () => {
       );
 
       const result = generator.generateGrammar(grammar);
-      expect(result.code).toContain('literal("a")');
-      expect(result.code).not.toContain("quantified");
+      // {1} is a degenerate repetition: emitting the bare inner parser
+      // would return a scalar where {2}, {0,1}, `*` etc. all produce
+      // `T[]` (and where `quantified(inner, 1, 1)` produces `["a"]`).
+      expect(result.code).toContain('quantified(literal("a"), 1, 1)');
     });
 
     it("should handle {0} as an always-matching zero repetition, not an always-failing empty choice", () => {

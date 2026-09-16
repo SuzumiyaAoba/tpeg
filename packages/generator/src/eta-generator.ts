@@ -571,7 +571,7 @@ export class EtaTPEGCodeGenerator {
           else if (quantifiedExpr.min === 1) combinators.add("oneOrMore");
           else combinators.add("quantified");
         } else if (quantifiedExpr.min === quantifiedExpr.max) {
-          if (quantifiedExpr.min !== 1) combinators.add("quantified");
+          combinators.add("quantified");
         } else {
           if (quantifiedExpr.min === 0 && quantifiedExpr.max === 1) {
             combinators.add("optional");
@@ -754,8 +754,11 @@ export class EtaTPEGCodeGenerator {
     }
 
     if (expr.min === expr.max) {
+      // {n} uses `quantified` for every n, including {1}: returning the
+      // bare inner parser would produce a scalar `T` where every other
+      // repetition form produces `T[]`. Mirrors `generateQuantifiedCode`
+      // in `packages/parser/src/codegen.ts`.
       if (expr.min === 0) return `quantified(${inner}, 0, 0)`; // {0,0} - always returns empty array
-      if (expr.min === 1) return inner;
       return `quantified(${inner}, ${expr.min}, ${expr.max})`;
     }
 

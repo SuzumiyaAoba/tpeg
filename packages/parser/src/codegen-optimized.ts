@@ -836,11 +836,10 @@ export class OptimizedTPEGCodeGenerator {
                   : "quantified",
             );
           } else if (quantified.min === quantified.max) {
-            // `{n}`: `{1}` returns the inner code bare (no combinator of
-            // its own); every other `n` (including `{0}`) uses `quantified`.
-            if (quantified.min !== 1) {
-              combinators.add("quantified");
-            }
+            // `{n}` uses `quantified` for every `n` (including `{0}`
+            // and `{1}` -- the latter keeps the `T[]` result shape of
+            // the other repetition forms rather than returning `T`).
+            combinators.add("quantified");
           } else if (quantified.min === 0 && quantified.max === 1) {
             combinators.add("optional");
           } else {
