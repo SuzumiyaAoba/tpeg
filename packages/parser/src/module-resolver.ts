@@ -310,25 +310,42 @@ export class ModuleResolver {
           filePath,
         );
       }
-      const moduleFile: ModuleFile = fullParse.success
-        ? {
-            type: "ModuleFile",
+      let moduleFile: ModuleFile;
+      if (fullParse.success) {
+        moduleFile = {
+          type: "ModuleFile",
+          filePath,
+          imports: fullParse.val.imports,
+          grammars: [fullParse.val.grammar],
+          // NamespaceManager and VersionManager both read moduleInfo off
+          // the ModuleFile, not off the grammar block, so it has to be
+          // lifted here for @version to actually reach them.
+          ...(fullParse.val.grammar.moduleInfo
+            ? { moduleInfo: fullParse.val.grammar.moduleInfo }
+            : {}),
+        };
+      } else {
+        const imports = this.parseImports(content);
+        if (imports.length === 0) {
+          // The imports-only fallback exists to keep dependency resolution
+          // working when the grammar half uses syntax
+          // `modularGrammarDefinition` doesn't support yet -- but a file
+          // with no imports at all has nothing to resolve, so surface the
+          // real syntax error instead of producing an empty module that
+          // masks it.
+          const { line, column } = offsetToPos(content, fullParse.error.pos);
+          throw new ModuleResolutionError(
+            `Failed to parse module file "${filePath}" at line ${line}, column ${column}: ${fullParse.error.message}`,
             filePath,
-            imports: fullParse.val.imports,
-            grammars: [fullParse.val.grammar],
-            // NamespaceManager and VersionManager both read moduleInfo off
-            // the ModuleFile, not off the grammar block, so it has to be
-            // lifted here for @version to actually reach them.
-            ...(fullParse.val.grammar.moduleInfo
-              ? { moduleInfo: fullParse.val.grammar.moduleInfo }
-              : {}),
-          }
-        : {
-            type: "ModuleFile",
-            filePath,
-            imports: this.parseImports(content),
-            grammars: [],
-          };
+          );
+        }
+        moduleFile = {
+          type: "ModuleFile",
+          filePath,
+          imports,
+          grammars: [],
+        };
+      }
 
       return moduleFile;
     } catch (error) {
@@ -360,26 +377,31 @@ export class ModuleResolver {
   }
 
   /**
-   * Parse import statements from module content
+   * Parse import statements from module content.
+   *
+   * Fallback for when `tpegModuleFile` can't parse the file at all, so
+   * dependency resolution still sees the imports of a module whose
+   * grammar block uses not-yet-supported syntax.
+   *
+   * Scans only the leading import section -- the same run of
+   * (trivia, import) pairs `tpegModuleFile` itself parses -- using the
+   * real `importStatement` parser at each candidate position, rather
+   * than the old line-by-line `startsWith("import ")` matching, which
+   * also picked up `import` lines inside `/* ... *\/` block comments
+   * and treated commented-out imports as real dependencies (masking the
+   * file's actual syntax error behind a phantom "module not found" for
+   * the fake path).
    */
   private parseImports(content: string): ImportStatement[] {
     const imports: ImportStatement[] = [];
-    const lines = content.split("\n");
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith("import ")) {
-        try {
-          const result = importStatement(trimmed, 0);
-          if (result.success) {
-            imports.push(result.val);
-          }
-        } catch {
-          // Ignore parse errors for now
-        }
-      }
+    let pos = 0;
+    while (pos < content.length) {
+      const start = skipTrailingWhitespaceAndComments(content, pos);
+      const result = importStatement(content, start);
+      if (!result.success) break;
+      imports.push(result.val);
+      pos = result.next;
     }
-
     return imports;
   }
 }

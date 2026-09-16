@@ -345,6 +345,60 @@ transforms T@typescript {
       expect(resolved.content.grammars).toHaveLength(0);
     });
 
+    it("should not extract imports from inside block comments", async () => {
+      // Regression test: the old line-based scan treated a commented-out
+      // `import` line inside `/* ... *\/` as a real dependency, so
+      // resolution failed with "Module file not found: phantom.tpeg",
+      // masking the file's actual syntax error.
+      mockFs.addFile(
+        "/test/bad.tpeg",
+        `/*
+import "phantom.tpeg" as ghost
+*/
+import "dep.tpeg" as dep
+grammar Bad { !!! }`,
+      );
+      mockFs.addFile("/test/dep.tpeg", `grammar D { d = "x" }`);
+
+      const resolved = await resolver.resolveModule("bad.tpeg");
+
+      expect(resolved.dependencies).toEqual(["/test/dep.tpeg"]);
+      expect(resolved.content.imports).toHaveLength(1);
+      expect(resolved.content.imports[0]?.modulePath).toBe("dep.tpeg");
+    });
+
+    it("should not extract line-commented imports in the fallback scan", async () => {
+      mockFs.addFile(
+        "/test/commented.tpeg",
+        `// import "phantom.tpeg" as ghost
+import "dep.tpeg" as dep
+grammar Bad { !!! }`,
+      );
+      mockFs.addFile("/test/dep.tpeg", `grammar D { d = "x" }`);
+
+      const resolved = await resolver.resolveModule("commented.tpeg");
+
+      expect(resolved.content.imports).toHaveLength(1);
+      expect(resolved.dependencies).toEqual(["/test/dep.tpeg"]);
+    });
+
+    it("should surface the real syntax error when the fallback finds no imports", async () => {
+      // A file whose grammar can't be parsed AND declares no imports has
+      // nothing for the imports-only fallback to resolve -- report the
+      // original parse error rather than resolving to an empty module.
+      mockFs.addFile(
+        "/test/broken.tpeg",
+        `grammar Bad {\n  r = "a" oops!!! not valid\n}`,
+      );
+
+      await expect(resolver.resolveModule("broken.tpeg")).rejects.toThrow(
+        ModuleResolutionError,
+      );
+      await expect(resolver.resolveModule("broken.tpeg")).rejects.toThrow(
+        /Failed to parse module file/,
+      );
+    });
+
     it("should resolve multiple modules", async () => {
       mockFs.addFile("/test/base.tpeg", BASE_MODULE);
       mockFs.addFile("/test/utils.tpeg", UTILS_MODULE);
