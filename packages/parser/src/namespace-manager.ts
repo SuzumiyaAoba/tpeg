@@ -52,6 +52,35 @@ export class QualifiedNameResolutionError extends Error {
 }
 
 /**
+ * Lexically normalizes a `/`-separated file path for equality
+ * comparison: collapses `.` segments and duplicate separators, resolves
+ * `..` segments, and preserves a leading `/`. No filesystem access --
+ * registered `filePath`s and import `modulePath`s are compared as
+ * strings only.
+ */
+const normalizeModulePath = (path: string): string => {
+  const isAbsolute = path.startsWith("/");
+  const segments: string[] = [];
+  for (const segment of path.split("/")) {
+    if (segment === "" || segment === ".") {
+      continue;
+    }
+    if (segment === "..") {
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  return `${isAbsolute ? "/" : ""}${segments.join("/")}`;
+};
+
+/** Directory portion of a `/`-separated path; `""` when it has none. */
+const dirnameOf = (path: string): string => {
+  const lastSlash = path.lastIndexOf("/");
+  return lastSlash === -1 ? "" : path.slice(0, lastSlash);
+};
+
+/**
  * Information about a resolved rule.
  */
 export interface ResolvedRule {
@@ -184,8 +213,13 @@ export class NamespaceManager {
     // necessarily `extractModuleName(targetModulePath)` alone, since a
     // module with an explicit `@namespace` differing from its own
     // basename is registered under that namespace instead (see
-    // `resolveRegisteredModuleName`'s doc comment).
-    const targetModule = this.resolveRegisteredModuleName(targetModulePath);
+    // `resolveRegisteredModuleName`'s doc comment). The current module's
+    // own filePath is supplied so a relative `modulePath` resolves
+    // against the directory of the file that declared the import.
+    const targetModule = this.resolveRegisteredModuleName(
+      targetModulePath,
+      this.moduleFilePaths.get(currentModule),
+    );
     if (!targetModule) {
       throw new QualifiedNameResolutionError(
         `${qualifiedId.module}.${qualifiedId.name}`,
@@ -286,7 +320,10 @@ export class NamespaceManager {
     const ruleToModules = new Map<string, Set<string>>();
 
     for (const [, modulePath] of scope.imports) {
-      const targetModuleName = this.resolveRegisteredModuleName(modulePath);
+      const targetModuleName = this.resolveRegisteredModuleName(
+        modulePath,
+        this.moduleFilePaths.get(currentModule),
+      );
       if (!targetModuleName) continue;
       const targetScope = this.scopes.get(targetModuleName);
       if (!targetScope) continue;
@@ -323,7 +360,10 @@ export class NamespaceManager {
 
     // Exported rules of imported modules
     for (const [alias, modulePath] of scope.imports) {
-      const targetModuleName = this.resolveRegisteredModuleName(modulePath);
+      const targetModuleName = this.resolveRegisteredModuleName(
+        modulePath,
+        this.moduleFilePaths.get(currentModule),
+      );
       const targetScope = targetModuleName
         ? this.scopes.get(targetModuleName)
         : undefined;
@@ -364,31 +404,74 @@ export class NamespaceManager {
    * importer referring to that module by its (basename-derived) path
    * can't just call `extractModuleName(modulePath)` and look it up
    * directly whenever the target was registered under a DIFFERENT,
-   * explicit namespace. This class has no `baseDir`/`FileSystemInterface`
-   * to resolve `modulePath` (typically relative, e.g. `"lib/helpers.tpeg"`)
-   * against a registered `filePath` (typically the absolute path
-   * `ModuleResolver` supplies) directly, so instead of path resolution,
-   * this falls back to scanning `moduleFilePaths` (moduleName -> filePath,
-   * populated by `registerModule`) for the registered entry whose OWN
-   * filePath shares `modulePath`'s basename -- purely local, no path
-   * resolution needed, and preserves `extractModuleName`'s own doc
-   * comment premise that a short, caller-facing module name is always a
-   * basename (explicit or derived), never a resolved path.
+   * explicit namespace.
    *
-   * Returns `undefined` when no registered module matches by either
-   * name, exactly like `extractModuleName(modulePath)` failing to find an
-   * entry in `moduleRules`/`scopes` used to (callers already handle that
-   * as "not registered").
+   * Matching is path-first: the import's `modulePath` is normalized
+   * relative to the importing module's own directory (imports are
+   * file paths, so `./b/u.tpeg` inside `/proj/c.tpeg` means
+   * `/proj/b/u.tpeg`) and compared against each registered `filePath`.
+   * Only when no registered `filePath` matches does this fall back to
+   * comparing basenames -- the earlier behavior, which mis-resolved an
+   * import to whichever same-basename module happened to be scanned
+   * first (e.g. `/proj/a/u.tpeg` for an import of `./b/u.tpeg`). The
+   * basename fallback still serves registrations whose `filePath` is a
+   * bare name rather than a real path (as in unit tests), but if it
+   * yields more than one candidate module the reference is genuinely
+   * ambiguous and this throws rather than picking one arbitrarily.
+   *
+   * Returns `undefined` when no registered module matches, exactly like
+   * `extractModuleName(modulePath)` failing to find an entry in
+   * `moduleRules`/`scopes` used to (callers already handle that as
+   * "not registered").
    */
-  private resolveRegisteredModuleName(modulePath: string): string | undefined {
+  private resolveRegisteredModuleName(
+    modulePath: string,
+    importerFilePath?: string,
+  ): string | undefined {
+    const importerDir =
+      importerFilePath === undefined
+        ? ""
+        : dirnameOf(normalizeModulePath(importerFilePath));
+    const resolvedPath = normalizeModulePath(
+      modulePath.startsWith("/") || importerDir === ""
+        ? modulePath
+        : `${importerDir}/${modulePath}`,
+    );
+
+    const pathMatches = new Set<string>();
+    for (const [moduleName, filePath] of this.moduleFilePaths) {
+      if (normalizeModulePath(filePath) === resolvedPath) {
+        pathMatches.add(moduleName);
+      }
+    }
+    if (pathMatches.size === 1) {
+      return [...pathMatches][0];
+    }
+    if (pathMatches.size > 1) {
+      throw new QualifiedNameResolutionError(
+        modulePath,
+        `Module path '${modulePath}' is ambiguous: it resolves to '${resolvedPath}', which is the filePath of multiple registered modules: ${[...pathMatches].join(", ")}`,
+      );
+    }
+
     const basename = this.extractModuleName(modulePath);
+    const candidates = new Set<string>();
     if (this.moduleRules.has(basename)) {
-      return basename;
+      candidates.add(basename);
     }
     for (const [moduleName, filePath] of this.moduleFilePaths) {
       if (this.extractModuleName(filePath) === basename) {
-        return moduleName;
+        candidates.add(moduleName);
       }
+    }
+    if (candidates.size === 1) {
+      return [...candidates][0];
+    }
+    if (candidates.size > 1) {
+      throw new QualifiedNameResolutionError(
+        modulePath,
+        `Module path '${modulePath}' is ambiguous: basename '${basename}' matches multiple registered modules: ${[...candidates].join(", ")}`,
+      );
     }
     return undefined;
   }

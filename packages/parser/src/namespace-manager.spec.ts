@@ -589,4 +589,115 @@ describe("NamespaceManager", () => {
       expect(available.get("h")).toEqual(new Set(["foo"]));
     });
   });
+
+  describe("same-basename modules", () => {
+    // Regression for issue #54: `resolveRegisteredModuleName` used to match
+    // a registered module by file basename alone, so with `/proj/a/u.tpeg`
+    // and `/proj/b/u.tpeg` both registered, an import of `./b/u.tpeg`
+    // resolved to whichever was found first instead of the file it names.
+    const registerSameBasenameModules = () => {
+      const ruleA = createRule("r", { type: "StringLiteral", value: "AAA" });
+      manager.registerModule(
+        createModuleFile(
+          "/proj/a/u.tpeg",
+          [
+            createModularGrammar("A", [ruleA], {
+              type: "ExportDeclaration",
+              rules: ["r"],
+            }),
+          ],
+          [],
+          { type: "ModuleInfo", namespace: "ns_a" },
+        ),
+      );
+      const ruleB = createRule("r", { type: "StringLiteral", value: "BBB" });
+      manager.registerModule(
+        createModuleFile(
+          "/proj/b/u.tpeg",
+          [
+            createModularGrammar("B", [ruleB], {
+              type: "ExportDeclaration",
+              rules: ["r"],
+            }),
+          ],
+          [],
+          { type: "ModuleInfo", namespace: "ns_b" },
+        ),
+      );
+    };
+
+    it("resolves a qualified reference by the import's full path, not its basename", () => {
+      registerSameBasenameModules();
+      manager.registerModule(
+        createModuleFile(
+          "/proj/c.tpeg",
+          [createGrammar("Main", [])],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "./b/u.tpeg",
+              alias: "x",
+            },
+          ],
+          { type: "ModuleInfo", namespace: "main" },
+        ),
+      );
+
+      const resolved = manager.resolveQualifiedName(
+        createQualifiedId("x", "r"),
+        "main",
+      );
+      expect(resolved.moduleName).toBe("ns_b");
+      expect(resolved.rule.pattern).toEqual({
+        type: "StringLiteral",
+        value: "BBB",
+      });
+    });
+
+    it("resolves `..` segments in the import path against the importer's directory", () => {
+      registerSameBasenameModules();
+      manager.registerModule(
+        createModuleFile(
+          "/proj/deep/c.tpeg",
+          [createGrammar("Main", [])],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "../a/u.tpeg",
+              alias: "x",
+            },
+          ],
+          { type: "ModuleInfo", namespace: "main" },
+        ),
+      );
+
+      const resolved = manager.resolveQualifiedName(
+        createQualifiedId("x", "r"),
+        "main",
+      );
+      expect(resolved.moduleName).toBe("ns_a");
+    });
+
+    it("fails loudly on a basename-only import when two same-basename modules are registered", () => {
+      registerSameBasenameModules();
+      manager.registerModule(
+        createModuleFile(
+          "/elsewhere/main.tpeg",
+          [createGrammar("Main", [])],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "u.tpeg",
+              alias: "x",
+            },
+          ],
+          { type: "ModuleInfo", namespace: "main" },
+        ),
+      );
+
+      expect(() =>
+        manager.resolveQualifiedName(createQualifiedId("x", "r"), "main"),
+      ).toThrow(/ambiguous/);
+    });
+  });
 });
