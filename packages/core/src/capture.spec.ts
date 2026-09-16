@@ -113,6 +113,32 @@ describe("capture", () => {
       expect(merged).toEqual({ name: "third" });
     });
 
+    it("keeps a `__proto__` label as an ordinary own property instead of dropping it or polluting the prototype", () => {
+      // `__proto__` is a legal grammar label, and `Object.assign`'s
+      // `[[Set]]` copy would route it through Object.prototype's
+      // `__proto__` setter: a primitive value is silently dropped, an
+      // object value replaces the merged object's prototype. The merge
+      // must define a plain data property instead.
+      const primitive = mergeCaptures([
+        tagged("__proto__", "a"),
+        tagged("other", "b"),
+      ]);
+      expect(Object.keys(primitive).sort()).toEqual(["__proto__", "other"]);
+      expect(primitive["__proto__"]).toBe("a");
+      expect(Object.getPrototypeOf(primitive)).toBe(Object.prototype);
+      expect(JSON.stringify(primitive)).toBe('{"__proto__":"a","other":"b"}');
+    });
+
+    it("keeps an object-valued `__proto__` capture as a data property, not the result's prototype", () => {
+      const protoCapture = capture("__proto__", capture("x", literal("a")));
+      const r = protoCapture("a", 0);
+      if (!r.success) throw new Error("unreachable");
+      const merged = mergeCaptures([r.val, tagged("other", "b")]);
+      expect(Object.getPrototypeOf(merged)).toBe(Object.prototype);
+      expect(Object.keys(merged).sort()).toEqual(["__proto__", "other"]);
+      expect(merged["__proto__"]).toEqual({ x: "a" });
+    });
+
     it("should not merge an untagged object-shaped value (e.g. an unlabeled reference to a rule that captures internally)", () => {
       // A plain object literal is exactly what an unlabeled Sequence
       // element resolves to when it happens to reference another

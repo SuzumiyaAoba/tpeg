@@ -119,8 +119,24 @@ export const mergeCaptures = (captures: unknown[]): CapturedValue => {
   const result: CapturedValue = {};
 
   for (const capture of captures) {
-    if (isCaptureTagged(capture)) {
-      Object.assign(result, capture);
+    if (!isCaptureTagged(capture)) continue;
+    // Copy entries with defineProperty rather than `Object.assign`: a
+    // label named `__proto__` is a legal grammar label, and assign's
+    // `[[Set]]` semantics route it through `Object.prototype`'s
+    // `__proto__` setter -- silently dropping a primitive value or
+    // replacing the merged object's prototype with an object value.
+    // Defining a plain data property keeps it an ordinary own property
+    // (the same thing `capture(...)`'s own computed-key literal
+    // `{ [label]: ... }` already produces upstream).
+    for (const key of Reflect.ownKeys(capture)) {
+      const descriptor = Object.getOwnPropertyDescriptor(capture, key);
+      if (!descriptor?.enumerable) continue;
+      Object.defineProperty(result, key, {
+        value: (capture as Record<PropertyKey, unknown>)[key],
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
     }
   }
 
