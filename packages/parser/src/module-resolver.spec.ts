@@ -276,6 +276,75 @@ describe("Module Resolution Engine", () => {
       );
     });
 
+    it("should reject a module file with unconsumed trailing content", async () => {
+      // `tpegModuleFile` is a prefix parser: without a full-consumption
+      // check, `grammar G { ... }\nGARBAGE` loads "successfully" with the
+      // trailing text silently dropped.
+      mockFs.addFile(
+        "/test/trailing.tpeg",
+        `grammar G { r = "x" }\nGARBAGE TRAILING`,
+      );
+
+      await expect(resolver.resolveModule("trailing.tpeg")).rejects.toThrow(
+        ModuleResolutionError,
+      );
+      await expect(resolver.resolveModule("trailing.tpeg")).rejects.toThrow(
+        /unexpected content at line 2, column 0/,
+      );
+    });
+
+    it("should reject a transforms block placed after the grammar block", async () => {
+      // Regression test for the data-loss case: `transforms` belongs
+      // INSIDE the grammar block per docs/peg-grammar.md, so a block after
+      // the closing "}" used to vanish silently -- the generated parser
+      // then compiled fine but never applied the transform functions.
+      mockFs.addFile(
+        "/test/misplaced.tpeg",
+        `grammar G {
+  __transformed = "a"
+  m = __transformed
+}
+transforms T@typescript {
+  m(captures: any) -> Result<any> { return { success: true, value: 1 }; }
+}`,
+      );
+
+      await expect(resolver.resolveModule("misplaced.tpeg")).rejects.toThrow(
+        ModuleResolutionError,
+      );
+      await expect(resolver.resolveModule("misplaced.tpeg")).rejects.toThrow(
+        /unexpected content at line 5, column 0/,
+      );
+    });
+
+    it("should still accept trailing whitespace and comments", async () => {
+      mockFs.addFile(
+        "/test/clean.tpeg",
+        `grammar G { r = "x" } // done\n/* trailing block */\n`,
+      );
+
+      const resolved = await resolver.resolveModule("clean.tpeg");
+
+      expect(resolved.resolved).toBe(true);
+      expect(resolved.content.grammars).toHaveLength(1);
+    });
+
+    it("should still fall back to imports-only when the grammar half cannot be parsed", async () => {
+      // Existing behavior preserved: a file whose grammar block doesn't
+      // parse at all still resolves its imports so dependency resolution
+      // keeps working.
+      mockFs.addFile(
+        "/test/no-grammar.tpeg",
+        `import "dep.tpeg" as dep\nthis is not a grammar block`,
+      );
+      mockFs.addFile("/test/dep.tpeg", `grammar D { d = "x" }`);
+
+      const resolved = await resolver.resolveModule("no-grammar.tpeg");
+
+      expect(resolved.content.imports).toHaveLength(1);
+      expect(resolved.content.grammars).toHaveLength(0);
+    });
+
     it("should resolve multiple modules", async () => {
       mockFs.addFile("/test/base.tpeg", BASE_MODULE);
       mockFs.addFile("/test/utils.tpeg", UTILS_MODULE);

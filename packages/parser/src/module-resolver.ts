@@ -18,8 +18,8 @@ import type {
   ModuleFile,
   QualifiedIdentifier,
 } from "@suzumiyaaoba/tpeg-core";
-import { parse } from "@suzumiyaaoba/tpeg-core";
-import { tpegModuleFile } from "./grammar";
+import { offsetToPos, parse } from "@suzumiyaaoba/tpeg-core";
+import { skipTrailingWhitespaceAndComments, tpegModuleFile } from "./grammar";
 import { importStatement } from "./module";
 
 // ============================================================================
@@ -292,6 +292,24 @@ export class ModuleResolver {
       // dependency resolution still works even when the grammar half can't
       // be parsed.
       const fullParse = parse(tpegModuleFile)(content);
+      // `parse()` only requires `tpegModuleFile` to match a PREFIX of the
+      // file (see `packages/core/src/utils.ts`'s `parse`), so content after
+      // the grammar block's closing "}" -- a misplaced `transforms` block, a
+      // typo'd second `grammar` block, arbitrary garbage -- would otherwise
+      // be silently dropped, leaving the module "loaded" with a truncated
+      // grammar. Require full consumption exactly the way the CLI does for
+      // `tpegFile` (`packages/cli/src/cli.ts`): only trailing whitespace and
+      // comments may remain.
+      const trailingEnd = fullParse.success
+        ? skipTrailingWhitespaceAndComments(content, fullParse.next)
+        : content.length;
+      if (fullParse.success && trailingEnd !== content.length) {
+        const { line, column } = offsetToPos(content, trailingEnd);
+        throw new ModuleResolutionError(
+          `Failed to parse module file "${filePath}": unexpected content at line ${line}, column ${column} (the import/grammar block(s) before this point parsed successfully, but did not consume the rest of the file)`,
+          filePath,
+        );
+      }
       const moduleFile: ModuleFile = fullParse.success
         ? {
             type: "ModuleFile",
