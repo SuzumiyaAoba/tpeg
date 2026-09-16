@@ -1,4 +1,5 @@
 import type { ModuleFile } from "@suzumiyaaoba/tpeg-core";
+import { dirnameOf, normalizeModulePath } from "./path-utils.js";
 
 const VERSION_PREFIX_RE = /^v/;
 const SEMVER_RE =
@@ -490,7 +491,10 @@ export class VersionManager {
     }
 
     for (const [dependencyModule, constraint] of moduleVersion.dependencies) {
-      const dependencyVersion = this.findRegisteredModule(dependencyModule);
+      const dependencyVersion = this.findRegisteredModule(
+        dependencyModule,
+        moduleVersion.filePath,
+      );
       if (!dependencyVersion) {
         throw new VersionCompatibilityError(
           dependencyModule,
@@ -512,7 +516,10 @@ export class VersionManager {
 
     // Check for conflicts
     for (const conflictModule of moduleVersion.conflicts) {
-      const conflictingModule = this.findRegisteredModule(conflictModule);
+      const conflictingModule = this.findRegisteredModule(
+        conflictModule,
+        moduleVersion.filePath,
+      );
       if (conflictingModule) {
         throw new VersionCompatibilityError(
           conflictModule,
@@ -586,11 +593,74 @@ export class VersionManager {
     );
   }
 
-  private findRegisteredModule(reference: string): ModuleVersion | undefined {
+  /**
+   * Resolves a dependency/conflict `reference` (an import's `modulePath`
+   * or a `@conflicts` entry) to a registered module.
+   *
+   * Matching is path-first, the same scheme `NamespaceManager` uses:
+   * `reference` is normalized relative to the referencing module's own
+   * directory and compared against each registered `filePath`, so
+   * `dirA/lib.tpeg` and `dirB/lib.tpeg` registered side by side are
+   * distinguished by the path the import actually names instead of
+   * `referenceTargetsModule`'s basename comparison silently matching
+   * whichever was registered first -- in BOTH directions (a valid
+   * dependency rejected against the wrong sibling's version, or a
+   * violated constraint passing because the wrong module satisfied it).
+   *
+   * The name/basename comparison remains as a fallback for references
+   * that don't resolve to a registered path (a `@conflicts` entry naming
+   * a module by its registered name, or a stub `filePath`), but when it
+   * yields multiple candidates the reference is genuinely ambiguous and
+   * this throws rather than picking one arbitrarily.
+   */
+  private findRegisteredModule(
+    reference: string,
+    importerFilePath?: string,
+  ): ModuleVersion | undefined {
+    const importerDir =
+      importerFilePath === undefined
+        ? ""
+        : dirnameOf(normalizeModulePath(importerFilePath));
+    const resolvedPath = normalizeModulePath(
+      reference.startsWith("/") || importerDir === ""
+        ? reference
+        : `${importerDir}/${reference}`,
+    );
+
+    const pathMatches: ModuleVersion[] = [];
+    for (const moduleVersion of this.moduleVersions.values()) {
+      if (normalizeModulePath(moduleVersion.filePath) === resolvedPath) {
+        pathMatches.push(moduleVersion);
+      }
+    }
+    if (pathMatches.length === 1) {
+      return pathMatches[0];
+    }
+    if (pathMatches.length > 1) {
+      throw new VersionCompatibilityError(
+        reference,
+        "unknown",
+        "unknown",
+        `Module reference '${reference}' is ambiguous: it resolves to '${resolvedPath}', the filePath of multiple registered modules: ${pathMatches.map((mv) => mv.moduleName).join(", ")}`,
+      );
+    }
+
+    const candidates: ModuleVersion[] = [];
     for (const [moduleName, moduleVersion] of this.moduleVersions) {
       if (this.referenceTargetsModule(reference, moduleName, moduleVersion)) {
-        return moduleVersion;
+        candidates.push(moduleVersion);
       }
+    }
+    if (candidates.length === 1) {
+      return candidates[0];
+    }
+    if (candidates.length > 1) {
+      throw new VersionCompatibilityError(
+        reference,
+        "unknown",
+        "unknown",
+        `Module reference '${reference}' is ambiguous: it matches multiple registered modules: ${candidates.map((mv) => mv.moduleName).join(", ")}`,
+      );
     }
     return undefined;
   }

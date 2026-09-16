@@ -984,6 +984,56 @@ describe("VersionManager", () => {
         VersionCompatibilityError,
       );
     });
+
+    // Regression for issue #55: `findRegisteredModule` matched by file
+    // basename, so with `dirA/lib.tpeg` and `dirB/lib.tpeg` registered
+    // under distinct namespaces, a constraint on `./dirB/lib.tpeg` was
+    // checked against whichever module happened to be scanned first --
+    // rejecting valid dependencies AND passing violated ones.
+    describe("same-basename modules", () => {
+      const registerLibs = (dirAVersion: string, dirBVersion: string) => {
+        manager.registerModule(
+          createModuleFile("/proj/dirA/lib.tpeg", [createGrammar("A")], [], {
+            type: "ModuleInfo",
+            namespace: "libA",
+            version: dirAVersion,
+          }),
+        );
+        manager.registerModule(
+          createModuleFile("/proj/dirB/lib.tpeg", [createGrammar("B")], [], {
+            type: "ModuleInfo",
+            namespace: "libB",
+            version: dirBVersion,
+          }),
+        );
+        manager.registerModule(
+          createModuleFile(
+            "/proj/main.tpeg",
+            [createGrammar("Main")],
+            [
+              {
+                type: "ImportStatement",
+                modulePath: "./dirB/lib.tpeg",
+                version: "^1.0.0",
+              },
+            ],
+            { type: "ModuleInfo", namespace: "main" },
+          ),
+        );
+      };
+
+      it("checks the constraint against the module the import path names, not a same-basename sibling", () => {
+        registerLibs("2.0.0", "1.5.0");
+        expect(() => manager.validateDependencies("main")).not.toThrow();
+      });
+
+      it("still rejects when the resolved module's own version violates the constraint", () => {
+        registerLibs("1.5.0", "9.9.9");
+        expect(() => manager.validateDependencies("main")).toThrow(
+          VersionCompatibilityError,
+        );
+      });
+    });
   });
 
   describe("utility methods", () => {
