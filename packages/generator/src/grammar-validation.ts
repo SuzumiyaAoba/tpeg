@@ -369,7 +369,7 @@ const collectNullableRepetitions = (
   switch (expr.type) {
     case "Star":
     case "Plus":
-      if (isNullableUncached(expr.expression, nullableRules)) {
+      if (isProvablyNullable(expr.expression, nullableRules)) {
         issues.push({ ruleName, nodeType: expr.type });
       }
       collectNullableRepetitions(
@@ -380,9 +380,11 @@ const collectNullableRepetitions = (
       );
       return;
     case "Quantified":
+      // Non-finite `max` counts as unbounded here too, matching the
+      // tpeg-parser copy of this check (`first-sets.ts`).
       if (
-        expr.max === undefined &&
-        isNullableUncached(expr.expression, nullableRules)
+        (expr.max === undefined || !Number.isFinite(expr.max)) &&
+        isProvablyNullable(expr.expression, nullableRules)
       ) {
         issues.push({ ruleName, nodeType: "Quantified" });
       }
@@ -418,6 +420,64 @@ const collectNullableRepetitions = (
       return;
     default:
       return;
+  }
+};
+
+/**
+ * "Provably nullable" variant of `isNullableUncached` for the
+ * REJECTION check in `collectNullableRepetitions` below -- mirrors
+ * `packages/parser/src/first-sets.ts`'s `isProvablyNullable`, which
+ * exists for exactly this asymmetry: the fixpoint computation treats
+ * an unresolved `Identifier`/`QualifiedIdentifier` as nullable because
+ * that's the safe direction for FIRST-set analysis, but for a
+ * *rejection* it is exactly backwards -- `ext*` over an external rule
+ * reference was being rejected even though nothing in the grammar can
+ * prove `ext` nullable, making the external escape hatch unusable
+ * under any unbounded repetition (#113). An external parser that is
+ * nullable at runtime still hits `zeroOrMore`'s zero-progress guard
+ * (`createInfiniteLoopError` in tpeg-core), the correct layer for that
+ * case.
+ */
+const isProvablyNullable = (
+  expr: Expression,
+  nullableRules: ReadonlyMap<string, boolean>,
+): boolean => {
+  switch (expr.type) {
+    case "StringLiteral":
+      return expr.value === "";
+    case "CharacterClass":
+    case "AnyChar":
+      return false;
+    case "Identifier":
+      return nullableRules.get(expr.name) ?? false;
+    case "QualifiedIdentifier":
+      return false;
+    case "Sequence":
+      return expr.elements.every((el) => isProvablyNullable(el, nullableRules));
+    case "Choice":
+      return expr.alternatives.some((alt) =>
+        isProvablyNullable(alt, nullableRules),
+      );
+    case "Group":
+      return isProvablyNullable(expr.expression, nullableRules);
+    case "Star":
+    case "Optional":
+      return true;
+    case "Plus":
+      return isProvablyNullable(expr.expression, nullableRules);
+    case "Quantified":
+      return (
+        expr.min === 0 || isProvablyNullable(expr.expression, nullableRules)
+      );
+    case "PositiveLookahead":
+    case "NegativeLookahead":
+    case "Cut":
+      return true;
+    case "LabeledExpression":
+    case "ActionExpression":
+      return isProvablyNullable(expr.expression, nullableRules);
+    default:
+      return false;
   }
 };
 

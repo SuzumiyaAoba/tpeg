@@ -1,9 +1,9 @@
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
-import { anyChar, capture, captureSequence, charClass, charClassRun, choice, commit, lazy, literal, negatedCharClass, notPredicate, oneOrMore, optional, sequence, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
+import { anyChar, capture, captureSequence, charClass, charClassRun, choice, commit, lazy, literal, negatedCharClass, notPredicate, oneOrMore, optional, sequence, untagCapture, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
 
-export const escapeChar: Parser<any> = sequence(literal("\\"), charClass("n", "r", "t", "\\", "\"", "'"));
+export const escapeChar: Parser<any> = untagCapture(sequence(literal("\\"), charClass("n", "r", "t", "\\", "\"", "'")));
 
-export const doubleStringChar: Parser<any> = choice((input, pos) => {
+export const doubleStringChar: Parser<any> = untagCapture(choice((input, pos) => {
   const __base = (escapeChar);
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -17,9 +17,9 @@ export const doubleStringChar: Parser<any> = choice((input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-}, negatedCharClass("\"", "\\"));
+}, negatedCharClass("\"", "\\")));
 
-export const singleStringChar: Parser<any> = choice((input, pos) => {
+export const singleStringChar: Parser<any> = untagCapture(choice((input, pos) => {
   const __base = (escapeChar);
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -33,9 +33,9 @@ export const singleStringChar: Parser<any> = choice((input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-}, negatedCharClass("'", "\\"));
+}, negatedCharClass("'", "\\")));
 
-export const doubleQuotedString: Parser<any> = (input, pos) => {
+export const doubleQuotedString: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("\""), capture("chars", zeroOrMore(doubleStringChar)), literal("\"")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -50,9 +50,9 @@ export const doubleQuotedString: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const singleQuotedString: Parser<any> = (input, pos) => {
+export const singleQuotedString: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("'"), capture("chars", zeroOrMore(singleStringChar)), literal("'")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -67,11 +67,11 @@ export const singleQuotedString: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const stringLiteralNode: Parser<any> = choice(doubleQuotedString, singleQuotedString);
+export const stringLiteralNode: Parser<any> = untagCapture(choice(doubleQuotedString, singleQuotedString));
 
-export const classEscapeStd: Parser<any> = (input, pos) => {
+export const classEscapeStd: Parser<any> = untagCapture((input, pos) => {
   const __base = (sequence(literal("\\"), charClass("t", "n", "r", "b", "f", "v", "0")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -85,9 +85,9 @@ export const classEscapeStd: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const classEscapeSpecial: Parser<any> = (input, pos) => {
+export const classEscapeSpecial: Parser<any> = untagCapture((input, pos) => {
   const __base = (sequence(literal("\\"), charClass("]", "\\", "^", "-", "\"", "'")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -101,18 +101,23 @@ export const classEscapeSpecial: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const classChar: Parser<any> = choice(classEscapeStd, classEscapeSpecial, negatedCharClass("]", "\\", "^", "-"));
+export const classChar: Parser<any> = untagCapture(choice(classEscapeStd, classEscapeSpecial, negatedCharClass("]", "\\", "^", "-")));
 
-export const charRangePair: Parser<any> = (input, pos) => {
+export const charRangePair: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("start", classChar), literal("-"), capture("end", classChar)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
     const { start, end } = ($$ ?? {});
- return { start, end }; 
+
+    if ((start.codePointAt(0) ?? 0) > (end.codePointAt(0) ?? 0)) {
+      throw new Error("Invalid character range: \"" + start + "-" + end + "\" (start must not be greater than end)");
+    }
+    return { start, end };
+  
   })();
   return {
     success: true,
@@ -120,9 +125,9 @@ export const charRangePair: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const charRangeSingle: Parser<any> = (input, pos) => {
+export const charRangeSingle: Parser<any> = untagCapture((input, pos) => {
   const __base = (capture("start", classChar));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -137,11 +142,11 @@ export const charRangeSingle: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const charRange: Parser<any> = choice(charRangePair, charRangeSingle);
+export const charRange: Parser<any> = untagCapture(choice(charRangePair, charRangeSingle));
 
-export const characterClassBrackets: Parser<any> = (input, pos) => {
+export const characterClassBrackets: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("["), capture("negation", optional(literal("^"))), capture("ranges", oneOrMore(charRange)), literal("]")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -156,9 +161,9 @@ export const characterClassBrackets: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const anyCharDot: Parser<any> = (input, pos) => {
+export const anyCharDot: Parser<any> = untagCapture((input, pos) => {
   const __base = (literal("."));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -171,17 +176,17 @@ export const anyCharDot: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const characterClassNode: Parser<any> = choice(characterClassBrackets, anyCharDot);
+export const characterClassNode: Parser<any> = untagCapture(choice(characterClassBrackets, anyCharDot));
 
-export const identStart: Parser<any> = charClass(["a", "z"], ["A", "Z"], "_");
+export const identStart: Parser<any> = untagCapture(charClass(["a", "z"], ["A", "Z"], "_"));
 
-export const identContChar: Parser<any> = charClass(["a", "z"], ["A", "Z"], ["0", "9"], "_");
+export const identContChar: Parser<any> = untagCapture(charClass(["a", "z"], ["A", "Z"], ["0", "9"], "_"));
 
-export const identCont: Parser<any> = zeroOrMore(identContChar);
+export const identCont: Parser<any> = untagCapture(zeroOrMore(identContChar));
 
-export const identifierName: Parser<any> = (input, pos) => {
+export const identifierName: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("start", identStart), capture("rest", identCont)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -196,9 +201,9 @@ export const identifierName: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const identifierNode: Parser<any> = (input, pos) => {
+export const identifierNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (capture("name", identifierName));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -213,9 +218,9 @@ export const identifierNode: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const qualifiedIdentifierNode: Parser<any> = (input, pos) => {
+export const qualifiedIdentifierNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("module", identifierName), literal("."), capture("name", identifierName), commit(notPredicate(sequence(literal("."), identStart)))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -230,11 +235,11 @@ export const qualifiedIdentifierNode: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const basicSyntax: Parser<any> = choice(stringLiteralNode, characterClassNode, qualifiedIdentifierNode, identifierNode);
+export const basicSyntax: Parser<any> = untagCapture(choice(stringLiteralNode, characterClassNode, qualifiedIdentifierNode, identifierNode));
 
-export const escapedActionChar: Parser<any> = (input, pos) => {
+export const escapedActionChar: Parser<any> = untagCapture((input, pos) => {
   const __base = (sequence(literal("\\"), anyChar()));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -248,9 +253,9 @@ export const escapedActionChar: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const doubleQuotedActionString: Parser<any> = (input, pos) => {
+export const doubleQuotedActionString: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("\""), capture("chars", zeroOrMore(choice(escapedActionChar, negatedCharClass("\"", "\\")))), literal("\"")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -265,9 +270,9 @@ export const doubleQuotedActionString: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const singleQuotedActionString: Parser<any> = (input, pos) => {
+export const singleQuotedActionString: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("'"), capture("chars", zeroOrMore(choice(escapedActionChar, negatedCharClass("'", "\\")))), literal("'")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -282,9 +287,9 @@ export const singleQuotedActionString: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const templateInterp: Parser<any> = (input, pos) => {
+export const templateInterp: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("${"), capture("first", optional(captureSequence(capture("w", lazy(() => wsAndComments)), capture("re", lazy(() => actionRegexLiteral))))), capture("parts", zeroOrMore(lazy(() => actionContent))), literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -301,10 +306,27 @@ export const templateInterp: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const templateActionString: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(literal("`"), capture("chars", zeroOrMore(choice(escapedActionChar, templateInterp, captureSequence(notPredicate(choice(literal("`"), literal("\\"))), capture("c", anyChar()))))), literal("`")));
+export const templatePlainChar: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(notPredicate(choice(literal("`"), literal("\\"))), capture("c", anyChar())));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { c } = ($$ ?? {});
+ return c; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const templateActionString: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("`"), capture("chars", zeroOrMore(choice(escapedActionChar, templateInterp, templatePlainChar))), literal("`")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -318,11 +340,11 @@ export const templateActionString: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const actionStringLiteral: Parser<any> = choice(doubleQuotedActionString, singleQuotedActionString, templateActionString);
+export const actionStringLiteral: Parser<any> = untagCapture(choice(doubleQuotedActionString, singleQuotedActionString, templateActionString));
 
-export const lineCommentChar: Parser<any> = (input, pos) => {
+export const lineCommentChar: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(notPredicate(choice(literal("\n"), literal("\r"))), capture("c", anyChar())));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -337,9 +359,9 @@ export const lineCommentChar: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const blockCommentChar: Parser<any> = (input, pos) => {
+export const blockCommentChar: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(notPredicate(literal("*/")), capture("c", anyChar())));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -354,9 +376,9 @@ export const blockCommentChar: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const actionLineComment: Parser<any> = (input, pos) => {
+export const actionLineComment: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("//"), capture("chars", zeroOrMore(lineCommentChar))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -371,9 +393,9 @@ export const actionLineComment: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const actionBlockComment: Parser<any> = (input, pos) => {
+export const actionBlockComment: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("/*"), capture("chars", zeroOrMore(blockCommentChar)), literal("*/")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -388,9 +410,9 @@ export const actionBlockComment: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const actionRegexEscaped: Parser<any> = (input, pos) => {
+export const actionRegexEscaped: Parser<any> = untagCapture((input, pos) => {
   const __base = (sequence(literal("\\"), anyChar()));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -404,9 +426,9 @@ export const actionRegexEscaped: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const actionRegexClassChar: Parser<any> = choice(actionRegexEscaped, (input, pos) => {
+export const actionRegexClassChar: Parser<any> = untagCapture(choice(actionRegexEscaped, (input, pos) => {
   const __base = (captureSequence(notPredicate(choice(literal("]"), literal("\n"), literal("\r"))), capture("c", anyChar())));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -421,9 +443,9 @@ export const actionRegexClassChar: Parser<any> = choice(actionRegexEscaped, (inp
     current: __result.current,
     next: __result.next,
   };
-});
+}));
 
-export const actionRegexClass: Parser<any> = (input, pos) => {
+export const actionRegexClass: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("["), capture("chars", zeroOrMore(actionRegexClassChar)), literal("]")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -438,10 +460,46 @@ export const actionRegexClass: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const actionRegexBodyChar: Parser<any> = choice(actionRegexEscaped, actionRegexClass, (input, pos) => {
+export const actionRegexBodyChar: Parser<any> = untagCapture(choice(actionRegexEscaped, actionRegexClass, (input, pos) => {
   const __base = (captureSequence(notPredicate(choice(literal("/"), literal("["), literal("\n"), literal("\r"))), capture("c", anyChar())));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { c } = ($$ ?? {});
+ return c; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+}));
+
+export const actionRegexLiteral: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("/"), notPredicate(choice(literal("/"), literal("*"))), capture("body", zeroOrMore(actionRegexBodyChar)), literal("/"), capture("flags", charClassRun([["a", "z"]], 0))));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { body, flags } = ($$ ?? {});
+ return "/" + body.join("") + "/" + flags.join(""); 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const actionRegexKeyword: Parser<any> = untagCapture(choice(literal("instanceof"), literal("await"), literal("case"), literal("default"), literal("delete"), literal("do"), literal("else"), literal("in"), literal("new"), literal("of"), literal("return"), literal("throw"), literal("typeof"), literal("void"), literal("yield")));
+
+export const actionOpChar: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(notPredicate(choice(literal(")"), literal("]"), literal("{"), literal("}"), literal("\""), literal("'"), literal("`"), literal("/"), charClass(["A", "Z"], ["a", "z"], ["0", "9"], "_", "$"), charClass(" ", "\t", "\n", "\r"))), capture("c", anyChar())));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -457,45 +515,9 @@ export const actionRegexBodyChar: Parser<any> = choice(actionRegexEscaped, actio
   };
 });
 
-export const actionRegexLiteral: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(literal("/"), notPredicate(choice(literal("/"), literal("*"))), capture("body", zeroOrMore(actionRegexBodyChar)), literal("/"), capture("flags", charClassRun([["a", "z"]], 0))));
-  const __result = __base(input, pos);
-  if (!__result.success) return __result;
-  const __val = (() => {
-    const $$: any = __result.val;
-    const { body, flags } = ($$ ?? {});
- return "/" + body.join("") + "/" + flags.join(""); 
-  })();
-  return {
-    success: true,
-    val: __val,
-    current: __result.current,
-    next: __result.next,
-  };
-};
+export const actionPostfix: Parser<any> = untagCapture(choice(literal("++"), literal("--")));
 
-export const actionRegexKeyword: Parser<any> = choice(literal("instanceof"), literal("await"), literal("case"), literal("default"), literal("delete"), literal("do"), literal("else"), literal("in"), literal("new"), literal("of"), literal("return"), literal("throw"), literal("typeof"), literal("void"), literal("yield"));
-
-export const actionOpChar: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(notPredicate(choice(literal(")"), literal("]"), literal("{"), literal("}"), literal("\""), literal("'"), literal("`"), literal("/"), charClass(["A", "Z"], ["a", "z"], ["0", "9"], "_", "$"), charClass(" ", "\t", "\n", "\r"))), capture("c", anyChar())));
-  const __result = __base(input, pos);
-  if (!__result.success) return __result;
-  const __val = (() => {
-    const $$: any = __result.val;
-    const { c } = ($$ ?? {});
- return c; 
-  })();
-  return {
-    success: true,
-    val: __val,
-    current: __result.current,
-    next: __result.next,
-  };
-};
-
-export const actionPostfix: Parser<any> = choice(literal("++"), literal("--"));
-
-export const actionKwRegex: Parser<any> = (input, pos) => {
+export const actionKwRegex: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("kw", actionRegexKeyword), notPredicate(charClass(["A", "Z"], ["a", "z"], ["0", "9"], "_", "$")), capture("w", lazy(() => wsAndComments)), capture("re", actionRegexLiteral)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -510,9 +532,9 @@ export const actionKwRegex: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const actionOpRegex: Parser<any> = (input, pos) => {
+export const actionOpRegex: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("op", actionOpChar), capture("w", lazy(() => wsAndComments)), capture("re", actionRegexLiteral)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -527,9 +549,68 @@ export const actionOpRegex: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const nestedActionBlock: Parser<any> = (input, pos) => {
+export const actionParenPlainChar: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(notPredicate(choice(literal("{"), literal("}"), literal("("), literal(")"))), capture("c", anyChar())));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { c } = ($$ ?? {});
+ return c; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const actionParenItem: Parser<any> = untagCapture(choice(lazy(() => nestedActionBlock), actionStringLiteral, actionLineComment, actionBlockComment, actionPostfix, actionKwRegex, actionOpRegex, lazy(() => actionStmtParenRegex), lazy(() => actionParenGroup), lazy(() => actionIdentifier), actionParenPlainChar));
+
+export const actionParenGroup: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("("), capture("first", optional(captureSequence(capture("w", lazy(() => wsAndComments)), capture("re", actionRegexLiteral)))), capture("parts", zeroOrMore(actionParenItem)), literal(")")));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { first, parts } = ($$ ?? {});
+
+    return "(" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + ")";
+  
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const actionStmtParenKeyword: Parser<any> = untagCapture(choice(literal("catch"), literal("switch"), literal("while"), literal("with"), literal("for"), literal("if")));
+
+export const actionStmtParenRegex: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("kw", actionStmtParenKeyword), notPredicate(charClass(["A", "Z"], ["a", "z"], ["0", "9"], "_", "$")), capture("w1", lazy(() => wsAndComments)), capture("g", actionParenGroup), capture("w2", lazy(() => wsAndComments)), capture("re", actionRegexLiteral)));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { kw, w1, g, w2, re } = ($$ ?? {});
+
+    return kw + w1.join("") + g + w2.join("") + re;
+  
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const nestedActionBlock: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("inner", lazy(() => actionBlock)), capture("tail", optional(captureSequence(capture("w", lazy(() => wsAndComments)), capture("re", actionRegexLiteral))))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -544,9 +625,9 @@ export const nestedActionBlock: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const actionIdentifier: Parser<any> = (input, pos) => {
+export const actionIdentifier: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("h", charClass(["A", "Z"], ["a", "z"], "_", "$")), capture("t", charClassRun([["A", "Z"], ["a", "z"], ["0", "9"], "_", "$"], 0))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -561,9 +642,9 @@ export const actionIdentifier: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const actionPlainChar: Parser<any> = (input, pos) => {
+export const actionPlainChar: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(notPredicate(choice(literal("{"), literal("}"))), capture("c", anyChar())));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -578,11 +659,11 @@ export const actionPlainChar: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const actionContent: Parser<any> = choice(nestedActionBlock, actionStringLiteral, actionLineComment, actionBlockComment, actionPostfix, actionKwRegex, actionOpRegex, actionIdentifier, actionPlainChar);
+export const actionContent: Parser<any> = untagCapture(choice(nestedActionBlock, actionStringLiteral, actionLineComment, actionBlockComment, actionPostfix, actionKwRegex, actionOpRegex, actionStmtParenRegex, actionIdentifier, actionPlainChar));
 
-export const actionBlock: Parser<any> = (input, pos) => {
+export const actionBlock: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("{"), capture("first", optional(captureSequence(capture("w", lazy(() => wsAndComments)), capture("re", actionRegexLiteral)))), capture("parts", zeroOrMore(actionContent)), literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -597,15 +678,15 @@ export const actionBlock: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const interWs: Parser<any> = charClassRun([" ", "\t", "\n", "\r"], 0);
+export const interWs: Parser<any> = untagCapture(charClassRun([" ", "\t", "\n", "\r"], 0));
 
-export const interWsPlus: Parser<any> = charClassRun([" ", "\t", "\n", "\r"], 1);
+export const interWsPlus: Parser<any> = untagCapture(charClassRun([" ", "\t", "\n", "\r"], 1));
 
-export const wsAndComments: Parser<any> = zeroOrMore(choice(charClass(" ", "\t", "\n", "\r"), actionLineComment, actionBlockComment));
+export const wsAndComments: Parser<any> = untagCapture(zeroOrMore(choice(charClass(" ", "\t", "\n", "\r"), actionLineComment, actionBlockComment)));
 
-export const docCommentRaw: Parser<any> = (input, pos) => {
+export const docCommentRaw: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("///"), capture("chars", zeroOrMore(lineCommentChar))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -620,14 +701,14 @@ export const docCommentRaw: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const wsAndCommentsOrDocs: Parser<any> = zeroOrMore(choice(charClass(" ", "\t", "\n", "\r"), docCommentRaw, actionLineComment, actionBlockComment));
+export const wsAndCommentsOrDocs: Parser<any> = untagCapture(zeroOrMore(choice(charClass(" ", "\t", "\n", "\r"), docCommentRaw, actionLineComment, actionBlockComment)));
 
-export const wsAndCommentsPlus: Parser<any> = oneOrMore(choice(charClass(" ", "\t", "\n", "\r"), actionLineComment, actionBlockComment));
+export const wsAndCommentsPlus: Parser<any> = untagCapture(oneOrMore(choice(charClass(" ", "\t", "\n", "\r"), actionLineComment, actionBlockComment)));
 
-export const group: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(literal("("), interWs, capture("expr", lazy(() => choiceExpr)), interWs, literal(")")));
+export const group: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("("), wsAndComments, capture("expr", lazy(() => choiceExpr)), wsAndComments, literal(")")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -641,18 +722,25 @@ export const group: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const primary: Parser<any> = choice(group, basicSyntax);
+export const primary: Parser<any> = untagCapture(choice(group, basicSyntax));
 
-export const integer: Parser<any> = (input, pos) => {
+export const integer: Parser<any> = untagCapture((input, pos) => {
   const __base = (capture("digits", charClassRun([["0", "9"]], 1)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
     const { digits } = ($$ ?? {});
- return parseInt(digits.join(""), 10); 
+
+    const text = digits.join("");
+    const n = parseInt(text, 10);
+    if (!Number.isSafeInteger(n)) {
+      throw new Error("Invalid quantifier bound: {" + text + "} is not a safe integer");
+    }
+    return n;
+  
   })();
   return {
     success: true,
@@ -660,16 +748,21 @@ export const integer: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const quantifiedRange: Parser<any> = (input, pos) => {
+export const quantifiedRange: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("{"), capture("min", integer), literal(","), capture("max", integer), literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
     const { min, max } = ($$ ?? {});
- return { min, max }; 
+
+    if (min > max) {
+      throw new Error("Invalid quantifier range: {" + min + "," + max + "} (minimum must not be greater than maximum)");
+    }
+    return { min, max };
+  
   })();
   return {
     success: true,
@@ -677,9 +770,9 @@ export const quantifiedRange: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const quantifiedMin: Parser<any> = (input, pos) => {
+export const quantifiedMin: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("{"), capture("min", integer), literal(","), literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -694,9 +787,9 @@ export const quantifiedMin: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const quantifiedExact: Parser<any> = (input, pos) => {
+export const quantifiedExact: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("{"), capture("n", integer), literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -711,11 +804,11 @@ export const quantifiedExact: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const quantifiedOp: Parser<any> = choice(quantifiedRange, quantifiedMin, quantifiedExact);
+export const quantifiedOp: Parser<any> = untagCapture(choice(quantifiedRange, quantifiedMin, quantifiedExact));
 
-export const starOp: Parser<any> = (input, pos) => {
+export const starOp: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("expr", primary), literal("*")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -730,9 +823,9 @@ export const starOp: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const plusOp: Parser<any> = (input, pos) => {
+export const plusOp: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("expr", primary), literal("+")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -747,9 +840,9 @@ export const plusOp: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const optionalOp: Parser<any> = (input, pos) => {
+export const optionalOp: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("expr", primary), literal("?")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -764,9 +857,9 @@ export const optionalOp: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const quantOp: Parser<any> = (input, pos) => {
+export const quantOp: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("expr", primary), capture("q", quantifiedOp)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -781,11 +874,32 @@ export const quantOp: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const postfix: Parser<any> = choice(starOp, plusOp, optionalOp, quantOp, primary);
+export const quantifierSuffix: Parser<any> = untagCapture(sequence(literal("{"), charClassRun([["0", "9"]], 1), optional(sequence(literal(","), charClassRun([["0", "9"]], 0))), literal("}")));
 
-export const positiveLookahead: Parser<any> = (input, pos) => {
+export const adjacentMalformedQuantifier: Parser<any> = untagCapture(sequence(literal("{"), charClassRun([["0", "9"], ",", " ", "\t", "\n", "\r", "\v", "\f"], 0), literal("}")));
+
+export const postfix: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("expr", choice(starOp, plusOp, optionalOp, quantOp, primary)), notPredicate(choice(literal("*"), literal("+"), literal("?"), quantifierSuffix)), notPredicate(adjacentMalformedQuantifier)));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { expr } = ($$ ?? {});
+
+    return expr;
+  
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const positiveLookahead: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("&"), capture("expr", postfix)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -800,9 +914,9 @@ export const positiveLookahead: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const negativeLookahead: Parser<any> = (input, pos) => {
+export const negativeLookahead: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("!"), capture("expr", postfix)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -817,11 +931,11 @@ export const negativeLookahead: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const prefix: Parser<any> = choice(positiveLookahead, negativeLookahead, postfix);
+export const prefix: Parser<any> = untagCapture(choice(positiveLookahead, negativeLookahead, postfix));
 
-export const labeled: Parser<any> = choice((input, pos) => {
+export const labeled: Parser<any> = untagCapture(choice((input, pos) => {
   const __base = (captureSequence(capture("label", identifierName), literal(":"), capture("expr", prefix)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -836,14 +950,31 @@ export const labeled: Parser<any> = choice((input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-}, prefix);
+}, prefix));
 
-export const notNextRuleStart: Parser<any> = sequence(notPredicate(sequence(identifierName, wsAndComments, literal("="))), notPredicate(sequence(literal("transforms"), notPredicate(identContChar))));
+export const notNextRuleStart: Parser<any> = untagCapture(sequence(notPredicate(sequence(identifierName, wsAndComments, literal("="))), notPredicate(sequence(literal("transforms"), notPredicate(identContChar)))));
 
-export const sequenceContinuation: Parser<any> = sequence(interWs, notNextRuleStart, labeled);
+export const cutMarkerNode: Parser<any> = untagCapture((input, pos) => {
+  const __base = (literal("~"));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+ return { type: "Cut" }; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
 
-export const sequenceBase: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(capture("first", labeled), capture("rest", zeroOrMore(sequenceContinuation))));
+export const sequenceElementNode: Parser<any> = untagCapture(choice(cutMarkerNode, labeled));
+
+export const sequenceContinuation: Parser<any> = untagCapture(sequence(wsAndComments, notNextRuleStart, sequenceElementNode));
+
+export const sequenceBase: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("first", sequenceElementNode), capture("rest", zeroOrMore(sequenceContinuation))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -861,10 +992,10 @@ export const sequenceBase: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const alternative: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(capture("base", sequenceBase), capture("act", optional(sequence(interWs, actionBlock)))));
+export const alternative: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("base", sequenceBase), capture("act", optional(captureSequence(wsAndComments, capture("code", actionBlock))))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -872,7 +1003,11 @@ export const alternative: Parser<any> = (input, pos) => {
     const { base, act } = ($$ ?? {});
 
     if (act.length === 0) return base;
-    return { type: "ActionExpression", expression: base, code: act[0][1] };
+    const code = act[0].code;
+    if (/^\d+(,\d*)?$/.test(code.trim())) {
+      throw new Error("Ambiguous \"{" + code + "}\" after an expression: this is a quantifier only when written with no space before \"{\"");
+    }
+    return { type: "ActionExpression", expression: base, code };
   
   })();
   return {
@@ -881,10 +1016,10 @@ export const alternative: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const choiceExpr: Parser<any> = (input, pos) => {
-  const __base = (captureSequence(capture("first", alternative), capture("rest", zeroOrMore(sequence(interWs, literal("/"), interWs, alternative)))));
+export const choiceExpr: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("first", alternative), capture("rest", zeroOrMore(sequence(wsAndComments, literal("/"), wsAndComments, alternative)))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -902,9 +1037,9 @@ export const choiceExpr: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const ruleDefinitionNode: Parser<any> = (input, pos) => {
+export const ruleDefinitionNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(interWs, capture("name", identifierName), wsAndComments, literal("="), wsAndComments, capture("pattern", choiceExpr)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -921,13 +1056,13 @@ export const ruleDefinitionNode: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const annotationValue: Parser<any> = choice(lazy(() => quotedStringValue), identifierName);
+export const annotationValue: Parser<any> = untagCapture(choice(lazy(() => quotedStringValue), identifierName));
 
-export const dedicatedAnnotationKey: Parser<any> = sequence(choice(literal("export"), literal("dependencies"), literal("conflicts"), literal("requires"), literal("memoize")), notPredicate(identContChar));
+export const dedicatedAnnotationKey: Parser<any> = untagCapture(sequence(choice(literal("export"), literal("dependencies"), literal("conflicts"), literal("requires"), literal("memoize")), notPredicate(identContChar)));
 
-export const keyValueAnnotation: Parser<any> = (input, pos) => {
+export const keyValueAnnotation: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(interWs, literal("@"), notPredicate(dedicatedAnnotationKey), capture("key", identifierName), interWs, literal(":"), interWs, capture("value", annotationValue)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -944,9 +1079,9 @@ export const keyValueAnnotation: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const flagAnnotation: Parser<any> = (input, pos) => {
+export const flagAnnotation: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(interWs, literal("@"), notPredicate(dedicatedAnnotationKey), capture("key", identifierName)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -963,11 +1098,49 @@ export const flagAnnotation: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const grammarAnnotationNode: Parser<any> = choice(keyValueAnnotation, flagAnnotation);
+export const grammarAnnotationNode: Parser<any> = untagCapture(choice(keyValueAnnotation, flagAnnotation));
 
-export const singleLineCommentNode: Parser<any> = (input, pos) => {
+export const memoizeAnnotationNode: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(interWs, literal("@"), literal("memoize"), capture("v", optional(captureSequence(wsAndComments, literal(":"), wsAndComments, capture("digits", charClassRun([["0", "9"]], 1)))))));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { v } = ($$ ?? {});
+
+    return { type: "GrammarAnnotation", key: "memoize", value: v.length ? v[0].digits.join("") : "" };
+  
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const annotatedRuleNode: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("anns", oneOrMore(memoizeAnnotationNode)), wsAndComments, capture("r", ruleDefinitionNode)));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { anns, r } = ($$ ?? {});
+
+    return { ...r, annotations: anns };
+  
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const singleLineCommentNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("//"), capture("chars", zeroOrMore(lineCommentChar))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -980,9 +1153,9 @@ export const singleLineCommentNode: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const docCommentNode: Parser<any> = (input, pos) => {
+export const docCommentNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("///"), capture("chars", zeroOrMore(lineCommentChar))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -997,9 +1170,9 @@ export const docCommentNode: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const blockCommentNode: Parser<any> = (input, pos) => {
+export const blockCommentNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("/*"), capture("chars", zeroOrMore(blockCommentChar)), literal("*/")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1012,13 +1185,13 @@ export const blockCommentNode: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const leadingContentUnit: Parser<any> = choice(blockCommentNode, docCommentNode, singleLineCommentNode, interWsPlus);
+export const leadingContentUnit: Parser<any> = untagCapture(choice(blockCommentNode, docCommentNode, singleLineCommentNode, interWsPlus));
 
-export const leadingContent: Parser<any> = zeroOrMore(leadingContentUnit);
+export const leadingContent: Parser<any> = untagCapture(zeroOrMore(leadingContentUnit));
 
-export const quotedStringValue: Parser<any> = (input, pos) => {
+export const quotedStringValue: Parser<any> = untagCapture((input, pos) => {
   const __base = (capture("s", stringLiteralNode));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1033,9 +1206,9 @@ export const quotedStringValue: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const importAlias: Parser<any> = (input, pos) => {
+export const importAlias: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(wsAndCommentsPlus, literal("as"), wsAndCommentsPlus, capture("name", identifierName)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1050,9 +1223,9 @@ export const importAlias: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const identifierCommaList: Parser<any> = (input, pos) => {
+export const identifierCommaList: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("first", identifierName), capture("rest", zeroOrMore(sequence(wsAndComments, literal(","), wsAndComments, identifierName)))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1069,9 +1242,9 @@ export const identifierCommaList: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const selectiveImportList: Parser<any> = (input, pos) => {
+export const selectiveImportList: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("{"), wsAndComments, capture("items", optional(identifierCommaList)), wsAndComments, literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1088,9 +1261,9 @@ export const selectiveImportList: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const simpleImportNode: Parser<any> = (input, pos) => {
+export const simpleImportNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("import"), wsAndCommentsPlus, capture("path", quotedStringValue), capture("alias", optional(importAlias))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1107,9 +1280,9 @@ export const simpleImportNode: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const selectiveImportNode: Parser<any> = (input, pos) => {
+export const selectiveImportNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("import"), wsAndCommentsPlus, capture("path", quotedStringValue), wsAndCommentsPlus, capture("selective", selectiveImportList)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1126,9 +1299,9 @@ export const selectiveImportNode: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const versionedImportNode: Parser<any> = (input, pos) => {
+export const versionedImportNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("import"), wsAndCommentsPlus, capture("path", quotedStringValue), wsAndCommentsPlus, literal("version"), wsAndCommentsPlus, capture("version", quotedStringValue), capture("alias", optional(importAlias))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1145,11 +1318,11 @@ export const versionedImportNode: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const importStatementNode: Parser<any> = choice(versionedImportNode, selectiveImportNode, simpleImportNode);
+export const importStatementNode: Parser<any> = untagCapture(choice(versionedImportNode, selectiveImportNode, simpleImportNode));
 
-export const exportRuleList: Parser<any> = (input, pos) => {
+export const exportRuleList: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("["), wsAndComments, capture("items", optional(identifierCommaList)), wsAndComments, literal("]")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1166,9 +1339,9 @@ export const exportRuleList: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const exportDeclarationNode: Parser<any> = (input, pos) => {
+export const exportDeclarationNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(interWs, literal("@export"), notPredicate(identContChar), commit(wsAndComments), commit(literal(":")), commit(wsAndComments), commit(capture("rules", exportRuleList))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1185,9 +1358,9 @@ export const exportDeclarationNode: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const quotedStringList: Parser<any> = (input, pos) => {
+export const quotedStringList: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("["), wsAndComments, capture("items", optional(sequence(stringLiteralNode, zeroOrMore(sequence(wsAndComments, literal(","), wsAndComments, stringLiteralNode))))), wsAndComments, literal("]")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1206,9 +1379,9 @@ export const quotedStringList: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const moduleInfoListAnnotationNode: Parser<any> = (input, pos) => {
+export const moduleInfoListAnnotationNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(interWs, literal("@"), notPredicate(sequence(choice(literal("export"), literal("requires"), literal("memoize")), notPredicate(identContChar))), capture("key", identifierName), wsAndComments, literal(":"), wsAndComments, capture("values", quotedStringList)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1225,9 +1398,9 @@ export const moduleInfoListAnnotationNode: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const quotedStringRecordEntry: Parser<any> = (input, pos) => {
+export const quotedStringRecordEntry: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("key", stringLiteralNode), wsAndComments, literal(":"), wsAndComments, capture("value", stringLiteralNode)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1242,9 +1415,9 @@ export const quotedStringRecordEntry: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const quotedStringRecord: Parser<any> = (input, pos) => {
+export const quotedStringRecord: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("{"), wsAndComments, capture("items", optional(sequence(quotedStringRecordEntry, zeroOrMore(sequence(wsAndComments, literal(","), wsAndComments, quotedStringRecordEntry))))), wsAndComments, literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1263,9 +1436,9 @@ export const quotedStringRecord: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const moduleInfoRecordAnnotationNode: Parser<any> = (input, pos) => {
+export const moduleInfoRecordAnnotationNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(interWs, literal("@"), notPredicate(sequence(choice(literal("export"), literal("dependencies"), literal("conflicts"), literal("memoize")), notPredicate(identContChar))), capture("key", identifierName), wsAndComments, literal(":"), wsAndComments, capture("values", quotedStringRecord)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1282,9 +1455,9 @@ export const moduleInfoRecordAnnotationNode: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const dottedGrammarName: Parser<any> = (input, pos) => {
+export const dottedGrammarName: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("first", identifierName), capture("rest", zeroOrMore(sequence(literal("."), identifierName)))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1301,9 +1474,9 @@ export const dottedGrammarName: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const grammarExtendsClause: Parser<any> = (input, pos) => {
+export const grammarExtendsClause: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("extends"), wsAndCommentsPlus, capture("name", dottedGrammarName)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1318,9 +1491,9 @@ export const grammarExtendsClause: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const grammarIncludesClause: Parser<any> = (input, pos) => {
+export const grammarIncludesClause: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("includes"), wsAndCommentsPlus, capture("first", dottedGrammarName), capture("rest", zeroOrMore(sequence(wsAndComments, literal(","), wsAndComments, dottedGrammarName)))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1337,9 +1510,9 @@ export const grammarIncludesClause: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const targetLanguageNode: Parser<any> = choice((input, pos) => {
+export const targetLanguageNode: Parser<any> = untagCapture(choice((input, pos) => {
   const __base = (captureSequence(capture("lang", literal("typescript")), notPredicate(lazy(() => langChar))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1429,11 +1602,11 @@ export const targetLanguageNode: Parser<any> = choice((input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-});
+}));
 
-export const langChar: Parser<any> = charClass(["a", "z"], ["A", "Z"], ["0", "9"]);
+export const langChar: Parser<any> = untagCapture(charClass(["a", "z"], ["A", "Z"], ["0", "9"]));
 
-export const transformSetName: Parser<any> = (input, pos) => {
+export const transformSetName: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("name", identifierName), wsAndComments, literal("@"), wsAndComments, capture("lang", targetLanguageNode)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1448,9 +1621,9 @@ export const transformSetName: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const typeWs: Parser<any> = (input, pos) => {
+export const typeWs: Parser<any> = untagCapture((input, pos) => {
   const __base = (capture("chars", zeroOrMore(choice(charClass(" ", "\t", "\n", "\r"), actionLineComment, actionBlockComment))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1465,9 +1638,9 @@ export const typeWs: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const typeObject: Parser<any> = (input, pos) => {
+export const typeObject: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("{"), capture("parts", zeroOrMore(actionContent)), literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1482,9 +1655,9 @@ export const typeObject: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const typeParen: Parser<any> = (input, pos) => {
+export const typeParen: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("("), capture("w1", typeWs), capture("inner", lazy(() => typeUnion)), capture("w2", typeWs), literal(")")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1501,9 +1674,9 @@ export const typeParen: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const typeNamed: Parser<any> = (input, pos) => {
+export const typeNamed: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("n", identifierName), capture("g", optional(captureSequence(capture("w1", typeWs), literal("<"), commit(capture("w2", typeWs)), commit(capture("a1", lazy(() => typeUnion))), commit(capture("arest", zeroOrMore(captureSequence(capture("c1", typeWs), literal(","), capture("c2", typeWs), capture("a", lazy(() => typeUnion)))))), commit(capture("w3", typeWs)), commit(literal(">")))))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1525,11 +1698,11 @@ export const typeNamed: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const typePrimary: Parser<any> = choice(typeObject, typeParen, typeNamed);
+export const typePrimary: Parser<any> = untagCapture(choice(typeObject, typeParen, typeNamed));
 
-export const typePostfix: Parser<any> = (input, pos) => {
+export const typePostfix: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("p", typePrimary), capture("arr", zeroOrMore(sequence(typeWs, literal("["), typeWs, literal("]"))))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1548,9 +1721,9 @@ export const typePostfix: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const typeUnion: Parser<any> = (input, pos) => {
+export const typeUnion: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(typeWs, capture("first", typePostfix), capture("rest", zeroOrMore(sequence(typeWs, choice(literal("|"), literal("&")), typeWs, typePostfix)))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1569,9 +1742,9 @@ export const typeUnion: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const parameterType: Parser<any> = (input, pos) => {
+export const parameterType: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("name", identifierName), wsAndComments, literal(":"), wsAndComments, capture("t", typeUnion)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1588,9 +1761,9 @@ export const parameterType: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const parameterList: Parser<any> = (input, pos) => {
+export const parameterList: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("("), wsAndComments, capture("items", optional(sequence(parameterType, zeroOrMore(sequence(wsAndComments, literal(","), wsAndComments, parameterType))))), wsAndComments, literal(")")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1609,9 +1782,9 @@ export const parameterList: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const returnTypeSpec: Parser<any> = (input, pos) => {
+export const returnTypeSpec: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(wsAndComments, literal("->"), wsAndComments, capture("t", typeUnion)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1630,9 +1803,9 @@ export const returnTypeSpec: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const transformFunctionNode: Parser<any> = (input, pos) => {
+export const transformFunctionNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("trivia", wsAndCommentsOrDocs), capture("name", identifierName), wsAndComments, capture("params", parameterList), capture("ret", returnTypeSpec), wsAndComments, capture("body", actionBlock)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1652,9 +1825,9 @@ export const transformFunctionNode: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const transformFunctions: Parser<any> = (input, pos) => {
+export const transformFunctions: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("first", transformFunctionNode), capture("rest", zeroOrMore(transformFunctionNode))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1671,9 +1844,9 @@ export const transformFunctions: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const transformDefinitionNode: Parser<any> = (input, pos) => {
+export const transformDefinitionNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(wsAndComments, literal("transforms"), wsAndCommentsPlus, capture("info", transformSetName), wsAndComments, literal("{"), capture("functions", transformFunctions), wsAndComments, literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1693,9 +1866,9 @@ export const transformDefinitionNode: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const grammarItemNode: Parser<any> = choice((input, pos) => {
+export const grammarItemNode: Parser<any> = untagCapture(choice((input, pos) => {
   const __base = (capture("e", exportDeclarationNode));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1733,6 +1906,21 @@ export const grammarItemNode: Parser<any> = choice((input, pos) => {
     const $$: any = __result.val;
     const { r } = ($$ ?? {});
  return { kind: "moduleInfoRecord", key: r.key, values: r.values }; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+}, (input, pos) => {
+  const __base = (capture("ar", annotatedRuleNode));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { ar } = ($$ ?? {});
+ return { kind: "rule", value: ar }; 
   })();
   return {
     success: true,
@@ -1826,11 +2014,11 @@ export const grammarItemNode: Parser<any> = choice((input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-});
+}));
 
-export const grammarItemWithWs: Parser<any> = sequence(grammarItemNode, interWs);
+export const grammarItemWithWs: Parser<any> = untagCapture(sequence(grammarItemNode, interWs));
 
-export const grammarItemsNode: Parser<any> = (input, pos) => {
+export const grammarItemsNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(interWs, capture("items", zeroOrMore(grammarItemWithWs))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1845,9 +2033,9 @@ export const grammarItemsNode: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const modularGrammarBlockNode: Parser<any> = (input, pos) => {
+export const modularGrammarBlockNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(leadingContent, literal("grammar"), interWsPlus, capture("name", dottedGrammarName), leadingContent, capture("ext", optional(grammarExtendsClause)), leadingContent, capture("inc", optional(grammarIncludesClause)), leadingContent, literal("{"), capture("items", grammarItemsNode), interWs, literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1915,9 +2103,9 @@ export const modularGrammarBlockNode: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const tpegFileNode: Parser<any> = (input, pos) => {
+export const tpegFileNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("imports", zeroOrMore(sequence(leadingContent, importStatementNode))), capture("grammar", modularGrammarBlockNode)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -1934,4 +2122,4 @@ export const tpegFileNode: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});

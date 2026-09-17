@@ -26,7 +26,10 @@ export const makeRng = (seed: number) => {
   let state = seed >>> 0;
   return (): number => {
     state = (Math.imul(state, 1103515245) + 12345) & 0x7fffffff;
-    return state / 0x7fffffff;
+    // Divide by 2^31, not 2^31-1: `state` can BE 0x7fffffff, and
+    // `pick`/`makeRandomInput` assume a [0, 1) draw -- 1.0 makes
+    // `Math.floor(rng() * len)` index one past the array's end.
+    return state / 0x80000000;
   };
 };
 
@@ -427,7 +430,8 @@ export const RANDOM_TEST_INPUTS: readonly string[] = (() => {
   let state = 424242 >>> 0;
   const rng = (): number => {
     state = (Math.imul(state, 1103515245) + 12345) & 0x7fffffff;
-    return state / 0x7fffffff;
+    // /2^31 (not /2^31-1) -- same [0, 1) range guarantee as `makeRng`.
+    return state / 0x80000000;
   };
   const alphabet = [
     "a",

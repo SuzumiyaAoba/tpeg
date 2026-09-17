@@ -115,6 +115,18 @@ describe("Grammar Definition Block Tests", () => {
       }
     });
 
+    test("should accept a comment between the key and ':' (#85)", () => {
+      const result = testParse(grammarAnnotation, '@version /* c */: "1.0"');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual({
+          type: "GrammarAnnotation",
+          key: "version",
+          value: "1.0",
+        });
+      }
+    });
+
     test("should parse a bare identifier value, as docs/peg-grammar.md's @start/@skip examples use", () => {
       const result = testParse(grammarAnnotation, "@start: expression");
       expect(result.success).toBe(true);
@@ -196,6 +208,20 @@ describe("Grammar Definition Block Tests", () => {
     test("attaches `@memoize: N` with its numeric value to the following rule", () => {
       const input = `grammar X {
         @memoize: 256
+        expr = [0-9]+
+      }`;
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules[0]?.annotations).toEqual([
+          { type: "GrammarAnnotation", key: "memoize", value: "256" },
+        ]);
+      }
+    });
+
+    test("accepts a comment between the key and ':' (#85)", () => {
+      const input = `grammar X {
+        @memoize /* bounded */ : 256
         expr = [0-9]+
       }`;
       const result = testParse(grammarDefinition, input);

@@ -113,6 +113,11 @@ export class NamespaceManager {
    * comment) instead of the second registration silently overwriting
    * the first's `scopes`/`moduleRules` entry. */
   private moduleFilePaths = new Map<string, string>();
+  /** Selective import lists: module name -> (import alias -> the rule
+   * names `import "m.tpeg" { r1, r2 }` brings into scope). Imports
+   * without a `{...}` list have no entry here -- they expose everything
+   * the target exports via their alias. */
+  private selectiveImports = new Map<string, Map<string, Set<string>>>();
 
   /**
    * Registers a module.
@@ -153,10 +158,19 @@ export class NamespaceManager {
     };
 
     // Process imports
+    const scopeSelectiveImports = new Map<string, Set<string>>();
     for (const importStmt of moduleFile.imports) {
       const alias =
         importStmt.alias || this.extractModuleName(importStmt.modulePath);
       scope.imports.set(alias, importStmt.modulePath);
+      if (importStmt.selective) {
+        scopeSelectiveImports.set(alias, new Set(importStmt.selective));
+      }
+    }
+    if (scopeSelectiveImports.size > 0) {
+      this.selectiveImports.set(moduleName, scopeSelectiveImports);
+    } else {
+      this.selectiveImports.delete(moduleName);
     }
 
     // Collect rules and exports from every grammar. Rule collection runs
@@ -233,6 +247,20 @@ export class NamespaceManager {
       );
     }
 
+    // A selective import (`import "m.tpeg" { r1, r2 }`) exposes ONLY the
+    // listed rules -- without this check the basename-derived alias made
+    // `alias.<any exported rule>` resolvable and the list restricted
+    // nothing (#110).
+    const selective = this.selectiveImports
+      .get(currentModule)
+      ?.get(qualifiedId.module);
+    if (selective !== undefined && !selective.has(qualifiedId.name)) {
+      throw new QualifiedNameResolutionError(
+        `${qualifiedId.module}.${qualifiedId.name}`,
+        `Rule '${qualifiedId.name}' is not in the selective import list of '${qualifiedId.module}'`,
+      );
+    }
+
     // Resolve the module name it was actually REGISTERED under -- not
     // necessarily `extractModuleName(targetModulePath)` alone, since a
     // module with an explicit `@namespace` differing from its own
@@ -289,6 +317,12 @@ export class NamespaceManager {
 
   /**
    * Resolves a local rule.
+   *
+   * Looks at the module's own rules first; on a miss, a name listed by a
+   * selective import (`import "m.tpeg" { r1, r2 }`, the documented
+   * unqualified-import form in `docs/peg-grammar.md`) resolves against
+   * the imported module's exports (#110). Two imports listing the same
+   * name is a genuine ambiguity and throws `NamespaceConflictError`.
    */
   resolveLocalRule(ruleName: string, currentModule: string): ResolvedRule {
     const scope = this.scopes.get(currentModule);
@@ -308,19 +342,68 @@ export class NamespaceManager {
     }
 
     const rule = rules.get(ruleName);
-    if (!rule) {
-      throw new QualifiedNameResolutionError(
-        ruleName,
-        `Rule '${ruleName}' not found in module '${currentModule}'`,
-      );
+    if (rule) {
+      return {
+        rule,
+        moduleName: currentModule,
+        isExported: scope.exports.has(ruleName),
+        isLocal: true,
+      };
     }
 
-    return {
-      rule,
-      moduleName: currentModule,
-      isExported: scope.exports.has(ruleName),
-      isLocal: true,
-    };
+    const selective = this.selectiveImports.get(currentModule);
+    if (selective) {
+      const providers: { moduleName: string; rule: RuleDefinition }[] = [];
+      let listedButNotExported: string | undefined;
+      for (const [alias, names] of selective) {
+        if (!names.has(ruleName)) continue;
+        const modulePath = scope.imports.get(alias);
+        if (modulePath === undefined) continue;
+        const targetModule = this.resolveRegisteredModuleName(
+          modulePath,
+          this.moduleFilePaths.get(currentModule),
+        );
+        if (!targetModule) continue;
+        const targetRule = this.moduleRules.get(targetModule)?.get(ruleName);
+        const isExported =
+          this.scopes.get(targetModule)?.exports.has(ruleName) ?? false;
+        if (!targetRule || !isExported) {
+          listedButNotExported = targetModule;
+          continue;
+        }
+        providers.push({ moduleName: targetModule, rule: targetRule });
+      }
+
+      if (providers.length === 1) {
+        const provider = providers[0];
+        if (provider) {
+          return {
+            rule: provider.rule,
+            moduleName: provider.moduleName,
+            isExported: true,
+            isLocal: false,
+          };
+        }
+      }
+      if (providers.length > 1) {
+        throw new NamespaceConflictError(
+          ruleName,
+          providers.map((p) => p.moduleName),
+          currentModule,
+        );
+      }
+      if (listedButNotExported !== undefined) {
+        throw new QualifiedNameResolutionError(
+          ruleName,
+          `Rule '${ruleName}' is selectively imported but not exported from module '${listedButNotExported}'`,
+        );
+      }
+    }
+
+    throw new QualifiedNameResolutionError(
+      ruleName,
+      `Rule '${ruleName}' not found in module '${currentModule}'`,
+    );
   }
 
   /**
@@ -342,8 +425,9 @@ export class NamespaceManager {
     // alias of the SAME module collapses to one entry instead of
     // (incorrectly) looking like multiple modules.
     const ruleToModules = new Map<string, Set<string>>();
+    const selective = this.selectiveImports.get(currentModule);
 
-    for (const [, modulePath] of scope.imports) {
+    for (const [alias, modulePath] of scope.imports) {
       const targetModuleName = this.resolveRegisteredModuleName(
         modulePath,
         this.moduleFilePaths.get(currentModule),
@@ -352,7 +436,13 @@ export class NamespaceManager {
       const targetScope = this.scopes.get(targetModuleName);
       if (!targetScope) continue;
 
+      // A selective import only brings its LISTED names into scope --
+      // counting every export here would report phantom conflicts for
+      // rules the importer never referenced (#110).
+      const listed = selective?.get(alias);
+
       for (const ruleName of targetScope.exports) {
+        if (listed !== undefined && !listed.has(ruleName)) continue;
         if (!ruleToModules.has(ruleName)) {
           ruleToModules.set(ruleName, new Set());
         }
@@ -382,7 +472,10 @@ export class NamespaceManager {
     // Local rules
     available.set(currentModule, new Set(scope.localRules));
 
-    // Exported rules of imported modules
+    // Exported rules of imported modules -- restricted to the listed
+    // names for a selective import, matching resolveQualifiedName's
+    // enforcement (#110).
+    const selective = this.selectiveImports.get(currentModule);
     for (const [alias, modulePath] of scope.imports) {
       const targetModuleName = this.resolveRegisteredModuleName(
         modulePath,
@@ -392,7 +485,15 @@ export class NamespaceManager {
         ? this.scopes.get(targetModuleName)
         : undefined;
       if (targetScope) {
-        available.set(alias, new Set(targetScope.exports));
+        const listed = selective?.get(alias);
+        available.set(
+          alias,
+          listed === undefined
+            ? new Set(targetScope.exports)
+            : new Set(
+                [...targetScope.exports].filter((name) => listed.has(name)),
+              ),
+        );
       }
     }
 
@@ -528,5 +629,6 @@ export class NamespaceManager {
     // down) would be wrongly rejected with a `ModuleNameCollisionError`
     // even though `getRegisteredModules()` reports nothing registered.
     this.moduleFilePaths.clear();
+    this.selectiveImports.clear();
   }
 }

@@ -1,8 +1,26 @@
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { describe, expect, test } from "vite-plus/test";
 import { grammarDefinition as handGrammarDefinition } from "../grammar";
 import { grammarBlockNode as genGrammarDefinition } from "./generated/grammar.generated";
 
 const pos = 0;
+
+/**
+ * A generated parser's semantic action has no way to produce a
+ * backtrackable ParseFailure, so the self-hosted grammar encodes
+ * "reject this input" checks (backwards char ranges, reversed/overflowing
+ * quantifier bounds, quantifier-shaped action blocks) as thrown Errors --
+ * those propagate out of the generated parser where the hand-written
+ * parser returns a failure. Both reject the input; normalize a throw to
+ * `success: false` so the comparison covers that.
+ */
+const callGen = (parser: Parser<unknown>, input: string) => {
+  try {
+    return parser(input, pos);
+  } catch {
+    return { success: false as const };
+  }
+};
 
 const cases = [
   `grammar Simple {
@@ -86,13 +104,125 @@ const cases = [
 
   `grammar Empty {
 }`,
+
+  // `///` documentation comments and `/* */` block comments as their own
+  // grammar items (issue #102) -- `///` attaches to the next rule's
+  // `documentation` field on both sides
+  `grammar G {
+  /// a doc comment
+  r = "a"
+}`,
+  `grammar G {
+  /// doc line one
+  /// doc line two
+  r = "a"
+}`,
+  `grammar G {
+  /* a block comment */
+  r = "a"
+}`,
+  `/* leading block comment */
+grammar G {
+  r = "x"
+}`,
+  `grammar G /* header comment */ {
+  r = "x"
+}`,
+
+  // `@memoize`/`@memoize: N` attaches to the FOLLOWING rule's
+  // `annotations`, not the grammar block's (issue #97) -- including the
+  // comment-tolerant ":" gap and a comment between annotation and rule
+  `grammar G {
+  @memoize
+  r = "x"
+}`,
+  `grammar G {
+  @memoize: 4
+  r = "x"
+}`,
+  `grammar G {
+  @memoize /* c */ : /* c */ 4
+  r = "x"
+}`,
+  `grammar G {
+  @memoize
+  // a comment between annotation and rule
+  r = "x"
+}`,
+  // `@start`/`@version` directly above a rule must NOT misattach as
+  // rule-level annotations -- only the literal "memoize" key does that
+  `grammar G {
+  @version: "1.0"
+  @start: expression
+  expression = "x"
+}`,
+
+  // module-metadata annotations parse (and are discarded) identically:
+  // `@export`, `@dependencies`/`@conflicts` lists, `@requires` records
+  `grammar G {
+  @export: [a, b]
+  a = "x"
+  b = "y"
+}`,
+  `grammar G {
+  @dependencies: ["a.tpeg", "b.tpeg"]
+  @requires: { "a.tpeg": "^1.0" }
+  r = "x"
+}`,
+  // a malformed `@export` (quoted names where the dedicated form wants
+  // bare identifiers) is a parse error on both sides, not a generic
+  // annotation
+  `grammar G {
+  @export: "a"
+  a = "x"
+}`,
+
+  // dotted grammar name and extends/includes clauses -- accepted then
+  // discarded by grammarDefinition on both sides
+  `grammar a.b.C {
+  r = "x"
+}`,
+  `grammar G extends base.Other {
+  r = "x"
+}`,
+  `grammar G includes a.B, c.D {
+  r = "x"
+}`,
+
+  // transforms blocks DO survive on a plain GrammarDefinition (its
+  // `transforms` field) -- a rule named e.g. "transformsFoo" is a rule,
+  // not a transform boundary, and `///` before a function attaches to
+  // its `documentation` field
+  `grammar G {
+  r = "x"
+  transforms TypescriptTransform@typescript {
+    toAst(n: any) -> Node { return n; }
+  }
+}`,
+  `grammar G {
+  transforms T@python {
+    /// function docs
+    emit(x: string, y: number) -> Result<string[]> { return x; }
+    helper() -> void { return; }
+  }
+}`,
+  `grammar G {
+  transformsFoo = "x"
+}`,
+  // malformed @export followed by a transforms block still fails wholesale
+  `grammar G {
+  @export: "a"
+  transforms T@rust {
+    f() -> int { return 0; }
+  }
+}`,
 ];
 
 describe("self-hosted grammar-block layer vs grammar.ts's grammarDefinition", () => {
   for (const input of cases) {
     test(input.slice(0, 60).replace(/\n/g, "\\n"), () => {
       const a = handGrammarDefinition(input, pos);
-      const b = genGrammarDefinition(input, pos);
+      const b = callGen(genGrammarDefinition, input);
       expect(a.success).toBe(b.success);
       if (a.success && b.success) {
         expect(b.val).toEqual(a.val);

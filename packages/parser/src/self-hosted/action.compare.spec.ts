@@ -37,6 +37,24 @@ describe("self-hosted action-block grammar vs brace-scanner.ts", () => {
     "{ for (const m of s.matchAll(/}/g)) {} }",
     "{ if (x) /re/; }",
     "{ x = /unterminated\n }",
+    // Nested `${ ... }` interpolation inside a template literal --
+    // including a nested template literal, an object literal, and a
+    // call whose argument is itself a template (issue #103)
+    "{ return `a${`b}c`}d`; }",
+    "{ return `a${x}b`; }",
+    "{ return `${ {a:1} }`; }",
+    "{ return `pre ${fn(`in${1}ner`)} post`; }",
+    "{ return `unterminated${x`; }",
+    // A regex literal right after a statement keyword's parenthesized
+    // header -- `)` here restores "value expected" (issue #104), unlike
+    // a call/grouping `)` where `/` is division
+    "{ if (x) /}/.test(y); }",
+    "{ while (t) /{/.exec(s); }",
+    "{ for (const m of x) /}/g.test(m); }",
+    "{ if ((a && b)) /}/.test(y); }",
+    "{ switch (v) { case 1: /}/.test(s); } }",
+    "{ foo(x) / re / 2; }",
+    "{ if (x) doThing(); }",
   ];
 
   for (const input of cases) {

@@ -139,6 +139,9 @@ export const andPredicate =
       // an input where `a` matches but `b` doesn't.
       if (result === FAIL_FATAL) return FAIL;
       if (isFatalFailure(result)) {
+        // `abort` (resource-limit -- see `ParseError.abort` in types.ts)
+        // is not a cut scoped to this probe: re-raise it unchanged.
+        if (result.error.abort === true) return result;
         return { success: false, error: { ...result.error, fatal: false } };
       }
       return result;
@@ -318,6 +321,19 @@ export const notPredicate = <T>(
     const result = parser(input, pos);
 
     if (isFailure(result)) {
+      // An `abort` failure (resource-limit hit -- see `ParseError.abort`
+      // in types.ts) must not be inverted into a success like an
+      // ordinary -- or even `fatal` -- child failure: re-raise it so it
+      // aborts the whole parse. (`FAIL`/`FAIL_FATAL` are singletons whose
+      // `error` getter materializes the watermark, so guard on the
+      // singleton check first to keep the hot path read-free.)
+      if (
+        result !== FAIL &&
+        result !== FAIL_FATAL &&
+        result.error.abort === true
+      ) {
+        return result;
+      }
       restoreFailureWatermark(snapshot);
       return createSuccessResult(pos);
     }

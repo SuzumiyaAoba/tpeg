@@ -11,6 +11,7 @@ import { join } from "node:path";
 import {
   generateTypeScriptParser,
   grammarDefinition,
+  skipTrailingWhitespaceAndComments,
 } from "@suzumiyaaoba/tpeg-parser";
 import { initialPos } from "./pos";
 
@@ -56,6 +57,32 @@ async function validateGrammars(): Promise<ValidationResult[]> {
             annotations: 0,
           });
           console.log(`   ❌ Parse failed: ${parseResult.error?.message}`);
+          continue;
+        }
+
+        // `grammarDefinition` alone only requires a valid PREFIX -- a
+        // file whose grammar block is followed by trailing garbage
+        // previously reported success while silently dropping everything
+        // after it (#88). Trailing whitespace/comments are still legal
+        // (same rule `cli.ts` applies), so skip them before the EOF
+        // check rather than requiring `next === length` outright.
+        const contentEnd = skipTrailingWhitespaceAndComments(
+          grammarText,
+          parseResult.next,
+        );
+        if (contentEnd !== grammarText.length) {
+          const preview = grammarText
+            .slice(contentEnd, contentEnd + 40)
+            .replace(/\n/g, "\\n");
+          const error = `Unexpected trailing content after grammar block at offset ${contentEnd}: "${preview}${contentEnd + 40 < grammarText.length ? "..." : ""}"`;
+          results.push({
+            grammar: file,
+            success: false,
+            error,
+            rules: 0,
+            annotations: 0,
+          });
+          console.log(`   ❌ ${error}`);
           continue;
         }
 

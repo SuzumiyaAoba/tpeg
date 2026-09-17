@@ -404,17 +404,34 @@ function findRecursiveRuleNames(
  * Performance monitoring utilities
  */
 export class PerformanceMonitor {
-  private startTimes = new Map<string, number>();
+  // A STACK of start times per operation, not a single timestamp: a
+  // monitored operation can be re-entered before the previous call ends
+  // (a recursive grammar rule under `includeMonitoring` wraps every
+  // invocation in start/end pairs, so `nested` calling `nested` nests
+  // same-operation measurements). A lone `Map<string, number>` dropped
+  // the outer measurement entirely -- the inner `end` consumed the only
+  // timestamp, the outer `end` then recorded 0 and the call count was
+  // halved (#109).
+  private startTimes = new Map<string, number[]>();
   private metrics = new Map<string, { totalTime: number; count: number }>();
 
   start(operation: string): void {
-    this.startTimes.set(operation, performance.now());
+    const stack = this.startTimes.get(operation);
+    if (stack) {
+      stack.push(performance.now());
+    } else {
+      this.startTimes.set(operation, [performance.now()]);
+    }
   }
 
   end(operation: string): number {
-    const startTime = this.startTimes.get(operation);
-    if (startTime === undefined) {
+    const stack = this.startTimes.get(operation);
+    if (!stack || stack.length === 0) {
       return 0;
+    }
+    const startTime = stack.pop() as number;
+    if (stack.length === 0) {
+      this.startTimes.delete(operation);
     }
 
     const endTime = performance.now();
@@ -426,7 +443,6 @@ export class PerformanceMonitor {
       count: existing.count + 1,
     });
 
-    this.startTimes.delete(operation);
     return duration;
   }
 

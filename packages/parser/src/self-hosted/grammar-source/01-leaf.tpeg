@@ -19,7 +19,17 @@ grammar SelfHostLeaf {
 
   classChar = classEscapeStd / classEscapeSpecial / [^\]\\\^\-]
 
-  charRangePair = start:classChar "-" end:classChar { return { start, end }; }
+  // Mirrors character-class.ts's charRange check: a backwards range like
+  // [z-a] is rejected (there is no backtracking-out for a return-based
+  // action, so this throws -- callers treat a thrown action the same way
+  // they treat the hand-written parser's fatal failure: the input is
+  // rejected either way).
+  charRangePair = start:classChar "-" end:classChar {
+    if ((start.codePointAt(0) ?? 0) > (end.codePointAt(0) ?? 0)) {
+      throw new Error("Invalid character range: \"" + start + "-" + end + "\" (start must not be greater than end)");
+    }
+    return { start, end };
+  }
 
   charRangeSingle = start:classChar { return { start }; }
 

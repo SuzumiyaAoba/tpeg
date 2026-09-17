@@ -23,17 +23,21 @@ hand-written parser remains the one actually used by `tpeg-parser`/`tpeg-cli`.
   3. `03-composition.tpeg` - everything in `01`+`02`, plus groups, lookahead
      (`&`/`!`), repetition (`*`/`+`/`?`/`{n,m}`), labels, and sequence/choice.
   4. `04-grammar.tpeg` - everything in `03`, plus rule definitions and plain
-     `grammar Name { ... }` blocks with `@key: value`/`@flag` annotations and
-     `//` comments.
-  5. `05-full.tpeg` - everything in `04`, plus the module system
-     (`import`/`export`, `extends`/`includes`, `@dependencies`/`@conflicts`/
-     `@requires`) and `transforms Name@language { ... }` definitions - see
-     "Module system and transforms" below. Kept as its own layer rather than
-     extending `04-grammar.tpeg` in place: plain `grammarDefinition` drops
-     exports/extends/includes entirely, so any grammar exercising those needs
-     `modularGrammarDefinition` as its oracle instead, and touching
-     `04-grammar.tpeg`'s rules in place would invalidate its own 11 existing
-     comparison cases for no reason - `04-grammar.tpeg` stays frozen.
+     `grammar Name { ... }` blocks with `@key: value`/`@flag` annotations,
+     `//`/`/* */` comments, `///` documentation comments, `@memoize`
+     rule-level annotations, `extends`/`includes` header clauses, and
+     `transforms Name@language { ... }` definitions (a plain
+     `GrammarDefinition` keeps those in its `transforms` field). The module
+     system's value-bearing annotations (`@export`, `@dependencies`/
+     `@conflicts`, `@requires`) are parsed-then-discarded exactly like the
+     hand-written `grammarDefinition` does.
+  5. `05-full.tpeg` - everything in `04`, plus the module system surface
+     (`import` statements, `@export`, `extends`/`includes`, `@dependencies`/
+     `@conflicts`/`@requires` as `ModuleInfo`) - see "Module system and
+     transforms" below. Kept as its own layer rather than extending
+     `04-grammar.tpeg`'s result shape: plain `grammarDefinition` drops
+     exports/imports/module info entirely, so any grammar exercising those
+     needs `modularGrammarDefinition` as its oracle instead.
 - `generated/*.ts` - each layer's generated TypeScript, produced by running
   `bun run packages/cli/src/cli.ts <file>.tpeg -o generated/<name>.ts` from
   the repo root. Regenerate after editing a `.tpeg` source.
@@ -43,32 +47,18 @@ hand-written parser remains the one actually used by `tpeg-parser`/`tpeg-cli`.
 
 ## What's excluded from this PoC
 
-- **Documentation comment collection** (`///` comments attached to a rule's
-  `documentation` field) is **not applicable, not merely unimplemented**:
-  `grammar.ts`'s `ruleDefinition` calls `createRuleDefinition(name, pattern)`
-  with only two arguments, and its `grammarItem` choice tries
-  `singleLineComment` (`literal("//")`) _before_ `documentationComment`
-  (`literal("///")`) - a `///` line matches `singleLineComment` first (its
-  `zeroOrMore(nonNewlineChar)` happily consumes the leftover third `/` as
-  ordinary content) and `///` never reaches `documentationComment` at all.
-  `RuleDefinition.documentation` has no producer anywhere in
-  `packages/parser/src/*.ts` outside test fixtures - grep
-  `createRuleDefinition\(` across the package and every real call site passes
-  exactly two arguments. So there is no upstream behavior to model: this PoC
-  (see `05-full.tpeg`'s `singleLineCommentNode`) accepts and discards a `///`
-  line exactly like a `//` line, which already matches the hand-written
-  parser's actual behavior byte-for-byte (`full.compare.spec.ts` has a case
-  proving it). Populating `RuleDefinition.documentation` for real would be a
-  production change to `grammar.ts` (reorder that `choice`, thread a doc-
-  comment array through to `createRuleDefinition`) plus every consumer of
-  `RuleDefinition` (codegen, type inference, etc.) - out of scope here since
-  it isn't a self-hosted-grammar task at all.
-- **`@memoize` rule-level annotations** remain out of scope, same as they
-  were for `04-grammar.tpeg` (untouched by this layer) - `grammarItemNode`
-  here still treats every `@key` uniformly as a generic annotation.
-
-The module system and `transforms` definitions - previously excluded here -
-are now covered by `05-full.tpeg`; see below.
+- Nothing user-visible at the grammar layer: `///` documentation comments
+  attach to the following rule's `documentation` field on both sides
+  (`grammar.ts`'s `grammarItem` tries `documentationComment` before
+  `singleLineComment`, and `04-grammar.tpeg`/`05-full.tpeg` mirror that
+  ordering and the pending-docs-attach-to-next-rule semantics of
+  `separateGrammarItems`), and `@memoize`/`@memoize: N` attaches to the
+  following rule's `annotations` rather than the grammar block's, matching
+  `grammar.ts`'s `memoizeAnnotation`+`annotatedRuleDefinition` pair
+  (`annotatedRuleNode` in the `.tpeg` sources).
+- `codegen`/`type-inference`-level checks (e.g. transform function-name
+  validation, generated-identifier checks) are out of scope - the PoC
+  compares parser ASTs, not downstream validation.
 
 ## Module system and transforms (`05-full.tpeg`)
 
@@ -153,8 +143,8 @@ This PoC's `04-grammar.tpeg` needs none of that. `sequenceContinuation`
 negative lookahead:
 
 ```tpeg
-notNextRuleStart = !(identifierName sameLineWs "=")
-sequenceContinuation = interWs notNextRuleStart labeled
+notNextRuleStart = !(identifierName wsAndComments "=")
+sequenceContinuation = wsAndComments notNextRuleStart labeled
 ```
 
 `"identifier <same-line-whitespace> ="` is never valid inside a TPEG

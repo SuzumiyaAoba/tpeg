@@ -252,6 +252,60 @@ describe("Module Resolution Engine", () => {
       expect(qualifiedFromMain.module.filePath).toBe("/test/a.tpeg");
     });
 
+    it("should resolve a qualified reference through the basename default alias (#111)", async () => {
+      // `import "base.tpeg"` with NO `as` clause: NamespaceManager
+      // registers the import under the module's basename, so `base.rule`
+      // must resolve here too -- previously only `importStmt.alias` was
+      // consulted and the same reference threw ModuleResolutionError.
+      mockFs.addFile("/test/base.tpeg", `grammar Base { identifier = [a-z]+ }`);
+      mockFs.addFile(
+        "/test/main.tpeg",
+        `
+          import "base.tpeg"
+          grammar Main { start = base.identifier }
+        `,
+      );
+
+      const mainModule = await resolver.resolveModule("main.tpeg");
+      const qualified = await resolveQualifiedIdentifier(
+        { type: "QualifiedIdentifier", module: "base", name: "identifier" },
+        mainModule,
+        resolver.context,
+      );
+      expect(qualified.module.filePath).toBe("/test/base.tpeg");
+      expect(qualified.ruleName).toBe("identifier");
+    });
+
+    it("should reject a qualified reference outside a selective import list (#110)", async () => {
+      mockFs.addFile(
+        "/test/base.tpeg",
+        `grammar Base { identifier = [a-z]+ secret = "s" }`,
+      );
+      mockFs.addFile(
+        "/test/main.tpeg",
+        `
+          import "base.tpeg" { identifier }
+          grammar Main { start = base.identifier t = base.secret }
+        `,
+      );
+
+      const mainModule = await resolver.resolveModule("main.tpeg");
+      const listed = await resolveQualifiedIdentifier(
+        { type: "QualifiedIdentifier", module: "base", name: "identifier" },
+        mainModule,
+        resolver.context,
+      );
+      expect(listed.ruleName).toBe("identifier");
+
+      await expect(
+        resolveQualifiedIdentifier(
+          { type: "QualifiedIdentifier", module: "base", name: "secret" },
+          mainModule,
+          resolver.context,
+        ),
+      ).rejects.toThrow(/not in the selective import list/);
+    });
+
     it("should cache resolved modules", async () => {
       mockFs.addFile("/test/utils.tpeg", UTILS_MODULE);
 
@@ -293,11 +347,14 @@ describe("Module Resolution Engine", () => {
       );
     });
 
-    it("should reject a transforms block placed after the grammar block", async () => {
-      // Regression test for the data-loss case: `transforms` belongs
-      // INSIDE the grammar block per docs/peg-grammar.md, so a block after
-      // the closing "}" used to vanish silently -- the generated parser
-      // then compiled fine but never applied the transform functions.
+    it("should attach a transforms block placed after the grammar block", async () => {
+      // `tpegFile` (index.ts) accepts `grammar { ... }` followed by
+      // top-level `transforms` blocks and merges them into
+      // `grammar.transforms` -- a module file is the same file format plus
+      // imports, so `tpegModuleFile` does the same (#112). Previously this
+      // was a silent data-loss path: the grammar parsed, the trailing
+      // block was left over, and the resolver's whole-file check rejected
+      // the file entirely.
       mockFs.addFile(
         "/test/misplaced.tpeg",
         `grammar G {
@@ -309,11 +366,28 @@ transforms T@typescript {
 }`,
       );
 
-      await expect(resolver.resolveModule("misplaced.tpeg")).rejects.toThrow(
+      const resolved = await resolver.resolveModule("misplaced.tpeg");
+
+      expect(resolved.resolved).toBe(true);
+      const grammar = resolved.content.grammars[0];
+      expect(grammar?.transforms).toHaveLength(1);
+      expect(grammar?.transforms?.[0]?.transformSet.name).toBe("T");
+    });
+
+    it("should still reject trailing garbage that is not a transforms block", async () => {
+      mockFs.addFile(
+        "/test/garbage.tpeg",
+        `grammar G {
+  r = "a"
+}
+this is not a transforms block`,
+      );
+
+      await expect(resolver.resolveModule("garbage.tpeg")).rejects.toThrow(
         ModuleResolutionError,
       );
-      await expect(resolver.resolveModule("misplaced.tpeg")).rejects.toThrow(
-        /unexpected content at line 5, column 0/,
+      await expect(resolver.resolveModule("garbage.tpeg")).rejects.toThrow(
+        /unexpected content at line 4, column 0/,
       );
     });
 

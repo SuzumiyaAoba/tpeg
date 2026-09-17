@@ -640,6 +640,59 @@ describe("validateGeneratedIdentifiers: reserved words and import collisions", (
     ).not.toThrow();
   });
 
+  it("does NOT reject a capture label named like an internal codegen binding -- it is destructured inside the action IIFE, where shadowing is legal (#115)", () => {
+    // `RESERVED_INTERNAL_RULE_NAMES`'s own doc comment says it does not
+    // apply to labels: `const { __base } = $$` sits inside the inner
+    // `(() => { ... })()` scope, legally shadowing the wrapper's
+    // `const __base` rather than colliding with it.
+    for (const name of ["__base", "__result", "__transformed", "__val"]) {
+      const grammar = grammarFromSource(
+        `start = ${name}:"a" { return ${name}; }`,
+      );
+      expect(() =>
+        validateGeneratedIdentifiers(grammar, {
+          namePrefix: "",
+          importedBindings: [],
+        }),
+      ).not.toThrow();
+    }
+  });
+
+  it("does NOT reject a transform parameter named like an internal codegen binding (#115)", () => {
+    const result = parse(grammarDefinition)(`grammar G {
+      start = digits:[0-9]+
+    }`);
+    if (!result.success) throw new Error("test fixture failed to parse");
+    const grammar = {
+      ...result.val,
+      transforms: [
+        {
+          type: "TransformDefinition" as const,
+          transformSet: {
+            name: "X",
+            targetLanguage: "typescript",
+            functions: [
+              {
+                name: "start",
+                // Arrow-function parameter inside wrapWithTransform's
+                // emitted wrapper -- legal shadowing, like a label.
+                parameters: [{ name: "__result", type: "string" }],
+                returnType: { type: "Result", generic: "number" },
+                body: "return { success: true, value: 1 };",
+              },
+            ],
+          },
+        },
+      ],
+    };
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: [],
+      }),
+    ).not.toThrow();
+  });
+
   it("rejects a transform function's parameter name when it is a reserved word", () => {
     const result = parse(grammarDefinition)(`grammar G {
       start = digits:[0-9]+
@@ -866,5 +919,30 @@ describe("validateGrammar: transform function names (issues #65/#66)", () => {
         optimize: true,
       }),
     ).toThrow(/matching no declared rule/);
+  });
+
+  it("rejects a multi-parameter transform function -- parameters 2+ have no runtime value to bind (#108)", () => {
+    // `wrapWithTransform` binds only the rule's parse result to
+    // `parameters[0]`; a second parameter previously compiled to an
+    // unbound identifier (`ReferenceError` at first invocation).
+    const grammar = grammarFromSource(`r = "a"
+  transforms X@typescript {
+    r(a: number, second: number) -> R { return { success: true, value: a }; }
+  }`);
+    expect(() => validateGrammar(grammar)).toThrow(/declares 2 parameters/);
+    expect(() =>
+      generateTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+      }),
+    ).toThrow(/declares 2 parameters/);
+    expect(() =>
+      generateOptimizedTypeScriptParser(grammar, {
+        language: "typescript",
+        includeImports: false,
+        includeTypes: false,
+        optimize: true,
+      }),
+    ).toThrow(/declares 2 parameters/);
   });
 });

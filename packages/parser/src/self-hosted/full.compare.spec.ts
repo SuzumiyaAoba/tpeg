@@ -84,6 +84,18 @@ describe("self-hosted transformDefinitionNode vs transforms.ts's transformDefini
       `transforms T /* c */ @typescript /* c */ { /* c */ f() -> X { return 1; } /* c */ }`,
       `transforms T@typescript { f /* c */ () -> X /* c */ { return 1; } }`,
 
+      // `///` documentation attaches to the function that follows it --
+      // including the FIRST function (issue #116: transformSet's plain
+      // whitespace separator used to eat the first function's doc lines)
+      `transforms T@typescript {
+  /// docs for first
+  a() -> X { return 1; }
+  /// docs for second
+  b() -> Y { return 2; }
+}`,
+      `transforms T@typescript { /// inline doc
+  a() -> X { return 1; } }`,
+
       // failure cases: an unsupported language, and a transform set with no
       // functions at all (transformFunctions requires at least one)
       `transforms T@ruby { f() -> X { return 1; } }`,

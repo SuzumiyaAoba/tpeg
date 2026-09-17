@@ -1,3 +1,4 @@
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { describe, expect, test } from "vite-plus/test";
 import { characterClass as handCharacterClass } from "../character-class";
 import { identifier as handIdentifier } from "../identifier";
@@ -11,6 +12,23 @@ import {
 } from "./generated/leaf.generated";
 
 const pos = 0;
+
+/**
+ * A generated parser's semantic action has no way to produce a
+ * backtrackable ParseFailure, so the self-hosted grammar encodes
+ * "reject this input" checks (e.g. charRangePair's backwards-range
+ * validation) as thrown Errors -- those propagate out of the generated
+ * parser where the hand-written parser returns a (fatal) failure.
+ * Both reject the input; normalize a throw to `success: false` so the
+ * comparison covers that.
+ */
+const callGen = (parser: Parser<unknown>, input: string) => {
+  try {
+    return parser(input, pos);
+  } catch {
+    return { success: false as const };
+  }
+};
 
 describe("self-hosted leaf grammar vs hand-written parser", () => {
   describe("stringLiteral", () => {
@@ -60,11 +78,22 @@ describe("self-hosted leaf grammar vs hand-written parser", () => {
       "[']",
       "[",
       "not-a-class",
+      // a backwards range is rejected on both sides (the hand-written
+      // parser fails fatally; the generated parser's action throws --
+      // see callGen above)
+      "[z-a]",
+      "[9-0]",
+      // non-ASCII (incl. astral) class chars and raw control bytes are
+      // accepted raw by both -- matching character-class.ts's ranges
+      "[é-ü]",
+      "[😀-🙏]",
+      "[\u0001]",
+      "[\n]",
     ];
     for (const input of cases) {
       test(JSON.stringify(input), () => {
         const a = handCharacterClass(input, pos);
-        const b = genCharacterClass(input, pos);
+        const b = callGen(genCharacterClass, input);
         expect(a.success).toBe(b.success);
         if (a.success && b.success) {
           expect(b.val).toEqual(a.val);

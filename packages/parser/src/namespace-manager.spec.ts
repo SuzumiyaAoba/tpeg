@@ -859,4 +859,184 @@ describe("NamespaceManager", () => {
       );
     });
   });
+
+  // Regression for #110: `ImportStatement.selective` was parsed but never
+  // read -- the documented `import "m.tpeg" { r1, r2 }` form resolved
+  // nothing unqualified, while the basename default alias exposed every
+  // export qualified, so the list restricted nothing either.
+  describe("selective imports (#110)", () => {
+    const registerBaseAndMain = () => {
+      manager.registerModule(
+        createModuleFile("/proj/base.tpeg", [
+          createModularGrammar(
+            "Base",
+            [
+              createRule("identifier"),
+              createRule("whitespace"),
+              createRule("secret"),
+            ],
+            {
+              type: "ExportDeclaration",
+              rules: ["identifier", "whitespace", "secret"],
+            },
+          ),
+        ]),
+      );
+      manager.registerModule(
+        createModuleFile(
+          "/proj/minicalc.tpeg",
+          [createGrammar("MiniCalc", [createRule("factor")])],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "base.tpeg",
+              selective: ["identifier", "whitespace"],
+            },
+          ],
+        ),
+      );
+    };
+
+    it("resolves a selectively-imported name unqualified", () => {
+      registerBaseAndMain();
+      const resolved = manager.resolveLocalRule("identifier", "minicalc");
+      expect(resolved.moduleName).toBe("base");
+      expect(resolved.isLocal).toBe(false);
+      expect(resolved.isExported).toBe(true);
+    });
+
+    it("rejects a qualified reference to a rule outside the list", () => {
+      registerBaseAndMain();
+      expect(() =>
+        manager.resolveQualifiedName(
+          createQualifiedId("base", "secret"),
+          "minicalc",
+        ),
+      ).toThrow(/not in the selective import list/);
+    });
+
+    it("still resolves a qualified reference to a listed rule", () => {
+      registerBaseAndMain();
+      const resolved = manager.resolveQualifiedName(
+        createQualifiedId("base", "identifier"),
+        "minicalc",
+      );
+      expect(resolved.rule.name).toBe("identifier");
+    });
+
+    it("rejects an unqualified reference to a name not in the list", () => {
+      registerBaseAndMain();
+      expect(() => manager.resolveLocalRule("secret", "minicalc")).toThrow(
+        /not found/,
+      );
+    });
+
+    it("reports a listed-but-unexported name distinctly", () => {
+      manager.registerModule(
+        createModuleFile("/proj/base.tpeg", [
+          createModularGrammar("Base", [createRule("internal")], {
+            type: "ExportDeclaration",
+            rules: [],
+          }),
+        ]),
+      );
+      manager.registerModule(
+        createModuleFile(
+          "/proj/main.tpeg",
+          [createGrammar("Main", [])],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "base.tpeg",
+              selective: ["internal"],
+            },
+          ],
+        ),
+      );
+      expect(() => manager.resolveLocalRule("internal", "main")).toThrow(
+        /selectively imported but not exported/,
+      );
+    });
+
+    it("conflict detection only counts listed names", () => {
+      manager.registerModule(
+        createModuleFile("/proj/a.tpeg", [
+          createModularGrammar("A", [
+            createRule("shared"),
+            createRule("onlyA"),
+          ]),
+        ]),
+      );
+      manager.registerModule(
+        createModuleFile("/proj/b.tpeg", [
+          createModularGrammar("B", [
+            createRule("shared"),
+            createRule("onlyB"),
+          ]),
+        ]),
+      );
+      manager.registerModule(
+        createModuleFile(
+          "/proj/main.tpeg",
+          [createGrammar("Main", [])],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "a.tpeg",
+              selective: ["onlyA"],
+            },
+            {
+              type: "ImportStatement",
+              modulePath: "b.tpeg",
+              selective: ["onlyB"],
+            },
+          ],
+        ),
+      );
+      // Both modules export `shared`, but neither import lists it --
+      // there is no actual name collision in the importer's scope.
+      expect(() => manager.checkNamespaceConflicts("main")).not.toThrow();
+    });
+
+    it("flags a genuine conflict between two selective imports", () => {
+      manager.registerModule(
+        createModuleFile("/proj/a.tpeg", [
+          createModularGrammar("A", [createRule("shared")]),
+        ]),
+      );
+      manager.registerModule(
+        createModuleFile("/proj/b.tpeg", [
+          createModularGrammar("B", [createRule("shared")]),
+        ]),
+      );
+      manager.registerModule(
+        createModuleFile(
+          "/proj/main.tpeg",
+          [createGrammar("Main", [])],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "a.tpeg",
+              selective: ["shared"],
+            },
+            {
+              type: "ImportStatement",
+              modulePath: "b.tpeg",
+              selective: ["shared"],
+            },
+          ],
+        ),
+      );
+      expect(() => manager.resolveLocalRule("shared", "main")).toThrow(
+        NamespaceConflictError,
+      );
+    });
+
+    it("getAvailableRules exposes only the listed names", () => {
+      registerBaseAndMain();
+      expect(manager.getAvailableRules("minicalc").get("base")).toEqual(
+        new Set(["identifier", "whitespace"]),
+      );
+    });
+  });
 });

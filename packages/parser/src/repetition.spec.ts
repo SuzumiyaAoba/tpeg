@@ -125,6 +125,22 @@ describe("repetition operators", () => {
           expect(result.success).toBe(false);
         }
       });
+
+      it("should reject bounds that are not safe integers (#84)", () => {
+        // `parseInt` overflows to `Infinity` at ~309 digits and loses
+        // precision past 2^53; both must be rejected at parse time rather
+        // than reaching `tpeg-core`'s `quantified()` as `min: Infinity`.
+        const tests = [
+          `{${"9".repeat(310)}}`,
+          `{${"9".repeat(310)},}`,
+          `{1,${"9".repeat(310)}}`,
+          "{9007199254740993}", // 2^53 + 1: finite but not a safe integer
+        ];
+        for (const test of tests) {
+          const result = quantifiedOperator(test, pos);
+          expect(result.success).toBe(false);
+        }
+      });
     });
 
     describe("repetitionOperator", () => {

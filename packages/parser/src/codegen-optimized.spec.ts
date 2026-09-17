@@ -1375,7 +1375,9 @@ describe("includeMonitoring", () => {
     expect(result.code).toContain("start(operation: string): void");
     expect(result.code).toContain("end(operation: string): number");
     expect(result.code).toContain("report(): void");
-    expect(result.code).toContain("new Map<string, number>()");
+    // start times are a stack per operation so same-name nested
+    // measurements don't overwrite each other (#109).
+    expect(result.code).toContain("new Map<string, number[]>()");
   });
 
   it("emits no type annotations under includeTypes: false so the output stays runnable JavaScript", () => {

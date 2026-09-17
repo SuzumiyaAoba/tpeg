@@ -6,6 +6,7 @@ import {
   walkDispatchTrie,
 } from "./dispatch-trie";
 import type { Expectation } from "./failure";
+import { guardedParserCall } from "./limits";
 import {
   FAIL,
   FAIL_FATAL,
@@ -62,6 +63,12 @@ export const tryOrderedCandidates = <T>(
     }
 
     if (isFatalFailure(result)) {
+      // An `abort` failure (resource-limit hit -- see `ParseError.abort`
+      // in types.ts) is not a cut: re-raise it unchanged so it aborts
+      // the whole parse rather than just this choice.
+      if (result !== FAIL_FATAL && result.error.abort === true) {
+        return result;
+      }
       // Absorb the cut here (this choice's own boundary), not forwarded
       // to whatever encloses it -- see `commit`'s doc comment.
       if (result === FAIL_FATAL) return FAIL;
@@ -826,4 +833,8 @@ export const reject =
 export const lazy =
   <T>(fn: () => Parser<T>): Parser<T> =>
   (input: string, pos) =>
-    fn()(input, pos);
+    // Depth-guarded: every generated rule reference is emitted as a
+    // `lazy(() => ...)` hop, so grammar recursion on nested input funnels
+    // through here -- this is the point where `PARSER_LIMITS.
+    // MAX_RECURSION_DEPTH` is enforced for generated parsers (#114).
+    guardedParserCall(() => fn()(input, pos), pos);

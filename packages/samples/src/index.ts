@@ -7,6 +7,8 @@
  * Each sample demonstrates different parsing capabilities and use cases.
  */
 
+import { join } from "node:path";
+
 const showHelp = () => {
   console.log(`
 🎯 TPEG Parser Samples
@@ -37,56 +39,58 @@ Individual sample commands:
 `);
 };
 
-const runSample = async (sampleName: string) => {
-  try {
-    switch (sampleName.toLowerCase()) {
-      case "arith":
-      case "arithmetic":
-        console.log("🧮 Running Arithmetic Calculator Demo...\n");
-        await import("./arith/demo");
-        break;
+// Each demo script guards its entry point behind `import.meta.main`,
+// so `await import("./json/demo")` from here loaded the module but never
+// RAN its demo (#93). Spawn the script directly instead -- that makes it
+// the main module again, keeps each demo's own argv handling working,
+// and lets extra args (`bun run samples arith --ast "1+2"`) forward.
+const SAMPLE_SCRIPTS: Record<string, readonly [string, string]> = {
+  arith: ["🧮 Running Arithmetic Calculator Demo...", "arith/demo.ts"],
+  arithmetic: ["🧮 Running Arithmetic Calculator Demo...", "arith/demo.ts"],
+  csv: ["📊 Running CSV Parser Demo...", "csv/demo.ts"],
+  json: ["🟢 Running JSON Parser Demo...", "json/demo.ts"],
+  peg: ["📝 Running PEG Grammar Demo...", "peg/demo.ts"],
+};
 
-      case "csv":
-        console.log("📊 Running CSV Parser Demo...\n");
-        await import("./csv/demo");
-        break;
-
-      case "json":
-        console.log("📋 Running JSON Parser Demo...\n");
-        await import("./json/demo");
-        break;
-
-      case "peg":
-        console.log("📝 Running PEG Grammar Demo...\n");
-        await import("./peg/demo");
-        break;
-
-      default:
-        console.error(`❌ Unknown sample: ${sampleName}`);
-        console.log("Use --help to see available samples");
-        process.exit(1);
-    }
-  } catch (error) {
-    console.error(`❌ Failed to run sample '${sampleName}':`, error);
+const runSample = (sampleName: string, sampleArgs: string[]) => {
+  const entry = SAMPLE_SCRIPTS[sampleName.toLowerCase()];
+  if (!entry) {
+    console.error(`❌ Unknown sample: ${sampleName}`);
+    console.log("Use --help to see available samples");
     process.exit(1);
+  }
+
+  const [header, script] = entry;
+  console.log(`${header}\n`);
+
+  // `process.execPath` is the running Bun binary; the demo .ts files
+  // aren't executable on their own.
+  const result = Bun.spawnSync(
+    [process.execPath, join(import.meta.dir, script), ...sampleArgs],
+    {
+      stdio: ["inherit", "inherit", "inherit"],
+    },
+  );
+  if (result.exitCode !== 0) {
+    process.exit(result.exitCode);
   }
 };
 
-const runAllSamples = async () => {
+const runAllSamples = () => {
   console.log("🎯 Running All TPEG Samples\n");
 
   const samples = ["arith", "csv", "json", "peg"];
 
   for (const sample of samples) {
     console.log(`\n${"=".repeat(60)}`);
-    await runSample(sample);
+    runSample(sample, []);
     console.log(`${"=".repeat(60)}\n`);
   }
 
   console.log("✅ All samples completed successfully!");
 };
 
-const main = async () => {
+const main = () => {
   const args = process.argv.slice(2);
 
   if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
@@ -95,7 +99,7 @@ const main = async () => {
   }
 
   if (args.includes("--all")) {
-    await runAllSamples();
+    runAllSamples();
     return;
   }
 
@@ -104,12 +108,14 @@ const main = async () => {
     showHelp();
     return;
   }
-  await runSample(sampleName);
+  runSample(sampleName, args.slice(1));
 };
 
 if (import.meta.main) {
-  main().catch((error) => {
+  try {
+    main();
+  } catch (error) {
     console.error("❌ Unexpected error:", error);
     process.exit(1);
-  });
+  }
 }

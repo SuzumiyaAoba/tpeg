@@ -21,7 +21,17 @@ grammar SelfHostComposition {
 
   classChar = classEscapeStd / classEscapeSpecial / [^\]\\\^\-]
 
-  charRangePair = start:classChar "-" end:classChar { return { start, end }; }
+  // Mirrors character-class.ts's charRange check: a backwards range like
+  // [z-a] is rejected (there is no backtracking-out for a return-based
+  // action, so this throws -- callers treat a thrown action the same way
+  // they treat the hand-written parser's fatal failure: the input is
+  // rejected either way).
+  charRangePair = start:classChar "-" end:classChar {
+    if ((start.codePointAt(0) ?? 0) > (end.codePointAt(0) ?? 0)) {
+      throw new Error("Invalid character range: \"" + start + "-" + end + "\" (start must not be greater than end)");
+    }
+    return { start, end };
+  }
 
   charRangeSingle = start:classChar { return { start }; }
 
@@ -52,7 +62,25 @@ grammar SelfHostComposition {
 
   singleQuotedActionString = "'" chars:(escapedActionChar / [^'\\])* "'" { return "'" + chars.join("") + "'"; }
 
-  templateActionString = "`" chars:(escapedActionChar / [^`\\])* "`" { return "`" + chars.join("") + "`"; }
+  // A template literal's `${ ... }` interpolation is real JavaScript -- it
+  // can contain nested braces, strings, comments, regexes, and even nested
+  // template literals -- so it is scanned with the same actionContent
+  // machinery as a block body (mirroring brace-scanner.ts's
+  // skipStringLiteral -> scanJsToBlockClose recursion). A bare `$` not
+  // followed by `{` is ordinary template text (handled by the catch-all
+  // char alternative below, which templateInterp's ordered choice shadows
+  // only when "${" is literally present).
+  templateInterp = "${" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionContent* "}" {
+    return "${" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + "}";
+  }
+
+  // A plain template-text char -- needs its own rule (not an inline
+  // `c:.` capture) so each element of `chars` is a STRING: a labeled
+  // capture inside a sequence yields a `{c: ...}` object, which would
+  // join as "[object Object]" instead of the character.
+  templatePlainChar = !("`" / "\\") c:. { return c; }
+
+  templateActionString = "`" chars:(escapedActionChar / templateInterp / templatePlainChar)* "`" { return "`" + chars.join("") + "`"; }
 
   actionStringLiteral = doubleQuotedActionString / singleQuotedActionString / templateActionString
 
@@ -102,6 +130,33 @@ grammar SelfHostComposition {
 
   actionOpRegex = op:actionOpChar w:wsAndComments re:actionRegexLiteral { return op + w.join("") + re; }
 
+  // A `(...)` group inside action code: mirrors brace-scanner.ts's paren
+  // tracking (each `(` nests, and strings/comments/regexes/nested blocks
+  // inside still apply) so the `)` ending a statement keyword's header can
+  // be recognized as a position where a value -- and therefore a regex --
+  // is expected next (`if (x) /}/.test(y)`). `(` immediately after the
+  // opening paren is "value expected" too, so a leading regex is allowed
+  // (`( /re/.exec(s) )`), same as actionBlock's own `first` slot.
+  actionParenPlainChar = !("{" / "}" / "(" / ")") c:. { return c; }
+
+  actionParenItem = nestedActionBlock / actionStringLiteral / actionLineComment / actionBlockComment / actionPostfix / actionKwRegex / actionOpRegex / actionStmtParenRegex / actionParenGroup / actionIdentifier / actionParenPlainChar
+
+  actionParenGroup = "(" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionParenItem* ")" {
+    return "(" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + ")";
+  }
+
+  // Statement keywords whose parenthesized header restores "value
+  // expected" at the closing `)` -- brace-scanner.ts's STMT_PAREN_KEYWORDS.
+  actionStmtParenKeyword = "catch" / "switch" / "while" / "with" / "for" / "if"
+
+  // The whole `kw (...) /re/` shape folds into one rule (a PEG has no
+  // lookbehind) -- same technique as actionKwRegex/actionOpRegex. When no
+  // regex follows (`if (x) doThing()`), the rule fails and `if` falls
+  // through to actionIdentifier like any other keyword.
+  actionStmtParenRegex = kw:actionStmtParenKeyword ![A-Za-z0-9_$] w1:wsAndComments g:actionParenGroup w2:wsAndComments re:actionRegexLiteral {
+    return kw + w1.join("") + g + w2.join("") + re;
+  }
+
   // A nested `{ ... }` block ends a statement, so it may be followed by a
   // regex literal (matching the hand-written scanner's `}` -> value
   // expected rule).
@@ -113,7 +168,7 @@ grammar SelfHostComposition {
 
   actionPlainChar = !("{" / "}") c:. { return c; }
 
-  actionContent = nestedActionBlock / actionStringLiteral / actionLineComment / actionBlockComment / actionPostfix / actionKwRegex / actionOpRegex / actionIdentifier / actionPlainChar
+  actionContent = nestedActionBlock / actionStringLiteral / actionLineComment / actionBlockComment / actionPostfix / actionKwRegex / actionOpRegex / actionStmtParenRegex / actionIdentifier / actionPlainChar
 
   // At the start of a block a value is expected, so a leading regex is
   // allowed (`{ /re/.test(x) }`).
@@ -127,16 +182,37 @@ grammar SelfHostComposition {
   // optionalWhitespaceOrComment (whitespace-utils.ts), which
   // ruleDefinition uses between a rule's name and its "=" (so
   // `y\n= "b"` and `y /* c */ = "b"` are both rule starts, not
-  // sequence continuations).
+  // sequence continuations). Also used INSIDE expressions: the
+  // hand-written parser's `whitespace` (composition.ts) skips `//` and
+  // `/* */` comments between any two elements, so `interWs` (whitespace
+  // only) must not appear at element boundaries in patterns.
   wsAndComments = ([ \t\n\r] / actionLineComment / actionBlockComment)*
 
-  group = "(" interWs expr:choiceExpr interWs ")" { return { type: "Group", expression: expr }; }
+  group = "(" wsAndComments expr:choiceExpr wsAndComments ")" { return { type: "Group", expression: expr }; }
 
   primary = group / basicSyntax
 
-  integer = digits:[0-9]+ { return parseInt(digits.join(""), 10); }
+  // Mirrors repetition.ts's positiveInt: a bound that overflows to
+  // Infinity or loses integer precision is rejected (thrown, since an
+  // action can't backtrack -- see charRangePair above).
+  integer = digits:[0-9]+ {
+    const text = digits.join("");
+    const n = parseInt(text, 10);
+    if (!Number.isSafeInteger(n)) {
+      throw new Error("Invalid quantifier bound: {" + text + "} is not a safe integer");
+    }
+    return n;
+  }
 
-  quantifiedRange = "{" min:integer "," max:integer "}" { return { min, max }; }
+  // Mirrors repetition.ts's rangeCount: a reversed range like {5,2} is
+  // rejected at parse time rather than crashing the generated parser's
+  // `quantified()` at module load.
+  quantifiedRange = "{" min:integer "," max:integer "}" {
+    if (min > max) {
+      throw new Error("Invalid quantifier range: {" + min + "," + max + "} (minimum must not be greater than maximum)");
+    }
+    return { min, max };
+  }
 
   quantifiedMin = "{" min:integer "," "}" { return { min, max: undefined }; }
 
@@ -156,7 +232,37 @@ grammar SelfHostComposition {
 
   quantOp = expr:primary q:quantifiedOp { return { type: "Quantified", expression: expr, min: q.min, max: q.max }; }
 
-  postfix = starOp / plusOp / optionalOp / quantOp / primary
+  // A syntactically valid `{n}`/`{n,}`/`{n,m}` shape -- used only as a
+  // lookahead, so it stays purely syntactic (no integer/range validation;
+  // `{5,2}` still matches here, and that's fine -- see postfixGuard).
+  quantifierSuffix = "{" [0-9]+ ("," [0-9]*)? "}"
+
+  // An ADJACENT "{...}" whose content is digits/commas/whitespace only is
+  // a botched quantifier, not an action -- mirrors repetition.ts's
+  // LOOKS_LIKE_MALFORMED_QUANTIFIER (`/^[\d,\s]*$/` on the scanned brace
+  // content), covering `"a"{,3}` (missing minimum), `"a"{}` , and
+  // `"a"{2,3,4}` (extra comma).
+  adjacentMalformedQuantifier = "{" [0-9, \t\n\r\v\f]* "}"
+
+  // Post-fix guards mirror the two checks withRepetition runs after a
+  // postfix expression, in the same order:
+  //   1. a SECOND valid repetition operator immediately after one that
+  //      was already consumed (`"a"{2}{4}`, `"a"**`, `"a"?+`) is a parse
+  //      error -- repetition operators don't chain;
+  //   2. an adjacent "{...}" that isn't a valid operator but looks like a
+  //      botched one (digits/commas/whitespace only) is rejected rather
+  //      than reinterpreted as a semantic-action block by the
+  //      alternative-level optional action.
+  // Both must run for EVERY postfix result -- even a bare primary, since
+  // `"a"{,3}` consumed no operator yet still must not treat `{,3}` as an
+  // action. (When the base consumed no operator at all, guard 1 can never
+  // fire anyway -- a valid operator would have been consumed by the op
+  // rules -- so applying it unconditionally is safe.)
+  postfix = expr:(starOp / plusOp / optionalOp / quantOp / primary)
+            !("*" / "+" / "?" / quantifierSuffix)
+            !adjacentMalformedQuantifier {
+    return expr;
+  }
 
   positiveLookahead = "&" expr:postfix { return { type: "PositiveLookahead", expression: expr }; }
 
@@ -169,20 +275,43 @@ grammar SelfHostComposition {
 
   notNextRuleStart = !(identifierName wsAndComments "=")
 
-  sequenceContinuation = interWs notNextRuleStart labeled
+  // The `~` cut/commit marker is a sequence element of its own, mirroring
+  // composition.ts's sequenceElement = choice(cutMarker, labeled) -- it is
+  // tried first since `~` can't start a labeled expression anyway.
+  cutMarkerNode = "~" { return { type: "Cut" }; }
 
-  sequenceBase = first:labeled rest:sequenceContinuation* {
+  sequenceElementNode = cutMarkerNode / labeled
+
+  sequenceContinuation = wsAndComments notNextRuleStart sequenceElementNode
+
+  sequenceBase = first:sequenceElementNode rest:sequenceContinuation* {
     if (rest.length === 0) return first;
     const elements = [first, ...rest.map((r: any) => r[2])];
     return { type: "Sequence", elements };
   }
 
-  alternative = base:sequenceBase act:(interWs actionBlock)? {
+  // Optional trailing semantic action, mirroring composition.ts's
+  // withOptionalAction: `whitespace` there is zero-or-more (comment
+  // tolerant), so an action is accepted with ANY whitespace/comment gap --
+  // including none at all (`"a"{return 1}` is a valid ActionExpression on
+  // both sides; an adjacent `{...}` that LOOKS like a botched quantifier
+  // was already rejected by the postfix guard above).
+  //
+  // The quantifier-shaped-body check mirrors QUANTIFIER_SHAPED_ACTION_BODY
+  // (`/^\d+(,\d*)?$/` on the trimmed block content): `expr {2}` WITH a
+  // space is a common typo for the no-space quantifier, and its body has
+  // no `return`, so it would evaluate to `undefined` -- rejected (thrown,
+  // like charRangePair) rather than silently accepted as an action.
+  alternative = base:sequenceBase act:(wsAndComments code:actionBlock)? {
     if (act.length === 0) return base;
-    return { type: "ActionExpression", expression: base, code: act[0][1] };
+    const code = act[0].code;
+    if (/^\d+(,\d*)?$/.test(code.trim())) {
+      throw new Error("Ambiguous \"{" + code + "}\" after an expression: this is a quantifier only when written with no space before \"{\"");
+    }
+    return { type: "ActionExpression", expression: base, code };
   }
 
-  choiceExpr = first:alternative rest:(interWs "/" interWs alternative)* {
+  choiceExpr = first:alternative rest:(wsAndComments "/" wsAndComments alternative)* {
     if (rest.length === 0) return first;
     const alternatives = [first, ...rest.map((r: any) => r[3])];
     return { type: "Choice", alternatives };

@@ -8,6 +8,7 @@ export * from "./char-class";
 export * from "./combinators";
 export * from "./error";
 export * from "./failure";
+export * from "./limits";
 export * from "./lookahead";
 export * from "./reference-eval";
 export * from "./regex-fused";

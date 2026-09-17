@@ -58,13 +58,18 @@ export const Space = choice(lit(" "), lit("\t"), EndOfLine);
  * Comments are used for documentation and are typically ignored during parsing.
  *
  * ```txt
- * Comment <- '#' (!EndOfLine .)* EndOfLine
+ * Comment <- '#' (!EndOfLine .)* (EndOfLine / !.)
  * ```
+ *
+ * A comment may also be terminated by end-of-input, not only a line
+ * ending -- without the `!.` alternative, a grammar file whose last line
+ * is a `# ...` comment with no trailing newline fails to parse entirely
+ * (#90).
  */
 export const Comment = seq(
   lit("#"),
   map(many(map(seq(not(EndOfLine), any), ($) => $[1])), ($) => $.join("")),
-  EndOfLine,
+  choice(EndOfLine, EndOfFile),
 );
 
 /**

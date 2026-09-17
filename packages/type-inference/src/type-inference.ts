@@ -76,7 +76,11 @@ const NAMED_CONTROL_CHAR_ESCAPES: Readonly<Record<string, string>> = {
   "\b": "\\b",
   "\f": "\\f",
   "\v": "\\v",
-  "\0": "\\0",
+  // "\x00", not "\0": a following digit merges into the escape ("\0"+"5"
+  // -> "\05", a legacy octal escape -- a SyntaxError in strict-mode code,
+  // which generated parsers are). The fixed-width hex spelling is
+  // unambiguous regardless of the next character (#105).
+  "\0": "\\x00",
 };
 
 const escapeStringLiteralType = (value: string): string => {

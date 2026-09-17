@@ -57,11 +57,38 @@ export const optionalOperator: Parser<string> = literal("?");
  */
 export const quantifiedOperator: Parser<{ min: number; max?: number }> =
   (() => {
-    // Parse a positive integer
-    const positiveInt: Parser<number> = map(
-      oneOrMore(charClass(["0", "9"])),
-      (digits) => Number.parseInt(digits.join(""), 10),
-    );
+    // Parse a positive integer. Not a plain `map` (which can't turn a
+    // success into a failure): a bound longer than ~309 digits overflows
+    // `Number.parseInt` to `Infinity`, and anything past 2^53 silently
+    // loses precision -- `{Infinity}`-equivalent `{n}` then reaches
+    // `tpeg-core`'s `quantified()` with `min === Infinity`, whose required
+    // loop (`i < min`) never terminates on a nullable body (or burns
+    // astronomical-but-finite iterations otherwise). Reject anything that
+    // isn't a safe integer at parse time instead.
+    const digitsParser = oneOrMore(charClass(["0", "9"]));
+    const positiveInt: Parser<number> = (input: string, pos: number) => {
+      const result = digitsParser(input, pos);
+      if (!result.success) return result;
+      const digits = result.val.join("");
+      const count = Number.parseInt(digits, 10);
+      if (!Number.isSafeInteger(count)) {
+        // Fatal: `{<digits>` immediately after an expression is
+        // unambiguously an attempted quantifier (see `withRepetition`'s
+        // adjacency reasoning) -- don't let `choice`/`optional` degrade
+        // this to a misleading "expected digit" watermark.
+        return createFailure(
+          `Invalid quantifier bound: {${digits}} is not a safe integer`,
+          pos,
+          { parserName: "quantifiedOperator", fatal: true },
+        );
+      }
+      return {
+        success: true,
+        val: count,
+        current: result.current,
+        next: result.next,
+      };
+    };
 
     // Parse {n} - exactly n times
     const exactCount: Parser<{ min: number; max?: number }> = map(

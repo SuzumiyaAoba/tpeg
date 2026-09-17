@@ -71,14 +71,15 @@ const charClassChar: Parser<string> = choice(
   ),
   // Regular characters (excluding special characters). Only "-" (the
   // range operator, 0x2D) needs to be excluded from this run -- the
-  // boundary below stops at "," (0x2C), one code point short of "-", and
-  // picks back up at "." (0x2E), one past it. A previous version of this
-  // range stopped at "+" (0x2B) instead of ",", which excluded the comma
-  // too even though it has no special meaning inside a character class,
-  // making a literal "," impossible to write in one (`[a,b]` and even the
-  // escaped `[a\,b]` both failed to parse -- no escape sequence covered it
-  // either, see the escape charClass above).
-  charClass([" ", ","], [".", "["], ["_", "~"]),
+  // boundary hops over it by stopping at "," (0x2C) and picking back up
+  // at "." (0x2E). "]"/"\"/"^" stay excluded (they have escapes above).
+  // Control bytes 0x00-0x1F and DEL (0x7F) are accepted RAW here for the
+  // same reason string literals accept them ("any character except the
+  // closing quote/`\\`", `string-literal.ts`): docs/peg-grammar.md's
+  // escape-asymmetry note explicitly documents raw control bytes working
+  // in both, and values like 0x01-0x07/0x0E-0x1F/0x7F otherwise have no
+  // spelling at all (no `\xNN` escape exists in this grammar).
+  charClass(["\u{0000}", ","], [".", "["], ["_", "\u{007F}"]),
   // Any non-ASCII character (U+0080 and up, including astral code points
   // outside the BMP), covered as one range so `charClass` (tpeg-core)
   // matches it as a single code point rather than a UTF-16 surrogate

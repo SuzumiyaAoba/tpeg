@@ -1,3 +1,5 @@
+import { PARSER_LIMITS } from "@suzumiyaaoba/tpeg-core";
+
 /**
  * Constants and string literals used throughout the TPEG parser
  *
@@ -130,7 +132,12 @@ const NAMED_CONTROL_CHAR_ESCAPES: Record<string, string> = {
   "\b": "\\b",
   "\f": "\\f",
   "\v": "\\v",
-  "\0": "\\0",
+  // "\x00", not "\0": a following digit in the emitted literal would
+  // merge into the escape ("\\0" + "5" -> "\05", a legacy octal escape
+  // that is a SyntaxError in strict-mode ESM -- which generated parsers
+  // are). The two-character hex spelling is unambiguous regardless of
+  // what character comes next (#105).
+  "\0": "\\x00",
 };
 
 /**
@@ -256,16 +263,26 @@ export const ERROR_MESSAGES = {
 } as const;
 
 /**
- * Parser configuration constants
+ * Parser configuration constants.
+ *
+ * `MAX_RECURSION_DEPTH`/`MAX_INPUT_LENGTH` are enforced by
+ * `@suzumiyaaoba/tpeg-core` (`PARSER_LIMITS` in `core/src/limits.ts`):
+ * `lazy()`/`recursive()` guard delegation depth and `parse()` rejects
+ * over-long inputs. This alias stays so any consumer reading the
+ * documented values here sees the numbers that are actually enforced.
  */
 export const PARSER_CONFIG = {
-  MAX_RECURSION_DEPTH: 1000,
-  MAX_INPUT_LENGTH: 1_000_000,
+  MAX_RECURSION_DEPTH: PARSER_LIMITS.MAX_RECURSION_DEPTH,
+  MAX_INPUT_LENGTH: PARSER_LIMITS.MAX_INPUT_LENGTH,
   DEFAULT_POSITION: 0,
 } as const;
 
 /**
- * Regular expression patterns used in parsing
+ * Regular expression patterns used in parsing.
+ *
+ * Retained for backwards compatibility with consumers importing the
+ * documented constants; the parsers themselves use literal matchers and
+ * character classes, not these regexes.
  */
 export const REGEX_PATTERNS = {
   IDENTIFIER: /^[a-zA-Z_][a-zA-Z0-9_]*$/,

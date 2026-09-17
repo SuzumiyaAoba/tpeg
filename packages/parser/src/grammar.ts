@@ -640,7 +640,13 @@ const keyValueAnnotation: Parser<GrammarAnnotation> = map(
     // `moduleInfoRecordAnnotation` apply the same refusal for the keys
     // owned by the OTHER structured forms.
     annotationKeyExcluding(DEDICATED_ANNOTATION_KEYS),
-    optionalWhitespace,
+    // Comment-tolerant on BOTH sides of ":" (see
+    // `optionalWhitespaceOrComment`'s doc comment,
+    // `./whitespace-utils.ts`): `@key /* c */: value` is as legitimate a
+    // comment position as `@key: /* c */ value` below -- docs/
+    // peg-grammar.md's Comments section accepts one in every position
+    // separating two syntactic elements.
+    optionalWhitespaceOrComment,
     literal(GRAMMAR_SYMBOLS.LABEL_SEPARATOR),
     // Comment-tolerant (see `optionalWhitespaceOrComment`'s doc comment,
     // `./whitespace-utils.ts`): a comment between the ":" and the value
@@ -747,7 +753,9 @@ const memoizeAnnotation: Parser<GrammarAnnotation> = map(
     literal("memoize"),
     optional(
       sequence(
-        optionalWhitespace,
+        // Comment-tolerant on BOTH sides of ":", matching
+        // keyValueAnnotation (`@memoize /* c */: 4`).
+        optionalWhitespaceOrComment,
         literal(GRAMMAR_SYMBOLS.LABEL_SEPARATOR),
         // Comment-tolerant, matching keyValueAnnotation's own ":" handling
         // above (`@memoize: /* c */ 4`).
@@ -1243,11 +1251,16 @@ export const modularGrammarDefinition: Parser<ModularGrammarDefinition> = map(
  * Parse a full TPEG module file: zero or more import statements (each
  * preceded by its own leading comments/whitespace, so a `//`-commented
  * import line doesn't fail leadingContent's "no arbitrary text" rule)
- * followed by a single grammar block. This is what a `.tpeg` file that
- * begins with `import "..." as alias` lines needs - grammarDefinition and
- * modularGrammarDefinition on their own only accept a grammar block, since
- * their `leadingContent` skips comments/whitespace but not `import`
- * statements.
+ * followed by a single grammar block and any trailing `transforms`
+ * blocks. This is what a `.tpeg` file that begins with `import "..." as
+ * alias` lines needs - grammarDefinition and modularGrammarDefinition on
+ * their own only accept a grammar block, since their `leadingContent`
+ * skips comments/whitespace but not `import` statements.
+ *
+ * Trailing `transforms Name@lang { ... }` blocks attach to the returned
+ * grammar's `transforms` array exactly as `index.ts`'s `tpegFile` does,
+ * so a module file can carry transforms the same way a plain grammar
+ * file can.
  */
 export const tpegModuleFile: Parser<{
   imports: ImportStatement[];
@@ -1258,6 +1271,21 @@ export const tpegModuleFile: Parser<{
       map(sequence(leadingContent, importStatement), ([, stmt]) => stmt),
     ),
     modularGrammarDefinition,
+    zeroOrMore(
+      map(
+        sequence(optionalWhitespaceOrComment, transformDefinition),
+        ([, transform]) => transform,
+      ),
+    ),
   ),
-  ([imports, grammar]) => ({ imports, grammar }),
+  ([imports, grammar, transforms]) => ({
+    imports,
+    grammar:
+      transforms.length === 0
+        ? grammar
+        : {
+            ...grammar,
+            transforms: [...(grammar.transforms ?? []), ...transforms],
+          },
+  }),
 );

@@ -27,20 +27,31 @@ import type {
  * Simple performance monitoring for generation timing
  */
 export class PerformanceMonitor {
-  private timers = new Map<string, number>();
+  // A stack of start times per operation, not a single timestamp:
+  // same-name `start` calls can nest (a monitored recursive rule
+  // re-enters its own start/end pair), and a lone `Map<string, number>`
+  // silently dropped the outer measurement (#109).
+  private timers = new Map<string, number[]>();
 
   start(name: string): void {
-    this.timers.set(name, performance.now());
+    const stack = this.timers.get(name);
+    if (stack) {
+      stack.push(performance.now());
+    } else {
+      this.timers.set(name, [performance.now()]);
+    }
   }
 
   end(name: string): number {
-    const startTime = this.timers.get(name);
-    if (!startTime) {
+    const stack = this.timers.get(name);
+    if (!stack || stack.length === 0) {
       return 0;
     }
-    const elapsed = performance.now() - startTime;
-    this.timers.delete(name);
-    return elapsed;
+    const startTime = stack.pop() as number;
+    if (stack.length === 0) {
+      this.timers.delete(name);
+    }
+    return performance.now() - startTime;
   }
 }
 

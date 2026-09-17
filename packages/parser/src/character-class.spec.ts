@@ -174,5 +174,29 @@ describe("characterClass", () => {
         expect(result.success).toBe(false);
       });
     });
+
+    describe("raw control bytes (#89)", () => {
+      // docs/peg-grammar.md's escape-asymmetry note documents that a raw,
+      // unescaped control character works in both string literals and
+      // character classes; without these ranges, bytes like 0x01-0x07,
+      // 0x0E-0x1F and DEL had no valid spelling at all.
+      it("accepts a raw control-byte range", () => {
+        const result = parser("[\x01-\x07]", pos);
+        expect(result.success).toBe(true);
+        if (result.success && result.val.type === "CharacterClass") {
+          expect(result.val.ranges).toEqual([{ start: "\x01", end: "\x07" }]);
+        }
+      });
+
+      it("accepts raw bytes 0x0E-0x1F and DEL", () => {
+        expect(parser("[\x0e-\x1f]", pos).success).toBe(true);
+        expect(parser("[\x7f]", pos).success).toBe(true);
+      });
+
+      it("still rejects the class metacharacters unescaped", () => {
+        expect(parser("[a^]", pos).success).toBe(false);
+        expect(parser("[z-a]", pos).success).toBe(false);
+      });
+    });
   });
 });

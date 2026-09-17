@@ -130,7 +130,16 @@ export interface ModuleVersion {
  * Version management system.
  */
 export class VersionManager {
+  // Keyed by `normalizeModulePath(filePath)`, not by module name: two
+  // modules with the same basename in different directories
+  // (`dirA/lib.tpeg`, `dirB/lib.tpeg`) are different modules, and a
+  // name-keyed map collapsed them into one entry where the second
+  // registration silently overwrote the first (#107).
   private moduleVersions = new Map<string, ModuleVersion>();
+  // `moduleName -> normalized filePaths`, for name-based lookups
+  // (`getModuleVersion`, `validateDependencies`, display keys). A name
+  // shared by multiple paths is ambiguous for those lookups.
+  private moduleNameIndex = new Map<string, string[]>();
   private versionCache = new Map<string, SemanticVersion>();
 
   /**
@@ -456,7 +465,30 @@ export class VersionManager {
       conflicts,
     };
 
-    this.moduleVersions.set(moduleName, moduleVersion);
+    const pathKey = normalizeModulePath(moduleFile.filePath);
+    // Re-registering the same path replaces the entry -- and if the
+    // module's name changed, drop the stale name-index link so the old
+    // name no longer resolves to this path.
+    const previous = this.moduleVersions.get(pathKey);
+    if (previous && previous.moduleName !== moduleName) {
+      const siblings = this.moduleNameIndex.get(previous.moduleName);
+      if (siblings) {
+        const remaining = siblings.filter((p) => p !== pathKey);
+        if (remaining.length === 0) {
+          this.moduleNameIndex.delete(previous.moduleName);
+        } else {
+          this.moduleNameIndex.set(previous.moduleName, remaining);
+        }
+      }
+    }
+    this.moduleVersions.set(pathKey, moduleVersion);
+
+    const paths = this.moduleNameIndex.get(moduleName);
+    if (paths === undefined) {
+      this.moduleNameIndex.set(moduleName, [pathKey]);
+    } else if (!paths.includes(pathKey)) {
+      paths.push(pathKey);
+    }
   }
 
   /**
@@ -478,9 +510,12 @@ export class VersionManager {
 
   /**
    * Validates dependencies between modules.
+   *
+   * `currentModule` may be a module name or a file path -- either form
+   * is resolved through {@link lookupModule}.
    */
   validateDependencies(currentModule: string): void {
-    const moduleVersion = this.moduleVersions.get(currentModule);
+    const moduleVersion = this.lookupModule(currentModule);
     if (!moduleVersion) {
       throw new VersionCompatibilityError(
         currentModule,
@@ -535,8 +570,8 @@ export class VersionManager {
    * Validates dependencies for every module.
    */
   validateAllDependencies(): void {
-    for (const moduleName of this.moduleVersions.keys()) {
-      this.validateDependencies(moduleName);
+    for (const pathKey of this.moduleVersions.keys()) {
+      this.validateDependencies(pathKey);
     }
   }
 
@@ -646,8 +681,14 @@ export class VersionManager {
     }
 
     const candidates: ModuleVersion[] = [];
-    for (const [moduleName, moduleVersion] of this.moduleVersions) {
-      if (this.referenceTargetsModule(reference, moduleName, moduleVersion)) {
+    for (const moduleVersion of this.moduleVersions.values()) {
+      if (
+        this.referenceTargetsModule(
+          reference,
+          moduleVersion.moduleName,
+          moduleVersion,
+        )
+      ) {
         candidates.push(moduleVersion);
       }
     }
@@ -666,17 +707,70 @@ export class VersionManager {
   }
 
   /**
-   * Gets a module's version information.
+   * Resolves a module `reference` -- a module name OR a file path -- to
+   * its registered `ModuleVersion`. Path form is matched by normalized
+   * `filePath` (unique); name form goes through `moduleNameIndex` and
+   * throws `VersionCompatibilityError` when the name is shared by
+   * several registered modules, the same ambiguity policy
+   * `findRegisteredModule` applies to dependency references.
    */
-  getModuleVersion(moduleName: string): ModuleVersion | undefined {
-    return this.moduleVersions.get(moduleName);
+  private lookupModule(reference: string): ModuleVersion | undefined {
+    const byPath = this.moduleVersions.get(normalizeModulePath(reference));
+    if (byPath) {
+      return byPath;
+    }
+
+    const paths = this.moduleNameIndex.get(reference);
+    if (!paths || paths.length === 0) {
+      return undefined;
+    }
+    if (paths.length > 1) {
+      throw new VersionCompatibilityError(
+        reference,
+        "unknown",
+        "unknown",
+        `Module name '${reference}' is ambiguous: it names multiple registered modules: ${paths.join(", ")}`,
+      );
+    }
+    const path = paths[0];
+    return path === undefined ? undefined : this.moduleVersions.get(path);
   }
 
   /**
-   * Gets the list of registered modules.
+   * The map key used for a module in `getDependencyGraph`/
+   * `getCompatibilityMatrix`: the module name when unique, the
+   * normalized file path when the name is shared (the only key that
+   * still distinguishes `dirA/lib.tpeg` from `dirB/lib.tpeg`).
+   */
+  private displayKey(moduleVersion: ModuleVersion): string {
+    const paths = this.moduleNameIndex.get(moduleVersion.moduleName);
+    if (paths && paths.length === 1) {
+      return moduleVersion.moduleName;
+    }
+    return normalizeModulePath(moduleVersion.filePath);
+  }
+
+  /**
+   * Gets a module's version information, by module name or file path.
+   * Throws `VersionCompatibilityError` when a NAME refers to several
+   * registered modules -- the previous silent "last registration wins"
+   * behavior is what made same-basename collisions invisible (#107).
+   */
+  getModuleVersion(moduleName: string): ModuleVersion | undefined {
+    return this.lookupModule(moduleName);
+  }
+
+  /**
+   * Gets the list of registered modules: module names, plus the
+   * normalized file path of any module whose name is shared (so every
+   * registered module appears exactly once).
    */
   getRegisteredModules(): string[] {
-    return Array.from(this.moduleVersions.keys());
+    const modules: string[] = [];
+    for (const moduleVersion of this.moduleVersions.values()) {
+      modules.push(this.displayKey(moduleVersion));
+    }
+    return modules;
   }
 
   /**
@@ -685,9 +779,9 @@ export class VersionManager {
   getDependencyGraph(): Map<string, string[]> {
     const graph = new Map<string, string[]>();
 
-    for (const [moduleName, moduleVersion] of this.moduleVersions) {
+    for (const moduleVersion of this.moduleVersions.values()) {
       const dependencies = Array.from(moduleVersion.dependencies.keys());
-      graph.set(moduleName, dependencies);
+      graph.set(this.displayKey(moduleVersion), dependencies);
     }
 
     return graph;
@@ -699,49 +793,62 @@ export class VersionManager {
   getCompatibilityMatrix(): Map<string, Map<string, boolean>> {
     const matrix = new Map<string, Map<string, boolean>>();
 
-    for (const [moduleName, moduleVersion] of this.moduleVersions) {
+    for (const [modulePathKey, moduleVersion] of this.moduleVersions) {
       const compatibilityRow = new Map<string, boolean>();
 
-      for (const [otherModuleName, otherModuleVersion] of this.moduleVersions) {
-        if (moduleName === otherModuleName) {
-          compatibilityRow.set(otherModuleName, true);
+      for (const [otherPathKey, otherModuleVersion] of this.moduleVersions) {
+        const otherKey = this.displayKey(otherModuleVersion);
+        if (modulePathKey === otherPathKey) {
+          compatibilityRow.set(otherKey, true);
           continue;
         }
 
-        // 競合チェック
+        // 競合チェック -- resolve through findRegisteredModule (the same
+        // path-first scheme validateDependencies uses) so a `conflicts`
+        // entry naming `dirA/lib.tpeg` doesn't also match the unrelated
+        // `dirB/lib.tpeg` via basename (#107).
         if (
-          [...moduleVersion.conflicts].some((reference) =>
-            this.referenceTargetsModule(
+          [...moduleVersion.conflicts].some((reference) => {
+            const resolved = this.findRegisteredModule(
               reference,
-              otherModuleName,
-              otherModuleVersion,
-            ),
-          )
+              moduleVersion.filePath,
+            );
+            return (
+              resolved !== undefined &&
+              normalizeModulePath(resolved.filePath) === otherPathKey
+            );
+          })
         ) {
-          compatibilityRow.set(otherModuleName, false);
+          compatibilityRow.set(otherKey, false);
           continue;
         }
 
-        // 依存関係チェック
-        const constraint = [...moduleVersion.dependencies].find(([reference]) =>
-          this.referenceTargetsModule(
-            reference,
-            otherModuleName,
-            otherModuleVersion,
-          ),
+        // 依存関係チェック -- same resolution; a dependency on
+        // `dirA/lib.tpeg` constrains dirA's version only, never dirB's.
+        const constraint = [...moduleVersion.dependencies].find(
+          ([reference]) => {
+            const resolved = this.findRegisteredModule(
+              reference,
+              moduleVersion.filePath,
+            );
+            return (
+              resolved !== undefined &&
+              normalizeModulePath(resolved.filePath) === otherPathKey
+            );
+          },
         )?.[1];
         if (constraint) {
           const isCompatible = this.satisfiesConstraint(
             otherModuleVersion.version,
             constraint,
           );
-          compatibilityRow.set(otherModuleName, isCompatible);
+          compatibilityRow.set(otherKey, isCompatible);
         } else {
-          compatibilityRow.set(otherModuleName, true); // No dependency
+          compatibilityRow.set(otherKey, true); // No dependency
         }
       }
 
-      matrix.set(moduleName, compatibilityRow);
+      matrix.set(this.displayKey(moduleVersion), compatibilityRow);
     }
 
     return matrix;
@@ -752,6 +859,7 @@ export class VersionManager {
    */
   clear(): void {
     this.moduleVersions.clear();
+    this.moduleNameIndex.clear();
     this.versionCache.clear();
   }
 }

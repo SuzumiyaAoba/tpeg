@@ -109,6 +109,14 @@ export const labeled =
   (input: string, pos: number) => {
     const result = parser(input, pos);
     if (!result.success) {
+      // Read `.error` once: on the `FAIL`/`FAIL_FATAL` singletons it is a
+      // getter that materializes a fresh object per read.
+      const error = result.error;
+      // An `abort` failure (resource-limit hit -- see `ParseError.abort`,
+      // `@suzumiyaaoba/tpeg-core`) carries its own diagnostic; relabeling
+      // it would replace the limit message with this label. Re-raise
+      // unchanged.
+      if (error.abort === true) return result;
       const errorObj = {
         message: errorMessage,
         pos,
@@ -118,7 +126,7 @@ export const labeled =
         // `labeled(...)` would silently let an enclosing `choice` fall
         // back to a sibling alternative it should have been barred from
         // trying (see `commit`'s doc comment, `@suzumiyaaoba/tpeg-core`).
-        ...(result.error.fatal && { fatal: true }),
+        ...(error.fatal && { fatal: true }),
       };
       const labeledResult: ParseFailure = {
         success: false,
@@ -152,6 +160,11 @@ export const labeledWithContext =
   (input: string, pos: number) => {
     const result = parser(input, pos);
     if (!result.success) {
+      // Read `.error` once (see `labeled` above: singletons materialize
+      // it per read). An `abort` failure must keep its own resource-limit
+      // diagnostic -- re-raise unchanged.
+      const error = result.error;
+      if (error.abort === true) return result;
       const contextArray = Array.isArray(context) ? context : [context];
       const fullMessage = `${errorMessage} (in context: ${contextArray.join(" > ")})`;
       const errorObj = {
@@ -161,7 +174,7 @@ export const labeledWithContext =
         ...(parserName && { parserName }),
         // See `labeled`'s identical guard above: a `fatal` (cut/commit)
         // failure must survive relabeling.
-        ...(result.error.fatal && { fatal: true }),
+        ...(error.fatal && { fatal: true }),
       };
       const labeledResult: ParseFailure = {
         success: false,

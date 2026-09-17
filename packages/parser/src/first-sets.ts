@@ -780,14 +780,13 @@ export const canCommitWithoutConsuming = (
  * could succeed while consuming zero characters, so the repetition would
  * never terminate by input exhaustion. `packages/core/src/repetition.ts`'s
  * `zeroOrMore`/`oneOrMore`/`quantified` all carry a runtime
- * zero-progress guard for this (`createInfiniteLoopError`), but that guard
- * produces a NON-fatal failure -- which `optional`/`withDefault`/`choice`
- * then silently swallow as "no match" rather than surfacing it, so the
- * same underlying grammar mistake is a hard error in one context
- * (`zeroOrMore(...)` at top level) and silently accepted as `[]` in
- * another (`optional(zeroOrMore(...))`). Rather than generate code whose
- * behavior depends on incidental wrapping, codegen rejects this shape
- * outright -- see `assertNoNullableRepetition`.
+ * zero-progress guard for this (`createInfiniteLoopError`), which fails
+ * `fatal: true` so `optional`/`withDefault`/`choice` re-raise it rather
+ * than swallowing it -- the runtime path is therefore safe in every
+ * wrapping context. `assertNoNullableRepetition` still rejects the shape
+ * at GENERATION time because a grammar-authoring mistake deserves a
+ * diagnostic pointing at the rule in the `.tpeg` file, not a fatal
+ * failure surfaced mid-parse by whatever input first reaches it.
  *
  * A *bounded* `Quantified{n,m}` (including `{n,n}`) is NOT flagged: PEG
  * gives `e{n,m}` well-defined semantics even when `e` is nullable (each of
@@ -876,8 +875,11 @@ const collectNullableRepetitions = (
       collectNullableRepetitions(expr.expression, ruleName, analysis, issues);
       return;
     case "Quantified":
+      // `max === undefined` OR a non-finite `max` (hand-built ASTs can
+      // carry `Infinity`, the documented spelling of unbounded that
+      // `tpeg-core`'s `quantified` also honors) both mean "unbounded".
       if (
-        expr.max === undefined &&
+        (expr.max === undefined || !Number.isFinite(expr.max)) &&
         isProvablyNullable(expr.expression, analysis.nullableRules)
       ) {
         issues.push({ ruleName, nodeType: "Quantified" });

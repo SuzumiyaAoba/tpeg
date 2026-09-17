@@ -261,16 +261,25 @@ export const quantified = <T>(
   max?: number,
   parserName = "quantified",
 ): Parser<T[]> => {
-  // Validate input parameters early
-  if (min < 0) {
+  // Validate input parameters early. `min` must be a safe, non-negative
+  // integer: `Infinity` (e.g. a quantifier bound that overflowed
+  // `parseInt`) would make the required `i < min` loop below genuinely
+  // unbounded -- on a nullable `parser` that is an infinite loop, not a
+  // long one. `max` may be `Infinity` (the documented explicit spelling
+  // of unbounded, handled by `limit` below) but no other non-integer.
+  if (!Number.isSafeInteger(min) || min < 0) {
     throw new Error(
-      `Invalid quantified range: minimum (${min}) cannot be negative`,
+      `Invalid quantified range: minimum (${min}) must be a non-negative safe integer`,
     );
   }
 
-  if (max !== undefined && max < min) {
+  if (
+    max !== undefined &&
+    (max < min ||
+      (max !== Number.POSITIVE_INFINITY && !Number.isSafeInteger(max)))
+  ) {
     throw new Error(
-      `Invalid quantified range: maximum (${max}) cannot be less than minimum (${min})`,
+      `Invalid quantified range: maximum (${max}) must be a safe integer not less than minimum (${min}), or Infinity`,
     );
   }
 

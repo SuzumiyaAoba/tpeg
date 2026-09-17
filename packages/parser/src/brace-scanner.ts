@@ -312,9 +312,12 @@ export const skipBlockComment = (input: string, start: number): number => {
  * recognized via the standard regex-vs-division heuristic (a `/` opens a
  * regex only where a value/expression is expected -- after an operator,
  * `(`, `,`, `;`, a keyword like `return`, the start of a block, ...).
- * `)`/`]` count as operand ends, so `if (x) /re/` scans the `/` as
- * division -- a documented limitation shared with the self-hosted
- * grammar's `actionBlock` rule.
+ * `)`/`]` normally end an operand (`f(x) / re/` is division), but the
+ * tracker remembers which `(` opened a control-statement paren (`if`,
+ * `while`, `for`, `switch`, `catch`, `with`), so `)` closing one of
+ * THOSE restores expression position and `if (x) /re/` scans the `/` as
+ * a regex opener. The self-hosted grammar's `actionBlock` lacks that
+ * statement-paren tracking and mis-scans this case (#104).
  */
 const scanJsToBlockClose = (input: string, pos: number): number => {
   let braceDepth = 1;

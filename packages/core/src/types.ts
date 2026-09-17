@@ -184,6 +184,17 @@ export interface ParseError {
    * enumerable property on `ParseError`.
    */
   fatal?: boolean;
+  /**
+   * Set together with `fatal` for failures that must abort the ENTIRE
+   * parse rather than only the enclosing `choice` -- resource-limit hits
+   * (`./limits.ts`'s `guardedParserCall`, e.g. the recursion-depth
+   * limit). `tryOrderedCandidates` and the lookahead predicates
+   * otherwise absorb `fatal` at their own boundary (cut semantics),
+   * which would turn a limit hit into silent backtracking or even a
+   * successful `!e`; they check `abort` first and re-raise the failure
+   * unchanged instead.
+   */
+  abort?: boolean;
 }
 
 /**

@@ -17,6 +17,23 @@ import {
 } from "./type-inference";
 
 /**
+ * Renders one logical documentation line inside a generated JSDoc block
+ * comment. `text` originates in grammar source (a string literal's
+ * decoded value, e.g. `String literal: "<value>"`), so it is arbitrary
+ * user input: a star-slash pair in it would terminate the block comment
+ * early and break the generated file's syntax (#86), and a raw newline
+ * would produce an un-prefixed continuation line. Star-slash is
+ * rewritten to star-backslash-slash (which renders identically in JSDoc
+ * viewers), and the text is split on hard newlines so every emitted
+ * line keeps its ` * ` gutter.
+ */
+const docCommentLines = (text: string): string[] =>
+  text
+    .replace(/\*\//g, "*\\/")
+    .split(/\r\n|\r|\n/)
+    .map((line) => `   * ${line}`);
+
+/**
  * Enhanced rule information with type inference
  */
 export interface TypedRuleDefinition extends RuleDefinition {
@@ -281,7 +298,7 @@ export class TypeIntegrationEngine {
 
       if (this.options.includeDocumentation && inferredType.documentation) {
         typeDefinitions.push("  /**");
-        typeDefinitions.push(`   * ${inferredType.documentation}`);
+        typeDefinitions.push(...docCommentLines(inferredType.documentation));
         if (rule.dependencies.length > 0) {
           typeDefinitions.push(
             `   * Dependencies: ${rule.dependencies.join(", ")}`,
@@ -538,7 +555,9 @@ export class TypeIntegrationEngine {
       if (this.options.includeDocumentation) {
         interfaceLines.push("  /**");
         interfaceLines.push(
-          `   * Parse ${rule.name}: ${rule.inferredType.documentation}`,
+          ...docCommentLines(
+            `Parse ${rule.name}: ${rule.inferredType.documentation ?? ""}`,
+          ),
         );
         if (rule.hasCircularDependency) {
           interfaceLines.push(

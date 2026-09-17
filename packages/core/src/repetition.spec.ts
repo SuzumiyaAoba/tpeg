@@ -659,12 +659,33 @@ describe("quantified", () => {
     // An invalid range is a grammar authoring error, not a parse failure,
     // so it is reported eagerly when the parser is built.
     expect(() => quantified(lit("a"), -1, 3)).toThrow(
-      "minimum (-1) cannot be negative",
+      "minimum (-1) must be a non-negative safe integer",
     );
 
     expect(() => quantified(lit("a"), 5, 3)).toThrow(
-      "maximum (3) cannot be less than minimum (5)",
+      "maximum (3) must be a safe integer not less than minimum (5)",
     );
+
+    // #84: non-finite or non-integer bounds must not reach the run loops --
+    // `min: Infinity` makes the required loop genuinely unbounded.
+    expect(() => quantified(lit("a"), Number.POSITIVE_INFINITY)).toThrow(
+      "minimum (Infinity) must be a non-negative safe integer",
+    );
+    expect(() => quantified(lit("a"), Number.NaN)).toThrow(
+      "minimum (NaN) must be a non-negative safe integer",
+    );
+    expect(() => quantified(lit("a"), 0, Number.NaN)).toThrow(
+      "maximum (NaN) must be a safe integer",
+    );
+    expect(() => quantified(lit("a"), 0, 1.5)).toThrow(
+      "maximum (1.5) must be a safe integer",
+    );
+
+    // `max: Infinity` remains the documented explicit spelling of
+    // "unbounded" (the zero-progress guard still applies to its tail loop).
+    expect(() =>
+      quantified(lit("a"), 0, Number.POSITIVE_INFINITY),
+    ).not.toThrow();
   });
 
   it("should detect infinite loops when the tail is genuinely unbounded (`max` omitted)", () => {

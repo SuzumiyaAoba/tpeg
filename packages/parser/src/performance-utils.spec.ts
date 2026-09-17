@@ -13,6 +13,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   analyzeExpressionComplexity,
   analyzeGrammarPerformance,
+  PerformanceMonitor,
 } from "./performance-utils";
 import {
   createActionExpression,
@@ -266,5 +267,31 @@ describe("analyzeExpressionComplexity: ActionExpression traversal", () => {
     // expression alone counts as.
     expect(withAction.nodeCount).toBe(withoutAction.nodeCount + 1);
     expect(withAction.depth).toBe(withoutAction.depth + 1);
+  });
+});
+
+describe("PerformanceMonitor", () => {
+  it("keeps nested same-operation measurements instead of dropping the outer one (#109)", () => {
+    // A monitored recursive rule re-enters its own start/end pair; a
+    // single timestamp per operation silently dropped the outer
+    // measurement (the inner `end` consumed it, the outer `end` got 0).
+    const monitor = new PerformanceMonitor();
+    monitor.start("op");
+    monitor.start("op"); // nested re-entry, e.g. a recursive rule
+    const inner = monitor.end("op");
+    const outer = monitor.end("op");
+
+    const metrics = monitor.getMetrics().get("op");
+    expect(metrics?.count).toBe(2);
+    expect(inner).toBeGreaterThanOrEqual(0);
+    expect(outer).toBeGreaterThanOrEqual(0);
+    // The outer measurement spans the inner one, so it must be at least
+    // as large.
+    expect(outer).toBeGreaterThanOrEqual(inner);
+  });
+
+  it("returns 0 for `end` with no matching `start`", () => {
+    const monitor = new PerformanceMonitor();
+    expect(monitor.end("never-started")).toBe(0);
   });
 });

@@ -2,20 +2,23 @@ import {
   commaSeparated,
   labeled,
   memoize,
-  number,
-  quotedString,
   recursive,
   token,
 } from "@suzumiyaaoba/tpeg-combinator";
 import {
   type Parser,
   any,
+  anyChar,
+  charClass,
   choice,
   literal,
   map,
   not,
+  oneOrMore,
+  optional,
   parse,
   seq,
+  zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
 
 // Export Parser type
@@ -60,11 +63,98 @@ const nullParser = map(labeled(literal("null"), "Expected 'null'"), () => null);
 const trueParser = map(literal("true"), () => true);
 const falseParser = map(literal("false"), () => false);
 
-// Parse string values
-const stringParser = map(quotedString, (s) => s);
+// Strict JSON string (#91). The shared `quotedString` combinator is too
+// permissive for the fallback path: its generic escape arm maps ANY
+// `\x` to `x` (accepting `"\x"`, `"\q"`, `\u` without hex digits), and
+// its plain-char arm accepts unescaped control characters that JSON
+// requires to be escaped (U+0000-U+001F, including raw newlines). These
+// parsers only run when JSON.parse already rejected the input, so they
+// must apply the JSON grammar exactly.
 
-// Parse number values
-const numberParser = map(number, (n) => n);
+const jsonHexDigit = charClass(["0", "9"], ["a", "f"], ["A", "F"]);
+
+// \uXXXX -- four hex digits decoded as one UTF-16 code unit (an astral
+// character is two consecutive \uXXXX escapes, same as JSON).
+const jsonUnicodeEscape = map(
+  seq(literal("\\u"), jsonHexDigit, jsonHexDigit, jsonHexDigit, jsonHexDigit),
+  ([, h1, h2, h3, h4]) =>
+    String.fromCharCode(Number.parseInt(`${h1}${h2}${h3}${h4}`, 16)),
+);
+
+// The eight single-character escapes JSON legalizes. "u" is deliberately
+// NOT in this class: a `\u` not followed by exactly four hex digits must
+// fail rather than decode as a literal "u".
+const jsonSimpleEscape = map(
+  seq(literal("\\"), charClass('"', "\\", "/", "b", "f", "n", "r", "t")),
+  ([, char]): string => {
+    switch (char) {
+      case "b":
+        return "\b";
+      case "f":
+        return "\f";
+      case "n":
+        return "\n";
+      case "r":
+        return "\r";
+      case "t":
+        return "\t";
+      default:
+        return char;
+    }
+  },
+);
+
+// Unescaped control characters U+0000-U+001F are illegal in JSON strings.
+const jsonControlChar = charClass(["\u0000", "\u001F"]);
+
+const jsonStringChar = choice(
+  jsonUnicodeEscape,
+  jsonSimpleEscape,
+  map(
+    seq(not(choice(literal('"'), literal("\\"), jsonControlChar)), anyChar()),
+    ([, char]) => char,
+  ),
+);
+
+const jsonString: Parser<string> = labeled(
+  map(
+    seq(literal('"'), zeroOrMore(jsonStringChar), literal('"')),
+    ([, chars]) => chars.join(""),
+  ),
+  "Expected valid JSON string",
+);
+
+// Strict JSON number (#91): -?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?
+// The shared `number` combinator accepts leading zeros ("007", "-01")
+// that JSON.parse rejects. `Number()` on the matched text can't produce
+// NaN because the grammar itself only admits valid JSON numerals.
+const jsonDigits = map(oneOrMore(charClass(["0", "9"])), (chars) =>
+  chars.join(""),
+);
+const jsonIntPart = choice(
+  literal("0"),
+  map(
+    seq(charClass(["1", "9"]), zeroOrMore(charClass(["0", "9"]))),
+    ([d, ds]) => d + ds.join(""),
+  ),
+);
+const jsonNumber = map(
+  seq(
+    optional(literal("-")),
+    jsonIntPart,
+    optional(map(seq(literal("."), jsonDigits), ([, frac]) => `.${frac}`)),
+    optional(
+      map(
+        seq(charClass("e", "E"), optional(charClass("+", "-")), jsonDigits),
+        ([e, sign, exp]) => `${e}${sign.length > 0 ? sign[0] : ""}${exp}`,
+      ),
+    ),
+  ),
+  ([sign, int, frac, exp]) =>
+    Number(
+      `${sign.length > 0 ? "-" : ""}${int}${frac.length > 0 ? frac[0] : ""}${exp.length > 0 ? exp[0] : ""}`,
+    ),
+);
 
 // Handle empty arrays specifically
 const emptyArrayParser = map(
@@ -102,7 +192,7 @@ export const jsonParser = (): Parser<JSONValue> => {
 
   // Parse key-value pairs in objects
   const keyValuePair: Parser<[string, JSONValue]> = map(
-    seq(token(quotedString), token(literal(":")), token(valueParser)),
+    seq(token(jsonString), token(literal(":")), token(valueParser)),
     ([key, , value]) => [key, value] as const,
   );
 
@@ -144,8 +234,8 @@ export const jsonParser = (): Parser<JSONValue> => {
       nullParser,
       trueParser,
       falseParser,
-      stringParser,
-      numberParser,
+      jsonString,
+      jsonNumber,
       emptyObjectParser,
       objectParser,
       emptyArrayParser,

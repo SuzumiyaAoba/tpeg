@@ -544,9 +544,11 @@ describe("generateOptimizedTypeScriptParser({ enableRegexFusion: true, includeIm
     // `generateOptimizedImports` warns about: a combinator emitted in a
     // rule body without a matching import is a ReferenceError at
     // runtime, not a compile error, since generated code is untyped
-    // when `includeTypes: false`).
+    // when `includeTypes: false`). Choice nodes emit `predictiveChoice`
+    // (first-set dispatch) in optimized output, and `choice` is only
+    // imported when actually emitted (#83).
     expect(coreImportLine).toContain("sequence");
-    expect(coreImportLine).toContain("choice");
+    expect(coreImportLine).toContain("predictiveChoice");
   });
 
   it("compiles and runs correctly end to end with includeImports: true (imports actually resolve, not just textually present)", async () => {

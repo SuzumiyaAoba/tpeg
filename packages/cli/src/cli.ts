@@ -5,7 +5,11 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { offsetToPos, parse } from "@suzumiyaaoba/tpeg-core";
+import {
+  type GrammarDefinition,
+  offsetToPos,
+  parse,
+} from "@suzumiyaaoba/tpeg-core";
 import {
   analyzeFirstSets,
   applyAstOptimizations,
@@ -14,7 +18,7 @@ import {
   insertAutomaticCuts,
   promoteGlobalCuts,
   skipTrailingWhitespaceAndComments,
-  tpegFile,
+  tpegModuleFile,
 } from "@suzumiyaaoba/tpeg-parser";
 
 const USAGE = `Usage: tpeg <input.tpeg> [options]
@@ -254,8 +258,11 @@ export function run(argv: string[]): number {
     return 1;
   }
 
-  const parseResult = parse(tpegFile)(source);
-  // `parse()` only requires `tpegFile` to match a PREFIX of `source`, not
+  // `tpegModuleFile` (not `tpegFile`) so a `.tpeg` file whose top-level
+  // `import "..."` statements the module system documents is accepted
+  // here too (#112) -- tpegFile's grammar-only entry rejected them.
+  const parseResult = parse(tpegModuleFile)(source);
+  // `parse()` only requires `tpegModuleFile` to match a PREFIX of `source`, not
   // the whole file (see `packages/core/src/utils.ts`'s `parse`) -- so a
   // syntactically valid grammar followed by garbage (a typo'd second
   // `grammar` block, a misspelled `transforms` keyword that silently
@@ -297,6 +304,36 @@ export function run(argv: string[]): number {
     return 1;
   }
 
+  // `tpegModuleFile` returns the module's `imports` alongside the
+  // grammar. Imports are syntactically accepted but the generated parser
+  // is a single module -- references to imported rules still resolve
+  // through the external-binding escape hatch, which
+  // `buildQualifiedIdentifierWarnings` (wired into both generators)
+  // reports as warnings below. Surface the same limitation here so it
+  // isn't silent when a file actually declares imports.
+  if (parseResult.val.imports.length > 0) {
+    const list = parseResult.val.imports
+      .map((stmt) => `"${stmt.modulePath}"`)
+      .join(", ");
+    process.stderr.write(
+      `note: this file declares ${parseResult.val.imports.length} import(s) (${list}); ` +
+        `the generated parser does not resolve them -- imported rules must be supplied by the caller\n`,
+    );
+  }
+
+  // `ModularGrammarDefinition` carries the module-only fields (imports,
+  // exports, moduleInfo) the optimizers/generators don't consume -- pass
+  // them the plain `GrammarDefinition` they expect.
+  const parsedGrammar: GrammarDefinition = {
+    type: "GrammarDefinition",
+    name: parseResult.val.grammar.name,
+    annotations: parseResult.val.grammar.annotations,
+    rules: parseResult.val.grammar.rules,
+    ...(parseResult.val.grammar.transforms !== undefined
+      ? { transforms: parseResult.val.grammar.transforms }
+      : {}),
+  };
+
   // `applyAstOptimizations` (left-factoring, character-class merging,
   // negative-lookahead degeneration -- see packages/parser/src/ast-optimize.ts)
   // and `insertAutomaticCuts` both run ahead of code generation,
@@ -320,8 +357,8 @@ export function run(argv: string[]): number {
   // check actually happens (after these AST passes have already produced
   // `grammar` below, at codegen time, not before it).
   const astOptimized = options.astOptimize
-    ? applyAstOptimizations(parseResult.val)
-    : parseResult.val;
+    ? applyAstOptimizations(parsedGrammar)
+    : parsedGrammar;
   const cutInserted = options.autoCut
     ? insertAutomaticCuts(astOptimized)
     : astOptimized;

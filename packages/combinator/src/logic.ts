@@ -7,6 +7,7 @@ import type {
 import {
   FAIL,
   FAIL_FATAL,
+  guardedParserCall,
   isFailure,
   mergeFailureWatermark,
   offsetToPos,
@@ -330,7 +331,8 @@ export const recursive = <T>(
   let innerParser: Parser<T> | null = null;
 
   const parser: Parser<T> = (input: string, pos: number) => {
-    if (!innerParser) {
+    const inner = innerParser;
+    if (!inner) {
       return {
         success: false,
         error: {
@@ -339,7 +341,10 @@ export const recursive = <T>(
         },
       };
     }
-    return innerParser(input, pos);
+    // Depth-guarded, same as core's `lazy()`: the hand-written grammar
+    // parser's `expression` recursion (`(...)` nesting in .tpeg sources)
+    // funnels through this delegation (#114).
+    return guardedParserCall(() => inner(input, pos), pos);
   };
 
   const setParser = (p: Parser<T>): void => {

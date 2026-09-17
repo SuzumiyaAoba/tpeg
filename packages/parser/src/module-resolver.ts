@@ -474,7 +474,29 @@ export async function resolveQualifiedIdentifier(
   context: ModuleResolutionContext,
 ): Promise<{ module: ResolvedModule; ruleName: string }> {
   for (const importStmt of fromModule.content.imports) {
-    if (importStmt.alias === qualifiedId.module) {
+    // The effective alias defaults to the module's basename (minus
+    // `.tpeg`) when no `as` clause is given -- the same default
+    // `NamespaceManager.registerModule` applies, so `import "base.tpeg"`
+    // makes `base.<rule>` resolvable through BOTH resolvers (#111).
+    const effectiveAlias =
+      importStmt.alias ??
+      importStmt.modulePath
+        .split("/")
+        .pop()
+        ?.replace(/\.tpeg$/, "");
+    if (effectiveAlias === qualifiedId.module) {
+      // A selective import exposes only its listed rules
+      // (`import "m.tpeg" { r1, r2 }`) -- `NamespaceManager.
+      // resolveQualifiedName` applies the same restriction (#110).
+      if (
+        importStmt.selective !== undefined &&
+        !importStmt.selective.includes(qualifiedId.name)
+      ) {
+        throw new ModuleResolutionError(
+          `Cannot resolve qualified identifier: ${qualifiedId.module}.${qualifiedId.name} -- '${qualifiedId.name}' is not in the selective import list of '${qualifiedId.module}' (referenced from ${fromModule.filePath})`,
+          qualifiedId.module,
+        );
+      }
       // Resolve the imported module, relative to the REFERENCING module's
       // own directory -- matching `extractDependencies`'s own relative-path
       // handling above.

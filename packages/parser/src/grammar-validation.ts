@@ -380,6 +380,29 @@ export const assertValidTransformFunctionNames = (
       `Duplicate transform function(s) within one transform set: ${details} -- the later declaration silently overwrites the earlier one when the set is collected by name, the same authoring mistake a duplicate rule name is already rejected for.`,
     );
   }
+
+  // A transform signature's parameter LIST (`f(a: T, b: T)`) parses fine,
+  // but codegen has exactly one value to pass the function -- the rule's
+  // own parse result (`__result.val`, bound to `parameters[0]`). There is
+  // no second runtime value a second parameter could mean: emitting it
+  // would bind `undefined`, silently. Before this check, parameters 2+
+  // were simply dropped from the emitted arrow's parameter list, so a
+  // body referencing one compiled cleanly and then threw a
+  // `ReferenceError` the first time the transform ran (#108). Rejected
+  // here (not in `wrapWithTransform`) so all three generators get the
+  // identical failure -- this function is the shared transform validator
+  // both `validateGrammar` (codegen.ts/codegen-optimized.ts) and the Eta
+  // generator's `validateGrammarForEtaGenerator` already call.
+  for (const transformDef of grammar.transforms ?? []) {
+    const { transformSet } = transformDef;
+    for (const fn of transformSet.functions) {
+      if (fn.parameters.length > 1) {
+        throw new Error(
+          `Transform function "${fn.name}" in transforms ${transformSet.name}@${transformSet.targetLanguage} declares ${fn.parameters.length} parameters, but a transform is only ever invoked with the rule's parse result (bound to its first parameter, "${fn.parameters[0]?.name ?? ""}") -- parameters 2+ have no value to bind. Declare a single parameter, or destructure the captures object inside the body.`,
+        );
+      }
+    }
+  }
 };
 
 /**
@@ -897,10 +920,14 @@ export const validateGeneratedIdentifiers = (
     }
 
     for (const label of collectAllLabels(rule.pattern)) {
-      if (
-        JS_RESERVED_WORDS.has(label) ||
-        RESERVED_INTERNAL_RULE_NAMES.has(label)
-      ) {
+      // `JS_RESERVED_WORDS` only -- NOT `RESERVED_INTERNAL_RULE_NAMES`
+      // (whose own doc comment says it does not apply to labels): the
+      // `const { <label> } = $$` destructure `wrapWithAction` emits sits
+      // INSIDE the inner `(() => { ... })()` IIFE scope, so a label like
+      // `__base` legally shadows the wrapper's own `const __base`
+      // binding rather than colliding with it (#115). A JS reserved
+      // word still can't be a binding name anywhere, IIFE or not.
+      if (JS_RESERVED_WORDS.has(label)) {
         throw new Error(
           `Rule "${rule.name}" has a capture label named "${label}", which cannot be used as a destructured variable name (\`const { ${label} } = ...\`) in generated code -- rename the label.`,
         );
@@ -939,15 +966,22 @@ export const validateGeneratedIdentifiers = (
 
   for (const transformDef of grammar.transforms ?? []) {
     for (const fn of transformDef.transformSet.functions) {
-      const paramName = fn.parameters[0]?.name;
-      if (
-        paramName !== undefined &&
-        (JS_RESERVED_WORDS.has(paramName) ||
-          RESERVED_INTERNAL_RULE_NAMES.has(paramName))
-      ) {
-        throw new Error(
-          `Transform function "${fn.name}" has a parameter named "${paramName}", which cannot be used as a function parameter name in generated code -- rename the parameter.`,
-        );
+      // Every parameter, not just `parameters[0]`:
+      // `assertValidTransformFunctionNames` rejects multi-parameter
+      // transforms outright, but this check stands guard regardless --
+      // the day multi-parameter signatures are ever given a real meaning,
+      // a reserved name in position 2+ must still not slip through (#108).
+      for (const param of fn.parameters) {
+        // `JS_RESERVED_WORDS` only here too -- a transform parameter is a
+        // function parameter inside `wrapWithTransform`'s emitted arrow,
+        // where it legally shadows the wrapper-scope `__*` bindings, so
+        // `RESERVED_INTERNAL_RULE_NAMES` doesn't apply to it either
+        // (#115; see the label check above).
+        if (JS_RESERVED_WORDS.has(param.name)) {
+          throw new Error(
+            `Transform function "${fn.name}" has a parameter named "${param.name}", which cannot be used as a function parameter name in generated code -- rename the parameter.`,
+          );
+        }
       }
     }
   }

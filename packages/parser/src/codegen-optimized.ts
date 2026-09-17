@@ -711,23 +711,24 @@ export class OptimizedTPEGCodeGenerator {
         // case just below, this one is unconditional (independent of
         // `enablePredictiveDispatch`/FIRST-set analysis), so it's worth
         // getting exactly right rather than leaving imprecise.
-        if (expr.alternatives.length !== 1) {
-          combinators.add("choice");
-        }
-        // Whether this *particular* multi-alternative Choice ends up
-        // eligible for `predictiveChoice` depends on FIRST-set analysis
-        // this pass doesn't have (it only walks the raw AST) -- import
-        // it whenever the option is on and there's more than one
-        // alternative, rather than duplicating that analysis here. An
-        // unused `choice`/`predictiveChoice` import in the rare
-        // all-unknown-FIRST-set case is a DELIBERATE tradeoff (unlike
-        // the single-alternative case above, which needs no such
-        // analysis to get right), not an oversight.
-        if (
-          this.options.enablePredictiveDispatch &&
-          expr.alternatives.length > 1
-        ) {
-          combinators.add("predictiveChoice");
+        //
+        // For the multi-alternative case, `firstSetAnalysis` IS already
+        // populated by this point (`generate` computes it before the
+        // import pass), so the choice/predictiveChoice decision is made
+        // with the exact same eligibility test
+        // `tryGeneratePredictiveChoice` applies -- an unused `choice`
+        // import isn't merely untidy, it is a `noUnusedLocals` compile
+        // error in the consumer's project (#83).
+        if (expr.alternatives.length > 1) {
+          if (
+            this.options.enablePredictiveDispatch &&
+            this.firstSetAnalysis !== null &&
+            this.predictiveChoiceFilters(expr, this.firstSetAnalysis) !== null
+          ) {
+            combinators.add("predictiveChoice");
+          } else {
+            combinators.add("choice");
+          }
         }
         for (const alternative of expr.alternatives) {
           this.collectUsedCombinators(
@@ -1207,6 +1208,36 @@ export class OptimizedTPEGCodeGenerator {
   }
 
   /**
+   * Computes the per-alternative `predictiveChoice` filters for `expr`,
+   * or `null` when not a single alternative yields one (in which case
+   * `predictiveChoice` would filter nothing and the caller falls back to
+   * plain `choice`). Shared with `collectUsedCombinators`'s Choice case
+   * so the import set can never disagree with the emitted code: a
+   * grammar whose EVERY multi-alternative Choice is predictive-eligible
+   * emits no `choice(...)` call at all, and importing `choice` there is
+   * a `noUnusedLocals` compile error in the consumer (#83).
+   */
+  private predictiveChoiceFilters(
+    expr: Choice,
+    analysis: GrammarFirstSetAnalysis,
+  ): readonly (CharSet | null)[] | null {
+    // An alternative that could reach a `Cut` without having consumed any
+    // input must never be skipped by a static "next character"/literal-
+    // prefix guess -- see `canCommitWithoutConsuming`'s doc comment
+    // (`first-sets.ts`) for why skipping it can change which alternative
+    // a `fatal` failure ends up aborting the choice in favor of. Such an
+    // alternative's filter is forced to `null`, exactly as if its FIRST
+    // set were unresolvable.
+    const unsafeToSkip = expr.alternatives.map((alt) =>
+      canCommitWithoutConsuming(alt, analysis),
+    );
+    const filters = expr.alternatives.map((alt, i) =>
+      unsafeToSkip[i] ? null : predictiveFilterForExpression(alt, analysis),
+    );
+    return filters.some((f) => f !== null) ? filters : null;
+  }
+
+  /**
    * Attempts to generate a `predictiveChoice(...)` call for `expr`.
    * Returns `null` (caller falls back to plain `choice`) if not a single
    * alternative has a computable, non-nullable FIRST set -- in that case
@@ -1217,20 +1248,11 @@ export class OptimizedTPEGCodeGenerator {
     expr: Choice,
     analysis: GrammarFirstSetAnalysis,
   ): string | null {
-    // An alternative that could reach a `Cut` without having consumed any
-    // input must never be skipped by a static "next character"/literal-
-    // prefix guess -- see `canCommitWithoutConsuming`'s doc comment
-    // (`first-sets.ts`) for why skipping it can change which alternative
-    // a `fatal` failure ends up aborting the choice in favor of. Both
-    // guards below are forced to `null` for such an alternative, exactly
-    // as if its FIRST set were unresolvable.
     const unsafeToSkip = expr.alternatives.map((alt) =>
       canCommitWithoutConsuming(alt, analysis),
     );
-    const filters = expr.alternatives.map((alt, i) =>
-      unsafeToSkip[i] ? null : predictiveFilterForExpression(alt, analysis),
-    );
-    if (!filters.some((f) => f !== null)) {
+    const filters = this.predictiveChoiceFilters(expr, analysis);
+    if (!filters) {
       return null;
     }
 
@@ -1304,16 +1326,26 @@ export class OptimizedTPEGCodeGenerator {
     return `
 // Performance monitoring utilities
 const performanceMonitor = {
-  startTimes: new Map${t ? "<string, number>" : ""}(),
+  // A stack of start times per operation, not a single timestamp:
+  // monitored rules can recurse, nesting same-name start/end pairs --
+  // a lone timestamp silently drops the outer measurement (#109).
+  startTimes: new Map${t ? "<string, number[]>" : ""}(),
   metrics: new Map${t ? "<string, { total: number; count: number }>" : ""}(),
 
   start(operation${t ? ": string" : ""})${t ? ": void" : ""} {
-    this.startTimes.set(operation, performance.now());
+    const stack = this.startTimes.get(operation);
+    if (stack) {
+      stack.push(performance.now());
+    } else {
+      this.startTimes.set(operation, [performance.now()]);
+    }
   },
 
   end(operation${t ? ": string" : ""})${t ? ": number" : ""} {
-    const startTime = this.startTimes.get(operation);
-    if (startTime === undefined) return 0;
+    const stack = this.startTimes.get(operation);
+    if (stack === undefined || stack.length === 0) return 0;
+    const startTime = stack.pop()${t ? " as number" : ""};
+    if (stack.length === 0) this.startTimes.delete(operation);
 
     const duration = performance.now() - startTime;
     const existing = this.metrics.get(operation) || { total: 0, count: 0 };
@@ -1322,7 +1354,6 @@ const performanceMonitor = {
       count: existing.count + 1
     });
 
-    this.startTimes.delete(operation);
     return duration;
   },
 

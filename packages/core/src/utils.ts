@@ -1,4 +1,5 @@
 import { resetFailureWatermark } from "./failure";
+import { PARSER_LIMITS } from "./limits";
 import type {
   NonEmptyArray,
   ParseError,
@@ -230,6 +231,21 @@ export const createFailure = (
 export const parse =
   <T>(parser: Parser<T>) =>
   (input: string): ParseResult<T> => {
+    // Enforced input-length limit (`PARSER_LIMITS.MAX_INPUT_LENGTH`,
+    // ./limits.ts) -- the constant long existed as dead configuration in
+    // the parser package without anything reading it (#114). Returning a
+    // failure rather than throwing keeps `parse()`'s contract total.
+    if (input.length > PARSER_LIMITS.MAX_INPUT_LENGTH) {
+      return {
+        success: false,
+        error: {
+          message: `Input length ${input.length} exceeds the maximum of ${PARSER_LIMITS.MAX_INPUT_LENGTH}`,
+          pos: 0,
+          fatal: true,
+        },
+      };
+    }
+
     // Start this top-level parse with a clean farthest-failure watermark
     // (see `./failure.ts`) rather than relying on `fail`'s own
     // `input !== watermarkInput` identity check -- a direct `Parser<T>`

@@ -1,9 +1,9 @@
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
-import { capture, captureSequence, charClass, charClassRun, choice, commit, literal, negatedCharClass, notPredicate, oneOrMore, optional, sequence, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
+import { capture, captureSequence, charClass, charClassRun, choice, commit, literal, negatedCharClass, notPredicate, oneOrMore, optional, sequence, untagCapture, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
 
-export const escapeChar: Parser<any> = sequence(literal("\\"), charClass("n", "r", "t", "\\", "\"", "'"));
+export const escapeChar: Parser<any> = untagCapture(sequence(literal("\\"), charClass("n", "r", "t", "\\", "\"", "'")));
 
-export const doubleStringChar: Parser<any> = choice((input, pos) => {
+export const doubleStringChar: Parser<any> = untagCapture(choice((input, pos) => {
   const __base = (escapeChar);
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -17,9 +17,9 @@ export const doubleStringChar: Parser<any> = choice((input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-}, negatedCharClass("\"", "\\"));
+}, negatedCharClass("\"", "\\")));
 
-export const singleStringChar: Parser<any> = choice((input, pos) => {
+export const singleStringChar: Parser<any> = untagCapture(choice((input, pos) => {
   const __base = (escapeChar);
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -33,9 +33,9 @@ export const singleStringChar: Parser<any> = choice((input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-}, negatedCharClass("'", "\\"));
+}, negatedCharClass("'", "\\")));
 
-export const doubleQuotedString: Parser<any> = (input, pos) => {
+export const doubleQuotedString: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("\""), capture("chars", zeroOrMore(doubleStringChar)), literal("\"")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -50,9 +50,9 @@ export const doubleQuotedString: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const singleQuotedString: Parser<any> = (input, pos) => {
+export const singleQuotedString: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("'"), capture("chars", zeroOrMore(singleStringChar)), literal("'")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -67,11 +67,11 @@ export const singleQuotedString: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const stringLiteral: Parser<any> = choice(doubleQuotedString, singleQuotedString);
+export const stringLiteral: Parser<any> = untagCapture(choice(doubleQuotedString, singleQuotedString));
 
-export const classEscapeStd: Parser<any> = (input, pos) => {
+export const classEscapeStd: Parser<any> = untagCapture((input, pos) => {
   const __base = (sequence(literal("\\"), charClass("t", "n", "r", "b", "f", "v", "0")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -85,9 +85,9 @@ export const classEscapeStd: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const classEscapeSpecial: Parser<any> = (input, pos) => {
+export const classEscapeSpecial: Parser<any> = untagCapture((input, pos) => {
   const __base = (sequence(literal("\\"), charClass("]", "\\", "^", "-", "\"", "'")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -101,18 +101,23 @@ export const classEscapeSpecial: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const classChar: Parser<any> = choice(classEscapeStd, classEscapeSpecial, negatedCharClass("]", "\\", "^", "-"));
+export const classChar: Parser<any> = untagCapture(choice(classEscapeStd, classEscapeSpecial, negatedCharClass("]", "\\", "^", "-")));
 
-export const charRangePair: Parser<any> = (input, pos) => {
+export const charRangePair: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("start", classChar), literal("-"), capture("end", classChar)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
     const { start, end } = ($$ ?? {});
- return { start, end }; 
+
+    if ((start.codePointAt(0) ?? 0) > (end.codePointAt(0) ?? 0)) {
+      throw new Error("Invalid character range: \"" + start + "-" + end + "\" (start must not be greater than end)");
+    }
+    return { start, end };
+  
   })();
   return {
     success: true,
@@ -120,9 +125,9 @@ export const charRangePair: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const charRangeSingle: Parser<any> = (input, pos) => {
+export const charRangeSingle: Parser<any> = untagCapture((input, pos) => {
   const __base = (capture("start", classChar));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -137,11 +142,11 @@ export const charRangeSingle: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const charRange: Parser<any> = choice(charRangePair, charRangeSingle);
+export const charRange: Parser<any> = untagCapture(choice(charRangePair, charRangeSingle));
 
-export const characterClassBrackets: Parser<any> = (input, pos) => {
+export const characterClassBrackets: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("["), capture("negation", optional(literal("^"))), capture("ranges", oneOrMore(charRange)), literal("]")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -156,9 +161,9 @@ export const characterClassBrackets: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const anyCharDot: Parser<any> = (input, pos) => {
+export const anyCharDot: Parser<any> = untagCapture((input, pos) => {
   const __base = (literal("."));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -171,15 +176,15 @@ export const anyCharDot: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const characterClass: Parser<any> = choice(characterClassBrackets, anyCharDot);
+export const characterClass: Parser<any> = untagCapture(choice(characterClassBrackets, anyCharDot));
 
-export const identStart: Parser<any> = charClass(["a", "z"], ["A", "Z"], "_");
+export const identStart: Parser<any> = untagCapture(charClass(["a", "z"], ["A", "Z"], "_"));
 
-export const identCont: Parser<any> = charClassRun([["a", "z"], ["A", "Z"], ["0", "9"], "_"], 0);
+export const identCont: Parser<any> = untagCapture(charClassRun([["a", "z"], ["A", "Z"], ["0", "9"], "_"], 0));
 
-export const identifierName: Parser<any> = (input, pos) => {
+export const identifierName: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("start", identStart), capture("rest", identCont)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -194,9 +199,9 @@ export const identifierName: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const identifier: Parser<any> = (input, pos) => {
+export const identifier: Parser<any> = untagCapture((input, pos) => {
   const __base = (capture("name", identifierName));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -211,9 +216,9 @@ export const identifier: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const qualifiedIdentifier: Parser<any> = (input, pos) => {
+export const qualifiedIdentifier: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("module", identifierName), literal("."), capture("name", identifierName), commit(notPredicate(sequence(literal("."), identStart)))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
@@ -228,6 +233,6 @@ export const qualifiedIdentifier: Parser<any> = (input, pos) => {
     current: __result.current,
     next: __result.next,
   };
-};
+});
 
-export const basicSyntax: Parser<any> = choice(stringLiteral, characterClass, qualifiedIdentifier, identifier);
+export const basicSyntax: Parser<any> = untagCapture(choice(stringLiteral, characterClass, qualifiedIdentifier, identifier));

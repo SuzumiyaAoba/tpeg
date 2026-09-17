@@ -662,6 +662,12 @@ const transformFunctions: Parser<TransformFunction[]> = (
  * Parse complete transform set
  * Format: transforms Name@language { functions... }
  */
+// No separator between "{" and transformFunctions on purpose:
+// transformFunction's own leading docCollectingSeparator already skips
+// whitespace/comments AND collects `///` doc lines for the first
+// function -- a plain optionalWhitespaceOrComment here would eat those
+// doc lines before transformFunctions could see them (the same reason
+// the loop inside transformFunctions peeks with docCollectingSeparator).
 const transformSet: Parser<TransformSet> = map(
   sequence(
     transformsKeyword,
@@ -669,13 +675,12 @@ const transformSet: Parser<TransformSet> = map(
     transformSetName,
     optionalWhitespaceOrComment,
     transformBlockOpen,
-    optionalWhitespaceOrComment,
     transformFunctions,
     optionalWhitespaceOrComment,
     transformBlockClose,
   ),
   (results) =>
-    createTransformSet(results[2].name, results[2].language, results[6]),
+    createTransformSet(results[2].name, results[2].language, results[5]),
 );
 
 // ============================================================================

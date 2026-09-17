@@ -502,4 +502,23 @@ describe("transform function documentation comments (issue #67)", () => {
       expect(result.val[1]?.documentation).toBeUndefined();
     }
   });
+
+  // Issue #116: transformSet used to place a plain
+  // optionalWhitespaceOrComment between "{" and transformFunctions, which
+  // consumed a `///` line before the FIRST function as an ordinary comment
+  // (later functions' docs survived via docCollectingSeparator).
+  it("attaches /// docs to the FIRST function of a transform set", () => {
+    const result = parse(transformDefinition)(
+      `transforms T@typescript {\n  /// docs for a\n  a() -> X { return 1; }\n  /// docs for b\n  b() -> Y { return 2; }\n}`,
+    );
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.transformSet.functions[0]?.documentation).toEqual([
+        "docs for a",
+      ]);
+      expect(result.val.transformSet.functions[1]?.documentation).toEqual([
+        "docs for b",
+      ]);
+    }
+  });
 });

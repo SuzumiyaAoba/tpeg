@@ -26,6 +26,8 @@ export {
   grammarAnnotation,
   ruleDefinition,
   grammarDefinition,
+  modularGrammarDefinition,
+  tpegModuleFile,
   quotedString,
   singleLineComment,
   documentationComment,

@@ -1120,4 +1120,75 @@ describe("VersionManager", () => {
       expect(manager.getRegisteredModules()).toEqual([]);
     });
   });
+
+  // Regression for #107: `moduleVersions` was keyed by module NAME, so
+  // `dirA/lib.tpeg` and `dirB/lib.tpeg` collapsed into one entry -- the
+  // second registration silently overwrote the first, and dependency
+  // resolution then checked constraints against the wrong sibling.
+  describe("same-basename modules (#107)", () => {
+    const registerTwoLibs = () => {
+      manager.registerModule(
+        createModuleFile("dirA/lib.tpeg", [createGrammar("LibA")], [], {
+          type: "ModuleInfo",
+          version: "2.0.0",
+        }),
+      );
+      manager.registerModule(
+        createModuleFile("dirB/lib.tpeg", [createGrammar("LibB")], [], {
+          type: "ModuleInfo",
+          version: "9.9.9",
+        }),
+      );
+    };
+
+    it("keeps both modules registered instead of collapsing on basename", () => {
+      registerTwoLibs();
+      const modules = manager.getRegisteredModules();
+      expect(modules).toHaveLength(2);
+      expect(modules).toContain("dirA/lib.tpeg");
+      expect(modules).toContain("dirB/lib.tpeg");
+    });
+
+    it("resolves each module by its file path", () => {
+      registerTwoLibs();
+      expect(manager.getModuleVersion("dirA/lib.tpeg")?.version).toEqual({
+        major: 2,
+        minor: 0,
+        patch: 0,
+      });
+      expect(manager.getModuleVersion("dirB/lib.tpeg")?.version).toEqual({
+        major: 9,
+        minor: 9,
+        patch: 9,
+      });
+    });
+
+    it("throws on an ambiguous bare-name lookup", () => {
+      registerTwoLibs();
+      expect(() => manager.getModuleVersion("lib")).toThrow(/ambiguous/);
+    });
+
+    it("checks dependency constraints against the module the path names", () => {
+      registerTwoLibs();
+      // dirC/main.tpeg imports ../dirA/lib.tpeg (^2.0.0). With the
+      // name-keyed map this was validated against dirB's 9.9.9 and
+      // wrongly failed.
+      manager.registerModule(
+        createModuleFile(
+          "dirC/main.tpeg",
+          [createGrammar("Main")],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "../dirA/lib.tpeg",
+              version: "^2.0.0",
+            },
+          ],
+        ),
+      );
+      expect(() =>
+        manager.validateDependencies("dirC/main.tpeg"),
+      ).not.toThrow();
+    });
+  });
 });

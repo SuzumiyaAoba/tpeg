@@ -5,7 +5,25 @@ grammar SelfHostAction {
 
   singleQuotedActionString = "'" chars:(escapedActionChar / [^'\\])* "'" { return "'" + chars.join("") + "'"; }
 
-  templateActionString = "`" chars:(escapedActionChar / [^`\\])* "`" { return "`" + chars.join("") + "`"; }
+  // A template literal's `${ ... }` interpolation is real JavaScript -- it
+  // can contain nested braces, strings, comments, regexes, and even nested
+  // template literals -- so it is scanned with the same actionContent
+  // machinery as a block body (mirroring brace-scanner.ts's
+  // skipStringLiteral -> scanJsToBlockClose recursion). A bare `$` not
+  // followed by `{` is ordinary template text (handled by the catch-all
+  // char alternative below, which templateInterp's ordered choice shadows
+  // only when "${" is literally present).
+  templateInterp = "${" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionContent* "}" {
+    return "${" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + "}";
+  }
+
+  // A plain template-text char -- needs its own rule (not an inline
+  // `c:.` capture) so each element of `chars` is a STRING: a labeled
+  // capture inside a sequence yields a `{c: ...}` object, which would
+  // join as "[object Object]" instead of the character.
+  templatePlainChar = !("`" / "\\") c:. { return c; }
+
+  templateActionString = "`" chars:(escapedActionChar / templateInterp / templatePlainChar)* "`" { return "`" + chars.join("") + "`"; }
 
   actionString = doubleQuotedActionString / singleQuotedActionString / templateActionString
 
@@ -57,6 +75,33 @@ grammar SelfHostAction {
 
   actionOpRegex = op:actionOpChar w:wsAndComments re:actionRegexLiteral { return op + w.join("") + re; }
 
+  // A `(...)` group inside action code: mirrors brace-scanner.ts's paren
+  // tracking (each `(` nests, and strings/comments/regexes/nested blocks
+  // inside still apply) so the `)` ending a statement keyword's header can
+  // be recognized as a position where a value -- and therefore a regex --
+  // is expected next (`if (x) /}/.test(y)`). `(` immediately after the
+  // opening paren is "value expected" too, so a leading regex is allowed
+  // (`( /re/.exec(s) )`), same as actionBlock's own `first` slot.
+  actionParenPlainChar = !("{" / "}" / "(" / ")") c:. { return c; }
+
+  actionParenItem = nestedActionBlock / actionString / actionLineComment / actionBlockComment / actionPostfix / actionKwRegex / actionOpRegex / actionStmtParenRegex / actionParenGroup / actionIdentifier / actionParenPlainChar
+
+  actionParenGroup = "(" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionParenItem* ")" {
+    return "(" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + ")";
+  }
+
+  // Statement keywords whose parenthesized header restores "value
+  // expected" at the closing `)` -- brace-scanner.ts's STMT_PAREN_KEYWORDS.
+  actionStmtParenKeyword = "catch" / "switch" / "while" / "with" / "for" / "if"
+
+  // The whole `kw (...) /re/` shape folds into one rule (a PEG has no
+  // lookbehind) -- same technique as actionKwRegex/actionOpRegex. When no
+  // regex follows (`if (x) doThing()`), the rule fails and `if` falls
+  // through to actionIdentifier like any other keyword.
+  actionStmtParenRegex = kw:actionStmtParenKeyword ![A-Za-z0-9_$] w1:wsAndComments g:actionParenGroup w2:wsAndComments re:actionRegexLiteral {
+    return kw + w1.join("") + g + w2.join("") + re;
+  }
+
   // A nested `{ ... }` block ends a statement, so it may be followed by a
   // regex literal (matching the hand-written scanner's `}` -> value
   // expected rule).
@@ -68,7 +113,7 @@ grammar SelfHostAction {
 
   actionPlainChar = !("{" / "}") c:. { return c; }
 
-  actionContent = nestedActionBlock / actionString / actionLineComment / actionBlockComment / actionPostfix / actionKwRegex / actionOpRegex / actionIdentifier / actionPlainChar
+  actionContent = nestedActionBlock / actionString / actionLineComment / actionBlockComment / actionPostfix / actionKwRegex / actionOpRegex / actionStmtParenRegex / actionIdentifier / actionPlainChar
 
   // At the start of a block a value is expected, so a leading regex is
   // allowed (`{ /re/.test(x) }`).

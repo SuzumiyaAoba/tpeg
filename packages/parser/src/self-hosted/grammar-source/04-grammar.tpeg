@@ -21,7 +21,17 @@ grammar SelfHostGrammar {
 
   classChar = classEscapeStd / classEscapeSpecial / [^\]\\\^\-]
 
-  charRangePair = start:classChar "-" end:classChar { return { start, end }; }
+  // Mirrors character-class.ts's charRange check: a backwards range like
+  // [z-a] is rejected (there is no backtracking-out for a return-based
+  // action, so this throws -- callers treat a thrown action the same way
+  // they treat the hand-written parser's fatal failure: the input is
+  // rejected either way).
+  charRangePair = start:classChar "-" end:classChar {
+    if ((start.codePointAt(0) ?? 0) > (end.codePointAt(0) ?? 0)) {
+      throw new Error("Invalid character range: \"" + start + "-" + end + "\" (start must not be greater than end)");
+    }
+    return { start, end };
+  }
 
   charRangeSingle = start:classChar { return { start }; }
 
@@ -52,7 +62,25 @@ grammar SelfHostGrammar {
 
   singleQuotedActionString = "'" chars:(escapedActionChar / [^'\\])* "'" { return "'" + chars.join("") + "'"; }
 
-  templateActionString = "`" chars:(escapedActionChar / [^`\\])* "`" { return "`" + chars.join("") + "`"; }
+  // A template literal's `${ ... }` interpolation is real JavaScript -- it
+  // can contain nested braces, strings, comments, regexes, and even nested
+  // template literals -- so it is scanned with the same actionContent
+  // machinery as a block body (mirroring brace-scanner.ts's
+  // skipStringLiteral -> scanJsToBlockClose recursion). A bare `$` not
+  // followed by `{` is ordinary template text (handled by the catch-all
+  // char alternative below, which templateInterp's ordered choice shadows
+  // only when "${" is literally present).
+  templateInterp = "${" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionContent* "}" {
+    return "${" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + "}";
+  }
+
+  // A plain template-text char -- needs its own rule (not an inline
+  // `c:.` capture) so each element of `chars` is a STRING: a labeled
+  // capture inside a sequence yields a `{c: ...}` object, which would
+  // join as "[object Object]" instead of the character.
+  templatePlainChar = !("`" / "\\") c:. { return c; }
+
+  templateActionString = "`" chars:(escapedActionChar / templateInterp / templatePlainChar)* "`" { return "`" + chars.join("") + "`"; }
 
   actionStringLiteral = doubleQuotedActionString / singleQuotedActionString / templateActionString
 
@@ -102,6 +130,33 @@ grammar SelfHostGrammar {
 
   actionOpRegex = op:actionOpChar w:wsAndComments re:actionRegexLiteral { return op + w.join("") + re; }
 
+  // A `(...)` group inside action code: mirrors brace-scanner.ts's paren
+  // tracking (each `(` nests, and strings/comments/regexes/nested blocks
+  // inside still apply) so the `)` ending a statement keyword's header can
+  // be recognized as a position where a value -- and therefore a regex --
+  // is expected next (`if (x) /}/.test(y)`). `(` immediately after the
+  // opening paren is "value expected" too, so a leading regex is allowed
+  // (`( /re/.exec(s) )`), same as actionBlock's own `first` slot.
+  actionParenPlainChar = !("{" / "}" / "(" / ")") c:. { return c; }
+
+  actionParenItem = nestedActionBlock / actionStringLiteral / actionLineComment / actionBlockComment / actionPostfix / actionKwRegex / actionOpRegex / actionStmtParenRegex / actionParenGroup / actionIdentifier / actionParenPlainChar
+
+  actionParenGroup = "(" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionParenItem* ")" {
+    return "(" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + ")";
+  }
+
+  // Statement keywords whose parenthesized header restores "value
+  // expected" at the closing `)` -- brace-scanner.ts's STMT_PAREN_KEYWORDS.
+  actionStmtParenKeyword = "catch" / "switch" / "while" / "with" / "for" / "if"
+
+  // The whole `kw (...) /re/` shape folds into one rule (a PEG has no
+  // lookbehind) -- same technique as actionKwRegex/actionOpRegex. When no
+  // regex follows (`if (x) doThing()`), the rule fails and `if` falls
+  // through to actionIdentifier like any other keyword.
+  actionStmtParenRegex = kw:actionStmtParenKeyword ![A-Za-z0-9_$] w1:wsAndComments g:actionParenGroup w2:wsAndComments re:actionRegexLiteral {
+    return kw + w1.join("") + g + w2.join("") + re;
+  }
+
   // A nested `{ ... }` block ends a statement, so it may be followed by a
   // regex literal (matching the hand-written scanner's `}` -> value
   // expected rule).
@@ -113,7 +168,7 @@ grammar SelfHostGrammar {
 
   actionPlainChar = !("{" / "}") c:. { return c; }
 
-  actionContent = nestedActionBlock / actionStringLiteral / actionLineComment / actionBlockComment / actionPostfix / actionKwRegex / actionOpRegex / actionIdentifier / actionPlainChar
+  actionContent = nestedActionBlock / actionStringLiteral / actionLineComment / actionBlockComment / actionPostfix / actionKwRegex / actionOpRegex / actionStmtParenRegex / actionIdentifier / actionPlainChar
 
   // At the start of a block a value is expected, so a leading regex is
   // allowed (`{ /re/.test(x) }`).
@@ -128,16 +183,54 @@ grammar SelfHostGrammar {
   // optionalWhitespaceOrComment (whitespace-utils.ts), which
   // ruleDefinition uses between a rule's name and its "=" (so
   // `y\n= "b"` and `y /* c */ = "b"` are both rule starts, not
-  // sequence continuations).
+  // sequence continuations). Also used INSIDE expressions: the
+  // hand-written parser's `whitespace` (composition.ts) skips `//` and
+  // `/* */` comments between any two elements, so `interWs` (whitespace
+  // only) must not appear at element boundaries in patterns.
   wsAndComments = ([ \t\n\r] / actionLineComment / actionBlockComment)*
 
-  group = "(" interWs expr:choiceExpr interWs ")" { return { type: "Group", expression: expr }; }
+  // A `///` documentation line as a TAGGED value ({ doc }) so a leading
+  // trivia run can collect it instead of discarding it -- mirrors
+  // transforms.ts's docCollectingSeparator. Tried before the `//`
+  // alternative everywhere it appears (a `///` line also starts with
+  // `//`, same shadowing reason as grammar.ts's grammarItem).
+  docCommentRaw = "///" chars:lineCommentChar* { return { doc: chars.join("").trim() }; }
+
+  // optionalWhitespaceOrComment + `///` collection: whitespace and
+  // comments are skipped like wsAndComments, but each `///` line yields a
+  // { doc } element in the result array (whitespace/`//`/`/* */` elements
+  // yield strings) so the caller can attach them as documentation.
+  wsAndCommentsOrDocs = ([ \t\n\r] / docCommentRaw / actionLineComment / actionBlockComment)*
+
+  // Required variant (requiredWhitespaceOrComment): at least one
+  // whitespace/comment unit -- a comment alone satisfies it.
+  wsAndCommentsPlus = ([ \t\n\r] / actionLineComment / actionBlockComment)+
+
+  group = "(" wsAndComments expr:choiceExpr wsAndComments ")" { return { type: "Group", expression: expr }; }
 
   primary = group / basicSyntax
 
-  integer = digits:[0-9]+ { return parseInt(digits.join(""), 10); }
+  // Mirrors repetition.ts's positiveInt: a bound that overflows to
+  // Infinity or loses integer precision is rejected (thrown, since an
+  // action can't backtrack -- see charRangePair above).
+  integer = digits:[0-9]+ {
+    const text = digits.join("");
+    const n = parseInt(text, 10);
+    if (!Number.isSafeInteger(n)) {
+      throw new Error("Invalid quantifier bound: {" + text + "} is not a safe integer");
+    }
+    return n;
+  }
 
-  quantifiedRange = "{" min:integer "," max:integer "}" { return { min, max }; }
+  // Mirrors repetition.ts's rangeCount: a reversed range like {5,2} is
+  // rejected at parse time rather than crashing the generated parser's
+  // `quantified()` at module load.
+  quantifiedRange = "{" min:integer "," max:integer "}" {
+    if (min > max) {
+      throw new Error("Invalid quantifier range: {" + min + "," + max + "} (minimum must not be greater than maximum)");
+    }
+    return { min, max };
+  }
 
   quantifiedMin = "{" min:integer "," "}" { return { min, max: undefined }; }
 
@@ -157,7 +250,37 @@ grammar SelfHostGrammar {
 
   quantOp = expr:primary q:quantifiedOp { return { type: "Quantified", expression: expr, min: q.min, max: q.max }; }
 
-  postfix = starOp / plusOp / optionalOp / quantOp / primary
+  // A syntactically valid `{n}`/`{n,}`/`{n,m}` shape -- used only as a
+  // lookahead, so it stays purely syntactic (no integer/range validation;
+  // `{5,2}` still matches here, and that's fine -- see postfixGuard).
+  quantifierSuffix = "{" [0-9]+ ("," [0-9]*)? "}"
+
+  // An ADJACENT "{...}" whose content is digits/commas/whitespace only is
+  // a botched quantifier, not an action -- mirrors repetition.ts's
+  // LOOKS_LIKE_MALFORMED_QUANTIFIER (`/^[\d,\s]*$/` on the scanned brace
+  // content), covering `"a"{,3}` (missing minimum), `"a"{}` , and
+  // `"a"{2,3,4}` (extra comma).
+  adjacentMalformedQuantifier = "{" [0-9, \t\n\r\v\f]* "}"
+
+  // Post-fix guards mirror the two checks withRepetition runs after a
+  // postfix expression, in the same order:
+  //   1. a SECOND valid repetition operator immediately after one that
+  //      was already consumed (`"a"{2}{4}`, `"a"**`, `"a"?+`) is a parse
+  //      error -- repetition operators don't chain;
+  //   2. an adjacent "{...}" that isn't a valid operator but looks like a
+  //      botched one (digits/commas/whitespace only) is rejected rather
+  //      than reinterpreted as a semantic-action block by the
+  //      alternative-level optional action.
+  // Both must run for EVERY postfix result -- even a bare primary, since
+  // `"a"{,3}` consumed no operator yet still must not treat `{,3}` as an
+  // action. (When the base consumed no operator at all, guard 1 can never
+  // fire anyway -- a valid operator would have been consumed by the op
+  // rules -- so applying it unconditionally is safe.)
+  postfix = expr:(starOp / plusOp / optionalOp / quantOp / primary)
+            !("*" / "+" / "?" / quantifierSuffix)
+            !adjacentMalformedQuantifier {
+    return expr;
+  }
 
   positiveLookahead = "&" expr:postfix { return { type: "PositiveLookahead", expression: expr }; }
 
@@ -168,31 +291,63 @@ grammar SelfHostGrammar {
   labeled = label:identifierName ":" expr:prefix { return { type: "LabeledExpression", label, expression: expr }; }
           / prefix
 
-  notNextRuleStart = !(identifierName wsAndComments "=")
+  // A whole-word "transforms" is also a rule boundary (it starts a
+  // transform-definition grammarItem, never a sequence continuation) --
+  // the !identContChar keeps the check whole-word so a rule legitimately
+  // named e.g. "transformsFoo" is unaffected.
+  notNextRuleStart = !(identifierName wsAndComments "=") !("transforms" !identContChar)
 
-  sequenceContinuation = interWs notNextRuleStart labeled
+  // The `~` cut/commit marker is a sequence element of its own, mirroring
+  // composition.ts's sequenceElement = choice(cutMarker, labeled) -- it is
+  // tried first since `~` can't start a labeled expression anyway.
+  cutMarkerNode = "~" { return { type: "Cut" }; }
 
-  sequenceBase = first:labeled rest:sequenceContinuation* {
+  sequenceElementNode = cutMarkerNode / labeled
+
+  sequenceContinuation = wsAndComments notNextRuleStart sequenceElementNode
+
+  sequenceBase = first:sequenceElementNode rest:sequenceContinuation* {
     if (rest.length === 0) return first;
     const elements = [first, ...rest.map((r: any) => r[2])];
     return { type: "Sequence", elements };
   }
 
-  alternative = base:sequenceBase act:(interWs actionBlock)? {
+  // Optional trailing semantic action, mirroring composition.ts's
+  // withOptionalAction: `whitespace` there is zero-or-more (comment
+  // tolerant), so an action is accepted with ANY whitespace/comment gap --
+  // including none at all (`"a"{return 1}` is a valid ActionExpression on
+  // both sides; an adjacent `{...}` that LOOKS like a botched quantifier
+  // was already rejected by the postfix guard above).
+  //
+  // The quantifier-shaped-body check mirrors QUANTIFIER_SHAPED_ACTION_BODY
+  // (`/^\d+(,\d*)?$/` on the trimmed block content): `expr {2}` WITH a
+  // space is a common typo for the no-space quantifier, and its body has
+  // no `return`, so it would evaluate to `undefined` -- rejected (thrown,
+  // like charRangePair) rather than silently accepted as an action.
+  alternative = base:sequenceBase act:(wsAndComments code:actionBlock)? {
     if (act.length === 0) return base;
-    return { type: "ActionExpression", expression: base, code: act[0][1] };
+    const code = act[0].code;
+    if (/^\d+(,\d*)?$/.test(code.trim())) {
+      throw new Error("Ambiguous \"{" + code + "}\" after an expression: this is a quantifier only when written with no space before \"{\"");
+    }
+    return { type: "ActionExpression", expression: base, code };
   }
 
-  choiceExpr = first:alternative rest:(interWs "/" interWs alternative)* {
+  choiceExpr = first:alternative rest:(wsAndComments "/" wsAndComments alternative)* {
     if (rest.length === 0) return first;
     const alternatives = [first, ...rest.map((r: any) => r[3])];
     return { type: "Choice", alternatives };
   }
 
   // ---- Rule / grammar block structure ----
-  // Module system (import/export/extends/includes/@dependencies/@requires),
-  // transform definitions, and documentation-comment collection are
-  // deliberately out of scope for this self-hosting PoC.
+  // The module system's VALUE-bearing annotations
+  // (@export/@dependencies/@conflicts/@requires) and the `extends`/
+  // `includes` header clauses are accepted-then-discarded the same way
+  // the hand-written grammarDefinition does, so a grammar using them
+  // still parses -- they just don't reach the returned AST. Only
+  // `transforms` definitions DO survive on a plain GrammarDefinition
+  // (its `transforms` field), so this layer models them in full (same
+  // rules as 05-full.tpeg).
 
   ruleDefinitionNode = interWs name:identifierName wsAndComments "=" wsAndComments pattern:choiceExpr {
     return { type: "RuleDefinition", name, pattern };
@@ -202,29 +357,288 @@ grammar SelfHostGrammar {
 
   annotationValue = annotationValueQuoted / identifierName
 
-  keyValueAnnotation = interWs "@" key:identifierName interWs ":" interWs value:annotationValue {
+  identContChar = [a-zA-Z0-9_]
+
+  // Keys owned by dedicated structured-annotation forms
+  // (grammar.ts's DEDICATED_ANNOTATION_KEYS): the generic "@key: value"/
+  // "@key" alternatives must refuse them so a malformed dedicated
+  // annotation (or a bare "@memoize" with no rule after it) surfaces as a
+  // parse error instead of being silently swallowed as a generic
+  // annotation nothing downstream reads.
+  dedicatedAnnotationKey = ("export" / "dependencies" / "conflicts" / "requires" / "memoize") !identContChar
+
+  keyValueAnnotation = interWs "@" !dedicatedAnnotationKey key:identifierName wsAndComments ":" wsAndComments value:annotationValue {
     return { type: "GrammarAnnotation", key, value };
   }
 
-  flagAnnotation = interWs "@" key:identifierName {
+  flagAnnotation = interWs "@" !dedicatedAnnotationKey key:identifierName {
     return { type: "GrammarAnnotation", key, value: "" };
   }
 
   grammarAnnotationNode = keyValueAnnotation / flagAnnotation
 
+  // `@memoize`/`@memoize: N` before a rule attaches to the RULE's
+  // `annotations`, not the grammar block's -- mirrors grammar.ts's
+  // memoizeAnnotation + annotatedRuleDefinition (which is tried BEFORE
+  // the generic grammarAnnotation for exactly that precedence reason:
+  // restricting the key to the literal "memoize" keeps it from
+  // misattaching e.g. "@start: expression" to the following rule).
+  // NOTE: no word-boundary check after "memoize", exactly like the
+  // hand-written `literal("memoize")` -- "@memoizeFoo = \"x\"" parses as
+  // a rule `Foo` carrying a memoize annotation there too.
+  memoizeAnnotationNode = interWs "@" "memoize" v:(wsAndComments ":" wsAndComments digits:[0-9]+)? {
+    return { type: "GrammarAnnotation", key: "memoize", value: v.length ? v[0].digits.join("") : "" };
+  }
+
+  annotatedRuleNode = anns:memoizeAnnotationNode+ wsAndComments r:ruleDefinitionNode {
+    return { ...r, annotations: anns };
+  }
+
+  // `@export: [name, ...]` -- parsed and discarded here exactly like
+  // grammarDefinition does (the export list only matters to
+  // modularGrammarDefinition / NamespaceManager). The `~` cut mirrors
+  // grammar.ts's exportDeclaration: once "@export" is seen, a malformed
+  // rest is a fatal error, not a generic annotation.
+  exportRuleList = "[" wsAndComments items:identifierCommaList? wsAndComments "]" {
+    return items.length === 0 ? [] : items[0];
+  }
+
+  identifierCommaList = first:identifierName rest:(wsAndComments "," wsAndComments identifierName)* {
+    return [first, ...rest.map((r: any) => r[3])];
+  }
+
+  exportDeclarationNode = interWs "@export" !identContChar ~ wsAndComments ":" wsAndComments rules:exportRuleList {
+    return { type: "ExportDeclaration", rules };
+  }
+
+  // Generic "@key: [\"a\", \"b\"]" (@dependencies/@conflicts) and
+  // "@key: { \"a\": \"b\" }" (@requires) -- parsed and discarded like
+  // exportDeclarationNode; reserved-key exclusion mirrors
+  // module.ts's annotationKeyExcluding (every dedicated key OTHER than
+  // this form's own is refused).
+  quotedStringList = "[" wsAndComments items:(stringLiteralNode (wsAndComments "," wsAndComments stringLiteralNode)*)? wsAndComments "]" {
+    if (items.length === 0) return [];
+    const [first, rest] = items[0];
+    return [first.value, ...rest.map((r: any) => r[3].value)];
+  }
+
+  moduleInfoListAnnotationNode = interWs "@" !(("export" / "requires" / "memoize") !identContChar) key:identifierName wsAndComments ":" wsAndComments values:quotedStringList {
+    return { type: "ModuleInfoListAnnotation", key, values };
+  }
+
+  quotedStringRecordEntry = key:stringLiteralNode wsAndComments ":" wsAndComments value:stringLiteralNode { return [key.value, value.value]; }
+
+  quotedStringRecord = "{" wsAndComments items:(quotedStringRecordEntry (wsAndComments "," wsAndComments quotedStringRecordEntry)*)? wsAndComments "}" {
+    if (items.length === 0) return {};
+    const [first, rest] = items[0];
+    return Object.fromEntries([first, ...rest.map((r: any) => r[3])]);
+  }
+
+  moduleInfoRecordAnnotationNode = interWs "@" !(("export" / "dependencies" / "conflicts" / "memoize") !identContChar) key:identifierName wsAndComments ":" wsAndComments values:quotedStringRecord {
+    return { type: "ModuleInfoRecordAnnotation", key, values };
+  }
+
   singleLineCommentNode = "//" chars:lineCommentChar* { return { kind: "comment" }; }
 
-  grammarItemNode = a:grammarAnnotationNode { return { kind: "annotation", value: a }; }
+  // `///` carries its trimmed text as a "documentation" item so the
+  // grammar-block action can attach it to the next rule's `documentation`
+  // field -- mirrors grammar.ts's documentationComment (tried before the
+  // `//` alternative since a `///` line also starts with `//`).
+  docCommentNode = "///" chars:lineCommentChar* { return { kind: "documentation", value: chars.join("").trim() }; }
+
+  blockCommentNode = "/*" chars:blockCommentChar* "*/" { return { kind: "comment" }; }
+
+  // A run of whitespace and/or comments, tolerant the same way
+  // grammar.ts's leadingContent (before the "grammar" keyword) and
+  // optionalWhitespaceOrComment (between header clauses and "{") are.
+  leadingContentUnit = blockCommentNode / docCommentNode / singleLineCommentNode / interWsPlus
+
+  leadingContent = leadingContentUnit*
+
+  // ---- Transform definitions: `transforms Name@language { fn()->T {...} }`
+  // (packages/parser/src/transforms.ts) -- a plain GrammarDefinition DOES
+  // keep these (its `transforms` field), so this layer models them in
+  // full, identical to 05-full.tpeg's section. ----
+
+  // Same six languages, same order, and the same "not a prefix of a longer
+  // identifier" guard as transforms.ts's targetLanguage - notably the guard
+  // only excludes a following [a-zA-Z0-9], NOT "_", matching that function's
+  // TYPE_CHAR-less regex exactly (so "typescript_x" still parses as language
+  // "typescript" here, same as in the hand-written parser).
+  targetLanguageNode = lang:"typescript" !langChar { return lang; }
+                     / lang:"python" !langChar { return lang; }
+                     / lang:"go" !langChar { return lang; }
+                     / lang:"rust" !langChar { return lang; }
+                     / lang:"java" !langChar { return lang; }
+                     / lang:"cpp" !langChar { return lang; }
+
+  langChar = [a-zA-Z0-9]
+
+  transformSetName = name:identifierName wsAndComments "@" wsAndComments lang:targetLanguageNode { return { name, language: lang }; }
+
+  // ---- Type expressions in transform signatures (transforms.ts's
+  // typeExpression): a union/intersection of postfix types; a postfix type
+  // is a primary plus `[]` markers; a primary is an object-literal type
+  // ("{...}" -- actionContent already skips strings/comments/nested braces,
+  // same as transforms.ts's scanObjectType), a parenthesized type, or a
+  // named type with optional `<args...>` (nested and multi-argument
+  // generics included). Every rule returns `{ text, head? }`: `text` is the
+  // exact source slice (inner whitespace preserved via the typeWs
+  // captures), and `head` is set only when the whole type is exactly
+  // `Name` or `Name<args>`, so returnTypeSpec keeps emitting
+  // `{ type: "Result", generic: "number" }` for the common `Result<T>`
+  // shape while unions/arrays/multi-arg generics are no longer truncated.
+  // Separators INSIDE a type expression -- transforms.ts's
+  // skipTypeWhitespace skips comments as well as whitespace (and the
+  // comment text is part of the captured `text` slice, which is why the
+  // comment alternatives' raw return values are joined in verbatim).
+  typeWs = chars:([ \t\n\r] / actionLineComment / actionBlockComment)* { return chars.join(""); }
+
+  typeObject = "{" parts:actionContent* "}" { return { text: "{" + parts.join("") + "}" }; }
+
+  typeParen = "(" w1:typeWs inner:typeUnion w2:typeWs ")" {
+    return { text: "(" + w1 + inner.text + w2 + ")" };
+  }
+
+  // The `~` cut after "<" mirrors the hand parser: once a `<` follows the
+  // name, a malformed argument list fails the whole type (fatal) rather
+  // than backtracking to a bare `Name` that leaves "<" dangling. Every
+  // element inside the group is labeled so the captured object keeps the
+  // whitespace pieces needed to rebuild the raw `generic` text (unlabeled
+  // elements don't survive captureSequence's label merge).
+  typeNamed = n:identifierName g:(w1:typeWs "<" ~ w2:typeWs a1:typeUnion arest:(c1:typeWs "," c2:typeWs a:typeUnion)* w3:typeWs ">")? {
+    if (g.length === 0) return { text: n, head: { name: n } };
+    const p = g[0];
+    let inner = p.w2 + p.a1.text;
+    for (const r of p.arest) inner += r.c1 + "," + r.c2 + r.a.text;
+    inner += p.w3;
+    return { text: n + p.w1 + "<" + inner + ">", head: { name: n, generic: inner } };
+  }
+
+  typePrimary = typeObject / typeParen / typeNamed
+
+  typePostfix = p:typePrimary arr:(typeWs "[" typeWs "]")* {
+    let text = p.text;
+    for (const a of arr) text += a[0] + "[" + a[2] + "]";
+    return arr.length === 0 && p.head ? { text, head: p.head } : { text };
+  }
+
+  typeUnion = typeWs first:typePostfix rest:(typeWs ("|" / "&") typeWs typePostfix)* {
+    let text = first.text;
+    for (const r of rest) text += r[0] + r[1] + r[2] + r[3].text;
+    return rest.length === 0 && first.head ? { text, head: first.head } : { text };
+  }
+
+  // Signature separators are comment-tolerant (transforms.ts's
+  // optionalWhitespaceOrComment): `f(a /* c *\/: string)`, `f(a: string,
+  // /* c *\/ b: number)`, `f() /* c *\/ -> /* c *\/ T` all parse.
+  parameterType = name:identifierName wsAndComments ":" wsAndComments t:typeUnion {
+    return { name, type: t.text, optional: false };
+  }
+
+  parameterList = "(" wsAndComments items:(parameterType (wsAndComments "," wsAndComments parameterType)*)? wsAndComments ")" {
+    if (items.length === 0) return [];
+    const [first, rest] = items[0];
+    return [first, ...rest.map((r: any) => r[3])];
+  }
+
+  returnTypeSpec = wsAndComments "->" wsAndComments t:typeUnion {
+    return t.head
+      ? (t.head.generic !== undefined ? { type: t.head.name, generic: t.head.generic } : { type: t.head.name })
+      : { type: t.text };
+  }
+
+  // Leading trivia is wsAndCommentsOrDocs so `///` lines before a function
+  // attach to its `documentation` field (transforms.ts's
+  // docCollectingSeparator) instead of being discarded as plain comments.
+  transformFunctionNode = trivia:wsAndCommentsOrDocs name:identifierName wsAndComments params:parameterList ret:returnTypeSpec wsAndComments body:actionBlock {
+    const documentation = trivia.filter((t: any) => typeof t === "object" && t !== null).map((t: any) => t.doc);
+    const fn: any = { name, parameters: params, returnType: ret, body };
+    if (documentation.length > 0) fn.documentation = documentation;
+    return fn;
+  }
+
+  // At least one function is required - "transforms T@typescript { }" fails
+  // in the hand-written parser (transformFunctions never accepts zero), so
+  // this uses first+rest rather than a bare star(). No separator between
+  // functions on purpose: transformFunctionNode's own leading
+  // wsAndCommentsOrDocs already skips trivia AND collects `///` docs --
+  // a separate wsAndComments here would eat those doc lines before the
+  // next function could see them (same reason transforms.ts peeks with
+  // docCollectingSeparator instead of optionalWhitespaceOrComment).
+  transformFunctions = first:transformFunctionNode rest:transformFunctionNode* {
+    return [first, ...rest];
+  }
+
+  // No wsAndComments between "{" and transformFunctions -- the first
+  // function's own wsAndCommentsOrDocs collects any `///` doc lines there;
+  // a plain wsAndComments would discard them (see transformFunctions).
+  transformDefinitionNode = wsAndComments "transforms" wsAndCommentsPlus info:transformSetName wsAndComments "{" functions:transformFunctions wsAndComments "}" {
+    return {
+      type: "TransformDefinition",
+      transformSet: { name: info.name, targetLanguage: info.language, functions },
+    };
+  }
+
+
+  // Order mirrors grammar.ts's grammarItem: the dedicated "@export"/
+  // "@key: [...]"/"@key: {...}" forms (any reserved key excluded from the
+  // generic annotation alternatives) before "@memoize"-annotated rules,
+  // before the generic "@key: value"/"@key" annotation, before plain
+  // rules, then comments -- `///` before `//` since `///` starts with
+  // `//`.
+  grammarItemNode = e:exportDeclarationNode { return { kind: "export", value: e }; }
+                  / l:moduleInfoListAnnotationNode { return { kind: "moduleInfoList", value: l }; }
+                  / r:moduleInfoRecordAnnotationNode { return { kind: "moduleInfoRecord", value: r }; }
+                  / ar:annotatedRuleNode { return { kind: "rule", value: ar }; }
+                  / a:grammarAnnotationNode { return { kind: "annotation", value: a }; }
                   / r:ruleDefinitionNode { return { kind: "rule", value: r }; }
+                  / t:transformDefinitionNode { return { kind: "transform", value: t }; }
+                  / d:docCommentNode { return d; }
                   / c:singleLineCommentNode { return { kind: "comment" }; }
+                  / c:blockCommentNode { return { kind: "comment" }; }
 
   grammarItemWithWs = grammarItemNode interWs
 
   grammarItemsNode = interWs items:grammarItemWithWs* { return items.map((i: any) => i[0]); }
 
-  grammarBlockNode = interWs "grammar" interWsPlus name:identifierName interWs "{" items:grammarItemsNode interWs "}" {
-    const rules = items.filter((i: any) => i.kind === "rule").map((i: any) => i.value);
-    const annotations = items.filter((i: any) => i.kind === "annotation").map((i: any) => i.value);
-    return { type: "GrammarDefinition", name, annotations, rules, transforms: [] };
+  // Dotted names and extends/includes clauses mirror grammar.ts's shared
+  // grammarBlock (grammarDefinition accepts then discards them -- a plain
+  // GrammarDefinition has no field for them).
+  dottedGrammarName = first:identifierName rest:("." identifierName)* {
+    return [first, ...rest.map((r: any) => r[1])].join(".");
+  }
+
+  grammarExtendsClause = "extends" wsAndCommentsPlus name:dottedGrammarName { return name; }
+
+  grammarIncludesClause = "includes" wsAndCommentsPlus first:dottedGrammarName rest:(wsAndComments "," wsAndComments dottedGrammarName)* {
+    return [first, ...rest.map((r: any) => r[3])];
+  }
+
+  grammarBlockNode = leadingContent "grammar" wsAndCommentsPlus name:dottedGrammarName leadingContent ext:grammarExtendsClause? leadingContent inc:grammarIncludesClause? leadingContent "{" items:grammarItemsNode interWs "}" {
+    const rules: any[] = [];
+    const annotations: any[] = [];
+    const transforms: any[] = [];
+    // `///` documentation items accumulate and attach to the next rule's
+    // `documentation` field; any other item kind drops a pending run --
+    // mirrors grammar.ts's separateGrammarItems.
+    let pendingDocs: string[] = [];
+    for (const i of items) {
+      if (i.kind === "annotation") { annotations.push(i.value); pendingDocs = []; }
+      else if (i.kind === "rule") {
+        rules.push(pendingDocs.length > 0 ? { ...i.value, documentation: pendingDocs } : i.value);
+        pendingDocs = [];
+      }
+      else if (i.kind === "transform") { transforms.push(i.value); pendingDocs = []; }
+      else if (i.kind === "documentation") pendingDocs.push(i.value);
+      // "comment" is ignored and does NOT break a pending doc run;
+      // "export"/"moduleInfoList"/"moduleInfoRecord" are parse-and-discard
+      // at this layer (grammar.ts's separateGrammarItems only surfaces
+      // them on ModularGrammarDefinition, so a plain GrammarDefinition
+      // drops them entirely) -- but like every non-comment item kind
+      // there, they DO drop a pending doc-comment run.
+      else if (i.kind !== "comment") pendingDocs = [];
+    }
+    return { type: "GrammarDefinition", name, annotations, rules, transforms };
   }
 }
