@@ -96,6 +96,159 @@ export const REGEX_PREFIX_KEYWORDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Keywords whose `( ... )` is followed by a STATEMENT, not a continuation
+ * of the current expression: after `if (x)`, `while (x)`, `for (...)`,
+ * `switch (x)`, `catch (e)`, or `with (x)`, the next token begins a new
+ * statement/expression -- so a `/` there opens a regex literal, whereas a
+ * `/` after a call or grouping paren (`foo(x) / y`, `(a + b) / c`) is
+ * division. Used to decide what `)` does to `exprExpected`.
+ */
+const STMT_PAREN_KEYWORDS: ReadonlySet<string> = new Set([
+  "if",
+  "while",
+  "for",
+  "switch",
+  "catch",
+  "with",
+]);
+
+/**
+ * Keywords directly followed by a BLOCK `{` (not an object literal) when a
+ * value would otherwise be expected: `else {`, `try {`, `finally {`,
+ * `do {`. These keywords are all in {@link REGEX_PREFIX_KEYWORDS} (a
+ * value/regex may follow them), so without this set their `{` would be
+ * misclassified as an object literal.
+ */
+const BLOCK_KEYWORDS: ReadonlySet<string> = new Set([
+  "do",
+  "else",
+  "finally",
+  "try",
+]);
+
+/**
+ * Shared regex-vs-division disambiguation state for the JavaScript
+ * scanners in this file (`scanJsToBlockClose`, `codeContainsIdentifier`)
+ * and the mirrored copy in `grammar.ts`'s `grammarRuleExpression` -- kept
+ * as one implementation so the three can never drift.
+ *
+ * The plain "operand just ended" heuristic is not enough on its own: `)`
+ * and `}` each have TWO meanings. `)` closing a control-statement paren
+ * (`if (x) /re/`) is followed by a new statement -- a `/` there opens a
+ * regex -- while `)` closing a call or grouping (`f(x) / re/`) is an
+ * operand end -- a `/` there is division. Likewise `}` ending a block is
+ * followed by a statement, while `}` ending an object literal
+ * (`{v: 1} / $$ / 2`) is an operand end. This tracker records, per `(`,
+ * whether it was a statement paren, and per `{`, whether it opened an
+ * object literal, so `)`/`}` can restore the right expectation.
+ *
+ * Still an approximation (JavaScript's real regex/division ambiguity needs
+ * a full parse), but it removes the previously-documented wrong cases.
+ * ASI is deliberately not modeled: `f()\n/re/` is scanned as division even
+ * though a real parser inserts a `;` and treats `/re/` as a regex.
+ */
+export const createJsExprTracker = () => {
+  let exprExpected = true;
+  /** Per open `(`: true iff it was a control-statement paren. */
+  const parenStack: boolean[] = [];
+  /** Per open `{` INSIDE a JS context: true iff it opened an object literal. */
+  const braceStack: boolean[] = [];
+  /** Last identifier/keyword token text (for keyword checks on `(`/`{`). */
+  let prevWord: string | null = null;
+  /** Whether `prevWord` was preceded by `.` -- `x.if (y)` is a call, not `if`. */
+  let prevWordIsProp = false;
+  /** Last punctuation character seen (`.`, `;`, ...), for context checks. */
+  let prevPunct: string | null = null;
+  /** Category of the last significant token. */
+  let prevTok: "word" | "(" | ")" | "{" | "}" | "punct" | "operand" | "none" =
+    "none";
+
+  return {
+    /** Whether a `/` at this point could open a regex literal. */
+    get exprExpected(): boolean {
+      return exprExpected;
+    },
+    /** Record an identifier or keyword token `w`. */
+    word(w: string): void {
+      prevWord = w;
+      prevWordIsProp = prevTok === "punct" && prevPunct === ".";
+      prevTok = "word";
+      prevPunct = null;
+      exprExpected = REGEX_PREFIX_KEYWORDS.has(w);
+    },
+    /** Record a token that ends an operand: number, string, regex, `]`, `++`/`--`. */
+    operand(): void {
+      prevTok = "operand";
+      prevWord = null;
+      prevPunct = null;
+      exprExpected = false;
+    },
+    /** Record an opening `(`. */
+    openParen(): void {
+      parenStack.push(
+        prevTok === "word" &&
+          !prevWordIsProp &&
+          prevWord !== null &&
+          STMT_PAREN_KEYWORDS.has(prevWord),
+      );
+      prevTok = "(";
+      prevWord = null;
+      prevPunct = null;
+      exprExpected = true;
+    },
+    /** Record a closing `)`. */
+    closeParen(): void {
+      // A statement paren's `)` is followed by a statement -- a value (and
+      // so a regex) is expected next; a call/grouping `)` ends an operand.
+      exprExpected = parenStack.pop() === true;
+      prevTok = ")";
+      prevWord = null;
+      prevPunct = null;
+    },
+    /** Record an opening `{` -- call only in a JavaScript context. */
+    openBrace(): void {
+      // Object literal iff a value is expected here AND the `{` doesn't
+      // follow a statement boundary (`;`, `{`, `}`, a statement paren's
+      // `)`, or a block keyword like `else`/`try`).
+      const isObject =
+        exprExpected &&
+        prevTok !== "{" &&
+        prevTok !== "}" &&
+        prevTok !== ")" &&
+        !(prevTok === "punct" && prevPunct === ";") &&
+        !(
+          prevTok === "word" &&
+          prevWord !== null &&
+          BLOCK_KEYWORDS.has(prevWord)
+        );
+      braceStack.push(isObject);
+      prevTok = "{";
+      prevWord = null;
+      prevPunct = null;
+      exprExpected = true;
+    },
+    /** Record a closing `}` -- returns true iff it closed an object literal. */
+    closeBrace(): boolean {
+      const isObject = braceStack.pop() ?? false;
+      // A block's `}` ends a statement (regex may follow); an object
+      // literal's `}` ends an operand (division follows).
+      exprExpected = !isObject;
+      prevTok = "}";
+      prevWord = null;
+      prevPunct = null;
+      return isObject;
+    },
+    /** Record any other punctuator -- none can end an operand. */
+    punct(c: string): void {
+      prevTok = "punct";
+      prevPunct = c;
+      prevWord = null;
+      exprExpected = true;
+    },
+  };
+};
+
+/**
  * Advances past a regex literal starting at `start` (which must point at
  * the opening `/`), honoring `\` escapes and `[...]` character classes (a
  * `/` inside a class does not end the pattern). Returns the index just
@@ -167,25 +320,26 @@ const scanJsToBlockClose = (input: string, pos: number): number => {
   let braceDepth = 1;
   let i = pos;
   // Whether a `/` here could open a regex literal -- i.e. a value or
-  // expression is expected at this point rather than a binary operator.
-  let exprExpected = true;
+  // expression is expected at this point rather than a binary operator --
+  // tracked by `createJsExprTracker`, which additionally remembers per `(`/
+  // `{` whether it was a control-statement paren / object literal, so `)`
+  // and `}` restore the right expectation (`if (x) /re/` vs `f(x) / re/`,
+  // `{v:1} / $$ /` vs `if (x) {} /re/`).
+  const tracker = createJsExprTracker();
 
   while (i < input.length) {
     const ch = input[i];
 
     if (ch === "{") {
       braceDepth++;
-      exprExpected = true;
+      tracker.openBrace();
       i++;
       continue;
     }
     if (ch === "}") {
       braceDepth--;
       i++;
-      // A `}` inside the body ends a statement or object literal; treating
-      // it as "value expected" matches the self-hosted grammar, which folds
-      // an optional trailing regex into its nested-block rule.
-      exprExpected = true;
+      tracker.closeBrace();
       if (braceDepth === 0) {
         return i;
       }
@@ -193,7 +347,7 @@ const scanJsToBlockClose = (input: string, pos: number): number => {
     }
     if (ch === '"' || ch === "'" || ch === "`") {
       i = skipStringLiteral(input, i, ch);
-      exprExpected = false;
+      tracker.operand();
       continue;
     }
     if (ch === "/" && input[i + 1] === "/") {
@@ -204,16 +358,22 @@ const scanJsToBlockClose = (input: string, pos: number): number => {
       i = skipBlockComment(input, i);
       continue;
     }
-    if (ch === "/" && exprExpected) {
+    if (ch === "/" && tracker.exprExpected) {
       const regexEnd = scanRegexLiteral(input, i);
       if (regexEnd !== -1) {
         i = regexEnd;
-        exprExpected = false;
+        tracker.operand();
         continue;
       }
       // Not a well-formed regex -- a division operator, which expects an
       // operand next.
-      exprExpected = true;
+      tracker.punct("/");
+      i++;
+      continue;
+    }
+    if (ch === "/" && !tracker.exprExpected) {
+      // Division operator -- an operand follows.
+      tracker.punct("/");
       i++;
       continue;
     }
@@ -225,23 +385,33 @@ const scanJsToBlockClose = (input: string, pos: number): number => {
       ) {
         wordEnd++;
       }
-      exprExpected = REGEX_PREFIX_KEYWORDS.has(input.slice(i, wordEnd));
+      tracker.word(input.slice(i, wordEnd));
       i = wordEnd;
       continue;
     }
     if (ch !== undefined && ch >= "0" && ch <= "9") {
-      exprExpected = false;
+      tracker.operand();
       i++;
       continue;
     }
-    if (ch === ")" || ch === "]") {
-      exprExpected = false;
+    if (ch === "(") {
+      tracker.openParen();
+      i++;
+      continue;
+    }
+    if (ch === ")") {
+      tracker.closeParen();
+      i++;
+      continue;
+    }
+    if (ch === "]") {
+      tracker.operand();
       i++;
       continue;
     }
     if ((ch === "+" || ch === "-") && input[i + 1] === ch) {
       // Postfix `++`/`--` ends an operand.
-      exprExpected = false;
+      tracker.operand();
       i += 2;
       continue;
     }
@@ -250,7 +420,7 @@ const scanJsToBlockClose = (input: string, pos: number): number => {
       continue;
     }
     // Any other punctuator cannot end an operand, so a value is expected.
-    exprExpected = true;
+    tracker.punct(ch ?? "");
     i++;
   }
 
@@ -314,19 +484,19 @@ const scanTemplateForIdentifier = (
  */
 export const codeContainsIdentifier = (code: string, name: string): boolean => {
   let i = 0;
-  let exprExpected = true;
+  const tracker = createJsExprTracker();
   while (i < code.length) {
     const ch = code[i];
     if (ch === '"' || ch === "'") {
       i = skipStringLiteral(code, i, ch);
-      exprExpected = false;
+      tracker.operand();
       continue;
     }
     if (ch === "`") {
       const result = scanTemplateForIdentifier(code, i, name);
       if (result.found) return true;
       i = result.end;
-      exprExpected = false;
+      tracker.operand();
       continue;
     }
     if (ch === "/" && code[i + 1] === "/") {
@@ -337,14 +507,19 @@ export const codeContainsIdentifier = (code: string, name: string): boolean => {
       i = skipBlockComment(code, i);
       continue;
     }
-    if (ch === "/" && exprExpected) {
+    if (ch === "/" && tracker.exprExpected) {
       const regexEnd = scanRegexLiteral(code, i);
       if (regexEnd !== -1) {
         i = regexEnd;
-        exprExpected = false;
+        tracker.operand();
         continue;
       }
-      exprExpected = true;
+      tracker.punct("/");
+      i++;
+      continue;
+    }
+    if (ch === "/" && !tracker.exprExpected) {
+      tracker.punct("/");
       i++;
       continue;
     }
@@ -358,22 +533,42 @@ export const codeContainsIdentifier = (code: string, name: string): boolean => {
       }
       const word = code.slice(i, wordEnd);
       if (word === name) return true;
-      exprExpected = REGEX_PREFIX_KEYWORDS.has(word);
+      tracker.word(word);
       i = wordEnd;
       continue;
     }
     if (ch !== undefined && ch >= "0" && ch <= "9") {
-      exprExpected = false;
+      tracker.operand();
       i++;
       continue;
     }
-    if (ch === ")" || ch === "]") {
-      exprExpected = false;
+    if (ch === "(") {
+      tracker.openParen();
+      i++;
+      continue;
+    }
+    if (ch === ")") {
+      tracker.closeParen();
+      i++;
+      continue;
+    }
+    if (ch === "{") {
+      tracker.openBrace();
+      i++;
+      continue;
+    }
+    if (ch === "}") {
+      tracker.closeBrace();
+      i++;
+      continue;
+    }
+    if (ch === "]") {
+      tracker.operand();
       i++;
       continue;
     }
     if ((ch === "+" || ch === "-") && code[i + 1] === ch) {
-      exprExpected = false;
+      tracker.operand();
       i += 2;
       continue;
     }
@@ -383,7 +578,7 @@ export const codeContainsIdentifier = (code: string, name: string): boolean => {
     }
     // Any other punctuator cannot end an operand, so a value is expected --
     // the same rule `scanJsToBlockClose` applies to `{`, `}`, `(`, `=`, ...
-    exprExpected = true;
+    tracker.punct(ch ?? "");
     i++;
   }
   return false;

@@ -323,6 +323,56 @@ describe("TypeInferenceEngine", () => {
 
       expect(result.circularDependencies.length).toBe(2);
     });
+
+    it("records only the true cycle members, not the DFS path prefix leading to them (regression: `a -> b`, `b -> b` recorded `[a, b]` where the real cycle is `[b]`)", () => {
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition("a", createIdentifier("b")),
+          createRuleDefinition("b", createIdentifier("b")),
+          createRuleDefinition(
+            "c",
+            createSequence([createIdentifier("a"), createIdentifier("b")]),
+          ),
+        ],
+      );
+
+      const result = engine.inferGrammarTypes(grammar);
+
+      // The single self-loop on `b` is reported exactly once; `a` and `c`
+      // merely REFERENCE `b` and are not part of any cycle.
+      expect(result.circularDependencies).toEqual([["b"]]);
+    });
+
+    it("a cycle reached through a middle element still reports the cycle, not the whole stack", () => {
+      // `start` references `loop` through a sequence -- the stack when
+      // `loop` repeats is `[start, loop]`, but only `[loop]` is the cycle.
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "start",
+            createSequence([
+              createIdentifier("loop"),
+              createStringLiteral("end", '"'),
+            ]),
+          ),
+          createRuleDefinition(
+            "loop",
+            createChoice([
+              createIdentifier("loop"),
+              createStringLiteral("x", '"'),
+            ]),
+          ),
+        ],
+      );
+
+      const result = engine.inferGrammarTypes(grammar);
+
+      expect(result.circularDependencies).toEqual([["loop"]]);
+    });
   });
 
   describe("Type Inference Options", () => {

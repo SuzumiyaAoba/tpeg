@@ -53,6 +53,10 @@ import { ERROR_MESSAGES } from "./constants";
 import { computeNullableRules, isNullable } from "./first-sets";
 import type { Expression, GrammarDefinition } from "./types";
 
+/** Whole-string JavaScript identifier shape -- what every emitted
+ * `const`/`function` name (and so every `namePrefix`) must satisfy. */
+const JS_IDENTIFIER_FULL = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
+
 /**
  * Every rule name directly reachable from the very START of matching
  * `expr` -- i.e. a rule whose parser could be invoked at the SAME input
@@ -714,11 +718,13 @@ const JS_RESERVED_WORDS: ReadonlySet<string> = new Set([
  * Names every code generator (`codegen.ts`, `codegen-optimized.ts`,
  * `@suzumiyaaoba/tpeg-generator`'s Eta templates) declares as a `const`
  * INSIDE a rule's own generated function body when that rule carries a
- * semantic action or a transform (see `wrapWithAction`/`wrapWithTransform`
- * below in `codegen.ts`). A rule whose pattern is a bare reference to
+ * semantic action, a transform, or monitoring instrumentation (see
+ * `wrapWithAction`/`wrapWithTransform`/`wrapWithMonitoring` in
+ * `codegen.ts`). A rule whose pattern is a bare reference to
  * ANOTHER rule sharing one of these names generates that reference as the
  * plain identifier `__base` (or `lazy(() => __base)`, or `__result`, or
- * `__val`, or `__transformed`) -- which, once emitted inside
+ * `__val`, or `__transformed`, or `__monitored`) -- which, once emitted
+ * inside
  * `const __base = (${that reference});` in the SAME block as the sibling
  * `const __base = ...`/`const __result = ...`/`const __val = ...`/
  * `const __transformed = ...` declarations these wrappers emit, resolves
@@ -741,6 +747,7 @@ const JS_RESERVED_WORDS: ReadonlySet<string> = new Set([
  */
 const RESERVED_INTERNAL_RULE_NAMES: ReadonlySet<string> = new Set([
   "__base",
+  "__monitored",
   "__result",
   "__transformed",
   "__val",
@@ -822,7 +829,8 @@ export interface GeneratedIdentifierCheckOptions {
  * it's loaded -- because a rule name, a capture label, or a transform
  * function's parameter name collides with a JS reserved word, an import
  * this generator will emit, or one of the fixed internal names
- * `wrapWithAction`/`wrapWithTransform` declare inside a rule's own body.
+ * `wrapWithAction`/`wrapWithTransform`/`wrapWithMonitoring` declare inside
+ * a rule's own body.
  * TPEG's identifier grammar (`[a-zA-Z_][a-zA-Z0-9_]*`) allows all of
  * these unconditionally -- see `JS_RESERVED_WORDS`'s doc comment for
  * concrete, `tsc`-verified reproductions of each failure mode this
@@ -852,6 +860,24 @@ export const validateGeneratedIdentifiers = (
 ): void => {
   const importedBindings = new Set(options.importedBindings);
 
+  // The checks below validate `namePrefix + rule.name` as a whole against
+  // reserved words and imports, but a prefix that is not itself
+  // identifier-shaped slips through them entirely: "my-" + "start" is not
+  // a reserved word, collides with nothing, and emits `export const
+  // my-start` -- a SyntaxError. Since every legal rule name starts with
+  // `[a-zA-Z_]`, `prefix + name` is a valid JS identifier for ALL rules
+  // exactly when the non-empty prefix is itself a JS identifier
+  // (`[a-zA-Z_$][a-zA-Z0-9_$]*` -- `$` included, matching the emitted
+  // code's rules rather than TPEG's own identifier grammar).
+  if (
+    options.namePrefix !== "" &&
+    !JS_IDENTIFIER_FULL.test(options.namePrefix)
+  ) {
+    throw new Error(
+      `namePrefix "${options.namePrefix}" is not a valid JavaScript identifier prefix -- it would produce declaration names like "export const ${options.namePrefix}ruleName" that fail to parse. Use a prefix matching /[a-zA-Z_$][a-zA-Z0-9_$]*/ (or none).`,
+    );
+  }
+
   for (const rule of grammar.rules) {
     const emittedName = options.namePrefix + rule.name;
     if (JS_RESERVED_WORDS.has(emittedName)) {
@@ -877,6 +903,35 @@ export const validateGeneratedIdentifiers = (
       ) {
         throw new Error(
           `Rule "${rule.name}" has a capture label named "${label}", which cannot be used as a destructured variable name (\`const { ${label} } = ...\`) in generated code -- rename the label.`,
+        );
+      }
+    }
+
+    // A `QualifiedIdentifier` (`module.rule`) is emitted verbatim as a
+    // property access `module.name`, so its `module` part lands in
+    // expression position: a reserved word there is a SyntaxError
+    // (`function.foo`), and a name colliding with a generated import
+    // (e.g. `literal.foo`) silently reads a property off the imported
+    // combinator instead of the intended module binding -- a runtime
+    // TypeError, not a compile error, but equally a mis-binding the
+    // grammar author can't have intended. The `name` part sits in
+    // property position, where reserved words and collisions are legal
+    // (`m.class` is fine), so it is deliberately not checked.
+    const qualifiedRefs: QualifiedIdentifierReference[] = [];
+    collectQualifiedIdentifierReferences(
+      rule.pattern,
+      rule.name,
+      qualifiedRefs,
+    );
+    for (const ref of qualifiedRefs) {
+      if (JS_RESERVED_WORDS.has(ref.module)) {
+        throw new Error(
+          `Rule "${rule.name}" references "${ref.module}.${ref.name}", whose module part "${ref.module}" is a JavaScript reserved word -- the generated code emits it verbatim in expression position, which is a SyntaxError. Rename the module (e.g. via an import alias).`,
+        );
+      }
+      if (importedBindings.has(ref.module)) {
+        throw new Error(
+          `Rule "${rule.name}" references "${ref.module}.${ref.name}", whose module part "${ref.module}" collides with a runtime import this grammar's generated code also needs -- the emitted \`${ref.module}.${ref.name}\` would read a property off that import instead of the intended module binding. Rename the module (e.g. via an import alias).`,
         );
       }
     }

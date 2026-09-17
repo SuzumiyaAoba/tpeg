@@ -304,7 +304,7 @@ describe("TypeIntegrationEngine", () => {
 
       expect(typedGrammar.typeDefinitions).toContain("string[]");
       expect(typedGrammar.typeDefinitions).toContain(
-        "return Array.isArray(value);",
+        'return Array.isArray(value) && value.every((el: unknown) => typeof el === "string");',
       );
       expect(typedGrammar.typeDefinitions).not.toContain(
         'return typeof value === "string";',
@@ -365,6 +365,93 @@ describe("TypeIntegrationEngine", () => {
       );
       expect(typedGrammar.typeDefinitions).not.toContain(
         "return value !== undefined;",
+      );
+    });
+
+    it("generates a length- and per-member-checking guard for a tuple (Sequence) result", () => {
+      // `("a" [0-9]+)` infers `[string, string[]]`-ish tuple -- the guard
+      // must check the arity AND each slot, not merely `Array.isArray`,
+      // which used to accept `[1, 2, 3]` for any tuple type.
+      const options: Partial<TypeIntegrationOptions> = {
+        generateTypeGuards: true,
+      };
+      const engine = new TypeIntegrationEngine(options);
+
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "pair",
+            createSequence([
+              createStringLiteral("a", '"'),
+              createStringLiteral("b", '"'),
+            ]),
+          ),
+        ],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+
+      expect(typedGrammar.typeDefinitions).toContain(
+        'return Array.isArray(value) && value.length === 2 && (typeof value[0] === "string" && value[0] === "a") && (typeof value[1] === "string" && value[1] === "b");',
+      );
+    });
+
+    it("generates a union-of-tuples guard for an Optional result (`[T] | []`)", () => {
+      const options: Partial<TypeIntegrationOptions> = {
+        generateTypeGuards: true,
+      };
+      const engine = new TypeIntegrationEngine(options);
+
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "opt",
+            createOptional(createStringLiteral("x", '"')),
+          ),
+        ],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+
+      // `[T] | []` accepts the empty tuple OR a one-element tuple whose
+      // member matches -- `[1,2,3]` and `["y","z"]` must both fail.
+      expect(typedGrammar.typeDefinitions).toContain(
+        'return Array.isArray(value) && (value.length === 1 && (typeof value[0] === "string" && value[0] === "x") || value.length === 0);',
+      );
+    });
+
+    it("generates a recursive element guard for an array of arrays", () => {
+      // `"a" "b" *` -- a Star of a Sequence -- infers `[string, string][]`:
+      // every element must itself be a 2-tuple of those members.
+      const options: Partial<TypeIntegrationOptions> = {
+        generateTypeGuards: true,
+      };
+      const engine = new TypeIntegrationEngine(options);
+
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "rows",
+            createStar(
+              createSequence([
+                createStringLiteral("a", '"'),
+                createStringLiteral("b", '"'),
+              ]),
+            ),
+          ),
+        ],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+
+      expect(typedGrammar.typeDefinitions).toContain(
+        'value.every((el: unknown) => Array.isArray(el) && el.length === 2 && (typeof el[0] === "string" && el[0] === "a") && (typeof el[1] === "string" && el[1] === "b"))',
       );
     });
 

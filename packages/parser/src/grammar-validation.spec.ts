@@ -716,6 +716,87 @@ describe("validateGeneratedIdentifiers: reserved words and import collisions", (
     });
     expect(result.code).toContain("export const g_class");
   });
+
+  it("rejects a QualifiedIdentifier whose module part is a JS reserved word (regression: `function.foo` was emitted verbatim into expression position -- a SyntaxError)", () => {
+    const grammar = grammarFromSource("start = function.foo");
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: [],
+      }),
+    ).toThrow(/module part "function" is a JavaScript reserved word/);
+  });
+
+  it("does NOT reject a QualifiedIdentifier whose PROPERTY part is a reserved word (`m.class` is legal)", () => {
+    const grammar = grammarFromSource("start = m.class");
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: [],
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects a QualifiedIdentifier whose module part collides with a runtime import (`literal.foo` reads a property off the imported combinator)", () => {
+    const grammar = grammarFromSource("start = literal.foo");
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: ["Parser", "literal"],
+      }),
+    ).toThrow(/module part "literal" collides with a runtime import/);
+  });
+
+  it("accepts a QualifiedIdentifier whose module part merely MATCHES a combinator's name when nothing imports it", () => {
+    const grammar = grammarFromSource("start = literal.foo");
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: ["Parser"],
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("validateGeneratedIdentifiers: namePrefix shape (regression)", () => {
+  // `namePrefix + rule.name` is emitted verbatim as a `const` name, so a
+  // prefix that isn't identifier-shaped produces a declaration like
+  // `export const my-start` -- a SyntaxError, previously undiagnosed.
+  it.each(["my-", "123", "a b", "-x", "foo.bar"])(
+    "rejects a non-identifier-shaped namePrefix %j",
+    (namePrefix) => {
+      const grammar = grammarFromSource('start = "a"');
+      expect(() =>
+        validateGeneratedIdentifiers(grammar, {
+          namePrefix,
+          importedBindings: [],
+        }),
+      ).toThrow(/not a valid JavaScript identifier prefix/);
+    },
+  );
+
+  it.each(["my_", "$", "_", "g1", "myPrefix"])(
+    "accepts an identifier-shaped namePrefix %j",
+    (namePrefix) => {
+      const grammar = grammarFromSource('start = "a"');
+      expect(() =>
+        validateGeneratedIdentifiers(grammar, {
+          namePrefix,
+          importedBindings: [],
+        }),
+      ).not.toThrow();
+    },
+  );
+
+  it("end-to-end: both generators reject a non-identifier namePrefix before emitting any code", () => {
+    const grammar = grammarFromSource('start = "a"');
+    expect(() =>
+      generateTypeScriptParser(grammar, { namePrefix: "my-" }),
+    ).toThrow(/not a valid JavaScript identifier prefix/);
+    expect(() =>
+      generateOptimizedTypeScriptParser(grammar, { namePrefix: "my-" }),
+    ).toThrow(/not a valid JavaScript identifier prefix/);
+  });
 });
 
 describe("validateGrammar: transform function names (issues #65/#66)", () => {

@@ -213,4 +213,26 @@ describe("tpegFile", () => {
       ]);
     }
   });
+
+  it("keeps transforms blocks separated from the grammar by comments (regression: tpegFile's grammar->transforms separator skipped only whitespace, so a comment there silently dropped every following transforms block)", () => {
+    for (const comment of ["// a line comment", "/* a block comment */"]) {
+      const result = parse(tpegFile)(`
+        grammar Calculator {
+          number = [0-9]+
+        }
+        ${comment}
+        transforms Evaluator@typescript {
+          number(captures: string) -> Result<number> {
+            return { success: true, value: parseInt(captures, 10) };
+          }
+        }
+      `);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.transforms).toHaveLength(1);
+        expect(result.val.transforms?.[0]?.transformSet.name).toBe("Evaluator");
+      }
+    }
+  });
 });

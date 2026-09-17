@@ -728,4 +728,81 @@ describe("findNullableRepetitions / assertNoNullableRepetition", () => {
     expect(findNullableRepetitions(grammar, analysis)).toEqual([]);
     expect(() => assertNoNullableRepetition(grammar, analysis)).not.toThrow();
   });
+
+  // Regression for the external-identifier rejection: `isNullable`
+  // defaults an unresolved `Identifier` (the documented external-parser
+  // escape hatch) to nullable -- the safe direction for FIRST-set
+  // computation, but wrong for this REJECTION check, which needs provable
+  // nullability. `ext*` was rejected even though nothing in the grammar
+  // can prove `ext` nullable; a runtime-nullable external parser is the
+  // zero-progress guard's job (`zeroOrMore`'s createInfiniteLoopError).
+  it("does NOT flag a repetition over an unresolved (external) Identifier -- `ext*` is legal", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createStar(createIdentifier("externalParser")),
+        ),
+      ],
+    );
+    const analysis = analyzeFirstSets(grammar);
+    expect(findNullableRepetitions(grammar, analysis)).toEqual([]);
+    expect(() => assertNoNullableRepetition(grammar, analysis)).not.toThrow();
+  });
+
+  it("does NOT flag `ext+` or `ext{2,}` over an external Identifier either", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createSequence([
+            createPlus(createIdentifier("ext")),
+            createQuantified(createIdentifier("ext"), 2),
+          ]),
+        ),
+      ],
+    );
+    const analysis = analyzeFirstSets(grammar);
+    expect(findNullableRepetitions(grammar, analysis)).toEqual([]);
+  });
+
+  it("does NOT flag a repetition over a QualifiedIdentifier -- a cross-module reference is equally unprovable", () => {
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createStar(createQualifiedIdentifier("other", "rule")),
+        ),
+      ],
+    );
+    const analysis = analyzeFirstSets(grammar);
+    expect(findNullableRepetitions(grammar, analysis)).toEqual([]);
+  });
+
+  it("STILL flags a repetition over a LOCAL rule provably nullable in this grammar", () => {
+    // The escape-hatch relaxation must not leak into local rules: `empty`
+    // is declared here and provably nullable, so `empty*` is still the
+    // infinite-loop hazard the check exists for.
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [
+        createRuleDefinition("r", createStar(createIdentifier("empty"))),
+        createRuleDefinition(
+          "empty",
+          createOptional(createStringLiteral("a", '"')),
+        ),
+      ],
+    );
+    const analysis = analyzeFirstSets(grammar);
+    expect(findNullableRepetitions(grammar, analysis)).toEqual([
+      { ruleName: "r", nodeType: "Star" },
+    ]);
+  });
 });

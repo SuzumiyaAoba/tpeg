@@ -217,3 +217,98 @@ describe("docs/peg-grammar.md's Capture Structure Reference Table (each row actu
     },
   );
 });
+
+describe("rule-boundary capture-tag hygiene (regression: a single-label rule leaked its own label into the referencing rule's merged capture)", () => {
+  // `inner = key:"v"` emits a bare `capture("key", ...)` at its top level,
+  // which is CAPTURE_TAG-tagged. When `outer = inner name:"n"` merges
+  // captures, the tag on `inner`'s result made `mergeCaptures` pick up
+  // `key` too -- `outer` returned `{ key: "v", name: "n" }` where the
+  // table's unlabeled-element semantics say only `{ name: "n" }` (the
+  // unlabeled `inner` slot contributes nothing to the merge). Every
+  // exported rule is now wrapped in `untagCapture(...)` so no tag
+  // survives the boundary.
+  test("an unlabeled reference to a single-label rule contributes no label to the enclosing merge", async () => {
+    const core = (await import("@suzumiyaaoba/tpeg-core")) as unknown as Record<
+      string,
+      unknown
+    >;
+    const combinator =
+      (await import("@suzumiyaaoba/tpeg-combinator")) as unknown as Record<
+        string,
+        unknown
+      >;
+
+    const source = `grammar G {
+  outer = inner name:"n"
+  inner = key:"v"
+}`;
+    const parsed = grammarDefinition(source, 0);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const code = generateTypeScriptParser(parsed.val, {
+      includeImports: false,
+      includeTypes: false,
+    }).code;
+    expect(code).toContain("untagCapture(capture(");
+
+    const body = code.replace(/^export const (\w+)/gm, "const $1");
+    const scope = { ...combinator, ...core };
+    const factory = new Function(
+      ...Object.keys(scope),
+      `${body}\nreturn { outer };`,
+    );
+    const { outer } = factory(...Object.values(scope)) as {
+      outer: Parser<unknown>;
+    };
+
+    const result = outer("vn", 0);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toEqual({ name: "n" });
+    }
+  });
+
+  test("a labeled reference to that same single-label rule still captures it under the new label", async () => {
+    const core = (await import("@suzumiyaaoba/tpeg-core")) as unknown as Record<
+      string,
+      unknown
+    >;
+    const combinator =
+      (await import("@suzumiyaaoba/tpeg-combinator")) as unknown as Record<
+        string,
+        unknown
+      >;
+
+    const source = `grammar G {
+  outer = sub:inner name:"n"
+  inner = key:"v"
+}`;
+    const parsed = grammarDefinition(source, 0);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const code = generateTypeScriptParser(parsed.val, {
+      includeImports: false,
+      includeTypes: false,
+    }).code;
+
+    const body = code.replace(/^export const (\w+)/gm, "const $1");
+    const scope = { ...combinator, ...core };
+    const factory = new Function(
+      ...Object.keys(scope),
+      `${body}\nreturn { outer };`,
+    );
+    const { outer } = factory(...Object.values(scope)) as {
+      outer: Parser<unknown>;
+    };
+
+    const result = outer("vn", 0);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // `sub:` binds `inner`'s WHOLE value -- its own `{ key: "v" }`
+      // object -- under the new label; only the boundary tag is stripped.
+      expect(result.val).toEqual({ sub: { key: "v" }, name: "n" });
+    }
+  });
+});

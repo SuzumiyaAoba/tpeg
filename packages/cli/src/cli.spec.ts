@@ -91,6 +91,23 @@ describe("tpeg CLI", () => {
     expect(stderr).toContain("missing required <input.tpeg> argument");
   });
 
+  it("rejects extra positional arguments instead of silently ignoring them (regression: `tpeg a.tpeg b.tpeg` used to parse a.tpeg and drop b.tpeg entirely)", () => {
+    const inputPath = join(dir, "a.tpeg");
+    writeFileSync(inputPath, SIMPLE_GRAMMAR, "utf8");
+    const extraPath = join(dir, "b.tpeg");
+    writeFileSync(extraPath, SIMPLE_GRAMMAR, "utf8");
+
+    const { exitCode, stdout, stderr } = captureOutput(() =>
+      run([inputPath, extraPath]),
+    );
+    expect(exitCode).toBe(1);
+    // The extra argument is named in the error -- not silently dropped --
+    // and nothing was generated to stdout.
+    expect(stderr).toContain("unexpected extra argument(s)");
+    expect(stderr).toContain("b.tpeg");
+    expect(stdout).toBe("");
+  });
+
   it("fails with a clear message when the input file doesn't exist", () => {
     const { exitCode, stderr } = captureOutput(() =>
       run([join(dir, "does-not-exist.tpeg")]),

@@ -272,6 +272,40 @@ export const captureChoice = <T extends unknown[]>(
 };
 
 /**
+ * Wraps a parser so a `CAPTURE_TAG`ged object in its successful result is
+ * replaced by a shallow copy WITHOUT the tag -- the tag is non-enumerable,
+ * so a plain enumerable spread drops it while keeping every labeled field.
+ *
+ * Generated code applies this at every RULE boundary (each `export const
+ * <rule>`): per `docs/peg-grammar.md`'s Capture Structure Reference, a rule
+ * referenced unlabeled must contribute NOTHING to an enclosing
+ * `captureSequence`'s merge. That invariant breaks when a rule's own
+ * top-level parser still returns a tagged object -- e.g. `pair = key:"a"`
+ * compiles to a bare `capture("key", ...)`, and `(x:"a")`, `x:"a" / y:"b"`,
+ * `x:"a"?`, or an action body that `return`s `$$` can all surface a tagged
+ * value the same way. Normalizing at the boundary (rather than trying to
+ * enumerate every emitting shape) keeps the rule's own value identical --
+ * the tag is invisible to user code either way -- while making an
+ * unlabeled reference behave exactly like an unlabeled literal does.
+ *
+ * Applied INSIDE any `memoize(...)` wrapper the generator adds, so the
+ * memo table caches the already-untagged object rather than re-copying it
+ * on every cache hit.
+ */
+export const untagCapture = <T>(parser: Parser<T>): Parser<T> => {
+  return (input: string, pos: number) => {
+    const result = parser(input, pos);
+    if (!result.success || !isCaptureTagged(result.val)) return result;
+    return {
+      success: true as const,
+      val: { ...(result.val as CapturedValue) } as T,
+      current: result.current,
+      next: result.next,
+    };
+  };
+};
+
+/**
  * Checks if a value is a captured value (object with string keys).
  *
  * @param value The value to check

@@ -278,7 +278,7 @@ describe("commitAtTopLevel is narrowed to grammars where the start rule is never
       includeTypes: false,
     });
     expect(result.code).toContain(
-      'export const helper = sequence(literal("h"), commitAtTopLevel(literal("e")));',
+      'export const helper = untagCapture(sequence(literal("h"), commitAtTopLevel(literal("e"))));',
     );
   });
 });

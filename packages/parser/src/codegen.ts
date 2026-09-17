@@ -139,6 +139,35 @@ ${transformFn.body}
 };
 
 /**
+ * Wraps a rule's generated parser expression so every invocation is timed
+ * by a `performanceMonitor` object (the one `generateMonitoringCode` emits
+ * for `includeMonitoring`, or `globalPerformanceMonitor` in the Eta
+ * generator's output). The inner expression is evaluated ONCE inside an
+ * IIFE -- not per call -- so a `memoize(...)` inside `parserCode` keeps its
+ * memo table across invocations instead of being rebuilt on every call.
+ * Parameter types are emitted only under `includeTypes` -- matching
+ * `wrapWithAction`'s `$$: any` convention -- so the `includeTypes: false`
+ * output stays plain JavaScript (safe to run via `new Function` without a
+ * transpile step).
+ */
+export const wrapWithMonitoring = (
+  ruleName: string,
+  parserCode: string,
+  monitorObject = "performanceMonitor",
+  includeTypes = true,
+): string => `(() => {
+  const __monitored = (${parserCode});
+  return (input${includeTypes ? ": string" : ""}, pos${includeTypes ? ": number" : ""}) => {
+    ${monitorObject}.start(${JSON.stringify(ruleName)});
+    try {
+      return __monitored(input, pos);
+    } finally {
+      ${monitorObject}.end(${JSON.stringify(ruleName)});
+    }
+  };
+})()`;
+
+/**
  * Does `expr` contain a `Cut` marked `global: true` (by `promoteGlobalCuts`,
  * `packages/parser/src/ast-optimize.ts`) in a position where
  * `generateSequence`/`generateOptimizedSequence` will actually emit a
@@ -814,6 +843,12 @@ export class TPEGCodeGenerator {
         index === 0 && startRuleIsSafeForCommitAtTopLevel,
       );
     });
+    // Every rule's emitted parser is wrapped in `untagCapture(...)` (see
+    // `generateRule`) regardless of its pattern, so the import is needed
+    // unconditionally whenever the grammar declares any rule at all.
+    if (grammar.rules.length > 0) {
+      usedCombinators.add("untagCapture");
+    }
 
     // Add imports based on what's actually used
     if (this.options.includeImports) {
@@ -920,7 +955,14 @@ export class TPEGCodeGenerator {
     transformFn?: TransformFunction,
     isStartRule = false,
   ): string {
-    let parserCode = this.generateExpression(rule.pattern, isStartRule);
+    // `untagCapture` strips a surviving CAPTURE_TAG at the rule boundary --
+    // a rule whose own pattern still yields a tagged object (a bare
+    // `x:"a"`, a grouped/labeled choice alternative, an optional labeled
+    // element, an action returning `$$`, ...) would otherwise leak its
+    // internal labels into an enclosing `captureSequence` merge wherever
+    // it's referenced unlabeled. Applied inside `memoize(...)` below so the
+    // memo table stores the already-clean value.
+    let parserCode = `untagCapture(${this.generateExpression(rule.pattern, isStartRule)})`;
     const memoizeAnnotation = findMemoizeAnnotation(rule);
     if (memoizeAnnotation) {
       parserCode = wrapWithMemoize(parserCode, memoizeAnnotation);

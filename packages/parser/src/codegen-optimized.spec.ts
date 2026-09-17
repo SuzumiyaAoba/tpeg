@@ -186,7 +186,7 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
     const result = generator.generateGrammar(grammarWithExternalFoo);
 
     expect(result.code).toContain("export const g_baz");
-    expect(result.code).toContain("= foo;");
+    expect(result.code).toContain("= untagCapture(foo);");
     expect(result.code).not.toContain("g_foo");
   });
 
@@ -245,7 +245,7 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
     const result = generateOptimizedTypeScriptParser(grammar);
 
     expect(result.code).toContain(
-      "export const main: Parser<any> = math.expr;",
+      "export const main: Parser<any> = untagCapture(math.expr);",
     );
     expect(result.warnings).toEqual([
       expect.stringContaining('"main" references "math.expr"'),
@@ -424,7 +424,7 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
     const result = generateOptimizedTypeScriptParser(grammar);
 
     expect(result.code).toContain(
-      'export const r: Parser<any> = commit(literal("b"));',
+      'export const r: Parser<any> = untagCapture(commit(literal("b")));',
     );
   });
 
@@ -460,9 +460,11 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
     });
     // `inner` reduces to one part after the cut is stripped -- it must
     // still go through captureSequence (untagged) rather than being
-    // returned as the bare, tagged `commit(capture(...))`.
+    // returned as the bare, tagged `commit(capture(...))`, and the
+    // rule-boundary `untagCapture(...)` wrap keeps any residual tag from
+    // leaking into `outer`'s merged capture regardless.
     expect(result.code).toContain(
-      'export const inner = captureSequence(commit(capture("x", literal("v"))));',
+      'export const inner = untagCapture(captureSequence(commit(capture("x", literal("v")))));',
     );
 
     const body = result.code.replace(/^export const (\w+)/gm, "const $1");
@@ -528,7 +530,7 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
     const result = generateOptimizedTypeScriptParser(grammar);
 
     expect(result.code).toContain(
-      'export const r: Parser<any> = commitAtTopLevel(literal("b"));',
+      'export const r: Parser<any> = untagCapture(commitAtTopLevel(literal("b")));',
     );
   });
 
@@ -549,7 +551,7 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
     });
 
     expect(result.code).toContain(
-      'export const expr: Parser<any> = memoize(literal("x"), { maxCacheSize: 128 });',
+      'export const expr: Parser<any> = memoize(untagCapture(literal("x")), { maxCacheSize: 128 });',
     );
     expect(result.code).toContain(
       'import { memoize } from "@suzumiyaaoba/tpeg-combinator";',
@@ -1226,13 +1228,16 @@ describe("generateOptimizedTypeScriptParser: import precision (regression)", () 
       includeImports: true,
     });
     expect(result.code).not.toContain("import {  }");
+    // `untagCapture` is always imported -- every rule's exported parser is
+    // wrapped to strip a residual CAPTURE_TAG at the rule boundary, and a
+    // bare external-parser reference could itself return a tagged value.
     expect(
-      result.imports.some(
+      result.imports.filter(
         (line) =>
           !line.startsWith("import type") &&
           line.includes('from "@suzumiyaaoba/tpeg-core";'),
       ),
-    ).toBe(false);
+    ).toEqual(['import { untagCapture } from "@suzumiyaaoba/tpeg-core";']);
   });
 
   it("a trailing Cut with nothing after it (\"a\" ~) does not import 'commit' or 'commitAtTopLevel' (regression: same fix as codegen.ts's collectUsedCombinators/containsGlobalCut)", () => {
@@ -1353,5 +1358,96 @@ describe("includeMonitoring", () => {
       includeMonitoring: false,
     });
     expect(result.code).toContain("export const performanceMonitor");
+  });
+
+  it("emits a fully-typed monitor object under includeTypes (regression: `start(operation)`/`end(operation)` had untyped params -- TS7006 under strict)", () => {
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [createRuleDefinition("start", createStringLiteral("a", '"'))],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      includeMonitoring: true,
+      includeTypes: true,
+    });
+
+    expect(result.code).toContain("start(operation: string): void");
+    expect(result.code).toContain("end(operation: string): number");
+    expect(result.code).toContain("report(): void");
+    expect(result.code).toContain("new Map<string, number>()");
+  });
+
+  it("emits no type annotations under includeTypes: false so the output stays runnable JavaScript", () => {
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [createRuleDefinition("start", createStringLiteral("a", '"'))],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      includeMonitoring: true,
+      includeTypes: false,
+      includeImports: false,
+    });
+
+    expect(result.code).toContain("start(operation)");
+    expect(result.code).toContain("end(operation)");
+    expect(result.code).not.toContain("operation: string");
+    // The monitoring wrapper's own params must be untyped too.
+    expect(result.code).not.toContain("(input: string, pos: number)");
+    expect(result.code).toContain("return (input, pos) => {");
+  });
+
+  it("actually instruments every rule (regression: the monitor object was emitted and exported but no generated rule ever called it -- dead code)", async () => {
+    const core = await import("@suzumiyaaoba/tpeg-core");
+    const combinator = await import("@suzumiyaaoba/tpeg-combinator");
+
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition("start", createIdentifier("word")),
+        createRuleDefinition(
+          "word",
+          createPlus(createCharacterClass([createCharRange("a", "z")])),
+        ),
+      ],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      includeMonitoring: true,
+      includeTypes: false,
+      includeImports: false,
+    });
+
+    // Every exported rule is wrapped so each invocation reports
+    // start/end to the module-scope `performanceMonitor`.
+    expect(result.code).toContain('performanceMonitor.start("start")');
+    expect(result.code).toContain('performanceMonitor.start("word")');
+
+    const body = result.code
+      .replace(/^export \{[^}]*\};?$/gm, "")
+      .replace(/^export const (\w+)/gm, "const $1");
+    const scope = { ...combinator, ...core };
+    const factory = new Function(
+      ...Object.keys(scope),
+      `${body}\nreturn { start, performanceMonitor };`,
+    );
+    const built = factory(...Object.values(scope)) as {
+      start: (input: string, pos: number) => { success: boolean };
+      performanceMonitor: {
+        metrics: Map<string, { total: number; count: number }>;
+      };
+    };
+
+    expect(built.start("abc", 0).success).toBe(true);
+    expect(built.start("abc", 0).success).toBe(true);
+
+    // `start` delegates to `word` via a plain identifier reference, so
+    // both rules must be on the metrics ledger -- and `word`'s count
+    // must equal `start`'s, proving the wrap is around every call.
+    expect(built.performanceMonitor.metrics.get("start")?.count).toBe(2);
+    expect(built.performanceMonitor.metrics.get("word")?.count).toBe(2);
   });
 });

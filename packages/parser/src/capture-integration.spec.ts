@@ -81,7 +81,7 @@ describe("Capture Integration Tests", () => {
       expect(result.code).toContain('capture("message"');
       expect(result.code).toContain('literal("hello")');
       expect(result.imports).toContain(
-        'import { capture, literal } from "@suzumiyaaoba/tpeg-core";',
+        'import { capture, literal, untagCapture } from "@suzumiyaaoba/tpeg-core";',
       );
     });
 
@@ -300,7 +300,7 @@ describe("Capture Integration Tests", () => {
       });
 
       expect(result.imports).toContain(
-        'import { capture, literal } from "@suzumiyaaoba/tpeg-core";',
+        'import { capture, literal, untagCapture } from "@suzumiyaaoba/tpeg-core";',
       );
     });
 

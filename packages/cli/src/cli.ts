@@ -221,6 +221,16 @@ export function run(argv: string[]): number {
     process.stderr.write(USAGE);
     return 1;
   }
+  if (positionals.length > 1) {
+    process.stderr.write(
+      `error: unexpected extra argument(s): ${positionals
+        .slice(1)
+        .map(sanitizeForTerminal)
+        .join(", ")} -- only one <input.tpeg> is accepted\n\n`,
+    );
+    process.stderr.write(USAGE);
+    return 1;
+  }
 
   // Argument-combination errors are reported before touching the
   // filesystem or the parser: they don't depend on the input file's

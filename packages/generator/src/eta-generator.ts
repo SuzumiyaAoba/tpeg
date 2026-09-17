@@ -18,6 +18,7 @@ import {
   generateStringLiteralCode,
   validateGeneratedIdentifiers,
   wrapWithAction,
+  wrapWithMonitoring,
 } from "@suzumiyaaoba/tpeg-parser";
 import { Eta } from "eta";
 import { validateGrammarForEtaGenerator } from "./grammar-validation";
@@ -266,25 +267,43 @@ export class EtaTPEGCodeGenerator {
       const memoized = this.shouldMemoize(rule, complexity);
       const baseImplementation = this.generateRuleImplementation(rule);
 
-      // When a transform applies, memoization (if any) is baked into the
-      // wrapper's own base-parser call instead of left to the template's
-      // `memoize(<%= implementation %>)` wrapping -- that would otherwise
-      // memoize the *transformed* result, re-running the transform's own
-      // caching semantics differently from codegen.ts/codegen-optimized.ts.
-      const implementation = transformFn
+      // When a transform or monitoring applies, memoization (if any) is
+      // baked into the wrapper's own base-parser call instead of left to
+      // the template's `memoize(<%= implementation %>)` wrapping -- that
+      // would otherwise memoize the *transformed* result (or sit INSIDE
+      // the monitoring timer, hiding memo hits), re-running the
+      // transform's own caching semantics differently from
+      // codegen.ts/codegen-optimized.ts.
+      const bakeWrappers =
+        transformFn !== undefined || this.options.includeMonitoring;
+      let implementation = transformFn
         ? wrapWithTransform(
             rule.name,
             memoized ? `memoize(${baseImplementation})` : baseImplementation,
             transformFn,
           )
-        : baseImplementation;
+        : memoized && bakeWrappers
+          ? `memoize(${baseImplementation})`
+          : baseImplementation;
+      // `includeMonitoring` previously only imported and re-exported
+      // `globalPerformanceMonitor` without ever calling it -- instrument
+      // each rule here so the option actually measures something. The wrap
+      // is outermost so the timing covers memoization and the transform.
+      if (this.options.includeMonitoring) {
+        implementation = wrapWithMonitoring(
+          rule.name,
+          implementation,
+          "globalPerformanceMonitor",
+          this.options.includeTypes,
+        );
+      }
 
       const ruleData: RuleTemplateData = {
         namePrefix: this.options.namePrefix,
         name: rule.name,
         type: this.inferRuleType(rule),
         implementation,
-        memoized: transformFn ? false : memoized,
+        memoized: bakeWrappers ? false : memoized,
         includeTypes: this.options.includeTypes,
         comment: this.generateRuleComment(complexity) || undefined,
         complexity: complexity || undefined,
@@ -300,11 +319,18 @@ export class EtaTPEGCodeGenerator {
       options: this.options,
     };
 
-    // Add performance imports for optimized template
+    // The `globalPerformanceMonitor` import and its re-export footer are
+    // needed by BOTH template families whenever monitoring is on --
+    // previously they were gated on `optimize`, so `optimize: false` +
+    // `includeMonitoring: true` produced instrumented rules calling an
+    // unimported binding. Both generators self-empty (`[]`/`""`) when
+    // monitoring is off, so assigning them unconditionally is free.
+    templateData.performanceImports = this.generatePerformanceImports();
+    templateData.footer = this.generateFooter();
+
+    // Add the generated-file header for the optimized template
     if (this.options.optimize) {
-      templateData.performanceImports = this.generatePerformanceImports();
       templateData.header = this.generateHeader(grammar);
-      templateData.footer = this.generateFooter();
     }
 
     // Generate code using appropriate template
@@ -359,6 +385,15 @@ export class EtaTPEGCodeGenerator {
       grammar.rules.forEach((rule, index) => {
         this.collectUsedCombinators(rule.pattern, usedCombinators, index);
       });
+
+      // Every rule's emitted implementation is wrapped in
+      // `untagCapture(...)` (see `generateRuleImplementation`) regardless
+      // of its pattern -- same rule-boundary normalization
+      // `codegen.ts`/`codegen-optimized.ts` apply -- so the import is
+      // needed unconditionally whenever the grammar declares any rule.
+      if (grammar.rules.length > 0) {
+        usedCombinators.add("untagCapture");
+      }
 
       // memoize lives in tpeg-combinator, not tpeg-core, so it gets its own
       // import line rather than being folded into usedCombinators below --
@@ -604,7 +639,11 @@ export class EtaTPEGCodeGenerator {
    * Generate implementation code for a rule
    */
   private generateRuleImplementation(rule: RuleDefinition): string {
-    return this.generateExpressionCode(rule.pattern);
+    // `untagCapture` strips a surviving CAPTURE_TAG at the rule boundary --
+    // see `codegen.ts`'s `generateRule` for why a rule's own pattern can
+    // still yield a tagged object and why that must not leak into an
+    // enclosing `captureSequence` merge.
+    return `untagCapture(${this.generateExpressionCode(rule.pattern)})`;
   }
 
   /**

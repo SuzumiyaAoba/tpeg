@@ -1,4 +1,7 @@
-<%~ await includeAsync('imports', { imports: it.imports }) %>
+<%~ await includeAsync('imports', { 
+  imports: it.imports, 
+  performanceImports: it.performanceImports 
+}) %>
 <% if (it.rules && it.rules.length > 0) { %>
 <% for (let i = 0; i < it.rules.length; i++) { %>
 <% const rule = it.rules[i] %>
@@ -8,4 +11,8 @@
 <%~ await includeAsync('rule', rule) %>
 <% } %>
 <% } %>
+<% } %>
+<% if (it.footer) { %>
+
+<%= it.footer %>
 <% } %>

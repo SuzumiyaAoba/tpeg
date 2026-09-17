@@ -47,6 +47,7 @@ import {
   tryGenerateCharClassRunCode,
   wrapWithAction,
   wrapWithMemoize,
+  wrapWithMonitoring,
   wrapWithTransform,
 } from "./codegen";
 import {
@@ -533,6 +534,12 @@ export class OptimizedTPEGCodeGenerator {
         index === 0 && this.startRuleIsSafeForCommitAtTopLevel,
       );
     });
+    // Every rule's emitted parser is wrapped in `untagCapture(...)` (see
+    // `generateOptimizedRule`) regardless of its pattern, so the import is
+    // needed unconditionally whenever the grammar declares any rule at all.
+    if (grammar.rules.length > 0) {
+      usedCombinators.add("untagCapture");
+    }
 
     // Add performance imports if needed. memoize and commitAtTopLevel
     // both live in tpeg-combinator, not tpeg-core, so they must not also
@@ -879,10 +886,15 @@ export class OptimizedTPEGCodeGenerator {
     // fusion root (`regexFusionScope: "rule"`, or a whole rule that also
     // happens to be the maximal fusable node under `"subtree"`) is
     // decided there, uniformly with every interior node.
-    const innerCode = this.generateOptimizedExpression(
+    // `untagCapture` strips a surviving CAPTURE_TAG at the rule boundary --
+    // see `codegen.ts`'s `generateRule` for why a rule's own pattern can
+    // still yield a tagged object and why that must not leak into an
+    // enclosing `captureSequence` merge. Applied inside `memoize(...)`
+    // below so the memo table stores the already-clean value.
+    const innerCode = `untagCapture(${this.generateOptimizedExpression(
       rule.pattern,
       isStartRule,
-    );
+    )})`;
 
     // An explicit `@memoize` annotation wins over the automatic
     // reentrancy-based trigger below (and applies regardless of
@@ -911,6 +923,19 @@ export class OptimizedTPEGCodeGenerator {
 
     if (transformFn) {
       parserCode = wrapWithTransform(rule.name, parserCode, transformFn);
+    }
+
+    // `includeMonitoring` times every invocation of this rule against the
+    // module-scope `performanceMonitor` `generateMonitoringCode` emits --
+    // applied last so the measurement covers memoization and the
+    // transform, i.e. what a caller of the exported parser actually pays.
+    if (this.options.includeMonitoring) {
+      parserCode = wrapWithMonitoring(
+        rule.name,
+        parserCode,
+        "performanceMonitor",
+        this.options.includeTypes,
+      );
     }
 
     const name = stringInterner.intern(this.options.namePrefix + rule.name);
@@ -1272,32 +1297,36 @@ export class OptimizedTPEGCodeGenerator {
    * Generate performance monitoring code
    */
   private generateMonitoringCode(): string {
+    // `includeTypes: false` output is plain JavaScript (see `wrapWithAction`'s
+    // doc comment for the `new Function` use case that contract protects),
+    // so the type syntax below is emitted only when types are enabled.
+    const t = this.options.includeTypes;
     return `
 // Performance monitoring utilities
 const performanceMonitor = {
-  startTimes: new Map(),
-  metrics: new Map(),
-  
-  start(operation) {
+  startTimes: new Map${t ? "<string, number>" : ""}(),
+  metrics: new Map${t ? "<string, { total: number; count: number }>" : ""}(),
+
+  start(operation${t ? ": string" : ""})${t ? ": void" : ""} {
     this.startTimes.set(operation, performance.now());
   },
-  
-  end(operation) {
+
+  end(operation${t ? ": string" : ""})${t ? ": number" : ""} {
     const startTime = this.startTimes.get(operation);
-    if (!startTime) return 0;
-    
+    if (startTime === undefined) return 0;
+
     const duration = performance.now() - startTime;
     const existing = this.metrics.get(operation) || { total: 0, count: 0 };
     this.metrics.set(operation, {
       total: existing.total + duration,
       count: existing.count + 1
     });
-    
+
     this.startTimes.delete(operation);
     return duration;
   },
-  
-  report() {
+
+  report()${t ? ": void" : ""} {
     console.log('Parser Performance Report:');
     for (const [op, metrics] of this.metrics) {
       console.log(\`  \${op}: \${metrics.count} calls, avg \${(metrics.total / metrics.count).toFixed(2)}ms\`);

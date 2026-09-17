@@ -1366,6 +1366,68 @@ grammar Example {
         expect(result.val.rules).toHaveLength(2);
       }
     });
+
+    // Regression tests for the same-line boundary bug: `grammarRule-
+    // Expression`'s `}`/`@` boundary checks only ran after skipping a
+    // whitespace run, so `start = "a"}` (no space before `}`) absorbed
+    // the brace into the rule's slice and failed the whole parse.
+    test("a rule ending immediately before '}' on the same line parses", () => {
+      const result = testParse(
+        grammarDefinition,
+        'grammar G {\n  start = "a"}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules.map((r) => r.name)).toEqual(["start"]);
+      }
+    });
+
+    test("a rule followed by a block comment then '}' on the same line parses", () => {
+      const result = testParse(
+        grammarDefinition,
+        'grammar G {\n  start = "a" /* note */}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules).toHaveLength(1);
+      }
+    });
+
+    test("multiple rules where each '}' directly follows the last rule parse", () => {
+      const result = testParse(
+        grammarDefinition,
+        'grammar G {\n  a = "x"\n  b = "y"}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules.map((r) => r.name)).toEqual(["a", "b"]);
+      }
+    });
+
+    test("a rule directly followed by an annotation on the same line still ends the rule", () => {
+      const result = testParse(
+        grammarDefinition,
+        'grammar G {\n  a = "x" @memoize\n  b = "y"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules.map((r) => r.name)).toEqual(["a", "b"]);
+      }
+    });
+
+    test("a line comment immediately followed by '}' ends the rule", () => {
+      const result = testParse(
+        grammarDefinition,
+        'grammar G {\n  a = "x" // note\n}\n  b = "y"\n}',
+      );
+      // `}` right after the comment's newline: the boundary check fires
+      // on the first non-whitespace character regardless of how the
+      // whitespace run was entered.
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules.map((r) => r.name)).toEqual(["a"]);
+      }
+    });
   });
 
   describe("malformed dedicated annotations", () => {

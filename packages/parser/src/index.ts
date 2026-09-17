@@ -62,6 +62,7 @@ export {
   collectTopLevelLabels,
   filterReferencedLabels,
   wrapWithAction,
+  wrapWithMonitoring,
   buildQualifiedIdentifierWarnings,
 } from "./codegen";
 export { escapeStringLiteral } from "./constants";
@@ -200,7 +201,7 @@ import { qualifiedIdentifier } from "./module";
 import { stringLiteral } from "./string-literal";
 import { transformDefinition } from "./transforms";
 import type { BasicSyntaxNode, GrammarDefinition } from "./types";
-import { whitespace } from "./whitespace-utils";
+import { optionalWhitespaceOrComment } from "./whitespace-utils";
 
 /**
  * Combined parser for all basic TPEG syntax elements.
@@ -282,7 +283,7 @@ export const tpegFile: Parser<GrammarDefinition> = map(
     grammarDefinition,
     star(
       map(
-        sequence(star(whitespace), transformDefinition),
+        sequence(optionalWhitespaceOrComment, transformDefinition),
         ([, transform]) => transform,
       ),
     ),

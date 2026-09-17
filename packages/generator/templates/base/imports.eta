@@ -3,3 +3,9 @@
 <%~ imp + "\n" %>
 <% }) %>
 <% } %>
+<% if (it.performanceImports && it.performanceImports.length > 0) { %>
+// Performance optimizations
+<% it.performanceImports.forEach(function(imp) { %>
+<%~ imp + "\n" %>
+<% }) %>
+<% } %>

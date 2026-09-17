@@ -185,10 +185,10 @@ describe("EtaTPEGCodeGenerator", () => {
         'import type { Parser } from "@suzumiyaaoba/tpeg-core";',
       );
       expect(result.code).toContain(
-        'import { literal } from "@suzumiyaaoba/tpeg-core";',
+        'import { literal, untagCapture } from "@suzumiyaaoba/tpeg-core";',
       );
       expect(result.code).toContain(
-        'export const test_hello: Parser<any> = literal("world");',
+        'export const test_hello: Parser<any> = untagCapture(literal("world"));',
       );
       expect(result.performance.templateEngine).toBe("eta");
     });
@@ -234,7 +234,7 @@ describe("EtaTPEGCodeGenerator", () => {
 
       expect(result.code).toContain('negatedCharClass(["0", "9"])');
       expect(result.code).toContain(
-        'import { negatedCharClass } from "@suzumiyaaoba/tpeg-core";',
+        'import { negatedCharClass, untagCapture } from "@suzumiyaaoba/tpeg-core";',
       );
     });
 
@@ -332,7 +332,7 @@ describe("EtaTPEGCodeGenerator", () => {
       });
 
       expect(result.code).toContain(
-        "export const main: Parser<any> = math.expr;",
+        "export const main: Parser<any> = untagCapture(math.expr);",
       );
       expect(result.warnings).toEqual([
         expect.stringContaining('"main" references "math.expr"'),
@@ -591,7 +591,9 @@ describe("EtaTPEGCodeGenerator", () => {
         includeTypes: false,
       });
 
-      expect(result.code).toContain('export const hello = literal("world");');
+      expect(result.code).toContain(
+        'export const hello = untagCapture(literal("world"));',
+      );
       expect(result.code).not.toContain(": Parser<any>");
     });
 
@@ -1121,6 +1123,55 @@ describe("EtaTPEGCodeGenerator: grammar validation", () => {
     ).rejects.toThrow(/globalPerformanceMonitor/);
   });
 
+  it("includeMonitoring actually wraps each rule with a start/end-timing call (regression: the monitor was imported and re-exported but no rule ever invoked it)", async () => {
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        createRuleDefinition("start", createIdentifier("word")),
+        createRuleDefinition(
+          "word",
+          createPlus(createCharacterClass([createCharRange("a", "z")], false)),
+        ),
+      ],
+    );
+
+    for (const optimize of [false, true]) {
+      const result = await generateEtaTypeScriptParser(grammar, {
+        optimize,
+        includeMonitoring: true,
+        includeTypes: false,
+      });
+
+      expect(result.code).toContain(
+        'import { globalPerformanceMonitor } from "@suzumiyaaoba/tpeg-generator";',
+      );
+      expect(result.code).toContain("export { globalPerformanceMonitor };");
+      // Each rule is wrapped in the monitoring IIFE -- `__monitored`
+      // holds the (possibly memoized/transformed) inner parser and the
+      // returned arrow times every invocation.
+      expect(result.code).toContain('globalPerformanceMonitor.start("start")');
+      expect(result.code).toContain('globalPerformanceMonitor.start("word")');
+      expect(result.code).toContain("const __monitored =");
+    }
+  });
+
+  it("includeMonitoring: false emits no monitor references at all", async () => {
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [createRuleDefinition("start", createStringLiteral("x"))],
+    );
+
+    const result = await generateEtaTypeScriptParser(grammar, {
+      optimize: true,
+      includeMonitoring: false,
+    });
+
+    expect(result.code).not.toContain("globalPerformanceMonitor");
+    expect(result.code).not.toContain("__monitored");
+  });
+
   it("rejects a rule body that is nothing but `~`", async () => {
     const grammar = createGrammarDefinition(
       "TestGrammar",
@@ -1315,7 +1366,9 @@ describe("EtaTPEGCodeGenerator: import precision (regression)", () => {
     expect(lines[0]).toBe(
       'import type { Parser } from "@suzumiyaaoba/tpeg-core";',
     );
-    expect(lines[1]).toBe('import { literal } from "@suzumiyaaoba/tpeg-core";');
+    expect(lines[1]).toBe(
+      'import { literal, untagCapture } from "@suzumiyaaoba/tpeg-core";',
+    );
   });
 
   it("a grammar with no tpeg-core combinator usage emits no empty tpeg-core import line", async () => {
@@ -1330,12 +1383,15 @@ describe("EtaTPEGCodeGenerator: import precision (regression)", () => {
       optimize: false,
     });
     expect(result.code).not.toContain("import {  }");
+    // `untagCapture` is always imported -- every rule's exported parser is
+    // wrapped to strip a residual CAPTURE_TAG at the rule boundary, and a
+    // bare external-parser reference could itself return a tagged value.
     expect(
-      result.imports.some(
+      result.imports.filter(
         (line) =>
           !line.startsWith("import type") &&
           line.includes('from "@suzumiyaaoba/tpeg-core";'),
       ),
-    ).toBe(false);
+    ).toEqual(['import { untagCapture } from "@suzumiyaaoba/tpeg-core";']);
   });
 });

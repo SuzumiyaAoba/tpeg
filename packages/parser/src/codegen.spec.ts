@@ -46,7 +46,7 @@ describe("TPEG Code Generation", () => {
       const result = generator.generateGrammar(grammar);
 
       expect(result.code).toContain(
-        'export const hello: Parser<any> = literal("hello");',
+        'export const hello: Parser<any> = untagCapture(literal("hello"));',
       );
       expect(result.exports).toEqual(["hello"]);
     });
@@ -427,7 +427,7 @@ describe("TPEG Code Generation", () => {
       const result = generator.generateGrammar(grammar);
 
       expect(result.code).toContain(
-        "export const main: Parser<any> = math.expr;",
+        "export const main: Parser<any> = untagCapture(math.expr);",
       );
       expect(result.exports).toEqual(["main"]);
       // No import is generated for `math` (see `generateQualifiedIdentifierCode`'s
@@ -549,7 +549,7 @@ describe("TPEG Code Generation", () => {
         'import type { Parser } from "@suzumiyaaoba/tpeg-core"',
       );
       expect(result.code).toContain(
-        'import { literal } from "@suzumiyaaoba/tpeg-core"',
+        'import { literal, untagCapture } from "@suzumiyaaoba/tpeg-core"',
       );
     });
 
@@ -597,7 +597,7 @@ describe("TPEG Code Generation", () => {
       const result = generateTypeScriptParser(grammar);
 
       expect(result.code).toContain(
-        'export const hello: Parser<any> = literal("hello");',
+        'export const hello: Parser<any> = untagCapture(literal("hello"));',
       );
       expect(result.imports.length).toBeGreaterThan(0);
       expect(result.exports).toEqual(["hello"]);
@@ -761,10 +761,10 @@ describe("TPEG Code Generation", () => {
       const result = generator.generateGrammar(grammar);
 
       expect(result.code).toContain(
-        'export const a: Parser<any> = sequence(literal("("), lazy(() => b), literal(")"));',
+        'export const a: Parser<any> = untagCapture(sequence(literal("("), lazy(() => b), literal(")")));',
       );
       expect(result.code).toContain(
-        'export const b: Parser<any> = choice(a, literal("x"));',
+        'export const b: Parser<any> = untagCapture(choice(a, literal("x")));',
       );
       expect(result.imports.join("\n")).toContain("lazy");
     });
@@ -790,7 +790,9 @@ describe("TPEG Code Generation", () => {
       const generator = new TPEGCodeGenerator();
       const result = generator.generateGrammar(grammar);
 
-      expect(result.code).toContain("export const term: Parser<any> = number;");
+      expect(result.code).toContain(
+        "export const term: Parser<any> = untagCapture(number);",
+      );
       expect(result.imports.join("\n")).not.toContain("lazy");
     });
 
@@ -818,7 +820,7 @@ describe("TPEG Code Generation", () => {
       const result = generator.generateGrammar(grammarWithExternalFoo);
 
       expect(result.code).toContain("export const g_baz");
-      expect(result.code).toContain("= foo;");
+      expect(result.code).toContain("= untagCapture(foo);");
       expect(result.code).not.toContain("g_foo");
     });
   });
@@ -851,7 +853,7 @@ describe("TPEG Code Generation", () => {
       // A raw control byte here would make this generated source invalid
       // TypeScript (an unterminated string literal).
       expect(result.code).toContain(
-        'export const ws: Parser<any> = charClass(" ", "\\t", "\\n", "\\r");',
+        'export const ws: Parser<any> = untagCapture(charClass(" ", "\\t", "\\n", "\\r"));',
       );
     });
   });
@@ -873,7 +875,7 @@ describe("TPEG Code Generation", () => {
       const result = generator.generateGrammar(grammar);
 
       expect(result.code).toContain(
-        'export const expr: Parser<any> = memoize(literal("x"));',
+        'export const expr: Parser<any> = memoize(untagCapture(literal("x")));',
       );
       expect(result.imports.join("\n")).toContain(
         'import { memoize } from "@suzumiyaaoba/tpeg-combinator";',
@@ -896,7 +898,7 @@ describe("TPEG Code Generation", () => {
       const result = generator.generateGrammar(grammar);
 
       expect(result.code).toContain(
-        'export const expr: Parser<any> = memoize(literal("x"), { maxCacheSize: 256 });',
+        'export const expr: Parser<any> = memoize(untagCapture(literal("x")), { maxCacheSize: 256 });',
       );
     });
 
@@ -1311,17 +1313,18 @@ describe("generateTypeScriptParser: import precision (regression)", () => {
     const result = generateTypeScriptParser(grammar, { includeImports: true });
     expect(result.code).not.toContain("import {  }");
     // `import type { Parser } from "@suzumiyaaoba/tpeg-core";` is still
-    // expected (always emitted under `includeImports: true`) -- what
-    // must be ABSENT is the separate, non-type combinator import line
-    // (`import { <combinators> } from ...`), since there are none to
-    // import here.
+    // expected (always emitted under `includeImports: true`), and so is
+    // `untagCapture` -- every rule's exported parser is wrapped to strip a
+    // residual CAPTURE_TAG at the rule boundary, and a bare external-parser
+    // reference could itself return a tagged value. What must be ABSENT is
+    // any combinator import beyond that.
     expect(
-      result.imports.some(
+      result.imports.filter(
         (line) =>
           !line.startsWith("import type") &&
           line.includes('from "@suzumiyaaoba/tpeg-core";'),
       ),
-    ).toBe(false);
+    ).toEqual(['import { untagCapture } from "@suzumiyaaoba/tpeg-core";']);
   });
 
   test("a trailing Cut with nothing after it (\"a\" ~) does not import 'commit' or 'commitAtTopLevel' (regression: collectUsedCombinators/containsGlobalCut only checked 'a Cut exists', not whether generateSequence actually emits a call for it)", () => {

@@ -30,7 +30,7 @@ import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   JS_IDENTIFIER_CONT,
   JS_IDENTIFIER_START,
-  REGEX_PREFIX_KEYWORDS,
+  createJsExprTracker,
   scanRegexLiteral,
   skipBlockComment,
   skipLineComment,
@@ -149,11 +149,13 @@ const grammarRuleExpression: Parser<Expression> = (
   let activeBraceDepth = 0;
   // Inside an action/transform body (activeBraceDepth > 0) the scanned
   // text is JavaScript, so a `/` can open a regex literal -- recognized
-  // via the same regex-vs-division heuristic `scanBalancedBraces` uses:
-  // true where a value/expression is expected, false where an operand
-  // just ended. At brace depth 0 the scanned text is TPEG syntax where
-  // `/` is the choice operator and the flag is never consulted.
-  let exprExpected = true;
+  // via the same regex-vs-division heuristic `scanBalancedBraces` uses
+  // (see `createJsExprTracker`: `)`/`}` restore different expectations
+  // depending on whether they close a control-statement paren / object
+  // literal or an expression paren / block). At brace depth 0 the scanned
+  // text is TPEG syntax where `/` is the choice operator and the flag is
+  // never consulted.
+  const tracker = createJsExprTracker();
 
   while (endPos < input.length && !foundEnd) {
     const char = input[endPos];
@@ -170,7 +172,7 @@ const grammarRuleExpression: Parser<Expression> = (
       // every following whitespace-boundary check in this rule -- and
       // often the parse of the rest of the file.
       endPos = skipStringLiteral(input, endPos, char);
-      exprExpected = false;
+      tracker.operand();
       continue;
     }
 
@@ -194,7 +196,7 @@ const grammarRuleExpression: Parser<Expression> = (
         i++;
       }
       endPos = Math.min(i + 1, input.length);
-      exprExpected = false;
+      tracker.operand();
       continue;
     }
 
@@ -208,36 +210,69 @@ const grammarRuleExpression: Parser<Expression> = (
       continue;
     }
 
-    if (char === "/" && activeBraceDepth > 0 && exprExpected) {
+    if (char === "/" && activeBraceDepth > 0 && tracker.exprExpected) {
       // A `/` inside an action/transform body where a value is expected
-      // opens a regex literal -- e.g. `= /}/` -- whose contents must not
-      // be mistaken for braces, quotes, or comments. Without this, a `}`
-      // inside the pattern decremented `activeBraceDepth` and desynced
+      // opens a regex literal -- e.g. `= /}/` or `if (ok) /}/` (a `)`
+      // closing a control-statement paren is followed by a statement, so
+      // `tracker.exprExpected` is true there too) -- whose contents must
+      // not be mistaken for braces, quotes, or comments. Without this, a
+      // `}` inside the pattern decremented `activeBraceDepth` and desynced
       // the whole boundary scan. A `/` that does not start a well-formed
       // regex here is a division operator instead.
       const regexEnd = scanRegexLiteral(input, endPos);
       if (regexEnd !== -1) {
         endPos = regexEnd;
-        exprExpected = false;
+        tracker.operand();
         continue;
       }
-      exprExpected = true;
+      tracker.punct("/");
+      endPos++;
+      continue;
+    }
+    if (char === "/" && activeBraceDepth > 0 && !tracker.exprExpected) {
+      // Division operator inside an action body -- an operand follows.
+      tracker.punct("/");
       endPos++;
       continue;
     }
 
     if (char === "{") {
       activeBraceDepth++;
-      exprExpected = true;
+      tracker.openBrace();
       endPos++;
       continue;
     }
 
-    if (char === "}" && activeBraceDepth > 0) {
+    if (char === "}") {
+      // A "}" at brace depth 0 can ONLY be the enclosing grammar block's
+      // own closing brace, reached with no intervening whitespace (e.g.
+      // `start = "a"}`): every other "}" inside a rule body is either
+      // depth-tracked as part of an action/transform/quantifier block or
+      // hidden inside a string literal or character class -- both of which
+      // the cases above skip atomically before this point ever sees them.
+      // Requiring a whitespace run before recognizing "}" as a boundary
+      // (the check inside the whitespace branch below) let such a brace be
+      // silently absorbed into this rule's slice, after which
+      // `expression()` stopped short at it and the full-consumption check
+      // reported a parse failure on a perfectly valid rule.
+      if (activeBraceDepth === 0) {
+        foundEnd = true;
+        break;
+      }
       activeBraceDepth--;
-      exprExpected = true;
+      tracker.closeBrace();
       endPos++;
       continue;
+    }
+
+    // Likewise, "@" can never appear inside an expression at depth 0 -- it
+    // only ever starts a grammarItem-level annotation -- so it is a
+    // boundary regardless of whether whitespace precedes it (e.g.
+    // `start = "a"@skip: ws`). The same check inside the whitespace branch
+    // below previously missed the no-whitespace form.
+    if (char === GRAMMAR_SYMBOLS.ANNOTATION_PREFIX && activeBraceDepth === 0) {
+      foundEnd = true;
+      break;
     }
 
     if (isLineBreakOrSpaceOrTab(char)) {
@@ -390,7 +425,7 @@ const grammarRuleExpression: Parser<Expression> = (
     }
 
     // Track whether a `/` encountered inside an action body could open a
-    // regex literal (see the `exprExpected` declaration above). The values
+    // regex literal (see the `tracker` declaration above). The values
     // produced while outside an action are never consulted.
     if (JS_IDENTIFIER_START.test(char ?? "")) {
       let wordEnd = endPos + 1;
@@ -400,23 +435,27 @@ const grammarRuleExpression: Parser<Expression> = (
       ) {
         wordEnd++;
       }
-      exprExpected = REGEX_PREFIX_KEYWORDS.has(input.slice(endPos, wordEnd));
+      tracker.word(input.slice(endPos, wordEnd));
       endPos = wordEnd;
       continue;
     }
     if (char !== undefined && char >= "0" && char <= "9") {
-      exprExpected = false;
-    } else if (char === ")" || char === "]") {
-      exprExpected = false;
+      tracker.operand();
+    } else if (char === "(") {
+      tracker.openParen();
+    } else if (char === ")") {
+      tracker.closeParen();
+    } else if (char === "]") {
+      tracker.operand();
     } else if ((char === "+" || char === "-") && input[endPos + 1] === char) {
       // Postfix `++`/`--` ends an operand.
-      exprExpected = false;
+      tracker.operand();
       endPos += 2;
       continue;
-    } else if (!isLineBreakOrSpaceOrTab(char)) {
+    } else if (char !== undefined && !isLineBreakOrSpaceOrTab(char)) {
       // Any other punctuator cannot end an operand, so a value is
       // expected next.
-      exprExpected = true;
+      tracker.punct(char);
     }
 
     endPos++;

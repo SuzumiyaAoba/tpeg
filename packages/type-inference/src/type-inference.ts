@@ -133,6 +133,18 @@ export interface InferredType {
   };
   /** For baseType "union": the inferred type of each alternative, used to build a type guard */
   unionMembers?: InferredType[];
+  /** For an isArray `T[]` type: the inferred element type, used to build
+   * an element-checking type guard (`value.every(...)`) instead of a bare
+   * `Array.isArray(value)` that would accept any array regardless of
+   * contents. */
+  arrayElement?: InferredType;
+  /** For an isArray fixed-shape `[A, B, ...]` tuple type: each member's
+   * inferred type in order -- lets a type guard check length AND each
+   * position's shape. */
+  tupleMembers?: InferredType[];
+  /** For an isArray union-of-tuples type (e.g. `[T] | []` from
+   * `optional(...)`): each variant's member list, in order. */
+  tupleVariants?: InferredType[][];
 }
 
 /**
@@ -714,7 +726,17 @@ export class TypeInferenceEngine {
       // readability (`"a -> b -> a"` reads as a cycle; `"a -> b"` alone
       // doesn't make the closure obvious), but that's a display-only
       // concern separate from the stored array's shape.
-      const cycle = [...this.context.ruleStack];
+      //
+      // Only rules from `ruleName`'s FIRST occurrence on the stack onward
+      // actually form the cycle: the stack is the full DFS path from
+      // whichever rule `inferGrammarTypes` started at, so a rule that
+      // merely REFERENCES a circular one (`a -> b`, `b -> b`) used to be
+      // recorded as part of the cycle itself (`[a, b]` for the true cycle
+      // `[b]`) -- and re-reported under every prefix reaching it.
+      const cycleStart = this.context.ruleStack.indexOf(ruleName);
+      const cycle = this.context.ruleStack.slice(
+        cycleStart === -1 ? 0 : cycleStart,
+      );
       throw new TypeInferenceError(
         `Circular dependency detected: ${cycle.join(" -> ")} -> ${ruleName}`,
         expression,
@@ -900,6 +922,7 @@ export class TypeInferenceEngine {
       documentation: this.options.generateDocumentation
         ? "Sequence of expressions as tuple"
         : undefined,
+      tupleMembers: elementTypes,
     };
   }
 
@@ -1004,6 +1027,7 @@ export class TypeInferenceEngine {
       documentation: this.options.generateDocumentation
         ? "Array of zero or more repetitions"
         : undefined,
+      arrayElement: innerType,
     };
   }
 
@@ -1047,6 +1071,7 @@ export class TypeInferenceEngine {
       documentation: this.options.generateDocumentation
         ? "Array of one or more repetitions"
         : undefined,
+      arrayElement: innerType,
     };
   }
 
@@ -1079,6 +1104,7 @@ export class TypeInferenceEngine {
       documentation: this.options.generateDocumentation
         ? "Optional expression"
         : undefined,
+      tupleVariants: [[innerType], []],
     };
   }
 
@@ -1128,6 +1154,7 @@ export class TypeInferenceEngine {
       baseType: innerType.baseType,
       imports: innerType.imports,
       documentation,
+      arrayElement: innerType,
     };
   }
 

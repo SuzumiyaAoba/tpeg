@@ -801,6 +801,66 @@ export interface NullableRepetitionIssue {
   readonly nodeType: "Star" | "Plus" | "Quantified";
 }
 
+/**
+ * `true` only when `expr` is PROVABLY nullable from what this grammar
+ * itself declares -- the mirror image of `isNullable`'s "unresolved ->
+ * true" default. `isNullable` treats an `Identifier` naming no rule of
+ * this grammar (the documented external-parser escape hatch -- see
+ * `grammar-validation.ts`'s module doc comment) and a cross-module
+ * `QualifiedIdentifier` as nullable because that's the safe direction
+ * for FIRST-set computation. For `collectNullableRepetitions`'s
+ * *rejection* check it is exactly backwards: `ext*` was rejected even
+ * though nothing in the grammar can prove `ext` nullable, making the
+ * external escape hatch unusable under any unbounded repetition. Only a
+ * construct this grammar can prove nullable gets flagged -- an external
+ * parser that happens to be nullable at runtime still hits
+ * `zeroOrMore`'s zero-progress guard (`createInfiniteLoopError`), which
+ * is the correct layer to own that case.
+ */
+const isProvablyNullable = (
+  expr: Expression,
+  nullableRules: ReadonlyMap<string, boolean>,
+): boolean => {
+  switch (expr.type) {
+    case "StringLiteral":
+      return expr.value === "";
+    case "CharacterClass":
+    case "AnyChar":
+      return false;
+    case "Identifier":
+      return nullableRules.get(expr.name) ?? false;
+    case "QualifiedIdentifier":
+      return false;
+    case "Sequence":
+      return expr.elements.every((el) => isProvablyNullable(el, nullableRules));
+    case "Choice":
+      return expr.alternatives.some((alt) =>
+        isProvablyNullable(alt, nullableRules),
+      );
+    case "Group":
+      return isProvablyNullable(expr.expression, nullableRules);
+    case "Star":
+    case "Optional":
+      return true;
+    case "Plus":
+      return isProvablyNullable(expr.expression, nullableRules);
+    case "Quantified":
+      return (
+        expr.min === 0 || isProvablyNullable(expr.expression, nullableRules)
+      );
+    case "PositiveLookahead":
+    case "NegativeLookahead":
+    case "Cut":
+      // Zero-width constructs: provably never consume input.
+      return true;
+    case "LabeledExpression":
+    case "ActionExpression":
+      return isProvablyNullable(expr.expression, nullableRules);
+    default:
+      return false;
+  }
+};
+
 const collectNullableRepetitions = (
   expr: Expression,
   ruleName: string,
@@ -810,7 +870,7 @@ const collectNullableRepetitions = (
   switch (expr.type) {
     case "Star":
     case "Plus":
-      if (isNullable(expr.expression, analysis.nullableRules)) {
+      if (isProvablyNullable(expr.expression, analysis.nullableRules)) {
         issues.push({ ruleName, nodeType: expr.type });
       }
       collectNullableRepetitions(expr.expression, ruleName, analysis, issues);
@@ -818,7 +878,7 @@ const collectNullableRepetitions = (
     case "Quantified":
       if (
         expr.max === undefined &&
-        isNullable(expr.expression, analysis.nullableRules)
+        isProvablyNullable(expr.expression, analysis.nullableRules)
       ) {
         issues.push({ ruleName, nodeType: "Quantified" });
       }

@@ -345,15 +345,21 @@ export class TypeIntegrationEngine {
 
   /**
    * Build the boolean expression (no "return"/";") that checks whether
-   * `value` matches an inferred type, for use in a type guard body.
+   * `valueExpr` matches an inferred type, for use in a type guard body.
+   * `valueExpr` is the JS expression naming the value under test --
+   * `"value"` at the top level, an element/member expression inside
+   * array/tuple checks.
    */
-  private guardExpression(inferredType: InferredType): string {
+  private guardExpression(
+    inferredType: InferredType,
+    valueExpr = "value",
+  ): string {
     // Checked before the string-literal heuristic below: a union's own
     // typeString (e.g. `"yes" | "no"`) can itself start and end with a
     // quote, which would otherwise be misread as a single string literal.
     if (inferredType.baseType === "union" && inferredType.unionMembers) {
       return inferredType.unionMembers
-        .map((member) => `(${this.guardExpression(member)})`)
+        .map((member) => `(${this.guardExpression(member, valueExpr)})`)
         .join(" || ");
     }
     // Checked BEFORE `baseType`'s own per-kind branches below: `inferStarType`/
@@ -369,7 +375,7 @@ export class TypeIntegrationEngine {
     // return type is a bare `value is T` predicate -- any boolean expression
     // type-checks regardless of whether it agrees with the runtime shape.
     if (inferredType.isArray) {
-      return "Array.isArray(value)";
+      return this.arrayGuardExpression(inferredType, valueExpr);
     }
     if (
       inferredType.typeString.startsWith('"') &&
@@ -377,21 +383,74 @@ export class TypeIntegrationEngine {
     ) {
       // String literal type
       const literal = inferredType.typeString.slice(1, -1);
-      return `typeof value === "string" && value === "${literal}"`;
+      return `typeof ${valueExpr} === "string" && ${valueExpr} === "${literal}"`;
     }
     if (inferredType.baseType === "string") {
-      return `typeof value === "string"`;
+      return `typeof ${valueExpr} === "string"`;
+    }
+    if (inferredType.baseType === "number") {
+      return `typeof ${valueExpr} === "number"`;
+    }
+    if (inferredType.baseType === "boolean") {
+      return `typeof ${valueExpr} === "boolean"`;
     }
     if (inferredType.baseType === "object") {
-      return `typeof value === "object" && value !== null`;
+      return `typeof ${valueExpr} === "object" && ${valueExpr} !== null`;
     }
     if (inferredType.baseType === "void") {
       // Lookaheads (inferLookaheadType) never produce a value, so the
       // runtime result actually is undefined -- unlike the generic
       // fallback below, "!== undefined" would be backwards here.
-      return "value === undefined";
+      return `${valueExpr} === undefined`;
     }
-    return "value !== undefined";
+    return `${valueExpr} !== undefined`;
+  }
+
+  /**
+   * The `isArray` case of {@link guardExpression}: checks `valueExpr` is an
+   * array AND that its contents match the inferred element/member shapes,
+   * rather than a bare `Array.isArray` which would accept `[1,2,3]` for a
+   * `string[]` or a wrong-arity tuple. Falls back to `Array.isArray` only
+   * when the inferred type carries no element information (e.g. an
+   * externally-supplied `unknown[]`).
+   */
+  private arrayGuardExpression(
+    inferredType: InferredType,
+    valueExpr: string,
+  ): string {
+    if (inferredType.tupleVariants) {
+      const variants = inferredType.tupleVariants.map((members) =>
+        this.tupleVariantGuard(members, valueExpr),
+      );
+      return `Array.isArray(${valueExpr}) && (${variants.join(" || ")})`;
+    }
+    if (inferredType.tupleMembers) {
+      return `Array.isArray(${valueExpr}) && ${this.tupleVariantGuard(inferredType.tupleMembers, valueExpr)}`;
+    }
+    if (inferredType.arrayElement) {
+      return `Array.isArray(${valueExpr}) && ${valueExpr}.every((el: unknown) => ${this.guardExpression(inferredType.arrayElement as InferredType, "el")})`;
+    }
+    return `Array.isArray(${valueExpr})`;
+  }
+
+  /**
+   * One tuple shape's `length === N && per-member checks` clause for
+   * {@link arrayGuardExpression}. A zero-member variant reduces to the
+   * length check alone (the `[]` half of `[T] | []`).
+   */
+  private tupleVariantGuard(
+    members: InferredType[],
+    valueExpr: string,
+  ): string {
+    const lengthCheck = `${valueExpr}.length === ${members.length}`;
+    if (members.length === 0) return lengthCheck;
+    const memberChecks = members
+      .map(
+        (member, i) =>
+          `(${this.guardExpression(member, `${valueExpr}[${i}]`)})`,
+      )
+      .join(" && ");
+    return `${lengthCheck} && ${memberChecks}`;
   }
 
   /**
