@@ -5,6 +5,7 @@
  * This is a basic implementation supporting core TPEG features.
  */
 
+import { codeContainsIdentifier } from "./brace-scanner";
 import { escapeStringLiteral } from "./constants";
 import { analyzeFirstSets, assertNoNullableRepetition } from "./first-sets";
 import {
@@ -375,8 +376,12 @@ export const collectTopLevelLabels = (expr: Expression): string[] => {
 
 /**
  * Narrows a label list down to the ones an action's code actually mentions
- * (matched as a whole word, so a label named `char` doesn't false-match
- * inside `charAt`). An unconditionally-destructured label the action ignores
+ * (matched as a whole identifier token, so a label named `char` doesn't
+ * false-match inside `charAt` -- and no longer false-matches inside string
+ * literals, comments, or regex bodies either: `codeContainsIdentifier`
+ * skips those, while still counting a label inside a `` ${ ... } ``
+ * template interpolation, which is real code). An
+ * unconditionally-destructured label the action ignores
  * would otherwise be a real `tsc --noEmit` failure on a saved generated file
  * under `noUnusedLocals` - never surfaced by dynamically `new Function`-eval'd
  * generated code in this package's own tests, which skips type-checking
@@ -385,8 +390,7 @@ export const collectTopLevelLabels = (expr: Expression): string[] => {
 export const filterReferencedLabels = (
   code: string,
   labels: string[],
-): string[] =>
-  labels.filter((label) => new RegExp(`\\b${label}\\b`).test(code));
+): string[] => labels.filter((label) => codeContainsIdentifier(code, label));
 
 /**
  * Wraps an alternative's generated parser expression so that, on a
@@ -402,14 +406,21 @@ export const wrapWithAction = (
   includeTypes: boolean,
 ): string => {
   // Only declare `$$` when something can actually reference it - a label
-  // destructure reads it, and the substring check covers a bare `$$` in the
-  // action body (e.g. `return $$.join("")` for an unlabeled expression). An
+  // destructure reads it, and the whole-token check covers a bare `$$` in
+  // the action body (e.g. `return $$.join("")` for an unlabeled
+  // expression, including one inside a `${ ... }` interpolation) WITHOUT
+  // counting a `$$` inside a string literal, comment, or regex body --
+  // the previous substring check did, emitting an unused `const $$` that
+  // fails `tsc --noEmit` under `noUnusedLocals` (see
+  // `filterReferencedLabels` above, and `codeContainsIdentifier` in
+  // `brace-scanner.ts` for the scanning rule). An
   // action that ignores its match entirely (e.g. `{ return { type: "X" }; }`)
   // would otherwise leave `$$` unused, which fails a real generated file's
   // own `tsc --noEmit` under `noUnusedLocals` (never surfaced by this
   // package's own tests, which execute generated code via `new Function`
   // rather than saving and compiling it as a file).
-  const needsCaptureValue = labels.length > 0 || actionCode.includes("$$");
+  const needsCaptureValue =
+    labels.length > 0 || codeContainsIdentifier(actionCode, "$$");
   // captureSequence()'s return type is a union of the merged capture object
   // and a positional tuple (it can't statically know which one a given call
   // produces), so an untyped $$ fails to typecheck a destructure of any

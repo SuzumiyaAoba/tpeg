@@ -1100,11 +1100,6 @@ export class TypeInferenceEngine {
   private inferQuantifiedType(expression: Quantified): InferredType {
     const innerType = this.inferExpressionType(expression.expression);
 
-    // If min === max === 1, it's just the inner type
-    if (expression.min === 1 && expression.max === 1) {
-      return innerType;
-    }
-
     const documentation = this.options.generateDocumentation
       ? `Quantified expression: {${expression.min},${expression.max ?? ""}}`
       : undefined;

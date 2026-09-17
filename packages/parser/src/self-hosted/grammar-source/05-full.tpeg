@@ -53,7 +53,19 @@ grammar SelfHostFull {
 
   singleQuotedActionString = "'" chars:(escapedActionChar / [^'\\])* "'" { return "'" + chars.join("") + "'"; }
 
-  templateActionString = "`" chars:(escapedActionChar / [^`\\])* "`" { return "`" + chars.join("") + "`"; }
+  // A template literal's `${ ... }` interpolation is real JavaScript --
+  // it can contain nested braces, strings, comments, regexes, and even
+  // nested template literals -- so it is scanned with the same
+  // actionContent machinery as a block body (mirroring brace-scanner.ts's
+  // skipStringLiteral -> scanJsToBlockClose recursion). A bare `$` not
+  // followed by `{` is ordinary template text (handled by the catch-all
+  // char alternative below, which templateInterp's ordered choice shadows
+  // only when "${" is literally present).
+  templateInterp = "${" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionContent* "}" {
+    return "${" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + "}";
+  }
+
+  templateActionString = "`" chars:(escapedActionChar / templateInterp / !("`" / "\\") c:.)* "`" { return "`" + chars.join("") + "`"; }
 
   actionStringLiteral = doubleQuotedActionString / singleQuotedActionString / templateActionString
 
@@ -132,6 +144,19 @@ grammar SelfHostFull {
   // sequence continuations).
   wsAndComments = ([ \t\n\r] / actionLineComment / actionBlockComment)*
 
+  // A `///` documentation line as a TAGGED value ({ doc }) so a leading
+  // trivia run can collect it instead of discarding it -- mirrors
+  // transforms.ts's docCollectingSeparator. Tried before the `//`
+  // alternative everywhere it appears (a `///` line also starts with
+  // `//`, same shadowing reason as grammar.ts's grammarItem).
+  docCommentRaw = "///" chars:lineCommentChar* { return { doc: chars.join("").trim() }; }
+
+  // optionalWhitespaceOrComment + `///` collection: whitespace and
+  // comments are skipped like wsAndComments, but each `///` line yields a
+  // { doc } element in the result array (whitespace/`//`/`/* */` elements
+  // yield strings) so the caller can attach them as documentation.
+  wsAndCommentsOrDocs = ([ \t\n\r] / docCommentRaw / actionLineComment / actionBlockComment)*
+
   // Required variant (requiredWhitespaceOrComment): at least one
   // whitespace/comment char -- a comment alone satisfies it, matching
   // the hand-written parser's separator positions (after "import",
@@ -205,17 +230,32 @@ grammar SelfHostFull {
 
   annotationValue = quotedStringValue / identifierName
 
-  keyValueAnnotation = interWs "@" key:identifierName interWs ":" interWs value:annotationValue {
+  // Keys with their own dedicated annotation syntax (grammar.ts's
+  // DEDICATED_ANNOTATION_KEYS) -- the generic "@key: value"/"@key" forms
+  // reject them (the `!dedicatedAnnotationKey` lookahead below), so a
+  // MALFORMED dedicated annotation (e.g. `@export: "a"`, a quoted string
+  // where the dedicated form wants `[names]`) surfaces as a parse error
+  // instead of being silently swallowed as a generic annotation that
+  // nothing downstream reads.
+  dedicatedAnnotationKey = ("export" / "dependencies" / "conflicts" / "requires" / "memoize") !identContChar
+
+  keyValueAnnotation = interWs "@" !dedicatedAnnotationKey key:identifierName interWs ":" interWs value:annotationValue {
     return { type: "GrammarAnnotation", key, value };
   }
 
-  flagAnnotation = interWs "@" key:identifierName {
+  flagAnnotation = interWs "@" !dedicatedAnnotationKey key:identifierName {
     return { type: "GrammarAnnotation", key, value: "" };
   }
 
   grammarAnnotationNode = keyValueAnnotation / flagAnnotation
 
   singleLineCommentNode = "//" chars:lineCommentChar* { return { kind: "comment" }; }
+
+  // `///` carries its trimmed text as a "documentation" item so the
+  // grammar-block action can attach it to the next rule's `documentation`
+  // field -- mirrors grammar.ts's documentationComment (which `///` would
+  // otherwise never reach, shadowed by the `//` single-line alternative).
+  docCommentNode = "///" chars:lineCommentChar* { return { kind: "documentation", value: chars.join("").trim() }; }
 
   blockCommentNode = "/*" chars:blockCommentChar* "*/" { return { kind: "comment" }; }
 
@@ -226,7 +266,7 @@ grammar SelfHostFull {
   // skips whitespace. Used at positions that aren't grammar items in their
   // own right (grammarItemNode's own comment alternatives cover the
   // between-items case), just skippable filler before a keyword/brace.
-  leadingContentUnit = blockCommentNode / singleLineCommentNode / interWsPlus
+  leadingContentUnit = blockCommentNode / docCommentNode / singleLineCommentNode / interWsPlus
 
   leadingContent = leadingContentUnit*
 
@@ -273,8 +313,14 @@ grammar SelfHostFull {
 
   // Matches the literal key "export" only (not any "@key: [...]"), same as
   // grammar.ts's exportDeclaration - this is why it must be tried before
-  // moduleInfoListAnnotationNode below, which accepts any key.
-  exportDeclarationNode = interWs "@export" wsAndComments ":" wsAndComments rules:exportRuleList {
+  // moduleInfoListAnnotationNode below, which accepts any key. The `~`
+  // cut after the whole-word boundary mirrors grammar.ts's
+  // malformedExportAnnotation: once "@export" is seen, a failure in the
+  // rest of the declaration is FATAL (a malformed `@export` is a parse
+  // error, not a generic annotation). `@exportFoo` is a different key
+  // entirely -- the `!identContChar` boundary check fails BEFORE the cut,
+  // so it still falls through to the generic annotations.
+  exportDeclarationNode = interWs "@export" !identContChar ~ wsAndComments ":" wsAndComments rules:exportRuleList {
     return { type: "ExportDeclaration", rules };
   }
 
@@ -289,7 +335,10 @@ grammar SelfHostFull {
   // grammarAnnotationNode (whose keyValueAnnotation alternative would
   // otherwise fail on the "[" value and fall through to flagAnnotation,
   // wrongly matching just "@key" and leaving ": [...]" dangling).
-  moduleInfoListAnnotationNode = interWs "@" key:identifierName wsAndComments ":" wsAndComments values:quotedStringList {
+  // Mirrors module.ts's annotationKeyExcluding: every dedicated key OTHER
+  // than this form's own (@dependencies/@conflicts) is rejected, so a
+  // malformed `@export: ["a"]`-style misfire can't fall through here.
+  moduleInfoListAnnotationNode = interWs "@" !(("export" / "requires" / "memoize") !identContChar) key:identifierName wsAndComments ":" wsAndComments values:quotedStringList {
     return { type: "ModuleInfoListAnnotation", key, values };
   }
 
@@ -302,8 +351,10 @@ grammar SelfHostFull {
   }
 
   // Generic "@key: { \"a\": \"b\" }" annotation (@requires) - same ordering
-  // rationale as moduleInfoListAnnotationNode above.
-  moduleInfoRecordAnnotationNode = interWs "@" key:identifierName wsAndComments ":" wsAndComments values:quotedStringRecord {
+  // rationale as moduleInfoListAnnotationNode above, and the same
+  // reserved-key exclusion (every dedicated key except this form's own
+  // @requires).
+  moduleInfoRecordAnnotationNode = interWs "@" !(("export" / "dependencies" / "conflicts" / "memoize") !identContChar) key:identifierName wsAndComments ":" wsAndComments values:quotedStringRecord {
     return { type: "ModuleInfoRecordAnnotation", key, values };
   }
 
@@ -311,9 +362,14 @@ grammar SelfHostFull {
     return [first, ...rest.map((r: any) => r[1])].join(".");
   }
 
-  grammarExtendsClause = "extends" interWsPlus name:dottedGrammarName { return name; }
+  // Comment-tolerant separators mirror grammar.ts's
+  // requiredWhitespaceOrComment/optionalWhitespaceOrComment (comments are
+  // allowed between syntactic elements everywhere in the grammar spec) --
+  // wsAndCommentsPlus/wsAndComments, not the whitespace-only
+  // interWsPlus/interWs.
+  grammarExtendsClause = "extends" wsAndCommentsPlus name:dottedGrammarName { return name; }
 
-  grammarIncludesClause = "includes" interWsPlus first:dottedGrammarName rest:(interWs "," interWs dottedGrammarName)* {
+  grammarIncludesClause = "includes" wsAndCommentsPlus first:dottedGrammarName rest:(wsAndComments "," wsAndComments dottedGrammarName)* {
     return [first, ...rest.map((r: any) => r[3])];
   }
 
@@ -348,7 +404,11 @@ grammar SelfHostFull {
   // `Name` or `Name<args>`, so returnTypeSpec keeps emitting
   // `{ type: "Result", generic: "number" }` for the common `Result<T>`
   // shape while unions/arrays/multi-arg generics are no longer truncated.
-  typeWs = chars:[ \t\n\r]* { return chars.join(""); }
+  // Separators INSIDE a type expression -- transforms.ts's
+  // skipTypeWhitespace skips comments as well as whitespace (and the
+  // comment text is part of the captured `text` slice, which is why the
+  // comment alternatives' raw return values are joined in verbatim).
+  typeWs = chars:([ \t\n\r] / actionLineComment / actionBlockComment)* { return chars.join(""); }
 
   typeObject = "{" parts:actionContent* "}" { return { text: "{" + parts.join("") + "}" }; }
 
@@ -385,34 +445,51 @@ grammar SelfHostFull {
     return rest.length === 0 && first.head ? { text, head: first.head } : { text };
   }
 
-  parameterType = name:identifierName interWs ":" interWs t:typeUnion {
+  // Signature separators are comment-tolerant (transforms.ts's
+  // optionalWhitespaceOrComment): `f(a /* c *\/: string)`, `f(a: string,
+  // /* c *\/ b: number)`, `f() /* c *\/ -> /* c *\/ T` all parse.
+  parameterType = name:identifierName wsAndComments ":" wsAndComments t:typeUnion {
     return { name, type: t.text, optional: false };
   }
 
-  parameterList = "(" interWs items:(parameterType (interWs "," interWs parameterType)*)? interWs ")" {
+  parameterList = "(" wsAndComments items:(parameterType (wsAndComments "," wsAndComments parameterType)*)? wsAndComments ")" {
     if (items.length === 0) return [];
     const [first, rest] = items[0];
     return [first, ...rest.map((r: any) => r[3])];
   }
 
-  returnTypeSpec = interWs "->" interWs t:typeUnion {
+  returnTypeSpec = wsAndComments "->" wsAndComments t:typeUnion {
     return t.head
       ? (t.head.generic !== undefined ? { type: t.head.name, generic: t.head.generic } : { type: t.head.name })
       : { type: t.text };
   }
 
-  transformFunctionNode = wsAndComments name:identifierName wsAndComments params:parameterList ret:returnTypeSpec wsAndComments body:actionBlock {
-    return { name, parameters: params, returnType: ret, body };
+  // Leading trivia is wsAndCommentsOrDocs so `///` lines before a function
+  // attach to its `documentation` field (transforms.ts's
+  // docCollectingSeparator) instead of being discarded as plain comments.
+  transformFunctionNode = trivia:wsAndCommentsOrDocs name:identifierName wsAndComments params:parameterList ret:returnTypeSpec wsAndComments body:actionBlock {
+    const documentation = trivia.filter((t: any) => typeof t === "object" && t !== null).map((t: any) => t.doc);
+    const fn: any = { name, parameters: params, returnType: ret, body };
+    if (documentation.length > 0) fn.documentation = documentation;
+    return fn;
   }
 
   // At least one function is required - "transforms T@typescript { }" fails
   // in the hand-written parser (transformFunctions never accepts zero), so
-  // this uses first+rest rather than a bare star().
-  transformFunctions = first:transformFunctionNode rest:(wsAndComments transformFunctionNode)* {
-    return [first, ...rest.map((r: any) => r[1])];
+  // this uses first+rest rather than a bare star(). No separator between
+  // functions on purpose: transformFunctionNode's own leading
+  // wsAndCommentsOrDocs already skips trivia AND collects `///` docs --
+  // a separate wsAndComments here would eat those doc lines before the
+  // next function could see them (same reason transforms.ts peeks with
+  // docCollectingSeparator instead of optionalWhitespaceOrComment).
+  transformFunctions = first:transformFunctionNode rest:transformFunctionNode* {
+    return [first, ...rest];
   }
 
-  transformDefinitionNode = wsAndComments "transforms" wsAndCommentsPlus info:transformSetName wsAndComments "{" wsAndComments functions:transformFunctions wsAndComments "}" {
+  // No wsAndComments between "{" and transformFunctions -- the first
+  // function's own wsAndCommentsOrDocs collects any `///` doc lines there;
+  // a plain wsAndComments would discard them (see transformFunctions).
+  transformDefinitionNode = wsAndComments "transforms" wsAndCommentsPlus info:transformSetName wsAndComments "{" functions:transformFunctions wsAndComments "}" {
     return {
       type: "TransformDefinition",
       transformSet: { name: info.name, targetLanguage: info.language, functions },
@@ -433,6 +510,7 @@ grammar SelfHostFull {
                   / a:grammarAnnotationNode { return { kind: "annotation", value: a }; }
                   / rule:ruleDefinitionNode { return { kind: "rule", value: rule }; }
                   / t:transformDefinitionNode { return { kind: "transform", value: t }; }
+                  / d:docCommentNode { return d; }
                   / c:singleLineCommentNode { return { kind: "comment" }; }
                   / c:blockCommentNode { return { kind: "comment" }; }
 
@@ -448,17 +526,27 @@ grammar SelfHostFull {
     let hasExport = false;
     const moduleInfoLists: Record<string, string[]> = {};
     const moduleInfoRecords: Record<string, Record<string, string>> = {};
+    // `///` documentation items accumulate and attach to the next rule's
+    // `documentation` field; any other item kind drops a pending run --
+    // mirrors grammar.ts's separateGrammarItems.
+    let pendingDocs: string[] = [];
 
     for (const i of items) {
-      if (i.kind === "annotation") annotations.push(i.value);
-      else if (i.kind === "rule") rules.push(i.value);
-      else if (i.kind === "transform") transforms.push(i.value);
-      else if (i.kind === "export") { hasExport = true; exportedRules.push(...i.value.rules); }
+      if (i.kind === "annotation") { annotations.push(i.value); pendingDocs = []; }
+      else if (i.kind === "rule") {
+        rules.push(pendingDocs.length > 0 ? { ...i.value, documentation: pendingDocs } : i.value);
+        pendingDocs = [];
+      }
+      else if (i.kind === "transform") { transforms.push(i.value); pendingDocs = []; }
+      else if (i.kind === "export") { hasExport = true; exportedRules.push(...i.value.rules); pendingDocs = []; }
       else if (i.kind === "moduleInfoList") {
         moduleInfoLists[i.key] = [...(moduleInfoLists[i.key] ?? []), ...i.values];
+        pendingDocs = [];
       } else if (i.kind === "moduleInfoRecord") {
         moduleInfoRecords[i.key] = { ...moduleInfoRecords[i.key], ...i.values };
-      }
+        pendingDocs = [];
+      } else if (i.kind === "documentation") pendingDocs.push(i.value);
+      // "comment" -- ignored, and does not break a pending doc run
     }
 
     const version = annotations.find((a: any) => a.key === "version")?.value;

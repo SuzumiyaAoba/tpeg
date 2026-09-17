@@ -5,6 +5,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import { TPEGCodeGenerator, generateTypeScriptParser } from "./codegen";
 import {
+  createActionExpression,
   createAnyChar,
   createCharRange,
   createCharacterClass,
@@ -699,7 +700,12 @@ describe("TPEG Code Generation", () => {
       expect(number("abc", pos).success).toBe(false);
     });
 
-    test("should leave a rule without a matching transform function unaffected", () => {
+    test("rejects a transform function whose name matches no declared rule", () => {
+      // Regression test for issue #65: a transform function binds to a
+      // rule by name, so "unrelatedRule" here is dead code that used to
+      // be silently dropped from generated output -- the generated parser
+      // compiled fine and simply never applied it. validateGrammar now
+      // rejects it at generation time like a duplicate rule name.
       const grammar = createGrammarDefinition(
         "TestGrammar",
         [],
@@ -719,10 +725,8 @@ describe("TPEG Code Generation", () => {
       );
 
       const generator = new TPEGCodeGenerator();
-      const result = generator.generateGrammar(grammar);
-
-      expect(result.code).toContain(
-        'export const hello: Parser<any> = literal("hello");',
+      expect(() => generator.generateGrammar(grammar)).toThrow(
+        /Transform function\(s\) matching no declared rule: "unrelatedRule"/,
       );
     });
   });
@@ -1424,5 +1428,82 @@ describe("generateTypeScriptParser: import precision (regression)", () => {
     const result = generateTypeScriptParser(grammar, { includeImports: true });
     expect(result.imports.join(" ")).toMatch(/\bcommitAtTopLevel\b/);
     expect(result.code).toContain('commitAtTopLevel(literal("b"))');
+  });
+});
+
+// Regression tests for issue #70: `wrapWithAction`/`filterReferencedLabels`
+// detected `$$` and label references with a naive `includes("$$")` /
+// `\blabel\b` substring test -- an occurrence inside a string literal,
+// comment, or regex counted as a real reference, emitting an unused
+// `const $$`/`const { label }` that fails `tsc --noEmit` under
+// `noUnusedLocals` on a saved generated file. `codeContainsIdentifier`
+// (brace-scanner.ts) now matches whole identifier tokens outside
+// strings/comments/regexes, while still counting `$$` inside a
+// `${ ... }` template interpolation (which is real code).
+describe("action-reference scanning ignores strings and comments (issue #70)", () => {
+  const generateActionRule = (actionCode: string) =>
+    generateTypeScriptParser(
+      createGrammarDefinition(
+        "T",
+        [],
+        [
+          createRuleDefinition(
+            "r",
+            createActionExpression(
+              createSequence([
+                createLabeledExpression("x", createStringLiteral("a")),
+                createStringLiteral("b"),
+              ]),
+              actionCode,
+            ),
+          ),
+        ],
+      ),
+      { includeImports: false, includeTypes: false },
+    );
+
+  test("'$$' inside a string literal does NOT emit 'const $$'", () => {
+    const result = generateActionRule('return "$$ is not a reference";');
+    expect(result.code).not.toContain("const $$");
+  });
+
+  test("'$$' inside a comment does NOT emit 'const $$'", () => {
+    const result = generateActionRule("// uses $$\nreturn 1;");
+    expect(result.code).not.toContain("const $$");
+  });
+
+  test("a label name inside a string literal is NOT destructured", () => {
+    // `x` is a real label on the expression, but the action only mentions
+    // it inside a string -- no `const { x }` destructure should appear.
+    const result = generateActionRule('return "x marks the spot";');
+    expect(result.code).not.toContain("const { x }");
+    // ...and since nothing references $$ either, no capture binding at all.
+    expect(result.code).not.toContain("const $$");
+  });
+
+  test("a label name inside a block comment is NOT destructured", () => {
+    const result = generateActionRule("/* x is captured above */\nreturn 1;");
+    expect(result.code).not.toContain("const { x }");
+  });
+
+  test("'$$$'/'$$foo' do not count as '$$' (whole-token match)", () => {
+    const result = generateActionRule("return $$$ + $$foo;");
+    expect(result.code).not.toContain("const $$");
+  });
+
+  test("a real '$$' reference still emits 'const $$' (control)", () => {
+    const result = generateActionRule('return $$.join("");');
+    expect(result.code).toContain("const $$");
+  });
+
+  test("'$$' inside a template interpolation DOES count (it is real code)", () => {
+    const result = generateActionRule("return `len=${$$.length}`;");
+    expect(result.code).toContain("const $$");
+  });
+
+  test("a really-referenced label IS destructured (control)", () => {
+    const result = generateActionRule("return x.toUpperCase();");
+    expect(result.code).toContain("const { x }");
+    expect(result.code).toContain("const $$");
   });
 });

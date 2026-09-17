@@ -256,6 +256,128 @@ const findCutOnlyRules = (grammar: GrammarDefinition): string[] => {
   return flagged;
 };
 
+// ============================================================================
+// Transform-function name checks
+// ============================================================================
+
+/**
+ * A transform function binds to a rule BY NAME (docs/peg-grammar.md's
+ * `rule_name(captures: ...) -> ...` convention): code generation looks the
+ * function up under a rule's own name (`codegen.ts`'s
+ * `collectTransformFunctions` builds `ruleName -> TransformFunction` and
+ * `wrapWithTransform` only ever queries it with a declared rule's name).
+ * Two consequences:
+ *
+ * - A function whose name matches NO declared rule is dead code that
+ *   silently never runs -- the generated parser compiles fine and simply
+ *   never applies it. Almost always a typo in the function name (or a
+ *   renamed rule whose transform wasn't renamed with it), so it's
+ *   rejected here the same way a duplicate rule name is: a
+ *   grammar-authoring error reported at generation time.
+ * - Two functions sharing one name in the SAME transform set silently
+ *   overwrite each other in that `byName` map (last declaration wins),
+ *   so the earlier one is dropped exactly like a duplicate rule name is
+ *   dropped by rule-name-keyed analysis. Checked per transform set --
+ *   two different-language sets legitimately reuse the same name (each
+ *   binds to the same rule for its own target).
+ */
+interface TransformNameIssue {
+  /** The transform set (`transforms <name>@<language> { ... }`). */
+  readonly setName: string;
+  readonly targetLanguage: string;
+  readonly functionName: string;
+}
+
+/** Transform functions whose name matches no declared rule of `grammar`. */
+const findUnmatchedTransformFunctions = (
+  grammar: GrammarDefinition,
+): TransformNameIssue[] => {
+  const ruleNames = new Set(grammar.rules.map((rule) => rule.name));
+  const unmatched: TransformNameIssue[] = [];
+  for (const transformDef of grammar.transforms ?? []) {
+    const { transformSet } = transformDef;
+    for (const fn of transformSet.functions) {
+      if (!ruleNames.has(fn.name)) {
+        unmatched.push({
+          setName: transformSet.name,
+          targetLanguage: transformSet.targetLanguage,
+          functionName: fn.name,
+        });
+      }
+    }
+  }
+  return unmatched;
+};
+
+/** Transform functions declared more than once within the SAME transform
+ * set (a name reused across two different sets is fine -- each set is a
+ * separate target binding). */
+const findDuplicateTransformFunctions = (
+  grammar: GrammarDefinition,
+): TransformNameIssue[] => {
+  const duplicates: TransformNameIssue[] = [];
+  for (const transformDef of grammar.transforms ?? []) {
+    const { transformSet } = transformDef;
+    const seen = new Set<string>();
+    const reported = new Set<string>();
+    for (const fn of transformSet.functions) {
+      if (seen.has(fn.name) && !reported.has(fn.name)) {
+        reported.add(fn.name);
+        duplicates.push({
+          setName: transformSet.name,
+          targetLanguage: transformSet.targetLanguage,
+          functionName: fn.name,
+        });
+      }
+      seen.add(fn.name);
+    }
+  }
+  return duplicates;
+};
+
+/**
+ * Throws on a transform function that matches no declared rule, or on a
+ * duplicate function name within one transform set -- see the doc comment
+ * above {@link TransformNameIssue} for why both are grammar-authoring
+ * errors reported at generation time rather than silently dropped.
+ * Exported so `@suzumiyaaoba/tpeg-generator`'s separate validator
+ * (`packages/generator/src/grammar-validation.ts`) can run the identical
+ * check with the identical message rather than keeping a second copy that
+ * would drift -- the same reason `validateGeneratedIdentifiers` below is
+ * imported there directly.
+ *
+ * @throws {Error} naming the offending function and its transform set.
+ */
+export const assertValidTransformFunctionNames = (
+  grammar: GrammarDefinition,
+): void => {
+  const unmatchedTransforms = findUnmatchedTransformFunctions(grammar);
+  if (unmatchedTransforms.length > 0) {
+    const details = unmatchedTransforms
+      .map(
+        (issue) =>
+          `"${issue.functionName}" in transforms ${issue.setName}@${issue.targetLanguage}`,
+      )
+      .join("; ");
+    throw new Error(
+      `Transform function(s) matching no declared rule: ${details} -- a transform function binds to a rule by name, so these are dead code that would silently never run (the generated parser compiles fine and simply never applies them). Check for a typo, or a renamed rule whose transform wasn't renamed with it.`,
+    );
+  }
+
+  const duplicateTransforms = findDuplicateTransformFunctions(grammar);
+  if (duplicateTransforms.length > 0) {
+    const details = duplicateTransforms
+      .map(
+        (issue) =>
+          `"${issue.functionName}" in transforms ${issue.setName}@${issue.targetLanguage}`,
+      )
+      .join("; ");
+    throw new Error(
+      `Duplicate transform function(s) within one transform set: ${details} -- the later declaration silently overwrites the earlier one when the set is collected by name, the same authoring mistake a duplicate rule name is already rejected for.`,
+    );
+  }
+};
+
 /**
  * One `QualifiedIdentifier` (e.g. `word.suffix`) found by
  * {@link findQualifiedIdentifierCollisions} whose `module` part collides
@@ -503,6 +625,11 @@ export const validateGrammar = (grammar: GrammarDefinition): void => {
       `${ERROR_MESSAGES.CUT_ONLY_PATTERN} (rule(s): ${cutOnly.join(", ")}) -- \`~\` only has meaning as one of several elements of a sequence (e.g. "a" ~ "b"); a rule, group, choice alternative, or repetition/lookahead body made up of nothing but \`~\` doesn't match anything.`,
     );
   }
+
+  // Transform-function checks run last: they don't interact with any of
+  // the rule-level analyses above (a transform binds to a rule by name --
+  // see TransformNameIssue's doc comment).
+  assertValidTransformFunctionNames(grammar);
 };
 
 // ============================================================================

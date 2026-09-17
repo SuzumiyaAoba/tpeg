@@ -252,4 +252,42 @@ describe("CSV Parser", () => {
       ]);
     });
   });
+
+  describe("Rows of empty fields (issue #69)", () => {
+    // The old filter dropped ANY row whose cells were all empty -- but a
+    // multi-field all-empty row is a real record (N empty columns), not a
+    // blank line. Only the phantom row a line break leaves behind -- one
+    // that parses as a single empty field `[""]` -- should be dropped.
+    it("keeps a ',,' row (three empty fields)", () => {
+      expect(parseCSV("a,b,c\n,,")).toEqual([
+        ["a", "b", "c"],
+        ["", "", ""],
+      ]);
+    });
+
+    it('keeps a "","" row (quoted empty fields)', () => {
+      expect(parseCSV('a,b\n"",""')).toEqual([
+        ["a", "b"],
+        ["", ""],
+      ]);
+    });
+
+    it("still drops a truly blank line", () => {
+      expect(parseCSV("a,b\n1,2\n\n3,4")).toEqual([
+        ["a", "b"],
+        ["1", "2"],
+        ["3", "4"],
+      ]);
+    });
+
+    it("a header literally named __proto__ is stored as data, not via the prototype setter", () => {
+      const result = parseCSVWithHeaders("__proto__,a\nx,1");
+      expect(result).toHaveLength(1);
+      const row = result[0] as Record<string, string>;
+      expect(Object.prototype.hasOwnProperty.call(row, "__proto__")).toBe(true);
+      expect(row["__proto__"]).toBe("x");
+      expect(row["a"]).toBe("1");
+      expect(Object.getPrototypeOf(row)).toBe(Object.prototype);
+    });
+  });
 });

@@ -40,6 +40,8 @@ import { expression } from "./composition";
 import { GRAMMAR_KEYWORDS, GRAMMAR_SYMBOLS } from "./constants";
 import { identifier } from "./identifier";
 import {
+  DEDICATED_ANNOTATION_KEYS,
+  annotationKeyExcluding,
   exportDeclaration,
   importStatement,
   moduleInfoListAnnotation,
@@ -64,7 +66,6 @@ import {
   optionalWhitespace,
   optionalWhitespaceOrComment,
   requiredWhitespaceOrComment,
-  whitespace,
 } from "./whitespace-utils";
 
 const IDENTIFIER_START_CHAR = /[a-zA-Z_]/;
@@ -176,8 +177,17 @@ const grammarRuleExpression: Parser<Expression> = (
     // A character class, e.g. `[^"]`, can contain a quote character that
     // isn't a string literal delimiter at all - skip its content atomically
     // (respecting `\]` escapes) so it's never mistaken for the start of a
-    // string literal above.
-    if (char === "[") {
+    // string literal above. Only at brace depth 0, though: inside an
+    // action/transform body a `[` is ordinary JavaScript (member access,
+    // array literal, computed key), not a TPEG character class - treating
+    // it as one ends the fake "class" at the first `]` even when that `]`
+    // sits inside a string (e.g. `x["]"]`), after which the leftover `"`
+    // opens a phantom string literal that swallows the rest of the file.
+    // Inside a body, `[`/`]` fall through to the generic punctuator
+    // handling below (`[` can't end an operand, `]` ends one), and any
+    // string inside the brackets is still skipped by the string case
+    // above before its contents can be misread.
+    if (char === "[" && activeBraceDepth === 0) {
       let i = endPos + 1;
       while (i < input.length && input[i] !== "]") {
         if (input[i] === "\\") i++;
@@ -382,11 +392,11 @@ const grammarRuleExpression: Parser<Expression> = (
     // Track whether a `/` encountered inside an action body could open a
     // regex literal (see the `exprExpected` declaration above). The values
     // produced while outside an action are never consulted.
-    if (JS_IDENTIFIER_START.test(char)) {
+    if (JS_IDENTIFIER_START.test(char ?? "")) {
       let wordEnd = endPos + 1;
       while (
         wordEnd < input.length &&
-        JS_IDENTIFIER_CONT.test(input[wordEnd])
+        JS_IDENTIFIER_CONT.test(input[wordEnd] ?? "")
       ) {
         wordEnd++;
       }
@@ -582,7 +592,15 @@ const keyValueAnnotation: Parser<GrammarAnnotation> = map(
   sequence(
     optionalWhitespace,
     literal(GRAMMAR_SYMBOLS.ANNOTATION_PREFIX),
-    identifier,
+    // Refuse keys owned by a dedicated structured-annotation parser
+    // (`@export`, `@dependencies`, `@conflicts`, `@requires`, `@memoize` --
+    // see `DEDICATED_ANNOTATION_KEYS` in `./module.ts`): a malformed
+    // `@export: "a"` must surface as a parse error, not silently re-parse
+    // as an inert generic annotation that flips `@export` to its
+    // "export all" default (issue #61). `moduleInfoListAnnotation`/
+    // `moduleInfoRecordAnnotation` apply the same refusal for the keys
+    // owned by the OTHER structured forms.
+    annotationKeyExcluding(DEDICATED_ANNOTATION_KEYS),
     optionalWhitespace,
     literal(GRAMMAR_SYMBOLS.LABEL_SEPARATOR),
     // Comment-tolerant (see `optionalWhitespaceOrComment`'s doc comment,
@@ -594,7 +612,7 @@ const keyValueAnnotation: Parser<GrammarAnnotation> = map(
     optionalWhitespaceOrComment,
     annotationValue,
   ),
-  (results) => createGrammarAnnotation(results[2].name, results[6]),
+  (results) => createGrammarAnnotation(results[2], results[6]),
 );
 
 /**
@@ -610,9 +628,11 @@ const flagAnnotation: Parser<GrammarAnnotation> = map(
   sequence(
     optionalWhitespace,
     literal(GRAMMAR_SYMBOLS.ANNOTATION_PREFIX),
-    identifier,
+    // Same dedicated-key refusal as keyValueAnnotation -- a bare
+    // `@export`/`@requires` flag isn't a meaningful annotation either.
+    annotationKeyExcluding(DEDICATED_ANNOTATION_KEYS),
   ),
-  (results) => createGrammarAnnotation(results[2].name, ""),
+  (results) => createGrammarAnnotation(results[2], ""),
 );
 
 /**
@@ -746,7 +766,52 @@ type GrammarItemType =
   | { type: "moduleInfoRecord"; key: string; values: Record<string, string> }
   | { type: "rule"; value: RuleDefinition }
   | { type: "transform"; value: TransformDefinition }
+  | { type: "documentation"; value: string }
   | { type: "comment"; value: string };
+
+/**
+ * `@export` reached here has already failed `exportDeclaration`'s exact
+ * `@export: [name, ...]` shape -- the literal key is present but the value
+ * is malformed (quoted names, a record, a bare scalar, a missing colon,
+ * ...). Every generic annotation alternative below refuses the reserved
+ * key `export` too, so without this detector a malformed `@export` would
+ * fall all the way through `grammarItem` and surface only as a generic
+ * "expected }"-style error at the annotation's own position. Failing
+ * FATALLY here (no backtracking out of the enclosing `choice`) names the
+ * actual mistake instead.
+ */
+const malformedExportAnnotation: Parser<never> = (input, pos) => {
+  // Leading whitespace is tolerated the same way `grammarAnnotation`'s own
+  // alternatives tolerate it (grammarItem alternatives run right after
+  // `grammarBlockWhitespace`, but a stray space can still intervene).
+  let i = pos;
+  while (isLineBreakOrSpaceOrTab(input[i])) i++;
+  const keyword = "@export";
+  if (!input.startsWith(keyword, i)) {
+    return createFailure(`Expected "${keyword}"`, pos, {
+      parserName: "malformedExportAnnotation",
+    });
+  }
+  const after = i + keyword.length;
+  if (IDENTIFIER_CONT_CHAR.test(input[after] ?? "")) {
+    // `@exportFoo` is a different key entirely, not a malformed @export.
+    return createFailure(`Expected "${keyword}"`, pos, {
+      parserName: "malformedExportAnnotation",
+    });
+  }
+  return {
+    success: false,
+    error: {
+      message:
+        "Malformed @export declaration -- expected `@export: [rule1, rule2, ...]` with bare rule names (quoted names, records, and scalar values are not allowed)",
+      pos: i,
+      expected: ["@export: [rules...]"],
+      found: input.slice(i, i + 40),
+      parserName: "malformedExportAnnotation",
+      fatal: true,
+    },
+  };
+};
 
 /**
  * Parse grammar item (export declaration, annotation, rule, transform, or comment)
@@ -774,6 +839,10 @@ const grammarItem: Parser<GrammarItemType> = choice(
     type: "export",
     value: decl,
   })),
+  // Must precede every generic `@key` alternative: a malformed `@export`
+  // (failed `exportDeclaration` above) is a fatal parse error here, not a
+  // generic annotation -- see `malformedExportAnnotation`'s doc comment.
+  malformedExportAnnotation,
   map(moduleInfoListAnnotation, (decl): GrammarItemType => ({
     type: "moduleInfoList",
     key: decl.key,
@@ -800,11 +869,17 @@ const grammarItem: Parser<GrammarItemType> = choice(
     type: "transform",
     value: transform,
   })),
-  map(singleLineComment, (comment): GrammarItemType => ({
-    type: "comment",
+  // `documentationComment` ("///") MUST be tried before `singleLineComment`
+  // ("//"): a `///` line also starts with `//`, so the single-line
+  // alternative would otherwise match first every time (consuming the
+  // third `/` as comment content) and the documentation form would be
+  // unreachable -- which is exactly what happened before, leaving
+  // `RuleDefinition.documentation` with no producer anywhere.
+  map(documentationComment, (comment): GrammarItemType => ({
+    type: "documentation",
     value: comment,
   })),
-  map(documentationComment, (comment): GrammarItemType => ({
+  map(singleLineComment, (comment): GrammarItemType => ({
     type: "comment",
     value: comment,
   })),
@@ -828,8 +903,15 @@ const grammarItems: Parser<GrammarItemType[]> = map(
 );
 
 /**
- * Separate grammar items into annotations, rules, and transforms
- * Comments are ignored as they don't contribute to the AST
+ * Separate grammar items into annotations, rules, and transforms.
+ * `///` documentation items accumulate and attach to the next rule's
+ * `documentation` field (docs/peg-grammar.md documents `///` as the
+ * rule-documentation form); plain `//`/`/* ... *\/` comments don't break
+ * the attachment, while any other item kind (annotation, export,
+ * transform, ...) drops a pending run -- a doc comment is for the rule it
+ * directly precedes, not for a later one several declarations away.
+ * Plain comments are otherwise ignored as they don't contribute to the
+ * AST.
  * @param items Array of mixed grammar items
  * @returns Separated annotations, rules, and transforms arrays
  */
@@ -856,29 +938,43 @@ const separateGrammarItems = (
   let hasExportDeclaration = false;
   const moduleInfoLists = new Map<string, string[]>();
   const moduleInfoRecords = new Map<string, Record<string, string>>();
+  let pendingDocs: string[] = [];
 
   for (const item of items) {
     if (item.type === "annotation") {
       annotations.push(item.value);
+      pendingDocs = [];
     } else if (item.type === "export") {
       hasExportDeclaration = true;
       exportedRules.push(...item.value.rules);
+      pendingDocs = [];
     } else if (item.type === "moduleInfoList") {
       moduleInfoLists.set(item.key, [
         ...(moduleInfoLists.get(item.key) ?? []),
         ...item.values,
       ]);
+      pendingDocs = [];
     } else if (item.type === "moduleInfoRecord") {
       moduleInfoRecords.set(item.key, {
         ...moduleInfoRecords.get(item.key),
         ...item.values,
       });
+      pendingDocs = [];
     } else if (item.type === "rule") {
-      rules.push(item.value);
+      rules.push(
+        pendingDocs.length > 0
+          ? { ...item.value, documentation: pendingDocs }
+          : item.value,
+      );
+      pendingDocs = [];
     } else if (item.type === "transform") {
       transforms.push(item.value);
+      pendingDocs = [];
+    } else if (item.type === "documentation") {
+      pendingDocs.push(item.value);
     }
-    // Comments are ignored - they don't contribute to the grammar structure
+    // Plain comments are ignored - they don't contribute to the grammar
+    // structure (but they also don't break a pending doc-comment run).
   }
 
   return {
@@ -898,8 +994,8 @@ const separateGrammarItems = (
  */
 const leadingContentItem: Parser<void> = map(
   choice(
+    documentationComment, // Consumes /// + content -- tried before singleLineComment for the same "///" starts with "//" reason as grammarItem above (both are discarded here, but the ordering keeps the two comment parsers' precedence consistent everywhere)
     singleLineComment, // Consumes // + content + implicit newline handling
-    documentationComment, // Consumes /// + content + implicit newline handling
     blockComment, // Consumes /* ... */ (at least "/*", so never zero-width)
     literal("\n"), // Consumes newline
     literal("\r\n"), // Consumes CRLF
@@ -944,7 +1040,13 @@ const dottedGrammarName: Parser<string> = map(
  * `module.rule` references) but too narrow here.
  */
 const grammarExtendsClause: Parser<string> = map(
-  sequence(literal("extends"), whitespace, dottedGrammarName),
+  sequence(
+    literal("extends"),
+    // Comment-tolerant like every other header separator (the `required`
+    // part still forbids `extendsB` with no separator at all).
+    requiredWhitespaceOrComment,
+    dottedGrammarName,
+  ),
   ([, , name]) => name,
 );
 
@@ -957,14 +1059,14 @@ const grammarExtendsClause: Parser<string> = map(
 const grammarIncludesClause: Parser<string[]> = map(
   sequence(
     literal("includes"),
-    whitespace,
+    requiredWhitespaceOrComment,
     dottedGrammarName,
     zeroOrMore(
       map(
         sequence(
-          optionalWhitespace,
+          optionalWhitespaceOrComment,
           literal(","),
-          optionalWhitespace,
+          optionalWhitespaceOrComment,
           dottedGrammarName,
         ),
         ([, , , name]) => name,

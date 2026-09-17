@@ -112,7 +112,21 @@ export const jsonParser = (): Parser<JSONValue> => {
     ([, pairs]) => {
       const obj: JSONObject = {};
       for (const [key, value] of pairs) {
-        obj[key] = value;
+        // `obj[key] = value` on the key "__proto__" would invoke
+        // Object.prototype's __proto__ SETTER -- mutating the object's
+        // prototype (or silently doing nothing when `value` isn't an
+        // object) instead of storing an own property, so `{"__proto__":
+        // 1}` both loses the key and risks prototype pollution.
+        // `Object.defineProperty` defines `__proto__` as an own data
+        // property (shadowing the inherited accessor) while keeping the
+        // ordinary Object.prototype on the returned object, matching what
+        // JSON.parse produces for the same input.
+        Object.defineProperty(obj, key, {
+          value,
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
       }
       return obj;
     },

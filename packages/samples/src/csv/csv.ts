@@ -100,9 +100,14 @@ export const parseCSV = (input: string): string[][] => {
   const result = parse(csvParser)(input);
 
   if (result.success) {
-    // Filter out completely empty rows
+    // Drop only the phantom row a trailing (or repeated) line break leaves
+    // behind: a line containing nothing parses as a single empty field
+    // `[""]`. A row of MULTIPLE empty fields -- `,,` or `"",""` -- is a
+    // real record (three/two empty columns respectively), not a blank
+    // line, so the previous "every cell is empty" test wrongly discarded
+    // it along with the phantom row.
     return result.val.filter(
-      (row) => row.length > 0 && row.some((cell) => cell.trim() !== ""),
+      (row) => !(row.length === 1 && row[0]?.trim() === ""),
     );
   }
 
@@ -146,7 +151,15 @@ export const parseCSVWithHeaders = (
   return dataRows.map((row) => {
     const obj: Record<string, string> = {};
     headers?.forEach((header, index) => {
-      obj[header] = row[index] ?? "";
+      // `obj[header] = ...` with a header literally named "__proto__"
+      // would hit Object.prototype's __proto__ setter instead of storing
+      // the field -- same fix as the JSON sample's objectParser.
+      Object.defineProperty(obj, header, {
+        value: row[index] ?? "",
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     });
     return obj;
   });

@@ -104,6 +104,7 @@ export { analyzeReentrancy, type ReentrancyAnalysis } from "./reentrancy";
 export {
   validateGrammar,
   validateGeneratedIdentifiers,
+  assertValidTransformFunctionNames,
   findQualifiedIdentifierReferences,
 } from "./grammar-validation";
 export type {

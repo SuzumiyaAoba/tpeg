@@ -717,3 +717,73 @@ describe("validateGeneratedIdentifiers: reserved words and import collisions", (
     expect(result.code).toContain("export const g_class");
   });
 });
+
+describe("validateGrammar: transform function names (issues #65/#66)", () => {
+  // A transform function binds to a rule BY NAME: a name matching no
+  // rule is dead code silently dropped from generated output, and a
+  // duplicate name within one set silently overwrites the earlier
+  // function -- both are now generation-time errors, the same class of
+  // authoring mistake a duplicate rule name already was.
+  it("rejects a transform function matching no declared rule", () => {
+    const grammar = grammarFromSource(`r = "a"
+  transforms X@typescript {
+    nonexistent(c: string) -> R { return { success: true, value: c }; }
+  }`);
+    expect(() => validateGrammar(grammar)).toThrow(
+      /Transform function\(s\) matching no declared rule: "nonexistent"/,
+    );
+  });
+
+  it("rejects duplicate function names within one transform set", () => {
+    const grammar = grammarFromSource(`r = "a"
+  transforms X@typescript {
+    r(c: string) -> R { return { success: true, value: 1 }; }
+    r(c: string) -> R { return { success: true, value: 2 }; }
+  }`);
+    expect(() => validateGrammar(grammar)).toThrow(
+      /Duplicate transform function\(s\).* "r"/,
+    );
+  });
+
+  it("accepts the same function name in two DIFFERENT transform sets (each binds its own target)", () => {
+    const grammar = grammarFromSource(`r = "a"
+  transforms X@typescript {
+    r(c: string) -> R { return { success: true, value: c }; }
+  }
+  transforms Y@python {
+    r(c: string) -> R { return { success: true, value: c }; }
+  }`);
+    expect(() => validateGrammar(grammar)).not.toThrow();
+  });
+
+  it("accepts a transform set whose function names all match rules", () => {
+    const grammar = grammarFromSource(`r = "a"
+  s = "b"
+  transforms X@typescript {
+    r(c: string) -> R { return { success: true, value: c }; }
+    s(c: string) -> R { return { success: true, value: c }; }
+  }`);
+    expect(() => validateGrammar(grammar)).not.toThrow();
+  });
+
+  it("end-to-end: the base and optimized generators both reject an unmatched transform function", () => {
+    const grammar = grammarFromSource(`r = "a"
+  transforms X@typescript {
+    nonexistent(c: string) -> R { return { success: true, value: c }; }
+  }`);
+    expect(() =>
+      generateTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+      }),
+    ).toThrow(/matching no declared rule/);
+    expect(() =>
+      generateOptimizedTypeScriptParser(grammar, {
+        language: "typescript",
+        includeImports: false,
+        includeTypes: false,
+        optimize: true,
+      }),
+    ).toThrow(/matching no declared rule/);
+  });
+});

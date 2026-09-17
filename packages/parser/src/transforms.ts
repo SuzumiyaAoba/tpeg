@@ -45,7 +45,6 @@ import {
   createTransformSet,
 } from "./types";
 import {
-  optionalWhitespace,
   optionalWhitespaceOrComment,
   requiredWhitespaceOrComment,
 } from "./whitespace-utils";
@@ -171,10 +170,30 @@ const TYPE_IDENT_CONT = /[a-zA-Z0-9_]/;
 const isTypeWhitespace = (char: string | undefined): boolean =>
   char === " " || char === "\t" || char === "\n" || char === "\r";
 
+/**
+ * Skips whitespace AND comments between type-expression tokens, matching
+ * `scanObjectType`'s existing comment skipping inside `{...}` types (and
+ * `optionalWhitespaceOrComment`'s rule everywhere else a signature
+ * separator can appear) -- `Map<K, /* c *\/ V>` is a comment between two
+ * syntactic elements, same as anywhere else.
+ */
 const skipTypeWhitespace = (input: string, pos: number): number => {
   let i = pos;
-  while (isTypeWhitespace(input[i])) i++;
-  return i;
+  for (;;) {
+    if (isTypeWhitespace(input[i])) {
+      i++;
+      continue;
+    }
+    if (input[i] === "/" && input[i + 1] === "/") {
+      i = skipLineComment(input, i);
+      continue;
+    }
+    if (input[i] === "/" && input[i + 1] === "*") {
+      i = skipBlockComment(input, i);
+      continue;
+    }
+    return i;
+  }
 };
 
 /**
@@ -356,9 +375,13 @@ const typeExpression: Parser<ParsedTypeExpression> = (
 const parameterType: Parser<{ name: string; type: string }> = map(
   sequence(
     identifier,
-    optionalWhitespace,
+    // Comment-tolerant around ":" and the type, same as every other
+    // signature separator (optionalWhitespaceOrComment, see
+    // `./whitespace-utils.ts`) -- `f(a /* c *\/: string)` is a comment
+    // between two syntactic elements, per docs/peg-grammar.md.
+    optionalWhitespaceOrComment,
     literal(TRANSFORM_SYMBOLS.TYPE_SEPARATOR),
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     map(typeExpression, (t) => t.text),
   ),
   (results) => ({
@@ -374,7 +397,7 @@ const parameterType: Parser<{ name: string; type: string }> = map(
 const parameterList: Parser<TransformParameter[]> = map(
   sequence(
     literal(TRANSFORM_SYMBOLS.PARAMETER_START),
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     choice(
       // Empty parameter list
       map(literal(TRANSFORM_SYMBOLS.PARAMETER_END), () => []),
@@ -385,15 +408,15 @@ const parameterList: Parser<TransformParameter[]> = map(
           zeroOrMore(
             map(
               sequence(
-                optionalWhitespace,
+                optionalWhitespaceOrComment,
                 literal(","),
-                optionalWhitespace,
+                optionalWhitespaceOrComment,
                 parameterType,
               ),
               (results) => results[3],
             ),
           ),
-          optionalWhitespace,
+          optionalWhitespaceOrComment,
           literal(TRANSFORM_SYMBOLS.PARAMETER_END),
         ),
         (results) => [results[0], ...results[1]],
@@ -418,9 +441,9 @@ const parameterList: Parser<TransformParameter[]> = map(
  */
 const returnTypeSpec: Parser<TransformReturnType> = map(
   sequence(
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     literal(TRANSFORM_SYMBOLS.RETURN_TYPE_SEPARATOR),
-    optionalWhitespace,
+    optionalWhitespaceOrComment,
     typeExpression,
   ),
   (results) => {
@@ -463,17 +486,62 @@ const functionBody: Parser<string> = (input, pos) => {
 // Transform Function Parser
 // ============================================================================
 
+const TRANSFORM_WS_CHARS: ReadonlySet<string> = new Set([
+  " ",
+  "\t",
+  "\n",
+  "\r",
+]);
+
+/**
+ * Skips a whitespace/comment run exactly like `optionalWhitespaceOrComment`,
+ * but returns the contents of every `///` documentation comment encountered
+ * (checked before the `//` case, since `///` starts with `//` too) so they
+ * can attach to the following function's `documentation` field -- the
+ * transform-level counterpart of `grammar.ts`'s `///`-before-a-rule
+ * attachment.
+ */
+const docCollectingSeparator: Parser<string[]> = (input, pos) => {
+  const docs: string[] = [];
+  let i = pos;
+  while (i < input.length) {
+    if (TRANSFORM_WS_CHARS.has(input[i] as string)) {
+      i++;
+      continue;
+    }
+    if (input[i] === "/" && input[i + 1] === "/" && input[i + 2] === "/") {
+      const end = skipLineComment(input, i);
+      docs.push(input.slice(i + 3, end).trim());
+      i = end;
+      continue;
+    }
+    if (input[i] === "/" && input[i + 1] === "/") {
+      i = skipLineComment(input, i);
+      continue;
+    }
+    if (input[i] === "/" && input[i + 1] === "*") {
+      i = skipBlockComment(input, i);
+      continue;
+    }
+    break;
+  }
+  return { success: true, val: docs, current: pos, next: i };
+};
+
 /**
  * Parse a single transform function
  * Format: function_name(params) -> ReturnType { body }
+ * Leading `///` documentation comments are attached to the function's
+ * `documentation` field.
  */
 const transformFunction: Parser<TransformFunction> = (
   input: string,
   pos: number,
 ) => {
-  // optionalWhitespaceOrComment
-  const whitespaceResult = optionalWhitespaceOrComment(input, pos);
+  // optionalWhitespaceOrComment + `///` doc collection
+  const whitespaceResult = docCollectingSeparator(input, pos);
   let currentPos = whitespaceResult.success ? whitespaceResult.next : pos;
+  const documentation = whitespaceResult.success ? whitespaceResult.val : [];
 
   // identifier
   const identifierResult = identifier(input, currentPos);
@@ -520,6 +588,7 @@ const transformFunction: Parser<TransformFunction> = (
       parameterListResult.val,
       returnTypeSpecResult.val,
       functionBodyResult.val,
+      documentation.length > 0 ? documentation : undefined,
     ),
     current: pos,
     next: functionBodyResult.next,
@@ -540,13 +609,10 @@ const transformFunctions: Parser<TransformFunction[]> = (
   const functions: TransformFunction[] = [];
   let currentPos = pos;
 
-  // 最初の空白・コメントをスキップ
-  const whitespaceResult = optionalWhitespaceOrComment(input, currentPos);
-  if (whitespaceResult.success) {
-    currentPos = whitespaceResult.next;
-  }
-
-  // 最初の関数を解析
+  // 最初の関数を解析 -- transformFunction's own leading separator
+  // (docCollectingSeparator) skips whitespace/comments AND collects any
+  // `///` documentation lines so they attach to the function that follows
+  // them, so there is deliberately no separate whitespace skip here.
   const firstFunctionResult = transformFunction(input, currentPos);
   if (!firstFunctionResult.success) {
     return firstFunctionResult;
@@ -557,19 +623,23 @@ const transformFunctions: Parser<TransformFunction[]> = (
 
   // 残りの関数を解析
   while (currentPos < input.length) {
-    // 関数間の空白・改行・コメントをスキップ
-    const separatorResult = optionalWhitespaceOrComment(input, currentPos);
-    if (separatorResult.success) {
-      currentPos = separatorResult.next;
-    }
+    // Peek past whitespace/comments WITHOUT letting a plain separator eat
+    // `///` doc lines before transformFunction can collect them -- the
+    // collected lines re-attach inside transformFunction's own separator.
+    const separatorResult = docCollectingSeparator(input, currentPos);
+    const afterSeparator = separatorResult.success
+      ? separatorResult.next
+      : currentPos;
 
     // 次のトークンが「}」（ブロックの終端）かチェック
-    if (currentPos < input.length && input[currentPos] === "}") {
+    if (afterSeparator < input.length && input[afterSeparator] === "}") {
       // ブロックの終端に到達したので終了
+      currentPos = afterSeparator;
       break;
     }
 
-    // 次の関数を試行
+    // 次の関数を試行 (transformFunction re-runs the same doc-collecting
+    // separator internally, so pending `///` lines attach to it)
     const nextFunctionResult = transformFunction(input, currentPos);
     if (!nextFunctionResult.success) {
       // 関数が見つからない場合は終了

@@ -53,6 +53,11 @@
  */
 
 import type { Expression, GrammarDefinition } from "@suzumiyaaoba/tpeg-core";
+// Imported rather than duplicated, for the same reason
+// `validateGeneratedIdentifiers` is (see this module's doc comment): the
+// transform-function name checks are pure `GrammarDefinition` analysis
+// with no Eta-specific inputs, so a second copy here would only drift.
+import { assertValidTransformFunctionNames } from "@suzumiyaaoba/tpeg-parser";
 
 // --- Nullability (ported from `packages/parser/src/first-sets.ts`'s
 // `isNullableUncached`/`computeNullableRules` -- see that module's doc
@@ -492,4 +497,11 @@ export const validateGrammarForEtaGenerator = (
       `Grammar contains unbounded repetition over a nullable (possibly zero-width) expression -- this has no well-defined PEG semantics, since the repetition could succeed without ever consuming input: ${description}`,
     );
   }
+
+  // Transform functions bind to rules BY NAME (see
+  // `assertValidTransformFunctionNames` in tpeg-parser): a name matching
+  // no rule is silently dropped from generated output, and a name
+  // repeated within one set silently overwrites the earlier function --
+  // rejected here identically to `validateGrammar`.
+  assertValidTransformFunctionNames(grammar);
 };

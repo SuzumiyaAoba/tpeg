@@ -1163,6 +1163,54 @@ grammar Example {
       );
     });
 
+    // Regression tests for issue #60: `extends`/`includes` keyword
+    // separators and the includes list's commas were whitespace-only
+    // (`whitespace`/`optionalWhitespace`), not comment-tolerant like every
+    // other separator position in the header.
+    test("block comment between 'extends' and its name", () => {
+      const result = testParse(
+        modularGrammarDefinition,
+        'grammar G extends /* c */ B {\n  r = "a"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.extends).toBe("B");
+      }
+    });
+
+    test("block comment between 'includes' and its first name", () => {
+      const result = testParse(
+        modularGrammarDefinition,
+        'grammar G includes /* c */ I {\n  r = "a"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.includes).toEqual(["I"]);
+      }
+    });
+
+    test("block comments around a comma inside an includes list", () => {
+      const result = testParse(
+        modularGrammarDefinition,
+        'grammar G includes A /* c */ , /* c */ B {\n  r = "a"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.includes).toEqual(["A", "B"]);
+      }
+    });
+
+    test("line comment between 'extends' and its name (comment alone satisfies the required separator)", () => {
+      const result = testParse(
+        modularGrammarDefinition,
+        'grammar G extends // c\n B {\n  r = "a"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.extends).toBe("B");
+      }
+    });
+
     // Metamorphic property: inserting a block comment at an arbitrary
     // space in a valid grammar must never change the parsed AST, as long
     // as the insertion point doesn't merge with an adjacent "/" (which
@@ -1240,6 +1288,251 @@ grammar Example {
         }
       }
       expect(tested).toBeGreaterThan(150);
+    });
+  });
+
+  describe("JavaScript-aware rule-boundary and action-body scanning", () => {
+    // Regression tests for issue #58: `grammarRuleExpression`'s boundary
+    // scanner treated EVERY `[` as a TPEG character class -- including
+    // ones inside an embedded JavaScript action body, where `x["]"]`'s
+    // `]` "closed" the phantom class and the following `"` opened a
+    // phantom string that desynced the rest of the scan.
+    test("a ']' inside a string literal inside a JS index expression doesn't desync the rule boundary", () => {
+      const result = testParse(
+        grammarDefinition,
+        'grammar G {\n  a = "x" { return x["]"]; }\n  b = "y"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules.map((r) => r.name)).toEqual(["a", "b"]);
+      }
+    });
+
+    test("a computed object key containing ']' inside an action body doesn't desync the boundary", () => {
+      const result = testParse(
+        grammarDefinition,
+        'grammar G {\n  a = "x" { const o = { ["]"]: 1 }; return o; }\n  b = "y"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules.map((r) => r.name)).toEqual(["a", "b"]);
+      }
+    });
+
+    test("a plain JS index expression inside an action body (control case)", () => {
+      const result = testParse(
+        grammarDefinition,
+        'grammar G {\n  a = "x" { return arr[i]; }\n  b = "y"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules).toHaveLength(2);
+      }
+    });
+
+    // Regression tests for issue #59: `scanBalancedBraces`'s string skip
+    // ran to the next unescaped quote, so a template literal's `${ ... }`
+    // interpolation (which can contain braces, strings, comments, and
+    // nested templates) desynced the brace count.
+    test("a template literal whose interpolation contains a nested block parses", () => {
+      const result = testParse(
+        grammarDefinition,
+        'grammar G {\n  a = "x" { return `t${ { n: 1 }.n }z`; }\n  b = "y"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules).toHaveLength(2);
+      }
+    });
+
+    test("a nested template literal inside an interpolation parses", () => {
+      const result = testParse(
+        grammarDefinition,
+        'grammar G {\n  a = "x" { return `outer ${ `inner ${1}` } end`; }\n  b = "y"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules).toHaveLength(2);
+      }
+    });
+
+    test("an interpolation containing a comment and a string with a '}' parses", () => {
+      const result = testParse(
+        grammarDefinition,
+        'grammar G {\n  a = "x" { return `${ /* } */ "}" }`; }\n  b = "y"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules).toHaveLength(2);
+      }
+    });
+  });
+
+  describe("malformed dedicated annotations", () => {
+    // Regression tests for issue #61: a malformed `@export` used to fall
+    // through to the generic annotation parsers and get silently ignored
+    // (consumed as `@key: value`/`@key` trivia that nothing reads). The
+    // dedicated keys are now reserved in the generic forms, and a
+    // literal-but-malformed `@export` is a fatal parse error.
+    const failsParse = (input: string) => {
+      const result = testParse(modularGrammarDefinition, input);
+      expect(result.success).toBe(false);
+      return result;
+    };
+
+    test("@export with a quoted-string value is a parse error, not a generic annotation", () => {
+      failsParse('grammar G {\n  @export: "a"\n  a = "x"\n}');
+    });
+
+    test("@export with a record value is a parse error", () => {
+      failsParse('grammar G {\n  @export: { "a": "b" }\n  a = "x"\n}');
+    });
+
+    test("@export with a bare scalar value is a parse error", () => {
+      failsParse('grammar G {\n  @export: a\n  a = "x"\n}');
+    });
+
+    test("a bare @export flag is a parse error (not a generic @flag)", () => {
+      failsParse('grammar G {\n  @export\n  a = "x"\n}');
+    });
+
+    test("a quoted string inside the @export list is a parse error", () => {
+      failsParse('grammar G {\n  @export: [a, "b"]\n  a = "x"\n  b = "y"\n}');
+    });
+
+    test("a malformed @dependencies with a scalar value is a parse error, not a generic @key: value", () => {
+      failsParse('grammar G {\n  @dependencies: "a"\n  a = "x"\n}');
+    });
+
+    test("a bare @requires flag is a parse error, not a generic @flag", () => {
+      failsParse('grammar G {\n  @requires\n  a = "x"\n}');
+    });
+
+    // Controls: the correct dedicated forms and unrelated keys must keep
+    // working exactly as before.
+    test("a well-formed @export: [names] still parses", () => {
+      const result = testParse(
+        modularGrammarDefinition,
+        'grammar G {\n  @export: [a]\n  a = "x"\n  b = "y"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.exports?.rules).toEqual(["a"]);
+      }
+    });
+
+    test("a well-formed @dependencies list still parses", () => {
+      const result = testParse(
+        modularGrammarDefinition,
+        'grammar G {\n  @dependencies: ["a", "b"]\n  r = "x"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.moduleInfo?.dependencies).toEqual(["a", "b"]);
+      }
+    });
+
+    test("a well-formed @requires record still parses", () => {
+      const result = testParse(
+        modularGrammarDefinition,
+        'grammar G {\n  @requires: { "a": ">=1" }\n  r = "x"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.moduleInfo?.requires).toEqual({ a: ">=1" });
+      }
+    });
+
+    test("an annotation whose key merely shares the 'export' prefix is a different key, not a malformed @export", () => {
+      const result = testParse(
+        modularGrammarDefinition,
+        'grammar G {\n  @exportFoo: "a"\n  r = "x"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.annotations).toContainEqual(
+          expect.objectContaining({ key: "exportFoo", value: "a" }),
+        );
+      }
+    });
+
+    test("@memoize still attaches to the following rule (not a generic flag)", () => {
+      const result = testParse(
+        grammarDefinition,
+        'grammar G {\n  @memoize\n  r = "a"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules[0]?.annotations).toContainEqual(
+          expect.objectContaining({ key: "memoize" }),
+        );
+      }
+    });
+  });
+
+  describe("rule documentation comments", () => {
+    // Regression tests for issue #67: `documentationComment` ("///") was
+    // unreachable -- grammarItem tried `singleLineComment` ("//") first,
+    // which matches a `///` line too (the third `/` became comment
+    // content) -- so `RuleDefinition.documentation` had no producer.
+    test("a /// comment directly before a rule attaches as documentation", () => {
+      const result = testParse(
+        grammarDefinition,
+        'grammar G {\n  /// Adds two numbers\n  r = "a"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules[0]?.documentation).toEqual([
+          "Adds two numbers",
+        ]);
+      }
+    });
+
+    test("consecutive /// lines accumulate into the documentation array", () => {
+      const result = testParse(
+        grammarDefinition,
+        'grammar G {\n  /// First line\n  /// @param x the thing\n  r = "a"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules[0]?.documentation).toEqual([
+          "First line",
+          "@param x the thing",
+        ]);
+      }
+    });
+
+    test("plain // and /* */ comments between /// lines and the rule don't break attachment", () => {
+      const result = testParse(
+        grammarDefinition,
+        'grammar G {\n  /// Doc line\n  // plain comment\n  /* block */\n  r = "a"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules[0]?.documentation).toEqual(["Doc line"]);
+      }
+    });
+
+    test("a /// line NOT followed by a rule attaches nowhere (documentation stays undefined)", () => {
+      const result = testParse(
+        grammarDefinition,
+        'grammar G {\n  /// Doc for nothing\n  @version: "1"\n  r = "a"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules[0]?.documentation).toBeUndefined();
+      }
+    });
+
+    test("a // comment is still a comment, not documentation (control)", () => {
+      const result = testParse(
+        grammarDefinition,
+        'grammar G {\n  // Not a doc\n  r = "a"\n}',
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules[0]?.documentation).toBeUndefined();
+      }
     });
   });
 });

@@ -235,6 +235,38 @@ describe("jsonParser", () => {
     const missingColonResult = parse(parser)('{"name" "John"}');
     expect(missingColonResult.success).toBe(false);
   });
+
+  // Regression test for issue #64: `obj[key] = value` on the key
+  // "__proto__" invoked Object.prototype's __proto__ SETTER -- silently
+  // dropping a non-object value (the key vanished from the result) and
+  // mutating the object's prototype for an object value. The parser now
+  // defines each key with Object.defineProperty, matching JSON.parse.
+  it("preserves an own '__proto__' key without mutating the prototype", () => {
+    const parser = jsonParser();
+
+    const result = parse(parser)('{"__proto__": 1, "a": 2}');
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const val = result.val as JSONObject;
+      // The key survives as an own property holding the actual value...
+      expect(Object.prototype.hasOwnProperty.call(val, "__proto__")).toBe(true);
+      expect(val["__proto__"]).toBe(1);
+      expect(val["a"]).toBe(2);
+      // ...and the object's prototype is untouched -- JSON.parse parity.
+      expect(Object.getPrototypeOf(val)).toBe(Object.prototype);
+    }
+
+    // An object value under "__proto__" is also stored, not set as the
+    // prototype.
+    const nested = parse(parser)('{"__proto__": {"x": 1}}');
+    expect(nested.success).toBe(true);
+    if (nested.success) {
+      const val = nested.val as JSONObject;
+      expect(Object.prototype.hasOwnProperty.call(val, "__proto__")).toBe(true);
+      expect(val["__proto__"]).toEqual({ x: 1 });
+      expect(Object.getPrototypeOf(val)).toBe(Object.prototype);
+    }
+  });
 });
 
 // Tests for parseJSON function

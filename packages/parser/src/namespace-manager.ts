@@ -40,6 +40,29 @@ export class NamespaceConflictError extends Error {
 }
 
 /**
+ * `@export` resolution error: an `@export: [...]` declaration listed a
+ * rule name that no grammar in the module actually declares. Without this
+ * check the phantom name lands in `scope.exports` like a real export --
+ * `checkNamespaceConflicts` then counts it as a genuine exporter and can
+ * raise a `NamespaceConflictError` against an importing module that
+ * legitimately imports ANOTHER module's real rule of the same name (a
+ * conflict between a real rule and nothing), and `getAvailableRules`
+ * advertises a rule that resolves to no `RuleDefinition`.
+ */
+export class ExportResolutionError extends Error {
+  constructor(
+    public readonly ruleName: string,
+    public readonly moduleName: string,
+    public readonly grammarName: string,
+  ) {
+    super(
+      `Rule '${ruleName}' in @export of grammar '${grammarName}' is not declared in module '${moduleName}' -- @export lists rules to export; every name must match a rule declared in this module.`,
+    );
+    this.name = "ExportResolutionError";
+  }
+}
+
+/**
  * Qualified-name resolution error.
  */
 export class QualifiedNameResolutionError extends Error {
@@ -99,6 +122,9 @@ export class NamespaceManager {
    *   `@namespace` on one or both) -- re-registering the SAME `filePath`
    *   (e.g. re-resolving an already-registered module) is not a
    *   collision and simply refreshes its entry.
+   * @throws {ExportResolutionError} if any grammar's `@export: [...]`
+   *   lists a rule name the module never declares -- see that error's
+   *   doc comment for the phantom-export failure mode this prevents.
    */
   registerModule(moduleFile: ModuleFile): void {
     const moduleName =
@@ -133,8 +159,15 @@ export class NamespaceManager {
       scope.imports.set(alias, importStmt.modulePath);
     }
 
-    // Collect rules and exports from every grammar
+    // Collect rules and exports from every grammar. Rule collection runs
+    // FIRST across ALL grammars and export registration happens in a
+    // second pass: an `@export` name is validated against the module's
+    // complete rule set (a modular grammar may legitimately export a rule
+    // declared by a sibling grammar in the same module file -- the module,
+    // not the individual grammar, is the namespace), and a name no rule
+    // declares is rejected as a phantom export (see ExportResolutionError).
     const rules = new Map<string, RuleDefinition>();
+    const pendingExports: { grammarName: string; ruleName: string }[] = [];
     for (const grammar of moduleFile.grammars) {
       // Process rules
       for (const rule of grammar.rules) {
@@ -156,13 +189,20 @@ export class NamespaceManager {
           : undefined;
       if (exports) {
         for (const ruleName of exports.rules) {
-          scope.exports.add(ruleName);
+          pendingExports.push({ grammarName: grammar.name, ruleName });
         }
       } else {
         for (const rule of grammar.rules) {
           scope.exports.add(rule.name);
         }
       }
+    }
+
+    for (const { grammarName, ruleName } of pendingExports) {
+      if (!rules.has(ruleName)) {
+        throw new ExportResolutionError(ruleName, moduleName, grammarName);
+      }
+      scope.exports.add(ruleName);
     }
 
     this.scopes.set(moduleName, scope);

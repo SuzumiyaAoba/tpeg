@@ -469,7 +469,12 @@ describe("TypeInferenceEngine", () => {
   });
 
   describe("Edge Cases and Error Handling", () => {
-    it("should handle quantified expressions with min === max === 1", () => {
+    it("should handle quantified expressions with min === max === 1 as a plain array", () => {
+      // quantified(x, 1, 1) (i.e. `x{1}`/`x{1,1}`) still returns T[] at
+      // runtime -- a one-element array on success -- exactly like every
+      // other exact-count quantifier; codegen emits it through
+      // `quantified(...)`, not the bare inner parser (issue #38), so the
+      // inferred type must be the array, not the scalar element type.
       const engine = new TypeInferenceEngine();
       const quantified = createQuantified(
         createStringLiteral("hello", '"'),
@@ -479,8 +484,8 @@ describe("TypeInferenceEngine", () => {
 
       const result = engine.inferExpressionType(quantified);
 
-      expect(result.typeString).toBe('"hello"');
-      expect(result.isArray).toBe(false);
+      expect(result.typeString).toBe('"hello"[]');
+      expect(result.isArray).toBe(true);
     });
 
     it("should handle quantified expressions with min === 0 as a plain array, never undefined", () => {

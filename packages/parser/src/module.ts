@@ -24,6 +24,7 @@ import {
   type QualifiedIdentifier,
   choice,
   createExportDeclaration,
+  createFailure,
   createImportStatement,
   createQualifiedIdentifier,
   literal,
@@ -259,6 +260,77 @@ export const exportDeclaration: Parser<ExportDeclaration> = map(
 // ============================================================================
 
 /**
+ * Annotation keys that have their own dedicated parser (and their own
+ * AST/consumer) rather than the generic `@key: value` form:
+ * `@export: [...]` (bare-identifier rule list), `@dependencies`/
+ * `@conflicts` (a `[...]` of quoted strings), `@requires` (a `{...}`
+ * record), and `@memoize` (a flag or `: N` attached to a rule). A parser
+ * for one of the OTHER annotation forms must refuse these keys outright --
+ * otherwise a malformed structured annotation silently re-parses as an
+ * inert generic annotation (or the wrong structured shape): `@export:
+ * ["a"]`, for example, would land in `moduleInfoLists` under an `"export"`
+ * key nothing ever reads back, flipping `@export`'s semantics to the
+ * "export all" default instead of erroring.
+ */
+export const DEDICATED_ANNOTATION_KEYS: ReadonlySet<string> = new Set([
+  "export",
+  "dependencies",
+  "conflicts",
+  "requires",
+  "memoize",
+]);
+
+/**
+ * `identifier` restricted to annotation keys not in `reserved` -- see
+ * `DEDICATED_ANNOTATION_KEYS` above for why each structured annotation
+ * parser refuses the keys owned by the other forms.
+ */
+export const annotationKeyExcluding = (
+  reserved: ReadonlySet<string>,
+): Parser<string> => {
+  const parser: Parser<string> = (input, pos) => {
+    const result = identifier(input, pos);
+    if (!result.success) return result;
+    if (reserved.has(result.val.name)) {
+      return createFailure(
+        `"@${result.val.name}" has its own dedicated annotation syntax and cannot be used here`,
+        pos,
+        {
+          expected: ["annotation key"],
+          found: result.val.name,
+          parserName: "annotationKey",
+        },
+      );
+    }
+    return {
+      success: true as const,
+      val: result.val.name,
+      current: pos,
+      next: result.next,
+    };
+  };
+  return parser;
+};
+
+/** Keys the quoted-string-LIST annotation parser must refuse -- every
+ * dedicated key except the two (`dependencies`/`conflicts`) that ARE this
+ * form's own. */
+const NON_LIST_ANNOTATION_KEYS: ReadonlySet<string> = new Set([
+  "export",
+  "requires",
+  "memoize",
+]);
+
+/** Keys the quoted-string-RECORD annotation parser must refuse -- every
+ * dedicated key except `requires`, which is this form's own. */
+const NON_RECORD_ANNOTATION_KEYS: ReadonlySet<string> = new Set([
+  "export",
+  "dependencies",
+  "conflicts",
+  "memoize",
+]);
+
+/**
  * A parsed `@key: ["a", "b"]` annotation - the array-of-quoted-strings form
  * docs/peg-grammar.md uses for `@dependencies` and `@conflicts`. Distinct
  * from `GrammarAnnotation` (single string value) and `ExportDeclaration`
@@ -311,7 +383,7 @@ const quotedStringList: Parser<string[]> = map(
 export const moduleInfoListAnnotation: Parser<ModuleInfoListAnnotation> = map(
   sequence(
     literal("@"),
-    identifier,
+    annotationKeyExcluding(NON_LIST_ANNOTATION_KEYS),
     optionalWhitespaceOrComment,
     literal(":"),
     optionalWhitespaceOrComment,
@@ -319,7 +391,7 @@ export const moduleInfoListAnnotation: Parser<ModuleInfoListAnnotation> = map(
   ),
   ([, key, , , , values]) => ({
     type: "ModuleInfoListAnnotation" as const,
-    key: key.name,
+    key,
     values,
   }),
 );
@@ -392,7 +464,7 @@ export const moduleInfoRecordAnnotation: Parser<ModuleInfoRecordAnnotation> =
   map(
     sequence(
       literal("@"),
-      identifier,
+      annotationKeyExcluding(NON_RECORD_ANNOTATION_KEYS),
       optionalWhitespaceOrComment,
       literal(":"),
       optionalWhitespaceOrComment,
@@ -400,7 +472,7 @@ export const moduleInfoRecordAnnotation: Parser<ModuleInfoRecordAnnotation> =
     ),
     ([, key, , , , values]) => ({
       type: "ModuleInfoRecordAnnotation" as const,
-      key: key.name,
+      key,
       values,
     }),
   );

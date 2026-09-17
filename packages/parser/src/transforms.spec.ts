@@ -407,3 +407,99 @@ describe("transformFunctions", () => {
     }
   });
 });
+
+describe("comments in transform signature positions (issue #62)", () => {
+  // The signature's ":", ",", and "->" separators only skipped plain
+  // whitespace (optionalWhitespace), not comments -- inconsistent with
+  // every other separator in the grammar, which is comment-tolerant.
+  const accepts = (src: string, label: string) => {
+    it(label, () => {
+      const result = parse(transformFunction)(src);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.name).toBe("f");
+      }
+    });
+  };
+
+  accepts(
+    `f(a /* c */: string) -> string { return a; }`,
+    "comment between a parameter name and ':'",
+  );
+  accepts(
+    `f(a: /* c */ string) -> string { return a; }`,
+    "comment between ':' and the parameter type",
+  );
+  accepts(
+    `f(a: string, /* c */ b: number) -> string { return a; }`,
+    "comment after ',' inside the parameter list",
+  );
+  accepts(
+    `f(a: string /* c */, b: number) -> string { return a; }`,
+    "comment before ',' inside the parameter list",
+  );
+  accepts(
+    `f( /* c */ a: string) -> string { return a; }`,
+    "comment right after '('",
+  );
+  accepts(
+    `f(a: string) /* c */ -> string { return a; }`,
+    "comment between ')' and '->'",
+  );
+  accepts(
+    `f(a: string) -> /* c */ string { return a; }`,
+    "comment between '->' and the return type",
+  );
+  accepts(
+    `f(a: string) // c\n -> string { return a; }`,
+    "line comment between ')' and '->'",
+  );
+  accepts(
+    `f(a: Map<string, /* c */ number>) -> string { return a; }`,
+    "comment inside a generic type's argument list",
+  );
+
+  it("a malformed signature still fails (comment tolerance doesn't widen the grammar)", () => {
+    const result = parse(transformFunction)(
+      `f(a /* c */ string) -> string { return a; }`,
+    );
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("transform function documentation comments (issue #67)", () => {
+  // `///` lines before a function attach to its `documentation` field --
+  // transformFunction's leading separator collects them (previously they
+  // were silently discarded as ordinary comments).
+  it("attaches a /// comment before a function to its documentation", () => {
+    const result = parse(transformFunction)(
+      `/// Adds one\nf(a: number) -> number { return a; }`,
+    );
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.documentation).toEqual(["Adds one"]);
+    }
+  });
+
+  it("collects /// docs between two functions onto the following one", () => {
+    const result = parse(transformFunctions)(
+      `f(a: number) -> number { return a; }\n/// Doc for g\ng(b: number) -> number { return b; }`,
+    );
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toHaveLength(2);
+      expect(result.val[0]?.documentation).toBeUndefined();
+      expect(result.val[1]?.documentation).toEqual(["Doc for g"]);
+    }
+  });
+
+  it("a // comment between functions is not documentation", () => {
+    const result = parse(transformFunctions)(
+      `f(a: number) -> number { return a; }\n// plain comment\ng(b: number) -> number { return b; }`,
+    );
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val[1]?.documentation).toBeUndefined();
+    }
+  });
+});

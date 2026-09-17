@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 import {
+  ExportResolutionError,
   NamespaceConflictError,
   NamespaceManager,
   QualifiedNameResolutionError,
@@ -212,6 +213,60 @@ describe("NamespaceManager", () => {
 
       manager.registerModule(moduleFile);
       expect(() => manager.registerModule(moduleFile)).not.toThrow();
+    });
+
+    it("rejects an @export naming a rule no grammar in the module declares (issue #68)", () => {
+      // Previously a phantom name was added to scope.exports unchecked:
+      // checkNamespaceConflicts could then raise a NamespaceConflictError
+      // against a module legitimately importing ANOTHER module's real rule
+      // of the same name (a conflict between a real rule and nothing).
+      const grammar = createModularGrammar("G", [createRule("real")], {
+        type: "ExportDeclaration",
+        rules: ["real", "ghost"],
+      });
+      const moduleFile = createModuleFile("test.tpeg", [grammar]);
+
+      expect(() => manager.registerModule(moduleFile)).toThrow(
+        ExportResolutionError,
+      );
+      expect(() => manager.registerModule(moduleFile)).toThrow(
+        /'ghost'.*@export.*grammar 'G'.*module 'test'/,
+      );
+    });
+
+    it("accepts an @export naming a rule declared by a SIBLING grammar in the same module file", () => {
+      // The module -- not the individual grammar -- is the namespace, so a
+      // grammar may export a rule another grammar in the same file declares.
+      const moduleFile = createModuleFile("test.tpeg", [
+        createModularGrammar("A", [createRule("a")], {
+          type: "ExportDeclaration",
+          rules: ["a", "b"],
+        }),
+        createModularGrammar("B", [createRule("b")]),
+      ]);
+
+      expect(() => manager.registerModule(moduleFile)).not.toThrow();
+      const scope = manager.getScope("test");
+      expect(scope?.exports.has("a")).toBe(true);
+      expect(scope?.exports.has("b")).toBe(true);
+    });
+
+    it("a phantom @export no longer produces a spurious NamespaceConflictError", () => {
+      // The original symptom: module "a"'s @export listed "shared" (a rule
+      // it never declared); module "main" legitimately imported module
+      // "b"'s REAL "shared" -- and conflict-checking blamed "a" too.
+      const moduleA = createModuleFile("a.tpeg", [
+        createModularGrammar("A", [createRule("aRule")], {
+          type: "ExportDeclaration",
+          rules: ["aRule", "shared"],
+        }),
+      ]);
+      expect(() => manager.registerModule(moduleA)).toThrow(
+        ExportResolutionError,
+      );
+      // The phantom export is rejected at registration, so it can never
+      // reach conflict checking at all.
+      expect(manager.getScope("a")?.exports.has("shared")).toBeFalsy();
     });
   });
 
@@ -602,7 +657,11 @@ describe("NamespaceManager", () => {
     // and `/proj/b/u.tpeg` both registered, an import of `./b/u.tpeg`
     // resolved to whichever was found first instead of the file it names.
     const registerSameBasenameModules = () => {
-      const ruleA = createRule("r", { type: "StringLiteral", value: "AAA" });
+      const ruleA = createRule("r", {
+        type: "StringLiteral",
+        value: "AAA",
+        quote: '"',
+      });
       manager.registerModule(
         createModuleFile(
           "/proj/a/u.tpeg",
@@ -616,7 +675,11 @@ describe("NamespaceManager", () => {
           { type: "ModuleInfo", namespace: "ns_a" },
         ),
       );
-      const ruleB = createRule("r", { type: "StringLiteral", value: "BBB" });
+      const ruleB = createRule("r", {
+        type: "StringLiteral",
+        value: "BBB",
+        quote: '"',
+      });
       manager.registerModule(
         createModuleFile(
           "/proj/b/u.tpeg",
@@ -657,6 +720,7 @@ describe("NamespaceManager", () => {
       expect(resolved.rule.pattern).toEqual({
         type: "StringLiteral",
         value: "BBB",
+        quote: '"',
       });
     });
 
