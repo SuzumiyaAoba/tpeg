@@ -98,7 +98,6 @@ const engine = new TypeInferenceEngine({
 import { TypeIntegrationEngine } from "@suzumiyaaoba/tpeg-type-inference";
 
 const integrationEngine = new TypeIntegrationEngine({
-  strictTypes: true,
   includeDocumentation: true,
   generateTypeGuards: true,
   typeNamespace: "MyGrammarTypes",
@@ -242,10 +241,9 @@ TPEG文法の型推論を実行するメインクラス。
 - `inferArrayTypes` (boolean): 繰り返し演算子の配列型推論を行うかどうか (デフォルト: true)
 - `inferUnionTypes` (boolean): 選択演算子のユニオン型推論を行うかどうか (デフォルト: true)
 - `inferObjectTypes` (boolean): シーケンス演算子のオブジェクト型推論を行うかどうか (デフォルト: true)
-- `includePositions` (boolean): 型に位置情報を含めるかどうか (デフォルト: false)
 - `customTypeMappings` (Map<string, string>): 特定のパターンのカスタム型マッピング
 - `generateDocumentation` (boolean): JSDocコメントを生成するかどうか (デフォルト: true)
-- `maxRecursionDepth` (number): スタックオーバーフローを防ぐ最大再帰深度 (デフォルト: 50)
+- `maxRecursionDepth` (number): スタックオーバーフローを防ぐ最大再帰深度 (デフォルト: 100)
 - `enableCaching` (boolean): パフォーマンスのためのキャッシュを有効にするかどうか (デフォルト: true)
 - `detectCircularDependencies` (boolean): 循環依存を検出するかどうか (デフォルト: true)
 
@@ -260,7 +258,6 @@ TPEG文法の型推論を実行するメインクラス。
 
 #### コンストラクタオプション
 
-- `strictTypes` (boolean): 厳密な型を生成するかどうか（'any'や'unknown'なし） (デフォルト: true)
 - `includeDocumentation` (boolean): 生成された型にJSDocコメントを含めるかどうか (デフォルト: true)
 - `customTypeMappings` (Map<string, string>): 特定のパターンのカスタム型マッピング
 - `generateTypeGuards` (boolean): 推論された型の型ガードを生成するかどうか (デフォルト: false)

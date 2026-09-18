@@ -159,6 +159,24 @@ const VARIANTS: readonly VariantSpec[] = [
       }).code,
   },
   {
+    // `optimize: false` defaults every opt-out-able optimization off
+    // (`enableMemoization`, `enablePredictiveDispatch`, `enableCharClassRun`
+    // all fall back to `optimize`'s value), so the emitted parser must
+    // still agree with the oracle -- it just spells `choice`/`zeroOrMore`
+    // instead of `predictiveChoice`/`charClassRun` and never wraps a rule
+    // in `memoize`. Explicit `@memoize` annotations still apply; that's
+    // fine, memoization doesn't change results.
+    name: "optimized, optimize: false",
+    shapePreserving: true,
+    build: (g) =>
+      generateOptimizedTypeScriptParser(g, {
+        language: "typescript",
+        includeImports: false,
+        includeTypes: false,
+        optimize: false,
+      }).code,
+  },
+  {
     name: "optimized + regex fusion (rule scope)",
     shapePreserving: true,
     build: (g) =>

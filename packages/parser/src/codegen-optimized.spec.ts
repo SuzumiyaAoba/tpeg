@@ -1371,6 +1371,105 @@ describe("generateOptimizedTypeScriptParser: import precision (regression)", () 
   });
 });
 
+describe("optimize master switch", () => {
+  // Exercises every default-on optimization feature at once: `big`'s
+  // FIRST-computable alternatives trigger `predictiveChoice`, `digits`'s
+  // bare-CharacterClass Plus triggers `charClassRun`, and `shared`
+  // (reached from all of `big`'s alternatives) is flagged reentrant and
+  // memoized.
+  const featureGrammar = () =>
+    createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "big",
+          createChoice([
+            createSequence([
+              createIdentifier("shared"),
+              createStringLiteral("x", '"'),
+            ]),
+            createSequence([
+              createIdentifier("shared"),
+              createStringLiteral("y", '"'),
+            ]),
+            createIdentifier("shared"),
+          ]),
+        ),
+        createRuleDefinition("shared", createStringLiteral("a", '"')),
+        createRuleDefinition(
+          "digits",
+          createPlus(createCharacterClass([createCharRange("0", "9")], false)),
+        ),
+      ],
+    );
+
+  it("optimize: false suppresses predictiveChoice/charClassRun/memoize emission", () => {
+    // Regression: `optimize` was stored in `this.options` but never
+    // read, so `optimize: false` produced byte-identical output to
+    // `optimize: true` despite the documented "Enable performance
+    // optimizations" contract.
+    const on = generateOptimizedTypeScriptParser(featureGrammar(), {
+      includeImports: false,
+    });
+    const off = generateOptimizedTypeScriptParser(featureGrammar(), {
+      includeImports: false,
+      optimize: false,
+    });
+
+    expect(on.code).toContain("predictiveChoice(");
+    expect(on.code).toContain("charClassRun(");
+    expect(on.code).toContain("memoize(");
+
+    expect(off.code).not.toContain("predictiveChoice(");
+    expect(off.code).not.toContain("charClassRun(");
+    expect(off.code).not.toContain("memoize(");
+    expect(off.code).not.toBe(on.code);
+  });
+
+  it("an explicitly-set per-feature flag still wins under optimize: false", () => {
+    // `optimize` supplies the DEFAULT for each feature flag, not an
+    // override -- a caller asking for one specific feature while
+    // leaving the master switch off still gets it.
+    const result = generateOptimizedTypeScriptParser(featureGrammar(), {
+      includeImports: false,
+      optimize: false,
+      enableMemoization: true,
+    });
+
+    expect(result.code).toContain("memoize(");
+    expect(result.code).not.toContain("predictiveChoice(");
+    expect(result.code).not.toContain("charClassRun(");
+  });
+
+  it("optimize: false output still parses correctly (feature-free combinator tree)", async () => {
+    const core = await import("@suzumiyaaoba/tpeg-core");
+    const combinator = await import("@suzumiyaaoba/tpeg-combinator");
+
+    const result = generateOptimizedTypeScriptParser(featureGrammar(), {
+      includeImports: false,
+      includeTypes: false,
+      optimize: false,
+    });
+    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+    const scope = { ...combinator, ...core };
+    const moduleFactory = new Function(
+      ...Object.keys(scope),
+      `${body}\nreturn { big };`,
+    );
+    const { big } = moduleFactory(...Object.values(scope));
+
+    // `big` = shared "x" / shared "y" / shared with shared = "a".
+    const ax = big("ax", 0);
+    expect(ax.success).toBe(true);
+    if (ax.success) expect(ax.next).toBe(2);
+    const a = big("a", 0);
+    expect(a.success).toBe(true);
+    if (a.success) expect(a.next).toBe(1);
+    expect(big("z", 0).success).toBe(false);
+  });
+});
+
 describe("includeMonitoring", () => {
   it("rejects a rule named performanceMonitor (would collide with the emitted monitor const)", () => {
     const grammar = createGrammarDefinition(

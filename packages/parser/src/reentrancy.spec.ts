@@ -391,5 +391,9 @@ describe("analyzeReentrancy", () => {
     expect(reentrantRules.size).toBe(N); // r1..rN; r0 is the entry point
     expect(reentrantRules.has("r0")).toBe(false);
     expect(reentrantRules.has(`r${N}`)).toBe(true);
-  });
+    // Explicit timeout: the assertion itself is behavioral (worklist
+    // propagation visits each edge once, so a 2k-rule chain converges),
+    // but the work takes ~4s standalone -- under full-suite parallel
+    // load it was intermittently exceeding vitest's 5s default.
+  }, 30_000);
 });

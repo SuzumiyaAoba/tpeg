@@ -1395,3 +1395,75 @@ describe("EtaTPEGCodeGenerator: import precision (regression)", () => {
     ).toEqual(['import { untagCapture } from "@suzumiyaaoba/tpeg-core";']);
   });
 });
+
+describe("EtaTPEGCodeGenerator: @memoize annotation (regression)", () => {
+  // Previously this generator never consulted `rule.annotations` at
+  // all -- `shouldMemoize(_rule, complexity)` ignored its `_rule`
+  // parameter -- so `@memoize` on a low-complexity, non-recursive rule
+  // emitted no `memoize(...)` at all, silently ignoring the documented
+  // annotation both parser-package generators honor.
+  const annotatedGrammar = (value = "") =>
+    createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        {
+          ...createRuleDefinition("start", createStringLiteral("a")),
+          annotations: [{ type: "GrammarAnnotation", key: "memoize", value }],
+        },
+      ],
+    );
+
+  it("a bare @memoize wraps a low-complexity rule AND imports memoize, on both templates", async () => {
+    for (const optimize of [false, true]) {
+      const result = await generateEtaTypeScriptParser(annotatedGrammar(), {
+        includeImports: true,
+        optimize,
+      });
+      expect(result.code).toContain("memoize(");
+      expect(result.imports.join(" ")).toMatch(/\bmemoize\b/);
+    }
+  });
+
+  it("@memoize applies even when enableMemoization: false (explicit annotation wins)", async () => {
+    const result = await generateEtaTypeScriptParser(annotatedGrammar(), {
+      includeImports: true,
+      optimize: false,
+      enableMemoization: false,
+    });
+    expect(result.code).toContain("memoize(");
+    expect(result.imports.join(" ")).toMatch(/\bmemoize\b/);
+  });
+
+  it("@memoize: N bakes { maxCacheSize: N } into the wrap", async () => {
+    const result = await generateEtaTypeScriptParser(annotatedGrammar("64"), {
+      includeImports: false,
+      optimize: false,
+    });
+    expect(result.code).toContain("{ maxCacheSize: 64 }");
+  });
+
+  it("generated code with an annotated rule compiles and parses", async () => {
+    const core = await import("@suzumiyaaoba/tpeg-core");
+    const combinator = await import("@suzumiyaaoba/tpeg-combinator");
+
+    const result = await generateEtaTypeScriptParser(annotatedGrammar("8"), {
+      includeImports: false,
+      includeTypes: false,
+      optimize: true,
+    });
+    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
+    const scope = { ...combinator, ...core };
+    const moduleFactory = new Function(
+      ...Object.keys(scope),
+      `${body}\nreturn { start };`,
+    );
+    const { start } = moduleFactory(...Object.values(scope)) as {
+      start: import("@suzumiyaaoba/tpeg-core").Parser<unknown>;
+    };
+    const ok = start("a", 0);
+    expect(ok.success).toBe(true);
+    if (ok.success) expect(ok.next).toBe(1);
+    expect(start("b", 0).success).toBe(false);
+  });
+});

@@ -84,8 +84,6 @@ export interface TypedGrammarDefinition extends Omit<
  * Options for type integration
  */
 export interface TypeIntegrationOptions {
-  /** Whether to generate strict types (no 'any' or 'unknown') */
-  strictTypes: boolean;
   /** Whether to include JSDoc comments in generated types */
   includeDocumentation: boolean;
   /** Custom type mappings for specific patterns */
@@ -100,7 +98,6 @@ export interface TypeIntegrationOptions {
  * Default type integration options
  */
 export const DEFAULT_TYPE_INTEGRATION_OPTIONS: TypeIntegrationOptions = {
-  strictTypes: true,
   includeDocumentation: true,
   customTypeMappings: new Map(),
   generateTypeGuards: false,
@@ -121,7 +118,6 @@ export class TypeIntegrationEngine {
       inferArrayTypes: true,
       inferUnionTypes: true,
       inferObjectTypes: true,
-      includePositions: false,
       customTypeMappings: this.options.customTypeMappings,
       generateDocumentation: this.options.includeDocumentation,
     });

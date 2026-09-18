@@ -98,7 +98,6 @@ const engine = new TypeInferenceEngine({
 import { TypeIntegrationEngine } from "@suzumiyaaoba/tpeg-type-inference";
 
 const integrationEngine = new TypeIntegrationEngine({
-  strictTypes: true,
   includeDocumentation: true,
   generateTypeGuards: true,
   typeNamespace: "MyGrammarTypes",
@@ -242,10 +241,9 @@ Main class for performing type inference on TPEG grammars.
 - `inferArrayTypes` (boolean): Whether to infer array types for repetition operators (default: true)
 - `inferUnionTypes` (boolean): Whether to infer union types for choice operators (default: true)
 - `inferObjectTypes` (boolean): Whether to infer object types for sequence operators (default: true)
-- `includePositions` (boolean): Whether to include position information in types (default: false)
 - `customTypeMappings` (Map<string, string>): Custom type mappings for specific patterns
 - `generateDocumentation` (boolean): Whether to generate JSDoc comments (default: true)
-- `maxRecursionDepth` (number): Maximum recursion depth to prevent stack overflow (default: 50)
+- `maxRecursionDepth` (number): Maximum recursion depth to prevent stack overflow (default: 100)
 - `enableCaching` (boolean): Whether to enable caching for performance (default: true)
 - `detectCircularDependencies` (boolean): Whether to detect circular dependencies (default: true)
 
@@ -260,7 +258,6 @@ Combines type inference with code generation for enhanced type-safe parser gener
 
 #### Constructor Options
 
-- `strictTypes` (boolean): Whether to generate strict types (no 'any' or 'unknown') (default: true)
 - `includeDocumentation` (boolean): Whether to include JSDoc comments in generated types (default: true)
 - `customTypeMappings` (Map<string, string>): Custom type mappings for specific patterns
 - `generateTypeGuards` (boolean): Whether to generate type guards for inferred types (default: false)

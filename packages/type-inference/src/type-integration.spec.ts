@@ -527,27 +527,8 @@ describe("TypeIntegrationEngine", () => {
       );
     });
 
-    it("should handle strict types option", () => {
-      const options: Partial<TypeIntegrationOptions> = {
-        strictTypes: true,
-      };
-      const engine = new TypeIntegrationEngine(options);
-
-      const grammar: GrammarDefinition = createGrammarDefinition(
-        "TestGrammar",
-        [],
-        [createRuleDefinition("test", createStringLiteral("value", '"'))],
-      );
-
-      const typedGrammar = engine.createTypedGrammar(grammar);
-
-      // With strict types, we shouldn't see 'any' or 'unknown' unless necessary
-      expect(typedGrammar.typeDefinitions).not.toContain("any");
-    });
-
     it("rejects rules whose pascalCased names collide instead of emitting duplicate type aliases (regression)", () => {
       const engine = new TypeIntegrationEngine({
-        strictTypes: true,
         generateTypeGuards: true,
       });
 

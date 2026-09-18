@@ -87,9 +87,24 @@ export interface OptimizedCodeGenOptions {
   includeImports?: boolean;
   /** Generate with type annotations */
   includeTypes?: boolean;
-  /** Enable performance optimizations */
+  /**
+   * Master switch for the optional performance passes: when explicitly
+   * `false`, the DEFAULT for each default-on per-feature flag
+   * (`enableMemoization`, `enablePredictiveDispatch`,
+   * `enableCharClassRun`) flips to off, so no `predictiveChoice`/
+   * `charClassRun`/`memoize` calls are emitted. An explicitly-set
+   * per-feature flag still wins -- this supplies defaults, not
+   * overrides. `enableRegexFusion` is opt-in (default `false`) and
+   * unaffected. Defaults to `true`.
+   */
   optimize?: boolean;
-  /** Enable memoization for complex expressions */
+  /**
+   * Wrap rules `./reentrancy.ts` flags as reentrant in `memoize(...)`.
+   * Defaults to `optimize`'s value (`true` unless `optimize: false`).
+   * An explicit `@memoize` rule annotation memoizes regardless of this
+   * flag -- it's the user directly saying "memoize this rule", not a
+   * suggestion this generator inferred.
+   */
   enableMemoization?: boolean;
   /** Generate performance monitoring code */
   includeMonitoring?: boolean;
@@ -98,7 +113,8 @@ export interface OptimizedCodeGenOptions {
    * whenever at least one alternative has a statically computable,
    * non-nullable FIRST set (see `packages/parser/src/first-sets.ts`).
    *
-   * Default `true` (like `enableMemoization`), unlike this package's other
+   * Defaults to `optimize`'s value (`true` unless `optimize: false`),
+   * like `enableMemoization` -- unlike this package's other
    * grammar rewrites (`./ast-optimize.ts`'s `leftFactorChoices` and
    * friends, which stay opt-in). The two have different safety
    * properties: `predictiveChoice` only *filters* which alternatives are
@@ -180,9 +196,10 @@ export interface OptimizedCodeGenOptions {
    * `Star`/`Plus`/`Quantified{0,}`/`Quantified{1,}` whose repeated
    * element is a bare `CharacterClass`. See `CodeGenOptions`'s option of
    * the same name (`./codegen.ts`) for the full rationale -- this
-   * generator's default is identical (`true`) for the identical reason:
-   * the emitted value is byte-identical to the unfused shape, so there's
-   * no risk surface to gate behind an opt-in.
+   * generator defaults it to `optimize`'s value (`true` unless
+   * `optimize: false`) for the identical reason the base generator
+   * defaults it on: the emitted value is byte-identical to the unfused
+   * shape, so there's no risk surface to gate behind an opt-in.
    */
   enableCharClassRun?: boolean;
 }
@@ -347,19 +364,34 @@ export class OptimizedTPEGCodeGenerator {
   private startRuleIsSafeForCommitAtTopLevel = true;
 
   constructor(options: OptimizedCodeGenOptions = { language: "typescript" }) {
+    // `optimize` is the master switch for this generator's optional
+    // performance passes: when explicitly `false` it flips the DEFAULT of
+    // each per-feature flag (`enableMemoization`,
+    // `enablePredictiveDispatch`, `enableCharClassRun` -- all default-on)
+    // to off, so `generateOptimizedTypeScriptParser(g, { optimize:
+    // false })` emits a plain combinator tree without
+    // `predictiveChoice`/`charClassRun`/`memoize` calls. It supplies the
+    // default, not an override: an explicitly-set per-feature flag still
+    // wins (`{ optimize: false, enableMemoization: true }` memoizes).
+    // `enableRegexFusion` stays opt-in (default `false`) regardless --
+    // see its doc comment for why it takes the more conservative
+    // posture. This field previously was stored and never read, so
+    // `optimize: false` silently produced byte-identical output to
+    // `optimize: true`.
+    const optimize = options.optimize ?? true;
     this.options = {
       language: options.language,
       namePrefix: options.namePrefix ?? "",
       includeImports: options.includeImports ?? true,
       includeTypes: options.includeTypes ?? true,
-      optimize: options.optimize ?? true,
-      enableMemoization: options.enableMemoization ?? true,
+      optimize,
+      enableMemoization: options.enableMemoization ?? optimize,
       includeMonitoring: options.includeMonitoring ?? false,
-      enablePredictiveDispatch: options.enablePredictiveDispatch ?? true,
+      enablePredictiveDispatch: options.enablePredictiveDispatch ?? optimize,
       enableRegexFusion: options.enableRegexFusion ?? false,
       regexFusionScope: options.regexFusionScope ?? "rule",
       regexFusionMinWeight: options.regexFusionMinWeight ?? MIN_FUSION_WEIGHT,
-      enableCharClassRun: options.enableCharClassRun ?? true,
+      enableCharClassRun: options.enableCharClassRun ?? optimize,
     };
   }
 

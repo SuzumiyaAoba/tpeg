@@ -71,11 +71,6 @@ export interface InferredType {
   documentation?: string | undefined;
   /** Whether this type represents a complex type that needs parentheses in unions */
   needsParens?: boolean;
-  /** Position information if includePositions is enabled */
-  position?: {
-    start: number;
-    end: number;
-  };
   /** For baseType "union": the inferred type of each alternative, used to build a type guard */
   unionMembers?: InferredType[];
   /** For an isArray `T[]` type: the inferred element type, used to build
@@ -132,8 +127,6 @@ export interface TypeInferenceOptions {
   inferUnionTypes: boolean;
   /** Whether to infer object types for sequence operators */
   inferObjectTypes: boolean;
-  /** Whether to include position information in types */
-  includePositions: boolean;
   /** Custom type mappings for specific patterns (e.g., "number" -> "MyNumberType") */
   customTypeMappings: Map<string, string>;
   /** Whether to generate JSDoc comments for inferred types */
@@ -156,7 +149,6 @@ export const DEFAULT_TYPE_INFERENCE_OPTIONS: TypeInferenceOptions = {
   inferArrayTypes: true,
   inferUnionTypes: true,
   inferObjectTypes: true,
-  includePositions: false,
   customTypeMappings: new Map(),
   generateDocumentation: true,
   maxRecursionDepth: 100,
@@ -1316,7 +1308,7 @@ export class TypeInferenceEngine {
     // Generate a unique key for caching based on expression structure
     return JSON.stringify(expression, (key, value) => {
       // Exclude documentation and other non-structural properties from cache key
-      if (key === "documentation" || key === "position") {
+      if (key === "documentation") {
         return undefined;
       }
       return value;

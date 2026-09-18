@@ -22,9 +22,11 @@ import {
   generateQualifiedIdentifierCode,
   generateQuantifiedCode,
   generateStringLiteralCode,
+  findMemoizeAnnotation,
   sequenceCombinatorFor,
   validateGeneratedIdentifiers,
   wrapWithAction,
+  wrapWithMemoize,
   wrapWithMonitoring,
   wrapWithTransform,
 } from "@suzumiyaaoba/tpeg-parser";
@@ -194,7 +196,15 @@ export class EtaTPEGCodeGenerator {
       this.currentRuleIndex = index;
       const complexity = performanceAnalysis.ruleComplexity.get(rule.name);
       const transformFn = transformsByRuleName.get(rule.name);
-      const memoized = this.shouldMemoize(rule, complexity);
+      // An explicit `@memoize` annotation wins over `shouldMemoize`'s
+      // complexity heuristic (and applies even when `enableMemoization`
+      // is off) -- mirroring codegen-optimized.ts's "the user directly
+      // saying memoize this rule" contract. Previously this generator
+      // ignored the annotation entirely.
+      const memoizeAnnotation = findMemoizeAnnotation(rule);
+      const memoized = memoizeAnnotation
+        ? false
+        : this.shouldMemoize(complexity);
       const baseImplementation = this.generateRuleImplementation(rule);
 
       // When a transform or monitoring applies, memoization (if any) is
@@ -203,18 +213,20 @@ export class EtaTPEGCodeGenerator {
       // would otherwise memoize the *transformed* result (or sit INSIDE
       // the monitoring timer, hiding memo hits), re-running the
       // transform's own caching semantics differently from
-      // codegen.ts/codegen-optimized.ts.
+      // codegen.ts/codegen-optimized.ts. An annotated rule's wrap is
+      // likewise always baked here: the `rule-memoized.eta` template
+      // only emits a bare `memoize(...)`, which can't carry
+      // `@memoize: N`'s `{ maxCacheSize: N }` argument.
       const bakeWrappers =
         transformFn !== undefined || this.options.includeMonitoring;
-      let implementation = transformFn
-        ? wrapWithTransform(
-            rule.name,
-            memoized ? `memoize(${baseImplementation})` : baseImplementation,
-            transformFn,
-          )
+      const memoizedImplementation = memoizeAnnotation
+        ? wrapWithMemoize(baseImplementation, memoizeAnnotation)
         : memoized && bakeWrappers
           ? `memoize(${baseImplementation})`
           : baseImplementation;
+      let implementation = transformFn
+        ? wrapWithTransform(rule.name, memoizedImplementation, transformFn)
+        : memoizedImplementation;
       // `includeMonitoring` previously only imported and re-exported
       // `globalPerformanceMonitor` without ever calling it -- instrument
       // each rule here so the option actually measures something. The wrap
@@ -329,13 +341,18 @@ export class EtaTPEGCodeGenerator {
       // import line rather than being folded into usedCombinators below --
       // tpeg-core doesn't export it.
       //
-      // Whether to import it must match shouldMemoize's own per-rule check
-      // exactly (estimatedComplexity === "high" || hasRecursion). The
-      // coarser grammar-level estimatedParseComplexity can stay "low" even
-      // when a single small rule is genuinely recursive, which would skip
-      // this import while a rule's generated code still called memoize().
-      let anyRuleMemoized = false;
-      if (this.options.enableMemoization) {
+      // Whether to import it must match the per-rule emission decision
+      // exactly: an explicit `@memoize` annotation (which applies even
+      // when `enableMemoization` is off -- see the rule loop above), or
+      // shouldMemoize's complexity check (estimatedComplexity === "high"
+      // || hasRecursion). The coarser grammar-level
+      // estimatedParseComplexity can stay "low" even when a single small
+      // rule is genuinely recursive, which would skip this import while
+      // a rule's generated code still called memoize().
+      let anyRuleMemoized = grammar.rules.some(
+        (rule) => findMemoizeAnnotation(rule) !== undefined,
+      );
+      if (!anyRuleMemoized && this.options.enableMemoization) {
         for (const complexity of analysis.ruleComplexity.values()) {
           if (
             complexity.estimatedComplexity === "high" ||
@@ -628,10 +645,7 @@ export class EtaTPEGCodeGenerator {
    * `packages/parser/src/reentrancy.ts`'s analysis (now importable) is
    * an independent follow-up, not part of this fix.
    */
-  private shouldMemoize(
-    _rule: RuleDefinition,
-    complexity?: ExpressionComplexity,
-  ): boolean {
+  private shouldMemoize(complexity?: ExpressionComplexity): boolean {
     if (!this.options.enableMemoization || !complexity) {
       return false;
     }
