@@ -3,12 +3,12 @@ grammar URL {
   @description: "HTTP/HTTPS URL parser with components"
   @author: "TPEG Parser"
   @license: "MIT"
-  
-  url = scheme "://" host
-  scheme = "http" / "https"
-  host = [a-zA-Z0-9]
-  port = [0-9]
-  path = [a-zA-Z0-9]
-  query = [a-zA-Z0-9]
-  fragment = [a-zA-Z0-9]
+
+  url = scheme "://" host (":" port)? ("/" path)? ("?" query)? ("#" fragment)?
+  scheme = "https" / "http"
+  host = [a-zA-Z0-9.\-]+
+  port = [0-9]+
+  path = [a-zA-Z0-9_./\-]+
+  query = [a-zA-Z0-9_&=%.\-]+
+  fragment = [a-zA-Z0-9_.\-]+
 }

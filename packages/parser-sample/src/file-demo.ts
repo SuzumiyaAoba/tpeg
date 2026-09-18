@@ -196,10 +196,7 @@ console.log("🎯 Demonstrating TPEG Parser with File-Based Examples\n");
 // Demo 1: Grammar definition files
 console.log("📚 Grammar Definition Files:");
 demoGrammarFile("minimal.tpeg");
-console.log(
-  "📝 Note: Complex grammar parsing with rules is a limitation of current parser implementation",
-);
-console.log("Basic syntax elements work correctly as shown below:\n");
+demoGrammarFile("working-example.tpeg");
 
 // Demo 2: Basic syntax parsing from file
 console.log("🔤 Basic Syntax Parsing:");

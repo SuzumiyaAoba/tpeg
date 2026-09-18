@@ -3,11 +3,12 @@ grammar CSV {
   @description: "CSV parser with quoted fields and escape sequences"
   @author: "TPEG Parser"
   @license: "MIT"
-  
-  csv = row
+
+  csv = row (newline row)* newline?
   row = field ("," field)*
   field = quotedField / unquotedField
-  quotedField = "\"" [a-zA-Z0-9] "\""
-  unquotedField = [a-zA-Z0-9]
+  quotedField = "\"" quotedChar* "\""
+  quotedChar = "\"\"" / [^\"\n]
+  unquotedField = [^",\n]*
   newline = "\n"
 }

@@ -182,13 +182,16 @@ const demoErrorCases = () => {
   ];
 
   for (const json of invalidExamples) {
-    try {
-      const result = parseJSON(json);
+    // parseJSON's contract is to RETURN null on parse failure (it only
+    // throws for a null input value), so failure is detected by the
+    // result, not by a catch block.
+    const result = parseJSON(json);
+    if (result === null) {
+      console.log(`✅ Correctly failed: ${json}`);
+    } else {
       console.log(
         `⚠️  Unexpectedly parsed: ${json} -> ${JSON.stringify(result)}`,
       );
-    } catch (_error) {
-      console.log(`✅ Correctly failed: ${json}`);
     }
     console.log();
   }

@@ -778,7 +778,7 @@ const emit = (expr: Expression, counter: GroupCounter): Emitted => {
           ? "*"
           : expr.type === "Plus"
             ? "+"
-            : expr.max === undefined
+            : expr.max === undefined || expr.max === Number.POSITIVE_INFINITY
               ? `{${expr.min},}`
               : `{${expr.min},${expr.max}}`;
       const ref = groupRef(groupIndex);

@@ -828,6 +828,19 @@ export const validateGeneratedIdentifiers = (
           `Rule "${rule.name}" has a capture label named "${label}", which cannot be used as a destructured variable name (\`const { ${label} } = ...\`) in generated code -- rename the label.`,
         );
       }
+      // A label named `$$` IS a legal destructured binding name in
+      // isolation (and `RESERVED_INTERNAL_RULE_NAMES` deliberately does
+      // not cover labels -- see above), but `wrapWithAction` emits the
+      // destructure in the SAME IIFE scope as its own
+      // `const $$ = __result.val;` -- so `const { $$ } = ($$ ?? {})`
+      // is a duplicate-`const` SyntaxError, not a legal shadow. Reachable
+      // only from a hand-built AST (the grammar parser's identifier rule
+      // can't produce a `$`).
+      if (label === "$$") {
+        throw new Error(
+          `Rule "${rule.name}" has a capture label named "$$", which collides with the \`const $$ = __result.val;\` binding wrapWithAction declares in the same scope as its \`const { ${label} } = ...\` destructure -- the emitted code fails to parse (duplicate lexical declaration). Rename the label.`,
+        );
+      }
     }
 
     // A `QualifiedIdentifier` (`module.rule`) is emitted verbatim as a

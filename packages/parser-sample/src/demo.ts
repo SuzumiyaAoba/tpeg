@@ -134,7 +134,7 @@ console.log();
 console.log("🚧 Architecture Benefits:");
 console.log("   • Monorepo with multiple focused packages");
 console.log("   • TypeScript strict mode compliance");
-console.log("   • 683 tests with comprehensive coverage");
+console.log("   • Extensive test suite with comprehensive coverage");
 console.log("   • Functional parser combinators");
 console.log("   • Performant const-based parser declarations");
 console.log("   • AST generation with Unist compatibility");

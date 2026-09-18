@@ -3,12 +3,14 @@ grammar INI {
   @description: "INI configuration file parser"
   @author: "TPEG Parser"
   @license: "MIT"
-  
-  ini = section / property / comment
+
+  ini = line ("\n" line?)* "\n"?
+  line = section / property / comment / blankLine
+  blankLine = [ \t]+
   section = "[" sectionName "]"
-  sectionName = [a-zA-Z0-9]
+  sectionName = [a-zA-Z0-9_]+
   property = key "=" value
-  key = [a-zA-Z0-9]
-  value = [a-zA-Z0-9]
-  comment = ";" [a-zA-Z0-9]
+  key = [a-zA-Z0-9_]+
+  value = [a-zA-Z0-9._/\-]+
+  comment = (";" / "#") [^\n]*
 }

@@ -5,26 +5,29 @@ grammar JsonLite {
   @author: "TPEG Team"
   @description: "Lightweight JSON parser"
   @license: "MIT"
-  
-  // Main JSON value types
-  value = string / number / boolean / nullLiteral / object / array
-  
+
+  // Main JSON value types (whitespace-tolerant)
+  value = whitespace (string / number / boolean / nullLiteral / object / array) whitespace
+
   // String parsing with escape sequences
   string = "\"" [^\"]* "\""
-  
+
   // Number parsing (integers and floats)
   number = [0-9]+ ("." [0-9]+)?
-  
+
   // Boolean literals
   boolean = "true" / "false"
-  
+
   // Null literal
   nullLiteral = "null"
-  
+
   // Object structure
-  object = "{" (pair ("," pair)*)? "}"
-  pair = string ":" value
-  
-  // Array structure
-  array = "[" (value ("," value)*)? "]"
+  object = "{" whitespace (pair ("," whitespace pair)*)? "}"
+  pair = string whitespace ":" value
+
+  // Array structure (elements carry their own whitespace via `value`)
+  array = "[" whitespace (value ("," value)*)? "]"
+
+  // Insignificant whitespace
+  whitespace = [ \t\n\r]*
 }

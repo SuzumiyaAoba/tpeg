@@ -2,8 +2,8 @@ grammar Identifier {
   @version: "1.0"
   @description: "Basic identifier parsing grammar"
   @author: "TPEG Parser"
-  
-  identifier = letter
+
+  identifier = letter (letter / digit / underscore)*
   letter = [a-zA-Z]
   digit = [0-9]
   underscore = "_"

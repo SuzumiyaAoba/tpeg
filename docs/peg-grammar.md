@@ -515,15 +515,11 @@ grammar ArithmeticCalculator {
   // Rule definitions
   expression = left:term rest:(op:add_op right:term)*
   term = left:factor rest:(op:mul_op right:factor)*
-  factor = num:number / paren:"(" expr:expression ")"
+  factor = num:number / "(" expr:expression ")"
 
   number = digits:[0-9]+
   add_op = "+" / "-"
   mul_op = "*" / "/"
-
-  // Ignored elements
-  @skip: whitespace
-  whitespace = [ \t\n\r]+
 }
 ```
 
@@ -572,10 +568,10 @@ Capture structures are automatically inferred from grammar patterns:
 
 ```tpeg
 // Grammar inference examples:
-number = digits:[0-9]+              // → captures: { digits: string }
+number = digits:[0-9]+              // → captures: { digits: string[] }
 expression = left:term right:term   // → captures: { left: T, right: T }
-optional = value?                   // → captures: { value?: T }
-repeated = item*                    // → captures: { item: T[] }
+optional = value:pattern?           // → captures: { value: [T] | [] }
+repeated = items:pattern*           // → captures: { items: T[] }
 choice = a:first / b:second         // → captures: { a?: T1, b?: T2 }
 group = sign:("+" / "-")           // → captures: { sign: string }
 ```
@@ -679,8 +675,9 @@ public class Result<T> {
 ```tpeg
 // TypeScript arithmetic evaluator
 transforms ArithmeticEvaluator@typescript {
-  number(captures: { digits: string }) -> Result<number> {
-    const value = parseInt(captures.digits, 10);
+  // `digits:[0-9]+` captures string[] (one entry per matched character)
+  number(captures: { digits: string[] }) -> Result<number> {
+    const value = parseInt(captures.digits.join(""), 10);
     if (isNaN(value)) {
       return { success: false, error: 'Invalid number format' };
     }
@@ -702,16 +699,31 @@ transforms ArithmeticEvaluator@typescript {
     return { success: true, value: result };
   }
 
-  factor(captures: { num?: number, paren?: number }) -> Result<number> {
-    return { success: true, value: captures.num ?? captures.paren };
+  // `"(" expr:expression ")"` captures `expr`, the inner expression's value
+  factor(captures: { num?: number, expr?: number }) -> Result<number> {
+    return { success: true, value: captures.num ?? captures.expr };
+  }
+
+  // `right:term` above captures term's TRANSFORMED value -- without a
+  // term transform it would be term's raw {left, rest} capture object
+  term(captures: {
+    left: number,
+    rest: Array<{op: string, right: number}>
+  }) -> Result<number> {
+    let result = captures.left;
+    for (const operation of captures.rest) {
+      if (operation.op === '*') result *= operation.right;
+      else result /= operation.right;
+    }
+    return { success: true, value: result };
   }
 }
 
 // Python arithmetic evaluator
 transforms ArithmeticEvaluator@python {
-  number(captures: { digits: string }) -> Result<int> {
+  number(captures: { digits: list }) -> Result<int> {
     try:
-      value = int(captures['digits'])
+      value = int(''.join(captures['digits']))
       return {'success': True, 'value': value}
     except ValueError:
       return {'success': False, 'error': 'Invalid number format'}
@@ -728,12 +740,23 @@ transforms ArithmeticEvaluator@python {
         return {'success': False, 'error': f"Unknown operator: {operation['op']}"}
     return {'success': True, 'value': result}
   }
+
+  # `term` needs a transform for the same reason the TypeScript one does
+  term(captures: { left: int, rest: Array<{op: string, right: int}> }) -> Result<int> {
+    result = captures['left']
+    for operation in captures['rest']:
+      if operation['op'] == '*':
+        result *= operation['right']
+      else:
+        result /= operation['right']
+    return {'success': True, 'value': result}
+  }
 }
 
 // Go arithmetic evaluator
 transforms ArithmeticEvaluator@go {
-  number(captures: { digits: string }) -> Result<int> {
-    value, err := strconv.Atoi(captures["digits"])
+  number(captures: { digits: []string }) -> Result<int> {
+    value, err := strconv.Atoi(strings.Join(captures["digits"], ""))
     if err != nil {
       return Result{Success: false, Error: "Invalid number format"}
     }
@@ -749,8 +772,8 @@ The same grammar can generate completely different type systems through differen
 ```tpeg
 // Arithmetic evaluator - returns numbers
 transforms ArithmeticEvaluator@typescript {
-  number(captures: { digits: string }) -> Result<number> {
-    return { success: true, value: parseInt(captures.digits, 10) };
+  number(captures: { digits: string[] }) -> Result<number> {
+    return { success: true, value: parseInt(captures.digits.join(""), 10) };
   }
 
   expression(captures: { left: number, rest: Array<{op: string, right: number}> }) -> Result<number> {
@@ -760,13 +783,13 @@ transforms ArithmeticEvaluator@typescript {
 
 // AST generator - returns syntax tree nodes
 transforms ArithmeticAST@typescript {
-  number(captures: { digits: string }) -> Result<NumberLiteral> {
+  number(captures: { digits: string[] }) -> Result<NumberLiteral> {
     return {
       success: true,
       value: {
         type: 'NumberLiteral',
-        value: parseInt(captures.digits, 10),
-        raw: captures.digits
+        value: parseInt(captures.digits.join(""), 10),
+        raw: captures.digits.join("")
       }
     };
   }
@@ -802,22 +825,25 @@ grammar ArithmeticCalculator {
   @version: "1.0"
   @description: "Simple four arithmetic operations calculator"
   @start: expression
-  @skip: whitespace
 
   // Operator precedence is expressed through grammar hierarchy:
   // expression (lowest precedence: +, -)
   //   ↳ term (higher precedence: *, /)
   //     ↳ factor (highest precedence: numbers, parentheses)
 
+  // Note: no annotation (e.g. "@skip") inserts whitespace automatically --
+  // every position that may contain whitespace must consume it explicitly
+  // via the `ws` rule below.
+
   // Main expression (addition/subtraction)
   // Types inferred from transform signatures
-  expression = left:term rest:(op:add_op right:term)*
+  expression = ws left:term rest:(ws op:add_op ws right:term)* ws
 
   // Term (multiplication/division)
-  term = left:factor rest:(op:mul_op right:factor)*
+  term = left:factor rest:(ws op:mul_op ws right:factor)*
 
   // Factor (number or parenthesized expression)
-  factor = num:number / paren:"(" expr:expression ")"
+  factor = num:number / "(" expr:expression ")"
 
   // Number literal
   number = sign:("+" / "-")? digits:[0-9]+ fraction:("." [0-9]+)?
@@ -826,8 +852,8 @@ grammar ArithmeticCalculator {
   add_op = "+" / "-"
   mul_op = "*" / "/"
 
-  // Whitespace (to be skipped)
-  whitespace = [ \t\n\r]+
+  // Whitespace (consumed explicitly at each position that allows it)
+  ws = [ \t\n\r]*
 }
 ```
 
@@ -836,21 +862,39 @@ grammar ArithmeticCalculator {
 ```tpeg
 // TypeScript transforms using unified declaration syntax
 transforms ArithmeticEvaluator@typescript {
-  // Type signature defines the complete type system for this rule
+  // Type signature defines the complete type system for this rule.
+  // `e*` captures an ARRAY of each iteration's value and `e?` captures
+  // `[] | [T]`, so `digits:[0-9]+` is string[] (join it before parsing),
+  // `sign:("+" / "-")?` is `[] | [string]`, and `fraction:("." [0-9]+)?`
+  // is `[] | [[string, string[]]]` (the optional wraps the sequence).
   number(captures: {
-    sign?: string,      // Inferred as optional from grammar '?'
-    digits: string,     // Inferred as string from character class repetition
-    fraction?: string   // Inferred as optional string
+    sign: string[],
+    digits: string[],
+    fraction: [] | [[string, string[]]]
   }) -> Result<number> { // Explicit return type drives the type system
-    let base = parseInt(captures.digits, 10);
-    if (captures.fraction) {
-      const fracStr = '0' + captures.fraction;
-      base += parseFloat(fracStr);
+    let value = parseInt(captures.digits.join(""), 10);
+    if (captures.fraction.length > 0) {
+      const [, fracDigits] = captures.fraction[0];
+      value += parseFloat(`0.${fracDigits.join("")}`);
     }
-    if (captures.sign === '-') {
-      base = -base;
+    if (captures.sign[0] === "-") {
+      value = -value;
     }
-    return { success: true, value: base };
+    return { success: true, value };
+  }
+
+  // `term` also needs a transform: without one, `right:term` in
+  // `expression` captures term's raw {left, rest} object, not a number.
+  term(captures: {
+    left: number,
+    rest: Array<{op: string, right: number}>
+  }) -> Result<number> {
+    let result = captures.left;
+    for (const operation of captures.rest) {
+      if (operation.op === "*") result *= operation.right;
+      else result /= operation.right;
+    }
+    return { success: true, value: result };
   }
 
   expression(captures: {
@@ -859,20 +903,18 @@ transforms ArithmeticEvaluator@typescript {
   }) -> Result<number> {
     let result = captures.left;
     for (const operation of captures.rest) {
-      switch (operation.op) {
-        case '+': result += operation.right; break;
-        case '-': result -= operation.right; break;
-        default: return { success: false, error: `Unknown operator: ${operation.op}` };
-      }
+      if (operation.op === "+") result += operation.right;
+      else result -= operation.right;
     }
     return { success: true, value: result };
   }
 
-  factor(captures: { num?: number, paren?: number }) -> Result<number> {
-    if (captures.num !== undefined) {
-      return { success: true, value: captures.num };
-    } else if (captures.paren !== undefined) {
-      return { success: true, value: captures.paren };
+  // `"(" expr:expression ")"` captures `expr` (the inner value), not a
+  // `paren` label on the "(" literal.
+  factor(captures: { num?: number, expr?: number }) -> Result<number> {
+    const value = captures.num ?? captures.expr;
+    if (value !== undefined) {
+      return { success: true, value };
     }
     return { success: false, error: 'Invalid factor' };
   }
@@ -1121,9 +1163,8 @@ statement =
 ```tpeg
 grammar JSON {
   @start: json
-  @skip: whitespace
 
-  json = value
+  json = ws value ws
 
   // Labeled choice for different value types
   value =
@@ -1134,10 +1175,10 @@ grammar JSON {
     bool:boolean /
     nil:"null"
 
-  object = "{" pairs:(pair ("," pair)*)? "}"
-  pair = key:string ":" value:value
+  object = "{" ws (pair (ws "," ws pair)* ws)? "}"
+  pair = key:string ws ":" ws value:value
 
-  array = "[" values:(value ("," value)*)? "]"
+  array = "[" ws (value (ws "," ws value)* ws)? "]"
 
   string = "\"" chars:char* "\""
   char = [^"\\] / "\\" escape:escape_char
@@ -1149,9 +1190,12 @@ grammar JSON {
   frac_part = "." [0-9]+
   exp_part = ("e"/"E") sign:("+"/"-")? [0-9]+
 
-  boolean = true:"true" / false:"false"
+  // "true"/"false" are reserved words and cannot be label names
+  boolean = litTrue:"true" / litFalse:"false"
 
-  whitespace = [ \t\n\r]+
+  // Whitespace is consumed explicitly where it may appear -- there is no
+  // automatic skipping annotation (see Known Limitations).
+  ws = [ \t\n\r]*
 }
 ```
 

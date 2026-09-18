@@ -24,6 +24,7 @@ import {
   createLabeledExpression,
   createOptional,
   createPlus,
+  createQuantified,
   createRuleDefinition,
   createSequence,
   createStar,
@@ -1257,6 +1258,37 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
     expect(() => emitFusedExpression(cls)).toThrow(
       /start \(U\+7A\) is greater than end \(U\+61\)/,
     );
+  });
+
+  it("emits `{min,}` (not `{min,Infinity}`) for a hand-built Quantified whose max is Number.POSITIVE_INFINITY -- `quantified`'s documented unbounded spelling must not become a RegExp SyntaxError", async () => {
+    // Hand-built AST only -- the grammar parser's `rangeCount` can't
+    // produce `max: Infinity` (it rejects non-safe-integer bounds), but
+    // `tpeg-core`'s `quantified` explicitly documents `Infinity` as the
+    // spelling of unbounded, and `checkFusionSafe` already treats such a
+    // node as unbounded. Emitting `{2,Infinity}` verbatim produced a
+    // `SyntaxError` (`incomplete {} quantifier`) at generated-module
+    // load time.
+    const expr = createQuantified(
+      createCharacterClass([createCharRange("a", "z")], false),
+      2,
+      Number.POSITIVE_INFINITY,
+    );
+    const fusedExpr = emitFusedExpression(expr);
+    expect(fusedExpr.source).toBe("((?:[\\u{61}-\\u{7a}]){2,})");
+
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [createRuleDefinition("r", expr)],
+    );
+    const rule = grammar.rules[0];
+    if (!rule) throw new Error("expected rule");
+    const analysis = analyzeFirstSets(grammar);
+    expect(isRuleFusable(rule, analysis)).toBe(true);
+
+    const r = await compileRuleFor(grammar, "r");
+    expect(r("aaabbb", ORIGIN).success).toBe(true);
+    expect(r("a", ORIGIN).success).toBe(false);
   });
 });
 

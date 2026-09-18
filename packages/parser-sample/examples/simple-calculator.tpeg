@@ -3,10 +3,10 @@ grammar Calculator {
   @description: "A simple arithmetic calculator grammar"
   @author: "TPEG Parser Demo"
   @license: "MIT"
-  
-  expression = term
+
+  expression = whitespace term whitespace
   term = factor
   factor = number / "(" expression ")"
-  number = [0-9]
-  whitespace = [ \t\n\r]
+  number = [0-9]+ ("." [0-9]+)?
+  whitespace = [ \t\n\r]*
 }

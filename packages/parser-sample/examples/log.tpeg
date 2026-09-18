@@ -3,10 +3,14 @@ grammar Log {
   @description: "Application log file parser with timestamps and levels"
   @author: "TPEG Parser"
   @license: "MIT"
-  
-  log = logEntry
+
+  log = logEntry ("\n" logEntry)* "\n"?
   logEntry = timestamp " " level " " message
-  timestamp = [0-9]
+  timestamp = isoTimestamp / commonTimestamp
+  isoTimestamp = date "T" time ("." [0-9]+)? ("Z" / ("+" / "-") [0-9]+ ":" [0-9]+)?
+  commonTimestamp = date " " time
+  date = [0-9]+ ("-" / "/") [0-9]+ ("-" / "/") [0-9]+
+  time = [0-9]+ ":" [0-9]+ ":" [0-9]+
   level = "ERROR" / "WARN" / "INFO" / "DEBUG" / "TRACE"
-  message = [a-zA-Z0-9]
+  message = [^\n]+
 }

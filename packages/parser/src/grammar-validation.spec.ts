@@ -20,6 +20,7 @@ import {
   validateGrammar,
 } from "./grammar-validation";
 import {
+  createActionExpression,
   createChoice,
   createGrammarDefinition,
   createIdentifier,
@@ -1053,6 +1054,36 @@ describe("validateGeneratedIdentifiers: emitted-name shape and external referenc
     ).toThrow(
       /capture label named "my-label".*not a valid JavaScript identifier/,
     );
+  });
+
+  it('rejects a capture label named "$$" -- collides with wrapWithAction\'s own `const $$` in the same scope (duplicate lexical declaration)', () => {
+    // `$$` IS identifier-shaped (JS_IDENTIFIER_FULL admits `$`), so it
+    // passes the shape/reserved-word checks -- but `wrapWithAction` emits
+    // `const $$ = __result.val;` and `const { $$ } = ($$ ?? {});` in the
+    // SAME IIFE scope: a duplicate `const $$`, a SyntaxError in the
+    // generated file. Reachable only from a hand-built AST (the grammar
+    // parser's identifier rule can't produce a `$`).
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createActionExpression(
+            createSequence([
+              createLabeledExpression("$$", createStringLiteral("a", '"')),
+            ]),
+            "return $$;",
+          ),
+        ),
+      ],
+    );
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: [],
+      }),
+    ).toThrow(/capture label named "\$\$"/);
   });
 
   it("rejects a QualifiedIdentifier with a non-identifier module part (emits `foo-bar.baz` -> `(foo - bar).baz` mis-parse)", () => {
