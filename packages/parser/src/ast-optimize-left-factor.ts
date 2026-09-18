@@ -87,7 +87,6 @@ import type {
   Identifier,
   QualifiedIdentifier,
   RuleDefinition,
-  Sequence,
   StringLiteral,
 } from "./types";
 import { createChoice, createSequence } from "./types";
@@ -247,7 +246,7 @@ const prefixesEqual = (a: Expression, b: Expression): boolean => {
 };
 
 const partsOf = (expr: Expression): Expression[] =>
-  expr.type === "Sequence" ? (expr as Sequence).elements : [expr];
+  expr.type === "Sequence" ? expr.elements : [expr];
 
 const toSingleExpression = (parts: Expression[]): Expression =>
   parts.length === 1 ? (parts[0] as Expression) : createSequence(parts);

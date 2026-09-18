@@ -18,7 +18,7 @@
 
 import { mapChildExpressions } from "@suzumiyaaoba/tpeg-core";
 import type { CharacterClass, Expression, GrammarDefinition } from "./types";
-import { createChoice, createSequence } from "./types";
+import { createCharacterClass, createChoice, createSequence } from "./types";
 
 /** A `CharacterClass`-equivalent view of `expr`, or `null` if `expr`
  * isn't safely mergeable (negated classes excluded -- see doc above). */
@@ -34,22 +34,13 @@ const charClassView = (expr: Expression): CharacterClass | null => {
   // (see `character-class.ts`'s non-ASCII `charClassChar` alternative).
   // Matches `regex-fusion.ts`'s identical `isSimpleRepeatable` check.
   if (expr.type === "StringLiteral" && [...expr.value].length === 1) {
-    return {
-      type: "CharacterClass",
-      ranges: [{ start: expr.value }],
-      negated: false,
-    };
+    return createCharacterClass([{ start: expr.value }]);
   }
   return null;
 };
 
-const mergeCharacterClassRanges = (
-  classes: CharacterClass[],
-): CharacterClass => ({
-  type: "CharacterClass",
-  ranges: classes.flatMap((c) => c.ranges),
-  negated: false,
-});
+const mergeCharacterClassRanges = (classes: CharacterClass[]): CharacterClass =>
+  createCharacterClass(classes.flatMap((c) => c.ranges));
 
 /** Merges each maximal run of >=2 consecutive mergeable alternatives into
  * one `CharacterClass`; a lone mergeable alternative (no adjacent partner)

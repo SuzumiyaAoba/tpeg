@@ -24,6 +24,10 @@
  * ```
  */
 
+import {
+  escapeStringLiteral,
+  unwrapToLabeledExpression,
+} from "@suzumiyaaoba/tpeg-core";
 import type {
   ActionExpression,
   AnyChar,
@@ -45,69 +49,6 @@ import type {
   Star,
   StringLiteral,
 } from "@suzumiyaaoba/tpeg-core";
-
-/**
- * Escapes a grammar `StringLiteral`'s decoded value for embedding as a
- * TypeScript string-literal TYPE (`"..."`, e.g. `export type X =
- * "a\\b";`) -- used by `inferStringLiteralType` below.
- *
- * Intentionally duplicates `packages/parser/src/constants.ts`'s
- * `escapeStringLiteral` rather than importing it: this package
- * (`tpeg-type-inference`) depends only on `@suzumiyaaoba/tpeg-core`, not
- * `@suzumiyaaoba/tpeg-parser`, so the two escapers can't share code
- * without introducing that dependency. Keep this in sync BY HAND with
- * `constants.ts`'s version if either changes; there is no automated check
- * tying the two together (same caveat `grammar-validation.ts`'s own
- * doc comment gives for its similarly-duplicated nullability logic).
- *
- * Escaping only `"` (a bare `.replace(/"/g, '\\"')`, this function's
- * predecessor) is not enough: a decoded value containing a literal
- * backslash re-escapes to an odd number of trailing backslashes ahead of
- * the closing quote (e.g. value `a\` -> `"a\"`, where the `\"` is read as
- * an escaped quote, not a closing one -- an unterminated string, invalid
- * TypeScript), and a value containing an actual control byte (a real
- * newline/tab, not the two source characters `\`+`n`) emits as a raw
- * byte inside the `"..."` literal, equally invalid.
- */
-const NAMED_CONTROL_CHAR_ESCAPES: Readonly<Record<string, string>> = {
-  "\n": "\\n",
-  "\r": "\\r",
-  "\t": "\\t",
-  "\b": "\\b",
-  "\f": "\\f",
-  "\v": "\\v",
-  // "\x00", not "\0": a following digit merges into the escape ("\0"+"5"
-  // -> "\05", a legacy octal escape -- a SyntaxError in strict-mode code,
-  // which generated parsers are). The fixed-width hex spelling is
-  // unambiguous regardless of the next character (#105).
-  "\0": "\\x00",
-};
-
-const escapeStringLiteralType = (value: string): string => {
-  let result = "";
-  for (const char of value) {
-    if (char === "\\") {
-      result += "\\\\";
-      continue;
-    }
-    if (char === '"') {
-      result += '\\"';
-      continue;
-    }
-    const namedEscape = NAMED_CONTROL_CHAR_ESCAPES[char];
-    if (namedEscape) {
-      result += namedEscape;
-      continue;
-    }
-    const code = char.codePointAt(0) ?? 0;
-    if (code < 0x20 || code === 0x7f) {
-      result += `\\x${code.toString(16).padStart(2, "0")}`;
-      continue;
-    }
-    result += char;
-  }
-  return result;
-};
 
 /**
  * Represents an inferred TypeScript type for a parser result
@@ -314,25 +255,6 @@ const circularDependencyPlaceholder = (ruleName: string): InferredType => ({
   imports: [],
   documentation: `Circular dependency detected in rule ${ruleName}`,
 });
-
-/**
- * Peels away transparent `Group` wrappers to see if `expr` is (or wraps)
- * a `LabeledExpression` -- a local duplicate of `labelOf` in
- * packages/parser/src/codegen.ts (not imported: this package depends on
- * tpeg-core only, not tpeg-parser). Used by `inferSequenceType` to decide
- * which elements contribute a field to a `captureSequence(...)`-merged
- * object, exactly like codegen's `collectTopLevelLabels` decides which
- * elements name a label.
- */
-const unwrapToLabeledExpression = (
-  expr: Expression,
-): LabeledExpression | undefined => {
-  if (expr.type === "LabeledExpression") return expr as LabeledExpression;
-  if (expr.type === "Group") {
-    return unwrapToLabeledExpression((expr as Group).expression);
-  }
-  return undefined;
-};
 
 /**
  * Type inference engine for TPEG grammars
@@ -693,7 +615,7 @@ export class TypeInferenceEngine {
    * @returns Inferred type for string literal
    */
   private inferStringLiteralType(expression: StringLiteral): InferredType {
-    const escapedValue = escapeStringLiteralType(expression.value);
+    const escapedValue = escapeStringLiteral(expression.value);
     const result: InferredType = {
       typeString: `"${escapedValue}"`,
       nullable: false,

@@ -46,3 +46,22 @@ export const dirnameOf = (path: string): string => {
   }
   return lastSlash === 0 ? "/" : path.slice(0, lastSlash);
 };
+
+/**
+ * The module name a `/`-separated path refers to: its basename minus the
+ * `.tpeg` extension (`"grammars/math.tpeg"` -> `"math"`, `"base.tpeg"`
+ * -> `"base"`). `"unknown"` for a path with no usable final segment, so
+ * callers comparing names can't confuse it with a real module name
+ * (identifiers can't contain `/` or end in `.tpeg`).
+ *
+ * Shared by `NamespaceManager`/`VersionedModuleRegistry` (the default
+ * registration key when no explicit `@namespace` is given) and
+ * `ModuleResolver` (the default `import` alias when no `as` clause is
+ * given) -- the three must agree or an import resolves under a different
+ * name than the module registered itself as.
+ */
+export const moduleNameFromPath = (modulePath: string): string => {
+  const parts = modulePath.split("/");
+  const filename = parts[parts.length - 1];
+  return filename ? filename.replace(/\.tpeg$/, "") : "unknown";
+};

@@ -3,7 +3,11 @@ import type {
   ModuleFile,
   QualifiedIdentifier,
 } from "@suzumiyaaoba/tpeg-core";
-import { dirnameOf, normalizeModulePath } from "./path-utils.js";
+import {
+  dirnameOf,
+  moduleNameFromPath,
+  normalizeModulePath,
+} from "./path-utils.js";
 import type { RuleDefinition } from "./types.js";
 
 /**
@@ -516,9 +520,7 @@ export class NamespaceManager {
    * (a thrown error) rather than a silent state-corrupting overwrite.
    */
   private extractModuleName(modulePath: string): string {
-    const parts = modulePath.split("/");
-    const filename = parts[parts.length - 1];
-    return filename ? filename.replace(/\.tpeg$/, "") : "unknown";
+    return moduleNameFromPath(modulePath);
   }
 
   /**

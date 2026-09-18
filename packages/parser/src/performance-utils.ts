@@ -6,6 +6,7 @@
  */
 
 import { childExpressions, forEachExpression } from "@suzumiyaaoba/tpeg-core";
+import { collectZeroOffsetRuleRefs, computeNullableRules } from "./first-sets";
 import type { Expression, GrammarDefinition } from "./types";
 
 /**
@@ -137,13 +138,18 @@ export function analyzeGrammarPerformance(grammar: GrammarDefinition): {
   // repeated object instances within a single expression tree.
   const ruleDependencies = new Map<string, Set<string>>();
   const leftmostRuleDependencies = new Map<string, Set<string>>();
+  const nullableRules = computeNullableRules(grammar);
   for (const rule of grammar.rules) {
     const dependencies = new Set<string>();
     collectRuleDependencies(rule.pattern, dependencies);
     ruleDependencies.set(rule.name, dependencies);
 
     const leftmostDependencies = new Set<string>();
-    collectLeftmostRuleDependencies(rule.pattern, leftmostDependencies);
+    collectZeroOffsetRuleRefs(
+      rule.pattern,
+      nullableRules,
+      leftmostDependencies,
+    );
     leftmostRuleDependencies.set(rule.name, leftmostDependencies);
   }
   const recursiveRuleNames = findRecursiveRuleNames(ruleDependencies);
@@ -177,16 +183,13 @@ export function analyzeGrammarPerformance(grammar: GrammarDefinition): {
     }
   }
 
-  // Best-effort, advisory only: `collectLeftmostRuleDependencies`'s
-  // `Sequence` case only looks at the literal first element, so a
-  // left-recursive reference "hidden" behind a nullable prefix (e.g.
-  // `e = "a"? e "b" / "c"`, where the leading `Optional` isn't itself a
-  // reference) is invisible here. `./grammar-validation.ts`'s
-  // `validateGrammar` is the AUTHORITATIVE check -- it accounts for
-  // nullability and runs as a hard error before either code generator
-  // does anything else, so it catches every case this suggestion list
-  // might miss. This loop is kept only for the human-readable suggestion
-  // text in whatever cases it DOES catch.
+  // Advisory only: `collectZeroOffsetRuleRefs` (`./first-sets.ts`) is the
+  // same zero-offset edge relation `./grammar-validation.ts`'s
+  // authoritative `validateGrammar` left-recursion check propagates
+  // along, so this set now sees through a nullable `Sequence` prefix too
+  // (e.g. `e = "a"? e "b" / "c"`). `validateGrammar` still runs first as
+  // the hard error; this loop only adds the human-readable suggestion
+  // text.
   for (const ruleName of leftRecursiveRuleNames) {
     optimizationSuggestions.push(
       `Rule '${ruleName}' has left recursion - this will cause infinite loops in a PEG parser`,
@@ -231,62 +234,6 @@ export function collectRuleDependencies(
       dependencies.add(node.name);
     }
   });
-}
-
-/**
- * Collect only the *leftmost* rule dependencies of an expression: the rules
- * that can be referenced at the very start of the input position this
- * expression is tried at, without first requiring some other token to be
- * consumed. This is the set of references relevant to left-recursion
- * detection, which is distinct from (and a subset of) general recursion:
- * a rule that only references itself after consuming a token first (e.g.
- * `Expr = "a" Expr / "a"`, ordinary right recursion) is perfectly safe in a
- * PEG parser, while a rule reachable from itself with nothing consumed first
- * (e.g. `Expr = Expr "a" / "a"`) causes infinite recursion.
- *
- * - `Sequence`: only the first element is leftmost -- later elements are
- *   only tried after the first has already matched (and consumed input, in
- *   the common case).
- * - `Choice`: every alternative is leftmost, since each is tried at the same
- *   starting position.
- * - `Star` / `Plus` / `Optional` / `Group` / `Quantified` / `LabeledExpression`:
- *   the wrapped expression is tried at the same starting position.
- * - `PositiveLookahead` / `NegativeLookahead`: the wrapped expression is
- *   evaluated at the same position too (lookaheads don't consume input), so
- *   a self-reference through a lookahead can still recurse without
- *   progressing.
- */
-function collectLeftmostRuleDependencies(
-  expr: Expression,
-  dependencies: Set<string>,
-): void {
-  switch (expr.type) {
-    case "Identifier":
-      dependencies.add(expr.name);
-      break;
-    case "Sequence": {
-      const first = expr.elements[0];
-      if (first) {
-        collectLeftmostRuleDependencies(first, dependencies);
-      }
-      break;
-    }
-    case "Choice":
-      for (const alternative of expr.alternatives) {
-        collectLeftmostRuleDependencies(alternative, dependencies);
-      }
-      break;
-    default:
-      // Every remaining container node (the unary wrappers, including
-      // `ActionExpression` -- a self-reference reachable only through a
-      // semantic action's wrapped expression is still tried at the same
-      // starting position, the action itself consuming no input) yields
-      // exactly one child here; leaf nodes yield none.
-      for (const child of childExpressions(expr)) {
-        collectLeftmostRuleDependencies(child, dependencies);
-      }
-      break;
-  }
 }
 
 /**

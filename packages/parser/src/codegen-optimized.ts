@@ -32,6 +32,7 @@ import {
   filterReferencedLabels,
   findMemoizeAnnotation,
   generateCharacterClassCode,
+  generateChoiceCode,
   generateIdentifierCode,
   generateLabeledExpressionCode,
   generateQualifiedIdentifierCode,
@@ -430,25 +431,21 @@ export class OptimizedTPEGCodeGenerator {
       ? ["performanceMonitor"]
       : [];
 
-    // Add optimized imports based on usage analysis
-    if (this.options.includeImports) {
-      const { lines, bindings } = this.generateOptimizedImports(grammar);
-      imports.push(...lines);
-      // Reject a rule name, capture label, or transform parameter name
-      // that would generate to a reserved word, an internal codegen
-      // name, or one of the bindings just collected above -- see
-      // `validateGeneratedIdentifiers`'s doc comment
-      // (`grammar-validation.ts`) for the concrete failure modes.
-      validateGeneratedIdentifiers(grammar, {
-        namePrefix: this.options.namePrefix,
-        importedBindings: [...bindings, ...monitoringBindings],
-      });
-    } else {
-      validateGeneratedIdentifiers(grammar, {
-        namePrefix: this.options.namePrefix,
-        importedBindings: monitoringBindings,
-      });
-    }
+    // Add optimized imports based on usage analysis, then reject a rule
+    // name, capture label, or transform parameter name that would
+    // generate to a reserved word, an internal codegen name, or one of
+    // the bindings just collected (plus `performanceMonitor`, a real
+    // top-level declaration whenever monitoring is emitted) -- see
+    // `validateGeneratedIdentifiers`'s doc comment
+    // (`grammar-validation.ts`) for the concrete failure modes.
+    const { lines, bindings } = this.options.includeImports
+      ? this.generateOptimizedImports(grammar)
+      : { lines: [], bindings: [] };
+    imports.push(...lines);
+    validateGeneratedIdentifiers(grammar, {
+      namePrefix: this.options.namePrefix,
+      importedBindings: [...bindings, ...monitoringBindings],
+    });
 
     // Generate parser for each rule with optimization, applying a matching
     // TypeScript transform function (if the grammar declares one)
@@ -948,17 +945,6 @@ export class OptimizedTPEGCodeGenerator {
   }
 
   private generateOptimizedChoice(expr: Choice): string {
-    if (expr.alternatives.length === 0) {
-      return "choice()";
-    }
-
-    if (expr.alternatives.length === 1) {
-      const alternative = expr.alternatives[0];
-      if (alternative) {
-        return this.generateOptimizedExpression(alternative);
-      }
-    }
-
     // NOTE: alternatives must NOT be reordered here. PEG's ordered choice
     // (`/`) is defined by "first alternative that matches wins" — the
     // declaration order is part of the grammar's semantics, not an
@@ -972,18 +958,19 @@ export class OptimizedTPEGCodeGenerator {
     // original match result" version of that idea: it FILTERS (never
     // reorders) alternatives by a statically-proven-safe FIRST-set check,
     // so declaration order among whatever survives is untouched.
-    if (this.options.enablePredictiveDispatch && this.firstSetAnalysis) {
-      const predictive = this.tryGeneratePredictiveChoice(
-        expr,
-        this.firstSetAnalysis,
-      );
-      if (predictive) return predictive;
-    }
-
-    const alternatives = expr.alternatives.map((alt) =>
-      this.generateOptimizedExpression(alt),
+    return generateChoiceCode(
+      expr,
+      (alt) => this.generateOptimizedExpression(alt),
+      (multi) => {
+        if (this.options.enablePredictiveDispatch && this.firstSetAnalysis) {
+          return (
+            this.tryGeneratePredictiveChoice(multi, this.firstSetAnalysis) ??
+            undefined
+          );
+        }
+        return undefined;
+      },
     );
-    return `choice(${alternatives.join(", ")})`;
   }
 
   /**

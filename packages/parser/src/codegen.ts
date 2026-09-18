@@ -5,9 +5,13 @@
  * This is a basic implementation supporting core TPEG features.
  */
 
-import { childExpressions, someExpression } from "@suzumiyaaoba/tpeg-core";
+import {
+  childExpressions,
+  escapeStringLiteral,
+  someExpression,
+  unwrapToLabeledExpression,
+} from "@suzumiyaaoba/tpeg-core";
 import { codeContainsIdentifier } from "./brace-scanner";
-import { escapeStringLiteral } from "./constants";
 import { analyzeFirstSets, assertNoNullableRepetition } from "./first-sets";
 import {
   findQualifiedIdentifierReferences,
@@ -623,15 +627,8 @@ export const isRuleReferencedAnywhere = (
  * (which is transparent at codegen time) - or undefined if the expression
  * isn't a (possibly grouped) `LabeledExpression`.
  */
-const labelOf = (expr: Expression): string | undefined => {
-  if (expr.type === "LabeledExpression") {
-    return expr.label;
-  }
-  if (expr.type === "Group") {
-    return labelOf(expr.expression);
-  }
-  return undefined;
-};
+const labelOf = (expr: Expression): string | undefined =>
+  unwrapToLabeledExpression(expr)?.label;
 
 /**
  * Collects the label names directly visible on an expression: either the
@@ -668,7 +665,7 @@ export const collectTopLevelLabels = (expr: Expression): string[] => {
     // generated file, for every rule whose action reused a label name.
     return [
       ...new Set(
-        (unwrapped as Sequence).elements
+        unwrapped.elements
           .map(labelOf)
           .filter((label): label is string => label !== undefined),
       ),
@@ -676,7 +673,7 @@ export const collectTopLevelLabels = (expr: Expression): string[] => {
   }
   if (unwrapped.type === "Choice") {
     const seen = new Set<string>();
-    for (const alt of (unwrapped as Choice).alternatives) {
+    for (const alt of unwrapped.alternatives) {
       for (const label of collectTopLevelLabels(alt)) seen.add(label);
     }
     return [...seen];
@@ -999,6 +996,41 @@ export const generateLabeledExpressionCode = (
 ): string => `capture("${label}", ${inner})`;
 
 /**
+ * Shared `Choice` emission skeleton used by the optimized and Eta
+ * generators (this class's own `generateChoice` deliberately always
+ * emits `choice(...)`, even for one alternative, so it does not use
+ * this helper):
+ *
+ * - zero alternatives emits `choice()`;
+ * - one alternative emits the alternative's code bare -- wrapping a
+ *   single branch in `choice(...)` would be a no-op call;
+ * - two or more emit `choice(alt1, alt2, ...)` unless `multiOverride`
+ *   supplies different code (the optimized generator's
+ *   predictive-dispatch attempt, which must run only after the
+ *   zero/one-alternative shortcuts -- same order it used inline).
+ */
+export const generateChoiceCode = (
+  expr: Choice,
+  generateAlternative: (alternative: Expression) => string,
+  multiOverride?: (expr: Choice) => string | undefined,
+): string => {
+  if (expr.alternatives.length === 0) {
+    return "choice()";
+  }
+  if (expr.alternatives.length === 1) {
+    const alternative = expr.alternatives[0];
+    if (alternative) {
+      return generateAlternative(alternative);
+    }
+  }
+  const override = multiOverride?.(expr);
+  if (override !== undefined) {
+    return override;
+  }
+  return `choice(${expr.alternatives.map(generateAlternative).join(", ")})`;
+};
+
+/**
  * Code generation options
  */
 export interface CodeGenOptions {
@@ -1132,71 +1164,22 @@ export class TPEGCodeGenerator {
       usedCombinators.add("untagCapture");
     }
 
-    // Add imports based on what's actually used
-    if (this.options.includeImports) {
-      imports.push('import type { Parser } from "@suzumiyaaoba/tpeg-core";');
-      const combinators = Array.from(usedCombinators).sort();
-      if (combinators.length > 0) {
-        imports.push(
-          `import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`,
-        );
-      }
-      // memoize and commitAtTopLevel both live in tpeg-combinator, not
-      // tpeg-core, so they share one import line there rather than being
-      // folded into `combinators` above. memoize is only ever emitted for
-      // a rule carrying an explicit `@memoize` annotation (see
-      // generateRule) -- this generator has no automatic memoization
-      // heuristic of its own (unlike codegen-optimized.ts).
-      // commitAtTopLevel is emitted (in place of the ordinary `commit`,
-      // see generateSequence) only for a `Cut` that is a direct element
-      // of the grammar's start rule's own top-level Sequence, AND ONLY
-      // when nothing else in the grammar references that start rule by
-      // name -- see `isRuleReferencedAnywhere`'s doc comment, and
-      // `packages/combinator/src/logic.ts`'s `commitAtTopLevel` doc
-      // comment for why the narrower shape is the one that's actually
-      // safe.
-      const combinatorPackageImports: string[] = [];
-      if (grammar.rules.some((rule) => findMemoizeAnnotation(rule))) {
-        combinatorPackageImports.push("memoize");
-      }
-      const startRule = grammar.rules[0];
-      if (
-        (startRuleIsSafeForCommitAtTopLevel &&
-          startRule?.pattern.type === "Sequence" &&
-          sequenceHasCutFollowedByElement(startRule.pattern.elements)) ||
-        grammarHasGlobalCut(grammar)
-      ) {
-        combinatorPackageImports.push("commitAtTopLevel");
-      }
-      if (combinatorPackageImports.length > 0) {
-        imports.push(
-          `import { ${combinatorPackageImports.join(", ")} } from "@suzumiyaaoba/tpeg-combinator";`,
-        );
-      }
-
-      // Reject a rule name, capture label, or transform parameter name
-      // that would generate to a reserved word, an internal codegen name,
-      // or (checked here, now that the exact set is known) one of the
-      // bindings just collected above -- see `validateGeneratedIdentifiers`'s
-      // doc comment (`grammar-validation.ts`) for the concrete failure
-      // modes. `"Parser"` is included unconditionally: the type import on
-      // line above this block is emitted whenever `includeImports` is
-      // true, regardless of `includeTypes` (see that import's own
-      // comment), so it's always a real collision risk here.
-      validateGeneratedIdentifiers(grammar, {
-        namePrefix: this.options.namePrefix,
-        importedBindings: [
-          "Parser",
-          ...usedCombinators,
-          ...combinatorPackageImports,
-        ],
-      });
-    } else {
-      validateGeneratedIdentifiers(grammar, {
-        namePrefix: this.options.namePrefix,
-        importedBindings: [],
-      });
-    }
+    // Emit the import statements for whatever `collectUsedCombinators`
+    // found (plus the `Parser` type), then reject a rule name, capture
+    // label, or transform parameter name that would generate to a
+    // reserved word, an internal codegen name, or one of the imported
+    // bindings -- see `validateGeneratedIdentifiers`'s doc comment
+    // (`grammar-validation.ts`) for the concrete failure modes.
+    const { lines: importLines, importedBindings } = this.buildImports(
+      grammar,
+      usedCombinators,
+      startRuleIsSafeForCommitAtTopLevel,
+    );
+    imports.push(...importLines);
+    validateGeneratedIdentifiers(grammar, {
+      namePrefix: this.options.namePrefix,
+      importedBindings,
+    });
 
     // Generate parser for each rule, applying a matching TypeScript
     // transform function (if the grammar declares one) to the rule's result
@@ -1227,6 +1210,67 @@ export class TPEGCodeGenerator {
       exports,
       warnings: buildQualifiedIdentifierWarnings(grammar),
     };
+  }
+
+  /**
+   * The import statements this grammar's emitted code needs, plus the
+   * exact set of binding names they declare (for
+   * `validateGeneratedIdentifiers` to check rule/label/parameter names
+   * against). Both empty when `includeImports` is false -- matching the
+   * emitted code, which then declares nothing.
+   */
+  private buildImports(
+    grammar: GrammarDefinition,
+    usedCombinators: ReadonlySet<string>,
+    startRuleIsSafeForCommitAtTopLevel: boolean,
+  ): { lines: string[]; importedBindings: string[] } {
+    if (!this.options.includeImports) {
+      return { lines: [], importedBindings: [] };
+    }
+    const lines: string[] = [
+      'import type { Parser } from "@suzumiyaaoba/tpeg-core";',
+    ];
+    const importedBindings: string[] = ["Parser", ...usedCombinators];
+    const combinators = Array.from(usedCombinators).sort();
+    if (combinators.length > 0) {
+      lines.push(
+        `import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`,
+      );
+    }
+    // memoize and commitAtTopLevel both live in tpeg-combinator, not
+    // tpeg-core, so they share one import line there rather than being
+    // folded into `combinators` above. memoize is only ever emitted for
+    // a rule carrying an explicit `@memoize` annotation (see
+    // generateRule) -- this generator has no automatic memoization
+    // heuristic of its own (unlike codegen-optimized.ts).
+    // commitAtTopLevel is emitted (in place of the ordinary `commit`,
+    // see generateSequence) only for a `Cut` that is a direct element
+    // of the grammar's start rule's own top-level Sequence, AND ONLY
+    // when nothing else in the grammar references that start rule by
+    // name -- see `isRuleReferencedAnywhere`'s doc comment, and
+    // `packages/combinator/src/logic.ts`'s `commitAtTopLevel` doc
+    // comment for why the narrower shape is the one that's actually
+    // safe.
+    const combinatorPackageImports: string[] = [];
+    if (grammar.rules.some((rule) => findMemoizeAnnotation(rule))) {
+      combinatorPackageImports.push("memoize");
+    }
+    const startRule = grammar.rules[0];
+    if (
+      (startRuleIsSafeForCommitAtTopLevel &&
+        startRule?.pattern.type === "Sequence" &&
+        sequenceHasCutFollowedByElement(startRule.pattern.elements)) ||
+      grammarHasGlobalCut(grammar)
+    ) {
+      combinatorPackageImports.push("commitAtTopLevel");
+    }
+    if (combinatorPackageImports.length > 0) {
+      lines.push(
+        `import { ${combinatorPackageImports.join(", ")} } from "@suzumiyaaoba/tpeg-combinator";`,
+      );
+    }
+    importedBindings.push(...combinatorPackageImports);
+    return { lines, importedBindings };
   }
 
   /**

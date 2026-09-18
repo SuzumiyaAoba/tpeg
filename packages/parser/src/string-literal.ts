@@ -18,6 +18,7 @@ import {
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
 import type { StringLiteral } from "./types";
+import { createStringLiteral } from "./types";
 
 /**
  * Parses escape sequences within string literals.
@@ -80,11 +81,7 @@ const doubleQuotedString: Parser<StringLiteral> = map(
     map(zeroOrMore(doubleQuoteChar), (chars) => chars.join("")),
     literal('"'),
   ),
-  ([_, content, __]) => ({
-    type: "StringLiteral" as const,
-    value: content,
-    quote: '"' as const,
-  }),
+  ([_, content, __]) => createStringLiteral(content, '"'),
 );
 
 /**
@@ -96,11 +93,7 @@ const singleQuotedString: Parser<StringLiteral> = map(
     map(zeroOrMore(singleQuoteChar), (chars) => chars.join("")),
     literal("'"),
   ),
-  ([_, content, __]) => ({
-    type: "StringLiteral" as const,
-    value: content,
-    quote: "'" as const,
-  }),
+  ([_, content, __]) => createStringLiteral(content, "'"),
 );
 
 /**

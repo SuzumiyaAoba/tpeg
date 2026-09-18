@@ -122,7 +122,7 @@ import type {
   GrammarDefinition,
   RuleDefinition,
 } from "./types";
-import { createChoice, createSequence } from "./types";
+import { createCharacterClass, createChoice, createSequence } from "./types";
 
 /** A single-code-point `CharSet` view of `expr`, or `null` if `expr`
  * doesn't denote exactly one code point based only on its own structure
@@ -170,8 +170,8 @@ const charSetToCharacterClass = (set: CharSet): CharacterClass => {
   const ranges = toCharRanges(set);
   const negatedRanges = toCharRanges(complement(set));
   return negatedRanges.length < ranges.length
-    ? { type: "CharacterClass", ranges: negatedRanges, negated: true }
-    : { type: "CharacterClass", ranges, negated: false };
+    ? createCharacterClass(negatedRanges, true)
+    : createCharacterClass(ranges);
 };
 
 /** Clause 2's precondition: `a` and `b` are both non-nullable, share no

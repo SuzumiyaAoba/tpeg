@@ -8,6 +8,7 @@
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { charClass, map, seq, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
 import type { Identifier } from "./types";
+import { createIdentifier } from "./types";
 
 /**
  * Parses the first character of an identifier.
@@ -50,8 +51,5 @@ export const identifier: Parser<Identifier> = map(
     identStart,
     map(zeroOrMore(identCont), (chars) => chars.join("")),
   ),
-  ([first, rest]) => ({
-    type: "Identifier" as const,
-    name: first + rest,
-  }),
+  ([first, rest]) => createIdentifier(first + rest),
 );

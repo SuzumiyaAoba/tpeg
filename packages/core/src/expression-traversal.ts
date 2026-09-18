@@ -1,4 +1,4 @@
-import type { Expression } from "./grammar-types";
+import type { Expression, LabeledExpression } from "./grammar-types";
 
 /**
  * Returns the direct child expressions of `expr`: `elements` for a
@@ -126,4 +126,29 @@ export const mapChildExpressions = (
       );
     }
   }
+};
+
+/**
+ * Peels away transparent `Group` wrappers to see if `expr` is (or wraps)
+ * a `LabeledExpression` -- a `Group` is transparent at codegen time, so
+ * `(x:"a")` labels exactly like `x:"a"`. Returns the unwrapped
+ * `LabeledExpression` node (its `.label` is the bound name), or
+ * `undefined` when `expr` isn't a labeled expression at all.
+ *
+ * Shared by `tpeg-parser`'s `labelOf`/`collectTopLevelLabels`
+ * (codegen.ts -- which of a sequence's elements name a label for the
+ * `captureSequence` merge) and `tpeg-type-inference` (the same decision
+ * for inferring merged-object field types); both previously kept their
+ * own copy of this walk.
+ */
+export const unwrapToLabeledExpression = (
+  expr: Expression,
+): LabeledExpression | undefined => {
+  if (expr.type === "LabeledExpression") {
+    return expr;
+  }
+  if (expr.type === "Group") {
+    return unwrapToLabeledExpression(expr.expression);
+  }
+  return undefined;
 };

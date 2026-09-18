@@ -7,6 +7,7 @@ export * from "./capture";
 export * from "./char-class";
 export * from "./combinators";
 export * from "./error";
+export * from "./escape";
 export * from "./expression-traversal";
 export * from "./failure";
 export * from "./limits";

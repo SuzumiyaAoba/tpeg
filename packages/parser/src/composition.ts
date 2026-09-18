@@ -41,8 +41,14 @@ import { withLookahead } from "./lookahead";
 import { qualifiedIdentifier } from "./module";
 import { withRepetition } from "./repetition";
 import { stringLiteral } from "./string-literal";
+import {
+  createActionExpression,
+  createChoice,
+  createCut,
+  createGroup,
+  createSequence,
+} from "./types";
 import type {
-  ActionExpression,
   BasicSyntaxNode,
   Choice,
   Expression,
@@ -165,10 +171,7 @@ const groupExpression = (): Parser<Group> => {
       seq(whitespace, (input, pos) => expressionParser(input, pos), whitespace),
       literal(")"),
     ),
-    ([_, [__, expr, ___], ____]) => ({
-      type: "Group" as const,
-      expression: expr,
-    }),
+    ([_, [__, expr, ___], ____]) => createGroup(expr),
   );
 };
 
@@ -256,11 +259,7 @@ const withOptionalAction = (parser: Parser<Expression>): Parser<Expression> => {
 
     return {
       success: true,
-      val: {
-        type: "ActionExpression",
-        expression: exprResult.val,
-        code,
-      } as ActionExpression,
+      val: createActionExpression(exprResult.val, code),
       current: exprResult.current,
       next: actionResult.next,
     };
@@ -275,9 +274,9 @@ const withOptionalAction = (parser: Parser<Expression>): Parser<Expression> => {
  * grammar-types.ts for the full semantics and `generateSequence` in
  * codegen.ts for how a `Sequence` containing one compiles to `commit(...)`.
  */
-const cutMarker: Parser<Expression> = map(literal("~"), (): Expression => ({
-  type: "Cut",
-}));
+const cutMarker: Parser<Expression> = map(literal("~"), (): Expression =>
+  createCut(),
+);
 
 /**
  * Parses a single sequence element: either the `~` cut marker or an
@@ -311,10 +310,7 @@ const sequenceExpression = (): Parser<Expression> => {
           return first;
         }
         const elements = [first, ...rest.map(([_, expr]) => expr)];
-        return {
-          type: "Sequence" as const,
-          elements,
-        } as Sequence;
+        return createSequence(elements);
       },
     ),
   );
@@ -337,10 +333,7 @@ const choiceExpression = (): Parser<Expression> => {
         return first;
       }
       const alternatives = [first, ...rest.map(([_, __, ___, expr]) => expr)];
-      return {
-        type: "Choice" as const,
-        alternatives,
-      } as Choice;
+      return createChoice(alternatives);
     },
   );
 };
@@ -401,10 +394,7 @@ export const sequenceOperator = (): Parser<Sequence> => {
       return expr;
     }
     // If it's not a sequence, wrap it in a sequence with one element
-    return {
-      type: "Sequence" as const,
-      elements: [expr],
-    };
+    return createSequence([expr]);
   });
 };
 
@@ -419,10 +409,7 @@ export const choiceOperator = (): Parser<Choice> => {
       return expr;
     }
     // If it's not a choice, wrap it in a choice with one alternative
-    return {
-      type: "Choice" as const,
-      alternatives: [expr],
-    };
+    return createChoice([expr]);
   });
 };
 

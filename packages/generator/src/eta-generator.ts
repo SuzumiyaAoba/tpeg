@@ -16,6 +16,7 @@ import {
   filterReferencedLabels,
   forEachSequenceElement,
   generateCharacterClassCode,
+  generateChoiceCode,
   generateIdentifierCode,
   generateLabeledExpressionCode,
   generateQualifiedIdentifierCode,
@@ -561,21 +562,7 @@ export class EtaTPEGCodeGenerator {
   }
 
   private generateChoice(expr: Choice): string {
-    if (expr.alternatives.length === 0) {
-      return "choice()";
-    }
-
-    if (expr.alternatives.length === 1) {
-      const alternative = expr.alternatives[0];
-      if (alternative) {
-        return this.generateExpressionCode(alternative);
-      }
-    }
-
-    const alternatives = expr.alternatives.map((alt) =>
-      this.generateExpressionCode(alt),
-    );
-    return `choice(${alternatives.join(", ")})`;
+    return generateChoiceCode(expr, (alt) => this.generateExpressionCode(alt));
   }
 
   private generateQuantified(expr: Quantified): string {

@@ -84,6 +84,7 @@
  * `unknown`, a one-way flag).
  */
 
+import { childExpressions } from "@suzumiyaaoba/tpeg-core";
 import {
   type CharSet,
   EMPTY_SET,
@@ -362,6 +363,78 @@ export const isNullable = (
 };
 
 /**
+ * Adds to `into` every rule name referenced by an `Identifier` reachable
+ * at offset ZERO from `expr`'s own start -- i.e. reachable without any
+ * preceding element necessarily having consumed a character. A
+ * `Sequence` contributes each element's refs in order but stops at the
+ * first non-nullable element (anything past it starts at a strictly
+ * later offset); a `Choice` contributes every alternative's; unary
+ * wrappers pass through. A `Cut` element is skipped without stopping the
+ * walk -- it consumes nothing (`isNullable(Cut)` is `true`), so whatever
+ * follows it is still at offset 0. `QualifiedIdentifier` contributes
+ * nothing: a cross-module reference can't recurse back into THIS
+ * grammar's own rules from here.
+ *
+ * This is the edge relation behind left-recursion detection
+ * (`grammar-validation.ts`'s `findLeftRecursiveRules`: a rule is
+ * left-recursive iff it can reach itself along zero-offset edges) and
+ * reentrancy's `computeRuleInvocableAtZero` (which propagates along the
+ * same edges through a worklist). Both previously kept their own
+ * structurally identical copy of this walk.
+ */
+export const collectZeroOffsetRuleRefs = (
+  expr: Expression,
+  nullableRules: ReadonlyMap<string, boolean>,
+  into: Set<string>,
+): void => {
+  switch (expr.type) {
+    case "Identifier":
+      into.add(expr.name);
+      return;
+    case "Sequence":
+      for (const el of expr.elements) {
+        if (el.type === "Cut") continue;
+        collectZeroOffsetRuleRefs(el, nullableRules, into);
+        // Only an element that might itself match zero characters lets
+        // the position stay at the sequence's own start for whatever
+        // comes next -- anything past the first non-nullable element is
+        // unreachable at offset 0 into this sequence's own attempt.
+        if (!isNullable(el, nullableRules)) return;
+      }
+      return;
+    case "Choice":
+      for (const alt of expr.alternatives) {
+        collectZeroOffsetRuleRefs(alt, nullableRules, into);
+      }
+      return;
+    case "Group":
+    case "LabeledExpression":
+    case "ActionExpression":
+    case "Star":
+    case "Plus":
+    case "Optional":
+    case "Quantified":
+    case "PositiveLookahead":
+    case "NegativeLookahead":
+      collectZeroOffsetRuleRefs(expr.expression, nullableRules, into);
+      return;
+    case "StringLiteral":
+    case "CharacterClass":
+    case "AnyChar":
+    case "Cut":
+    case "QualifiedIdentifier":
+      // Leaves: no rule references to collect.
+      return;
+    default: {
+      // Compile-time exhaustiveness: a new Expression variant must make
+      // an explicit decision here or this fails to typecheck.
+      const _exhaustive: never = expr;
+      return _exhaustive;
+    }
+  }
+};
+
+/**
  * Computes the FIRST set of `elements[from..]` as a suffix of a
  * `Sequence` -- the core of `sequenceFirstSet`, split out so a
  * `NegativeLookahead` element can subtract `alwaysMatchesSet` from
@@ -551,31 +624,17 @@ const collectRuleReferences = (expr: Expression, into: Set<string>): void => {
   const stack: Expression[] = [expr];
   while (stack.length > 0) {
     const node = stack.pop() as Expression;
-    switch (node.type) {
-      case "Identifier":
-        into.add(node.name);
-        break;
-      case "Sequence":
-        for (const element of node.elements) stack.push(element);
-        break;
-      case "Choice":
-        for (const alt of node.alternatives) stack.push(alt);
-        break;
-      case "Group":
-      case "Star":
-      case "Plus":
-      case "Optional":
-      case "Quantified":
-      case "PositiveLookahead":
-      case "NegativeLookahead":
-      case "LabeledExpression":
-      case "ActionExpression":
-        stack.push(node.expression);
-        break;
-      default:
-        // StringLiteral / CharacterClass / AnyChar / Cut /
-        // QualifiedIdentifier: no in-grammar rule reference.
-        break;
+    if (node.type === "Identifier") {
+      into.add(node.name);
+      continue;
+    }
+    // `childExpressions` (`@suzumiyaaoba/tpeg-core`) owns the
+    // which-nodes-have-children enumeration -- including the
+    // `ActionExpression` case hand-written copies kept missing; leaves
+    // (StringLiteral/CharacterClass/AnyChar/Cut/QualifiedIdentifier)
+    // contribute nothing.
+    for (const child of childExpressions(node)) {
+      stack.push(child);
     }
   }
 };

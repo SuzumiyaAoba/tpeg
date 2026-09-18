@@ -17,6 +17,7 @@ import {
   seq,
 } from "@suzumiyaaoba/tpeg-core";
 import type { AnyChar, CharRange, CharacterClass } from "./types";
+import { createAnyChar, createCharacterClass } from "./types";
 
 /**
  * Parses a single character within a character class.
@@ -151,19 +152,14 @@ const charClassContent: Parser<CharRange[]> = oneOrMore(charRange);
  */
 const characterClassBrackets: Parser<CharacterClass> = map(
   seq(literal("["), optional(literal("^")), charClassContent, literal("]")),
-  ([_, negation, ranges, __]) => ({
-    type: "CharacterClass" as const,
-    ranges,
-    negated: negation.length > 0,
-  }),
+  ([_, negation, ranges, __]) =>
+    createCharacterClass(ranges, negation.length > 0),
 );
 
 /**
  * Parses the any character dot (.).
  */
-const anyCharDot: Parser<AnyChar> = map(literal("."), () => ({
-  type: "AnyChar" as const,
-}));
+const anyCharDot: Parser<AnyChar> = map(literal("."), () => createAnyChar());
 
 /**
  * Parses any valid TPEG character class or any character dot.

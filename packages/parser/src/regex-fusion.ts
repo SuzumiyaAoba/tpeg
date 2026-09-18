@@ -137,6 +137,7 @@
  * genuinely changes value shape and has no reconstruction step).
  */
 
+import { someExpression } from "@suzumiyaaoba/tpeg-core";
 import {
   EMPTY_FIRST_SET,
   type FirstSet,
@@ -178,31 +179,23 @@ const isSimpleRepeatable = (expr: Expression): boolean => {
  * condition 1. Independent of input/grammar state, so it's checked once
  * per rule regardless of how many times `isRuleFusable` might otherwise
  * re-derive it. */
-const isStructurallyFusable = (expr: Expression): boolean => {
-  if (STRUCTURALLY_DISQUALIFYING.has(expr.type)) return false;
-  switch (expr.type) {
-    case "Sequence":
-      return expr.elements.every(isStructurallyFusable);
-    case "Choice":
-      return expr.alternatives.every(isStructurallyFusable);
-    case "Group":
-    case "Optional":
-      return isStructurallyFusable(expr.expression);
-    case "Star":
-    case "Plus":
-    case "Quantified":
-      return (
-        isSimpleRepeatable(expr.expression) &&
-        isStructurallyFusable(expr.expression)
-      );
-    case "StringLiteral":
-    case "CharacterClass":
-    case "AnyChar":
-      return true;
-    default:
-      return false;
-  }
-};
+const isStructurallyFusable = (expr: Expression): boolean =>
+  !someExpression(expr, (node) => {
+    if (STRUCTURALLY_DISQUALIFYING.has(node.type)) return true;
+    // A repetition is only fusable when what it repeats is a single
+    // character-like leaf (`isSimpleRepeatable`) -- anything compound
+    // would need backreference/value-shape reconstruction a regex can't
+    // express. (The repeated child itself is still visited and checked
+    // on its own below.)
+    if (
+      node.type === "Star" ||
+      node.type === "Plus" ||
+      node.type === "Quantified"
+    ) {
+      return !isSimpleRepeatable(node.expression);
+    }
+    return false;
+  });
 
 const isEmptyFirst = (fs: FirstSet): boolean =>
   !fs.unknown && fs.set.length === 0;

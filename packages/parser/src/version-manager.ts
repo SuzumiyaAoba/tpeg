@@ -1,5 +1,9 @@
 import type { ModuleFile } from "@suzumiyaaoba/tpeg-core";
-import { dirnameOf, normalizeModulePath } from "./path-utils.js";
+import {
+  dirnameOf,
+  moduleNameFromPath,
+  normalizeModulePath,
+} from "./path-utils.js";
 
 const VERSION_PREFIX_RE = /^v/;
 const SEMVER_RE =
@@ -609,9 +613,7 @@ export class VersionManager {
    * Extracts the module name from a path.
    */
   private extractModuleName(modulePath: string): string {
-    const parts = modulePath.split("/");
-    const filename = parts[parts.length - 1];
-    return filename ? filename.replace(/\.tpeg$/, "") : "unknown";
+    return moduleNameFromPath(modulePath);
   }
 
   private referenceTargetsModule(

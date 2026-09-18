@@ -21,6 +21,7 @@ import type {
 import { offsetToPos, parse } from "@suzumiyaaoba/tpeg-core";
 import { skipTrailingWhitespaceAndComments, tpegModuleFile } from "./grammar";
 import { importStatement } from "./module";
+import { moduleNameFromPath } from "./path-utils";
 
 // ============================================================================
 // Types
@@ -479,11 +480,7 @@ export async function resolveQualifiedIdentifier(
     // `NamespaceManager.registerModule` applies, so `import "base.tpeg"`
     // makes `base.<rule>` resolvable through BOTH resolvers (#111).
     const effectiveAlias =
-      importStmt.alias ??
-      importStmt.modulePath
-        .split("/")
-        .pop()
-        ?.replace(/\.tpeg$/, "");
+      importStmt.alias ?? moduleNameFromPath(importStmt.modulePath);
     if (effectiveAlias === qualifiedId.module) {
       // A selective import exposes only its listed rules
       // (`import "m.tpeg" { r1, r2 }`) -- `NamespaceManager.

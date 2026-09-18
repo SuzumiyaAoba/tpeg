@@ -63,6 +63,7 @@ export {
   generateCharacterClassCode,
   generateQuantifiedCode,
   generateLabeledExpressionCode,
+  generateChoiceCode,
   collectTopLevelLabels,
   filterReferencedLabels,
   collectTransformFunctions,
@@ -77,7 +78,7 @@ export {
   collectUsedCombinators,
   type UsedCombinatorsContext,
 } from "./codegen";
-export { escapeStringLiteral } from "./constants";
+export { escapeStringLiteral } from "@suzumiyaaoba/tpeg-core";
 
 // Export optimized code generation system
 export {

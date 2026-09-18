@@ -138,7 +138,12 @@
  * when everything before the cut in the same sequence is nullable.
  */
 
-import { analyzeFirstSets, isNullable } from "./first-sets";
+import {
+  analyzeFirstSets,
+  collectZeroOffsetRuleRefs,
+  isNullable,
+} from "./first-sets";
+import { collectRuleDependencies } from "./performance-utils";
 import type { Choice, Expression, GrammarDefinition, Sequence } from "./types";
 
 /** The set of (in-grammar) rule names an expression can invoke with zero
@@ -320,56 +325,6 @@ const walk = (expr: Expression, ctx: WalkContext): InvocationResult => {
 };
 
 /**
- * Rule names `expr` references through an `Identifier` reachable at
- * offset zero from `expr`'s own start -- `walk`'s traversal restricted
- * to collecting the names themselves rather than looking up their
- * (in-progress) fixpoint sets. Since `walk(Identifier).total` is exactly
- * `ruleInvocableAtZero.get(name)`, `walk(expr).total` always equals the
- * union of `table[d]` over every `d` this collects -- which is what lets
- * `computeRuleInvocableAtZero` propagate along these edges incrementally
- * instead of re-walking every rule's whole pattern each pass.
- */
-const collectZeroOffsetDependencies = (
-  expr: Expression,
-  nullableRules: ReadonlyMap<string, boolean>,
-  into: Set<string>,
-): void => {
-  switch (expr.type) {
-    case "Identifier":
-      into.add(expr.name);
-      return;
-    case "Sequence":
-      for (const el of expr.elements) {
-        collectZeroOffsetDependencies(el, nullableRules, into);
-        // Same early-break as `walkSequence`: nothing past the first
-        // non-nullable element is still at offset 0.
-        if (!isNullable(el, nullableRules)) return;
-      }
-      return;
-    case "Choice":
-      for (const alt of expr.alternatives) {
-        collectZeroOffsetDependencies(alt, nullableRules, into);
-      }
-      return;
-    case "Group":
-    case "Star":
-    case "Plus":
-    case "Optional":
-    case "Quantified":
-    case "LabeledExpression":
-    case "ActionExpression":
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-      collectZeroOffsetDependencies(expr.expression, nullableRules, into);
-      return;
-    default:
-      // StringLiteral, CharacterClass, AnyChar, QualifiedIdentifier, Cut
-      // -- no `Identifier` to collect.
-      return;
-  }
-};
-
-/**
  * Computes, for every rule, the full transitive set of rule names
  * invocable at offset 0 from that rule's own start -- always including
  * the rule's own name, since `Identifier` resolution needs "does this
@@ -379,7 +334,14 @@ const collectZeroOffsetDependencies = (
  * grammar.
  *
  * Worklist propagation over the zero-offset dependency graph
- * (`collectZeroOffsetDependencies`), the same shape `first-sets.ts`'s
+ * (`first-sets.ts`'s shared `collectZeroOffsetRuleRefs` -- `walk`'s
+ * traversal restricted to collecting the referenced names themselves
+ * rather than looking up their (in-progress) fixpoint sets; since
+ * `walk(Identifier).total` is exactly `ruleInvocableAtZero.get(name)`,
+ * `walk(expr).total` always equals the union of `table[d]` over every
+ * `d` it collects -- which is what lets this propagate along those
+ * edges incrementally instead of re-walking every rule's whole pattern
+ * each pass), the same shape `first-sets.ts`'s
  * `analyzeFirstSets` now uses: when a rule's set grows, only rules that
  * directly depend on it are revisited. The full-rescan fixpoint this
  * replaced re-walked every rule's whole pattern once per propagation
@@ -402,7 +364,7 @@ const computeRuleInvocableAtZero = (
   const directDeps = new Map<string, ReadonlySet<string>>();
   for (const rule of grammar.rules) {
     const deps = new Set<string>();
-    collectZeroOffsetDependencies(rule.pattern, nullableRules, deps);
+    collectZeroOffsetRuleRefs(rule.pattern, nullableRules, deps);
     deps.delete(rule.name); // self-edge is subsumed by the seed below
     directDeps.set(rule.name, deps);
     for (const dep of deps) {
@@ -475,43 +437,6 @@ export interface ReentrancyAnalysis {
 }
 
 /**
- * Collects every rule name referenced ANYWHERE in `expr`'s tree into
- * `into` -- every `Identifier`, regardless of whether it sits at offset
- * zero relative to `expr`'s own start (unlike `walk`/`invocableAtZero`
- * above, which stops at the first non-nullable `Sequence` element). The
- * basis for `minimizeByDominance`'s caller-counting: bounding "how many
- * times can rule R be invoked from within one execution of rule S's
- * body" needs every reference to R in S's pattern, not just the ones
- * reachable without consuming a character first.
- */
-const collectAllIdentifiers = (expr: Expression, into: Set<string>): void => {
-  switch (expr.type) {
-    case "Identifier":
-      into.add(expr.name);
-      return;
-    case "Sequence":
-      for (const el of expr.elements) collectAllIdentifiers(el, into);
-      return;
-    case "Choice":
-      for (const alt of expr.alternatives) collectAllIdentifiers(alt, into);
-      return;
-    case "Group":
-    case "Star":
-    case "Plus":
-    case "Optional":
-    case "Quantified":
-    case "LabeledExpression":
-    case "ActionExpression":
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-      collectAllIdentifiers(expr.expression, into);
-      return;
-    default:
-      return;
-  }
-};
-
-/**
  * Removes rules from `rawReentrantRules` that are DOMINATED by another
  * rule in that same set -- i.e. every possible invocation of `R` flows
  * through a single ancestor `S` whose own memoization already bounds how
@@ -574,7 +499,12 @@ const minimizeByDominance = (
   const callersOf = new Map<string, Set<string>>();
   for (const rule of grammar.rules) {
     const referenced = new Set<string>();
-    collectAllIdentifiers(rule.pattern, referenced);
+    // `collectRuleDependencies` (`./performance-utils.ts`) gathers every
+    // `Identifier` ANYWHERE in the pattern -- not just at offset zero
+    // like `walk`/`invocableAtZero` above -- because bounding "how many
+    // times can R be invoked from one execution of S's body" needs every
+    // reference to R in that body.
+    collectRuleDependencies(rule.pattern, referenced);
     for (const name of referenced) {
       let callers = callersOf.get(name);
       if (!callers) {

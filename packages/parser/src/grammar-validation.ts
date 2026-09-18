@@ -49,8 +49,9 @@
  * generation the same way.
  */
 
+import { forEachExpression } from "@suzumiyaaoba/tpeg-core";
 import { ERROR_MESSAGES } from "./constants";
-import { computeNullableRules, isNullable } from "./first-sets";
+import { collectZeroOffsetRuleRefs, computeNullableRules } from "./first-sets";
 import { findRecursiveRuleNames } from "./performance-utils";
 import type { Expression, GrammarDefinition } from "./types";
 
@@ -91,49 +92,9 @@ const zeroOffsetRuleRefs = (
   expr: Expression,
   nullableRules: ReadonlyMap<string, boolean>,
 ): ReadonlySet<string> => {
-  switch (expr.type) {
-    case "Identifier":
-      return new Set([expr.name]);
-    case "Sequence": {
-      const refs = new Set<string>();
-      for (const el of expr.elements) {
-        if (el.type === "Cut") continue;
-        for (const name of zeroOffsetRuleRefs(el, nullableRules)) {
-          refs.add(name);
-        }
-        // Only an element that might itself match zero characters lets
-        // the position stay at the sequence's own start for whatever
-        // comes next -- anything past the first non-nullable element is
-        // unreachable at offset 0 into this sequence's own attempt.
-        if (!isNullable(el, nullableRules)) break;
-      }
-      return refs;
-    }
-    case "Choice": {
-      const refs = new Set<string>();
-      for (const alt of expr.alternatives) {
-        for (const name of zeroOffsetRuleRefs(alt, nullableRules)) {
-          refs.add(name);
-        }
-      }
-      return refs;
-    }
-    case "Group":
-    case "LabeledExpression":
-    case "ActionExpression":
-    case "Star":
-    case "Plus":
-    case "Optional":
-    case "Quantified":
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-      return zeroOffsetRuleRefs(expr.expression, nullableRules);
-    default:
-      // StringLiteral, CharacterClass, AnyChar, Cut, QualifiedIdentifier
-      // (a cross-module reference can't recurse back into THIS grammar's
-      // own rules from here -- see `first-sets.ts`'s identical treatment).
-      return new Set();
-  }
+  const refs = new Set<string>();
+  collectZeroOffsetRuleRefs(expr, nullableRules, refs);
+  return refs;
 };
 
 /**
@@ -438,48 +399,16 @@ const collectQualifiedIdentifierCollisions = (
   ruleNames: ReadonlySet<string>,
   out: QualifiedIdentifierCollision[],
 ): void => {
-  switch (expr.type) {
-    case "QualifiedIdentifier":
-      if (ruleNames.has(expr.module)) {
-        out.push({
-          ruleName,
-          refersTo: `${expr.module}.${expr.name}`,
-        });
-      }
-      return;
-    case "Sequence":
-      for (const el of expr.elements) {
-        collectQualifiedIdentifierCollisions(el, ruleName, ruleNames, out);
-      }
-      return;
-    case "Choice":
-      for (const alt of expr.alternatives) {
-        collectQualifiedIdentifierCollisions(alt, ruleName, ruleNames, out);
-      }
-      return;
-    case "Group":
-    case "LabeledExpression":
-    case "ActionExpression":
-    case "Star":
-    case "Plus":
-    case "Optional":
-    case "Quantified":
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-      collectQualifiedIdentifierCollisions(
-        expr.expression,
+  // A bare `Identifier` is deliberately never checked -- see this
+  // function's own doc comment.
+  forEachExpression(expr, (node) => {
+    if (node.type === "QualifiedIdentifier" && ruleNames.has(node.module)) {
+      out.push({
         ruleName,
-        ruleNames,
-        out,
-      );
-      return;
-    default:
-      // StringLiteral, CharacterClass, AnyChar, Cut, Identifier -- no
-      // `QualifiedIdentifier` to check (a bare `Identifier` is
-      // deliberately never checked -- see this function's own doc
-      // comment).
-      return;
-  }
+        refersTo: `${node.module}.${node.name}`,
+      });
+    }
+  });
 };
 
 /** Every `QualifiedIdentifier`/local-rule-name collision across all of
@@ -510,45 +439,22 @@ export interface QualifiedIdentifierReference {
 
 /** Walks `expr`'s subtree collecting every `QualifiedIdentifier` node
  * (module and name unchanged, no collision filtering -- that's
- * {@link collectQualifiedIdentifierCollisions}'s job). Structurally
- * identical to that function's traversal; kept as a separate walk rather
- * than folded into it because the two have different outputs (a filtered
- * collision list vs. every reference unconditionally) and different
- * callers (`validateGrammar`, thrown on, vs. codegen's non-fatal
- * warning collection). */
+ * {@link collectQualifiedIdentifierCollisions}'s job). Kept as a
+ * separate walk rather than folded into it because the two have
+ * different outputs (a filtered collision list vs. every reference
+ * unconditionally) and different callers (`validateGrammar`, thrown on,
+ * vs. codegen's non-fatal warning collection); both share
+ * `forEachExpression` for the traversal itself. */
 const collectQualifiedIdentifierReferences = (
   expr: Expression,
   ruleName: string,
   out: QualifiedIdentifierReference[],
 ): void => {
-  switch (expr.type) {
-    case "QualifiedIdentifier":
-      out.push({ ruleName, module: expr.module, name: expr.name });
-      return;
-    case "Sequence":
-      for (const el of expr.elements) {
-        collectQualifiedIdentifierReferences(el, ruleName, out);
-      }
-      return;
-    case "Choice":
-      for (const alt of expr.alternatives) {
-        collectQualifiedIdentifierReferences(alt, ruleName, out);
-      }
-      return;
-    case "Group":
-    case "LabeledExpression":
-    case "ActionExpression":
-    case "Star":
-    case "Plus":
-    case "Optional":
-    case "Quantified":
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-      collectQualifiedIdentifierReferences(expr.expression, ruleName, out);
-      return;
-    default:
-      return;
-  }
+  forEachExpression(expr, (node) => {
+    if (node.type === "QualifiedIdentifier") {
+      out.push({ ruleName, module: node.module, name: node.name });
+    }
+  });
 };
 
 /**
@@ -786,35 +692,11 @@ const RESERVED_INTERNAL_RULE_NAMES: ReadonlySet<string> = new Set([
  */
 const collectAllLabels = (expr: Expression): string[] => {
   const labels: string[] = [];
-  const visit = (node: Expression): void => {
-    switch (node.type) {
-      case "LabeledExpression":
-        labels.push(node.label);
-        visit(node.expression);
-        return;
-      case "ActionExpression":
-      case "Group":
-      case "Star":
-      case "Plus":
-      case "Optional":
-      case "Quantified":
-      case "PositiveLookahead":
-      case "NegativeLookahead":
-        visit(node.expression);
-        return;
-      case "Sequence":
-        for (const el of node.elements) visit(el);
-        return;
-      case "Choice":
-        for (const alt of node.alternatives) visit(alt);
-        return;
-      default:
-        // StringLiteral, CharacterClass, Identifier, QualifiedIdentifier,
-        // AnyChar, Cut -- leaves, nothing to recurse into.
-        return;
+  forEachExpression(expr, (node) => {
+    if (node.type === "LabeledExpression") {
+      labels.push(node.label);
     }
-  };
-  visit(expr);
+  });
   return labels;
 };
 
