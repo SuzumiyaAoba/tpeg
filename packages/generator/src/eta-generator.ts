@@ -12,11 +12,16 @@ import {
   buildQualifiedIdentifierWarnings,
   collectTopLevelLabels,
   collectTransformFunctions,
+  collectUsedCombinators,
   filterReferencedLabels,
+  forEachSequenceElement,
   generateCharacterClassCode,
   generateIdentifierCode,
+  generateLabeledExpressionCode,
   generateQualifiedIdentifierCode,
+  generateQuantifiedCode,
   generateStringLiteralCode,
+  sequenceCombinatorFor,
   validateGeneratedIdentifiers,
   wrapWithAction,
   wrapWithMonitoring,
@@ -37,20 +42,14 @@ import type {
   ExpressionComplexity,
   GeneratedCode,
   GrammarDefinition,
-  Group,
   Identifier,
   LabeledExpression,
-  NegativeLookahead,
-  Optional,
   ParserTemplateData,
-  Plus,
-  PositiveLookahead,
   QualifiedIdentifier,
   Quantified,
   RuleDefinition,
   RuleTemplateData,
   Sequence,
-  Star,
   StringLiteral,
 } from "./types";
 
@@ -389,180 +388,32 @@ export class EtaTPEGCodeGenerator {
   /**
    * Collect all combinators used in an expression. `currentRuleIndex` is
    * the declaration index of the rule this expression tree belongs to --
-   * needed for the `Identifier` case below to decide, exactly like
+   * needed for the `Identifier` case to decide, exactly like
    * `generateIdentifier`/`generateIdentifierCode` do, whether a reference
    * is forward/self/mutual (and therefore emitted as `lazy(() => ...)`,
    * which needs the import).
+   *
+   * Delegates to the shared `collectUsedCombinators` in
+   * `packages/parser/src/codegen.ts` (re-exported by `tpeg-parser`) with
+   * this generator's own decisions: `generateChoice` returns a
+   * single-alternative `Choice` bare (no `choice` import), `generateSequence`
+   * wraps every element after ANY `Cut` in `commit(...)` (this generator
+   * never emits `commitAtTopLevel`, so `commitAfterAnyCut` is `true`),
+   * and this generator has no `charClassRun` path.
    */
   private collectUsedCombinators(
     expr: Expression,
     combinators: Set<string>,
     currentRuleIndex: number,
   ): void {
-    switch (expr.type) {
-      case "StringLiteral":
-        combinators.add("literal");
-        break;
-      case "CharacterClass":
-        combinators.add(
-          (expr as CharacterClass).negated ? "negatedCharClass" : "charClass",
-        );
-        break;
-      case "AnyChar":
-        combinators.add("anyChar");
-        break;
-      case "Identifier": {
-        // Mirrors `generateIdentifier`'s decision (via the shared
-        // `generateIdentifierCode`): a forward/self/mutual reference is
-        // generated as `lazy(() => name)`, which needs the import.
-        const targetIndex = this.ruleIndex.get((expr as Identifier).name);
-        if (targetIndex !== undefined && targetIndex >= currentRuleIndex) {
-          combinators.add("lazy");
-        }
-        break;
-      }
-      case "Sequence": {
-        // Mirrors `generateSequence`'s own single-surviving-element
-        // shortcut: with exactly one non-`Cut` element and no label, that
-        // element's own generated code is returned bare, never passed
-        // through `sequence(...)`/`captureSequence(...)` at all (e.g.
-        // `~ "a"`, where the Cut is dropped and "a" is the sole remaining
-        // element) -- see the identical fix/comment in
-        // `packages/parser/src/codegen.ts`'s own `collectUsedCombinators`.
-        const hasLabel = collectTopLevelLabels(expr).length > 0;
-        const nonCutElementCount = (expr as Sequence).elements.filter(
-          (el) => el.type !== "Cut",
-        ).length;
-        const isBareSinglePassthrough = nonCutElementCount === 1 && !hasLabel;
-        if (!isBareSinglePassthrough) {
-          combinators.add(hasLabel ? "captureSequence" : "sequence");
-        }
-        // `commit(...)` is only ever emitted for a non-`Cut` element that
-        // comes AFTER a `Cut` (see `generateSequence`): a `Cut` with
-        // nothing non-`Cut` after it -- a trailing `~`, or one followed
-        // only by more `Cut`s -- contributes no `commit(...)` call at
-        // all, so keying the import on "a Cut exists" left an unused
-        // `commit` import behind for that shape (e.g. `"a" ~`). Mirrors
-        // the identical fix in `packages/parser/src/codegen.ts`'s own
-        // `collectUsedCombinators`.
-        {
-          let committed = false;
-          for (const element of (expr as Sequence).elements) {
-            if (element.type === "Cut") {
-              committed = true;
-              continue;
-            }
-            if (committed) {
-              combinators.add("commit");
-            }
-            this.collectUsedCombinators(element, combinators, currentRuleIndex);
-          }
-        }
-        break;
-      }
-      case "Cut":
-        break;
-      case "Choice":
-        // Mirrors `generateChoice`'s own single-alternative shortcut:
-        // exactly one alternative is returned bare, never passed through
-        // `choice(...)` at all.
-        if ((expr as Choice).alternatives.length !== 1) {
-          combinators.add("choice");
-        }
-        for (const alternative of (expr as Choice).alternatives) {
-          this.collectUsedCombinators(
-            alternative,
-            combinators,
-            currentRuleIndex,
-          );
-        }
-        break;
-      case "Star":
-        combinators.add("zeroOrMore");
-        this.collectUsedCombinators(
-          (expr as Star).expression,
-          combinators,
-          currentRuleIndex,
-        );
-        break;
-      case "Plus":
-        combinators.add("oneOrMore");
-        this.collectUsedCombinators(
-          (expr as Plus).expression,
-          combinators,
-          currentRuleIndex,
-        );
-        break;
-      case "Optional":
-        combinators.add("optional");
-        this.collectUsedCombinators(
-          (expr as Optional).expression,
-          combinators,
-          currentRuleIndex,
-        );
-        break;
-      case "PositiveLookahead":
-        combinators.add("andPredicate");
-        this.collectUsedCombinators(
-          (expr as PositiveLookahead).expression,
-          combinators,
-          currentRuleIndex,
-        );
-        break;
-      case "NegativeLookahead":
-        combinators.add("notPredicate");
-        this.collectUsedCombinators(
-          (expr as NegativeLookahead).expression,
-          combinators,
-          currentRuleIndex,
-        );
-        break;
-      case "Group":
-        this.collectUsedCombinators(
-          (expr as Group).expression,
-          combinators,
-          currentRuleIndex,
-        );
-        break;
-      case "LabeledExpression":
-        combinators.add("capture");
-        this.collectUsedCombinators(
-          (expr as LabeledExpression).expression,
-          combinators,
-          currentRuleIndex,
-        );
-        break;
-      case "ActionExpression":
-        this.collectUsedCombinators(
-          (expr as ActionExpression).expression,
-          combinators,
-          currentRuleIndex,
-        );
-        break;
-      case "Quantified": {
-        const quantifiedExpr = expr as Quantified;
-        // Add combinator based on what the quantified expression will generate
-        if (quantifiedExpr.max === undefined) {
-          if (quantifiedExpr.min === 0) combinators.add("zeroOrMore");
-          else if (quantifiedExpr.min === 1) combinators.add("oneOrMore");
-          else combinators.add("quantified");
-        } else if (quantifiedExpr.min === quantifiedExpr.max) {
-          combinators.add("quantified");
-        } else {
-          if (quantifiedExpr.min === 0 && quantifiedExpr.max === 1) {
-            combinators.add("optional");
-          } else {
-            combinators.add("quantified");
-          }
-        }
-        this.collectUsedCombinators(
-          quantifiedExpr.expression,
-          combinators,
-          currentRuleIndex,
-        );
-        break;
-      }
-    }
+    collectUsedCombinators(expr, combinators, {
+      ruleIndex: this.ruleIndex,
+      currentRuleIndex,
+      enableCharClassRun: false,
+      commitAfterAnyCut: true,
+      choiceCombinatorFor: (choice) =>
+        choice.alternatives.length === 1 ? null : "choice",
+    });
   }
 
   /**
@@ -582,37 +433,37 @@ export class EtaTPEGCodeGenerator {
   private generateExpressionCode(expr: Expression): string {
     switch (expr.type) {
       case "StringLiteral":
-        return this.generateStringLiteral(expr as StringLiteral);
+        return this.generateStringLiteral(expr);
       case "CharacterClass":
-        return this.generateCharacterClass(expr as CharacterClass);
+        return this.generateCharacterClass(expr);
       case "Identifier":
-        return this.generateIdentifier(expr as Identifier);
+        return this.generateIdentifier(expr);
       case "QualifiedIdentifier":
-        return this.generateQualifiedIdentifier(expr as QualifiedIdentifier);
+        return this.generateQualifiedIdentifier(expr);
       case "AnyChar":
         return "anyChar()";
       case "Sequence":
-        return this.generateSequence(expr as Sequence);
+        return this.generateSequence(expr);
       case "Choice":
-        return this.generateChoice(expr as Choice);
+        return this.generateChoice(expr);
       case "Group":
-        return this.generateExpressionCode((expr as Group).expression);
+        return this.generateExpressionCode(expr.expression);
       case "Star":
-        return `zeroOrMore(${this.generateExpressionCode((expr as Star).expression)})`;
+        return `zeroOrMore(${this.generateExpressionCode(expr.expression)})`;
       case "Plus":
-        return `oneOrMore(${this.generateExpressionCode((expr as Plus).expression)})`;
+        return `oneOrMore(${this.generateExpressionCode(expr.expression)})`;
       case "Optional":
-        return `optional(${this.generateExpressionCode((expr as Optional).expression)})`;
+        return `optional(${this.generateExpressionCode(expr.expression)})`;
       case "Quantified":
-        return this.generateQuantified(expr as Quantified);
+        return this.generateQuantified(expr);
       case "PositiveLookahead":
-        return `andPredicate(${this.generateExpressionCode((expr as PositiveLookahead).expression)})`;
+        return `andPredicate(${this.generateExpressionCode(expr.expression)})`;
       case "NegativeLookahead":
-        return `notPredicate(${this.generateExpressionCode((expr as NegativeLookahead).expression)})`;
+        return `notPredicate(${this.generateExpressionCode(expr.expression)})`;
       case "LabeledExpression":
-        return this.generateLabeledExpression(expr as LabeledExpression);
+        return this.generateLabeledExpression(expr);
       case "ActionExpression":
-        return this.generateActionExpression(expr as ActionExpression);
+        return this.generateActionExpression(expr);
       case "Cut":
         // Only reachable via `generateSequence`'s single-element
         // shortcut, for the degenerate case of a rule whose entire
@@ -668,30 +519,36 @@ export class EtaTPEGCodeGenerator {
   private generateSequence(expr: Sequence): string {
     // A `~` cut marker is dropped from the emitted arguments entirely --
     // it consumes no input and contributes no value of its own -- and
-    // every element *after* it is individually wrapped in `commit(...)`.
-    // Mirrors `codegen.ts`'s `generateSequence` exactly (see that
-    // function's doc comment for the full rationale, including why
-    // wrapping each element individually rather than nesting the tail in
-    // a sub-sequence keeps the emitted tuple shape unchanged, and why the
-    // single-remaining-part shortcut below must be checked AFTER dropping
-    // the cut -- not on the original element count, which would wrongly
-    // wrap a degenerate `~ "a"` / `"a" ~` in `sequence(...)`, turning its
-    // value from `"a"` into `["a"]`).
-    const hasLabel = collectTopLevelLabels(expr).length > 0;
+    // every element *after* it is individually wrapped in `commit(...)`,
+    // via the same `forEachSequenceElement` state machine `codegen.ts`'s
+    // `generateSequence` uses (see that function's doc comment for the
+    // full rationale, including why wrapping each element individually
+    // rather than nesting the tail in a sub-sequence keeps the emitted
+    // tuple shape unchanged, and why the single-remaining-part shortcut
+    // below must be checked AFTER dropping the cut -- not on the
+    // original element count, which would wrongly wrap a degenerate
+    // `~ "a"` / `"a" ~` in `sequence(...)`, turning its value from `"a"`
+    // into `["a"]`). Unlike `codegen.ts` this generator never emits
+    // `commitAtTopLevel`, so `cutIsGlobal` is ignored: EVERY committed
+    // element gets the ordinary `commit(...)` wrapper, which is also
+    // what this generator's `collectUsedCombinators` ctx
+    // (`commitAfterAnyCut: true`) mirrors.
     const parts: string[] = [];
-    let committed = false;
-    for (const el of expr.elements) {
-      if (el.type === "Cut") {
-        committed = true;
-        continue;
-      }
+    forEachSequenceElement(expr.elements, (el, committed) => {
       const code = this.generateExpressionCode(el);
       parts.push(committed ? `commit(${code})` : code);
-    }
+    });
     if (parts.length === 0) {
       return "sequence()";
     }
-    if (parts.length === 1 && !hasLabel) {
+    // `sequenceCombinatorFor` returns `null` exactly when the sequence
+    // is emitted BARE (one surviving non-`Cut` element, no label) --
+    // the same shared predicate `codegen.ts` and `codegen-optimized.ts`
+    // use. A labeled sole survivor still goes through `captureSequence`
+    // below, or its CAPTURE_TAG-tagged value would leak out bare instead
+    // of merged.
+    const combinator = sequenceCombinatorFor(expr);
+    if (combinator === null && parts.length === 1) {
       const [only] = parts;
       if (only) return only;
     }
@@ -700,9 +557,7 @@ export class EtaTPEGCodeGenerator {
     // returns a positional tuple instead (each label's value left nested
     // inside it, still `capture()`-tagged), which would leave every label
     // unreachable by name. Mirrors `codegen.ts`'s identical check.
-    return hasLabel
-      ? `captureSequence(${parts.join(", ")})`
-      : `sequence(${parts.join(", ")})`;
+    return `${combinator ?? "sequence"}(${parts.join(", ")})`;
   }
 
   private generateChoice(expr: Choice): string {
@@ -725,34 +580,18 @@ export class EtaTPEGCodeGenerator {
 
   private generateQuantified(expr: Quantified): string {
     const inner = this.generateExpressionCode(expr.expression);
-
-    // Special cases that map to existing combinators
-    if (expr.max === undefined) {
-      if (expr.min === 0) return `zeroOrMore(${inner})`;
-      if (expr.min === 1) return `oneOrMore(${inner})`;
-      return `quantified(${inner}, ${expr.min})`;
-    }
-
-    if (expr.min === expr.max) {
-      // {n} uses `quantified` for every n, including {1}: returning the
-      // bare inner parser would produce a scalar `T` where every other
-      // repetition form produces `T[]`. Mirrors `generateQuantifiedCode`
-      // in `packages/parser/src/codegen.ts`.
-      if (expr.min === 0) return `quantified(${inner}, 0, 0)`; // {0,0} - always returns empty array
-      return `quantified(${inner}, ${expr.min}, ${expr.max})`;
-    }
-
-    // Range case {min,max}
-    if (expr.min === 0 && expr.max === 1) {
-      return `optional(${inner})`;
-    }
-
-    return `quantified(${inner}, ${expr.min}, ${expr.max})`;
+    // Delegates to the shared `generateQuantifiedCode`
+    // (`packages/parser/src/codegen.ts`, re-exported by `tpeg-parser`) --
+    // `{n}` must go through `quantified(...)` for every `n`, `{1}`
+    // included, or the generated parser returns scalar `T` where every
+    // other repetition form produces `T[]`. `false` for
+    // `enableCharClassRun`: this generator has no charClassRun path.
+    return generateQuantifiedCode(expr, inner, false);
   }
 
   private generateLabeledExpression(expr: LabeledExpression): string {
     const inner = this.generateExpressionCode(expr.expression);
-    return `capture("${expr.label}", ${inner})`;
+    return generateLabeledExpressionCode(expr.label, inner);
   }
 
   // Delegates to the shared `collectTopLevelLabels`/`filterReferencedLabels`/

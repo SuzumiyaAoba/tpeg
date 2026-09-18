@@ -14,18 +14,12 @@ import type {
   Choice,
   Expression,
   GrammarDefinition,
-  Group,
   Identifier,
   LabeledExpression,
-  NegativeLookahead,
-  Optional,
-  Plus,
-  PositiveLookahead,
   QualifiedIdentifier,
   Quantified,
   RuleDefinition,
   Sequence,
-  Star,
   StringLiteral,
   TransformFunction,
 } from "./types";
@@ -51,11 +45,10 @@ import {
   wrapWithTransform,
 } from "./codegen";
 import {
+  collectUsedCombinators,
   forEachSequenceElement,
   grammarHasGlobalCut,
-  sequenceCombinatorFor,
   sequenceHasCutFollowedByElement,
-  sequenceNeedsOrdinaryCommit,
 } from "./codegen";
 import type { GrammarFirstSetAnalysis } from "./first-sets";
 import {
@@ -613,7 +606,17 @@ export class OptimizedTPEGCodeGenerator {
   }
 
   /**
-   * Collect all combinators used in an expression
+   * Collect all combinators used in an expression. Delegates to the
+   * shared {@link collectUsedCombinators} in `codegen.ts` with this
+   * generator's own decisions: fusion roots are handled by `handled`
+   * (emitting `regexFusedMap` and never recursing -- see the comment
+   * inside it for why that check comes first at EVERY level), a
+   * single-alternative `Choice` is returned bare by
+   * `generateOptimizedChoice` so it adds no combinator, and a
+   * multi-alternative one emits `predictiveChoice` exactly when
+   * `tryGeneratePredictiveChoice`'s eligibility test passes
+   * (`firstSetAnalysis` IS already populated by this point -- `generate`
+   * computes it before the import pass).
    */
   private collectUsedCombinators(
     expr: Expression,
@@ -621,236 +624,42 @@ export class OptimizedTPEGCodeGenerator {
     currentRuleIndex: number,
     isStartRuleTopLevel = false,
   ): void {
-    // A fusion root (`this.fusionRoots`, populated by `planFusion` in
-    // `generateGrammar`) compiles to one `regexFusedMap(...)` call in
-    // `generateOptimizedExpression` -- checked FIRST, before the switch,
-    // so it applies uniformly whether `expr` is a whole rule's pattern
-    // (`regexFusionScope: "rule"`) or an interior node reached through
-    // recursion (`"subtree"`). Not walking further into `expr` here is
-    // what keeps this pass and `generateOptimizedExpression` in
-    // lockstep: neither one ever looks at what's inside a fused node.
-    if (this.fusionRoots.has(expr)) {
-      combinators.add("regexFusedMap");
-      return;
-    }
-    switch (expr.type) {
-      case "StringLiteral":
-        combinators.add("literal");
-        break;
-      case "CharacterClass":
-        combinators.add(expr.negated ? "negatedCharClass" : "charClass");
-        break;
-      case "AnyChar":
-        combinators.add("anyChar");
-        break;
-      case "Identifier": {
-        // Mirrors generateIdentifier's decision: a forward/self/mutual
-        // reference is generated as `lazy(() => name)`, which needs the
-        // import.
-        const targetIndex = this.ruleIndex.get(expr.name);
-        if (targetIndex !== undefined && targetIndex >= currentRuleIndex) {
-          combinators.add("lazy");
-        }
-        break;
-      }
-      case "Sequence": {
-        // Mirrors `generateOptimizedSequence`'s own decisions exactly,
-        // via the same shared helpers `codegen.ts` uses:
-        // `sequenceCombinatorFor` decides whether the sequence goes
-        // through `sequence(...)`/`captureSequence(...)` at all or is
-        // returned BARE (both `generateOptimizedSequence`'s early no-cut
-        // shortcut and its later general-case one boil down to the same
-        // rule: exactly one SURVIVING, non-`Cut` element and no label),
-        // and `sequenceNeedsOrdinaryCommit` decides whether any ordinary
-        // `commit(...)` is emitted -- when this IS the start rule's own
-        // top-level Sequence, OR a Cut here was marked `global: true` by
-        // `promoteGlobalCuts`, `commitAtTopLevel` (tpeg-combinator) is
-        // emitted instead, and a trailing/follower-less Cut emits
-        // neither. See `codegen.ts`'s identical `collectUsedCombinators`
-        // for the concrete unused-import shapes (e.g. `~ "a"`, `"a" ~`)
-        // guessing either decision used to leave behind.
-        const sequenceCombinator = sequenceCombinatorFor(expr);
-        if (sequenceCombinator !== null) {
-          combinators.add(sequenceCombinator);
-        }
-        if (sequenceNeedsOrdinaryCommit(expr, isStartRuleTopLevel)) {
-          combinators.add("commit");
-        }
-        for (const element of expr.elements) {
-          if (element.type === "Cut") continue;
-          this.collectUsedCombinators(element, combinators, currentRuleIndex);
-        }
-        break;
-      }
-      case "Choice":
-        // Mirrors `generateOptimizedChoice`'s own single-alternative
-        // shortcut: exactly one alternative is returned bare (that
-        // alternative's own generated code, unwrapped), never passed
-        // through `choice(...)` at all -- unlike the multi-alternative
-        // case just below, this one is unconditional (independent of
-        // `enablePredictiveDispatch`/FIRST-set analysis), so it's worth
-        // getting exactly right rather than leaving imprecise.
-        //
-        // For the multi-alternative case, `firstSetAnalysis` IS already
-        // populated by this point (`generate` computes it before the
-        // import pass), so the choice/predictiveChoice decision is made
-        // with the exact same eligibility test
-        // `tryGeneratePredictiveChoice` applies -- an unused `choice`
-        // import isn't merely untidy, it is a `noUnusedLocals` compile
-        // error in the consumer's project (#83).
-        if (expr.alternatives.length > 1) {
-          if (
-            this.options.enablePredictiveDispatch &&
-            this.firstSetAnalysis !== null &&
-            this.predictiveChoiceFilters(expr, this.firstSetAnalysis) !== null
-          ) {
-            combinators.add("predictiveChoice");
-          } else {
-            combinators.add("choice");
+    collectUsedCombinators(
+      expr,
+      combinators,
+      {
+        ruleIndex: this.ruleIndex,
+        currentRuleIndex,
+        enableCharClassRun: this.options.enableCharClassRun,
+        commitAfterAnyCut: false,
+        choiceCombinatorFor: (choice) =>
+          choice.alternatives.length <= 1
+            ? null
+            : this.options.enablePredictiveDispatch &&
+                this.firstSetAnalysis !== null &&
+                this.predictiveChoiceFilters(choice, this.firstSetAnalysis) !==
+                  null
+              ? "predictiveChoice"
+              : "choice",
+        handled: (e, into) => {
+          // A fusion root (`this.fusionRoots`, populated by `planFusion`
+          // in `generateGrammar`) compiles to one `regexFusedMap(...)`
+          // call in `generateOptimizedExpression` -- checked FIRST,
+          // before the switch, so it applies uniformly whether `e` is a
+          // whole rule's pattern (`regexFusionScope: "rule"`) or an
+          // interior node reached through recursion (`"subtree"`). Not
+          // walking further into `e` here is what keeps this pass and
+          // `generateOptimizedExpression` in lockstep: neither one ever
+          // looks at what's inside a fused node.
+          if (this.fusionRoots.has(e)) {
+            into.add("regexFusedMap");
+            return true;
           }
-        }
-        for (const alternative of expr.alternatives) {
-          this.collectUsedCombinators(
-            alternative,
-            combinators,
-            currentRuleIndex,
-          );
-        }
-        break;
-      case "Star":
-        // Mirrors generateOptimizedExpression's Star case exactly (same
-        // option check, same `tryGenerateCharClassRunCode` call), so the
-        // import set and the generated code can never disagree.
-        if (
-          this.options.enableCharClassRun &&
-          tryGenerateCharClassRunCode(expr.expression, 0) !== null
-        ) {
-          combinators.add("charClassRun");
-        } else {
-          combinators.add("zeroOrMore");
-          this.collectUsedCombinators(
-            expr.expression,
-            combinators,
-            currentRuleIndex,
-          );
-        }
-        break;
-      case "Plus":
-        // Mirrors generateOptimizedExpression's Plus case -- see the
-        // Star case's comment just above.
-        if (
-          this.options.enableCharClassRun &&
-          tryGenerateCharClassRunCode(expr.expression, 1) !== null
-        ) {
-          combinators.add("charClassRun");
-        } else {
-          combinators.add("oneOrMore");
-          this.collectUsedCombinators(
-            expr.expression,
-            combinators,
-            currentRuleIndex,
-          );
-        }
-        break;
-      case "Optional":
-        combinators.add("optional");
-        this.collectUsedCombinators(
-          expr.expression,
-          combinators,
-          currentRuleIndex,
-        );
-        break;
-      case "PositiveLookahead":
-        combinators.add("andPredicate");
-        this.collectUsedCombinators(
-          expr.expression,
-          combinators,
-          currentRuleIndex,
-        );
-        break;
-      case "NegativeLookahead":
-        combinators.add("notPredicate");
-        this.collectUsedCombinators(
-          expr.expression,
-          combinators,
-          currentRuleIndex,
-        );
-        break;
-      case "Group":
-        this.collectUsedCombinators(
-          expr.expression,
-          combinators,
-          currentRuleIndex,
-        );
-        break;
-      case "LabeledExpression":
-        combinators.add("capture");
-        this.collectUsedCombinators(
-          expr.expression,
-          combinators,
-          currentRuleIndex,
-        );
-        break;
-      case "ActionExpression":
-        this.collectUsedCombinators(
-          expr.expression,
-          combinators,
-          currentRuleIndex,
-        );
-        break;
-      case "Quantified": {
-        const quantified = expr as Quantified;
-        // {0,}/{1,} over a bare CharacterClass collapses to
-        // `charClassRun` instead (mirrors `generateQuantifiedCode`'s
-        // decision exactly, via the same call) -- add its import, and
-        // skip recursing into the CharacterClass itself so it doesn't
-        // ALSO add an unused charClass/negatedCharClass import.
-        const usesRun =
-          this.options.enableCharClassRun &&
-          quantified.max === undefined &&
-          (quantified.min === 0 || quantified.min === 1) &&
-          tryGenerateCharClassRunCode(
-            quantified.expression,
-            quantified.min as 0 | 1,
-          ) !== null;
-        if (usesRun) {
-          combinators.add("charClassRun");
-        } else {
-          // Mirrors `generateQuantifiedCode`'s (codegen.ts) branches
-          // exactly, rather than adding every combinator it could ever
-          // possibly emit for SOME `Quantified` shape: that used to add
-          // `quantified`/`zeroOrMore`/`oneOrMore`/`optional`/`choice`
-          // unconditionally, every one of them unused except whichever
-          // single branch this specific `min`/`max` pair actually takes
-          // (and `choice` is never emitted by `generateQuantifiedCode`
-          // for ANY shape -- it was always dead weight here).
-          if (quantified.max === undefined) {
-            combinators.add(
-              quantified.min === 0
-                ? "zeroOrMore"
-                : quantified.min === 1
-                  ? "oneOrMore"
-                  : "quantified",
-            );
-          } else if (quantified.min === quantified.max) {
-            // `{n}` uses `quantified` for every `n` (including `{0}`
-            // and `{1}` -- the latter keeps the `T[]` result shape of
-            // the other repetition forms rather than returning `T`).
-            combinators.add("quantified");
-          } else if (quantified.min === 0 && quantified.max === 1) {
-            combinators.add("optional");
-          } else {
-            combinators.add("quantified");
-          }
-          this.collectUsedCombinators(
-            quantified.expression,
-            combinators,
-            currentRuleIndex,
-          );
-        }
-        break;
-      }
-    }
+          return false;
+        },
+      },
+      isStartRuleTopLevel,
+    );
   }
 
   /**
@@ -986,50 +795,50 @@ export class OptimizedTPEGCodeGenerator {
     return this.templateCache.get(cacheKey, () => {
       switch (expr.type) {
         case "StringLiteral":
-          return this.generateStringLiteral(expr as StringLiteral);
+          return this.generateStringLiteral(expr);
         case "CharacterClass":
-          return this.generateOptimizedCharacterClass(expr as CharacterClass);
+          return this.generateOptimizedCharacterClass(expr);
         case "Identifier":
-          return this.generateIdentifier(expr as Identifier);
+          return this.generateIdentifier(expr);
         case "QualifiedIdentifier":
-          return this.generateQualifiedIdentifier(expr as QualifiedIdentifier);
+          return this.generateQualifiedIdentifier(expr);
         case "AnyChar":
           return "anyChar()";
         case "Sequence":
           return this.generateOptimizedSequence(
-            expr as Sequence,
+            expr,
             isStartRuleTopLevelSequence,
           );
         case "Choice":
-          return this.generateOptimizedChoice(expr as Choice);
+          return this.generateOptimizedChoice(expr);
         case "Group":
-          return this.generateOptimizedExpression((expr as Group).expression);
+          return this.generateOptimizedExpression(expr.expression);
         case "Star": {
           const run = this.options.enableCharClassRun
-            ? tryGenerateCharClassRunCode((expr as Star).expression, 0)
+            ? tryGenerateCharClassRunCode(expr.expression, 0)
             : null;
           if (run !== null) return run;
-          return `zeroOrMore(${this.generateOptimizedExpression((expr as Star).expression)})`;
+          return `zeroOrMore(${this.generateOptimizedExpression(expr.expression)})`;
         }
         case "Plus": {
           const run = this.options.enableCharClassRun
-            ? tryGenerateCharClassRunCode((expr as Plus).expression, 1)
+            ? tryGenerateCharClassRunCode(expr.expression, 1)
             : null;
           if (run !== null) return run;
-          return `oneOrMore(${this.generateOptimizedExpression((expr as Plus).expression)})`;
+          return `oneOrMore(${this.generateOptimizedExpression(expr.expression)})`;
         }
         case "Optional":
-          return `optional(${this.generateOptimizedExpression((expr as Optional).expression)})`;
+          return `optional(${this.generateOptimizedExpression(expr.expression)})`;
         case "Quantified":
-          return this.generateQuantified(expr as Quantified);
+          return this.generateQuantified(expr);
         case "PositiveLookahead":
-          return `andPredicate(${this.generateOptimizedExpression((expr as PositiveLookahead).expression)})`;
+          return `andPredicate(${this.generateOptimizedExpression(expr.expression)})`;
         case "NegativeLookahead":
-          return `notPredicate(${this.generateOptimizedExpression((expr as NegativeLookahead).expression)})`;
+          return `notPredicate(${this.generateOptimizedExpression(expr.expression)})`;
         case "LabeledExpression":
-          return this.generateLabeledExpression(expr as LabeledExpression);
+          return this.generateLabeledExpression(expr);
         case "ActionExpression":
-          return this.generateActionExpression(expr as ActionExpression);
+          return this.generateActionExpression(expr);
         default:
           throw new Error(
             `Unsupported expression type: ${(expr as { type: string }).type}`,

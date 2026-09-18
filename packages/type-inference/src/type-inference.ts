@@ -301,6 +301,21 @@ const normalizeCycleKey = (cycle: readonly string[]): string => {
 };
 
 /**
+ * The `unknown` placeholder recorded for a rule whose inference hit a
+ * circular dependency -- shared by `handleRuleInferenceError`'s
+ * `TypeInferenceError` and plain-`Error` branches so both produce the
+ * exact same shape/documentation.
+ */
+const circularDependencyPlaceholder = (ruleName: string): InferredType => ({
+  typeString: "unknown",
+  nullable: false,
+  isArray: false,
+  baseType: "unknown",
+  imports: [],
+  documentation: `Circular dependency detected in rule ${ruleName}`,
+});
+
+/**
  * Peels away transparent `Group` wrappers to see if `expr` is (or wraps)
  * a `LabeledExpression` -- a local duplicate of `labelOf` in
  * packages/parser/src/codegen.ts (not imported: this package depends on
@@ -409,8 +424,8 @@ export class TypeInferenceEngine {
     };
 
     // Tracks which distinct circular dependencies have already been
-    // recorded, keyed by `normalizeCycleKey` -- this loop infers each
-    // rule's type starting from its own fresh `ruleStack`, so a single
+    // recorded, keyed by `normalizeCycleKey` -- each rule's type is
+    // inferred starting from its own fresh `ruleStack`, so a single
     // cycle spanning N rules is independently rediscovered once per
     // participating rule (as a different rotation of the same rule-name
     // sequence). Without this, `result.circularDependencies`/`.warnings`
@@ -419,88 +434,7 @@ export class TypeInferenceEngine {
 
     // Infer types for each rule
     for (const rule of grammar.rules) {
-      try {
-        this.context.currentRule = rule.name;
-        this.context.ruleStack = [rule.name];
-        this.context.currentDepth = 0;
-
-        const inferredType = this.inferExpressionType(rule.pattern);
-        result.ruleTypes.set(rule.name, inferredType);
-        result.stats.typesInferred++;
-        // Add any new imports
-        result.imports.push(...inferredType.imports);
-      } catch (error) {
-        if (error instanceof TypeInferenceError) {
-          // Handle circular dependencies
-          if (
-            this.options.detectCircularDependencies &&
-            error.message.includes("Circular dependency")
-          ) {
-            // `error.cycle` was captured at THROW time (see
-            // `TypeInferenceError`'s own doc comment) -- `ruleStack` itself
-            // can no longer be read back here for this, now that
-            // `inferIdentifierType`'s `push`/`pop` is properly `finally`-
-            // guarded and has already unwound to just this rule's name by
-            // the time the exception reaches this `catch`. Falls back to
-            // this rule's own name only in the [in-practice unreachable]
-            // case of a `TypeInferenceError` thrown some other way with a
-            // message that happens to contain "Circular dependency".
-            const cycle = error.cycle ?? [rule.name];
-            const key = normalizeCycleKey(cycle);
-            if (!seenCycles.has(key)) {
-              seenCycles.add(key);
-              result.circularDependencies.push([...cycle]);
-              result.warnings.push(error.message);
-            }
-
-            // Use a placeholder type for circular dependencies
-            result.ruleTypes.set(rule.name, {
-              typeString: "unknown",
-              nullable: false,
-              isArray: false,
-              baseType: "unknown",
-              imports: [],
-              documentation: `Circular dependency detected in rule ${rule.name}`,
-            });
-          } else {
-            result.warnings.push(error.message);
-            // For other errors, use a more specific error type
-            result.ruleTypes.set(rule.name, {
-              typeString: "unknown",
-              nullable: false,
-              isArray: false,
-              baseType: "unknown",
-              imports: [],
-              documentation: `Type inference failed: ${error.message}`,
-            });
-          }
-        } else if (
-          error instanceof Error &&
-          error.message.includes("Circular dependency")
-        ) {
-          // Same de-duplication as above, for the [equally unreachable in
-          // practice] case of a plain `Error` rather than a
-          // `TypeInferenceError` -- no `.cycle` to key on here, so this
-          // falls back to the rule's own name.
-          const key = normalizeCycleKey([rule.name]);
-          if (!seenCycles.has(key)) {
-            seenCycles.add(key);
-            result.circularDependencies.push([rule.name]);
-            result.warnings.push(error.message);
-          }
-          // Use a placeholder type for circular dependencies
-          result.ruleTypes.set(rule.name, {
-            typeString: "unknown",
-            nullable: false,
-            isArray: false,
-            baseType: "unknown",
-            imports: [],
-            documentation: `Circular dependency detected in rule ${rule.name}`,
-          });
-        } else {
-          throw error;
-        }
-      }
+      this.inferRuleType(rule, result, seenCycles);
     }
 
     // Deduplicate imports and calculate final stats
@@ -510,6 +444,107 @@ export class TypeInferenceEngine {
     result.stats.inferenceTime = performance.now() - this.startTime;
 
     return result;
+  }
+
+  /**
+   * Infers a single rule's type into `result.ruleTypes`/`result.imports`,
+   * or records the error/placeholder on failure -- see
+   * {@link handleRuleInferenceError}.
+   */
+  private inferRuleType(
+    rule: RuleDefinition,
+    result: GrammarTypeInference,
+    seenCycles: Set<string>,
+  ): void {
+    try {
+      this.context.currentRule = rule.name;
+      this.context.ruleStack = [rule.name];
+      this.context.currentDepth = 0;
+
+      const inferredType = this.inferExpressionType(rule.pattern);
+      result.ruleTypes.set(rule.name, inferredType);
+      result.stats.typesInferred++;
+      // Add any new imports
+      result.imports.push(...inferredType.imports);
+    } catch (error) {
+      this.handleRuleInferenceError(rule, error, result, seenCycles);
+    }
+  }
+
+  /**
+   * Records the outcome of a failed {@link inferRuleType} call: a
+   * de-duplicated entry in `result.circularDependencies`/`.warnings`
+   * plus an `unknown` placeholder type for a circular dependency, a
+   * warning + placeholder for any other `TypeInferenceError`, and a
+   * rethrow for anything else.
+   */
+  private handleRuleInferenceError(
+    rule: RuleDefinition,
+    error: unknown,
+    result: GrammarTypeInference,
+    seenCycles: Set<string>,
+  ): void {
+    if (error instanceof TypeInferenceError) {
+      // Handle circular dependencies
+      if (
+        this.options.detectCircularDependencies &&
+        error.message.includes("Circular dependency")
+      ) {
+        // `error.cycle` was captured at THROW time (see
+        // `TypeInferenceError`'s own doc comment) -- `ruleStack` itself
+        // can no longer be read back here for this, now that
+        // `inferIdentifierType`'s `push`/`pop` is properly `finally`-
+        // guarded and has already unwound to just this rule's name by
+        // the time the exception reaches this `catch`. Falls back to
+        // this rule's own name only in the [in-practice unreachable]
+        // case of a `TypeInferenceError` thrown some other way with a
+        // message that happens to contain "Circular dependency".
+        const cycle = error.cycle ?? [rule.name];
+        const key = normalizeCycleKey(cycle);
+        if (!seenCycles.has(key)) {
+          seenCycles.add(key);
+          result.circularDependencies.push([...cycle]);
+          result.warnings.push(error.message);
+        }
+
+        // Use a placeholder type for circular dependencies
+        result.ruleTypes.set(
+          rule.name,
+          circularDependencyPlaceholder(rule.name),
+        );
+      } else {
+        result.warnings.push(error.message);
+        // For other errors, use a more specific error type
+        result.ruleTypes.set(rule.name, {
+          typeString: "unknown",
+          nullable: false,
+          isArray: false,
+          baseType: "unknown",
+          imports: [],
+          documentation: `Type inference failed: ${error.message}`,
+        });
+      }
+      return;
+    }
+    if (
+      error instanceof Error &&
+      error.message.includes("Circular dependency")
+    ) {
+      // Same de-duplication as above, for the [equally unreachable in
+      // practice] case of a plain `Error` rather than a
+      // `TypeInferenceError` -- no `.cycle` to key on here, so this
+      // falls back to the rule's own name.
+      const key = normalizeCycleKey([rule.name]);
+      if (!seenCycles.has(key)) {
+        seenCycles.add(key);
+        result.circularDependencies.push([rule.name]);
+        result.warnings.push(error.message);
+      }
+      // Use a placeholder type for circular dependencies
+      result.ruleTypes.set(rule.name, circularDependencyPlaceholder(rule.name));
+      return;
+    }
+    throw error;
   }
 
   /**
@@ -548,105 +583,12 @@ export class TypeInferenceEngine {
     }
 
     this.context.currentDepth++;
-    let inferredType: InferredType;
 
     try {
-      switch (expression.type) {
-        case "StringLiteral":
-          inferredType = this.inferStringLiteralType(expression);
-          break;
-        case "CharacterClass":
-          inferredType = this.inferCharacterClassType(expression);
-          break;
-        case "Identifier":
-          inferredType = this.inferIdentifierType(expression);
-          break;
-        case "AnyChar":
-          inferredType = this.inferAnyCharType(expression);
-          break;
-        case "Sequence":
-          inferredType = this.inferSequenceType(expression);
-          break;
-        case "Choice":
-          inferredType = this.inferChoiceType(expression);
-          break;
-        case "Group":
-          inferredType = this.inferGroupType(expression);
-          break;
-        case "Star":
-          inferredType = this.inferStarType(expression);
-          break;
-        case "Plus":
-          inferredType = this.inferPlusType(expression);
-          break;
-        case "Optional":
-          inferredType = this.inferOptionalType(expression);
-          break;
-        case "Quantified":
-          inferredType = this.inferQuantifiedType(expression);
-          break;
-        case "PositiveLookahead":
-        case "NegativeLookahead":
-          inferredType = this.inferLookaheadType(expression);
-          break;
-        case "Cut":
-          // The `~` cut/commit marker: consumes no input and, per
-          // `generateSequence` in packages/parser/src/codegen.ts, is
-          // dropped entirely rather than emitted as a `sequence(...)`
-          // argument -- so, like a lookahead, it contributes nothing to
-          // the result type.
-          inferredType = {
-            typeString: "void",
-            nullable: false,
-            isArray: false,
-            baseType: "void",
-            imports: [],
-            documentation: this.options.generateDocumentation
-              ? "Cut/commit marker - no result"
-              : undefined,
-          };
-          break;
-        case "LabeledExpression":
-          inferredType = this.inferLabeledExpressionType(expression);
-          break;
-        case "ActionExpression":
-          inferredType = this.inferActionExpressionType(expression);
-          break;
-        case "QualifiedIdentifier":
-          inferredType = this.inferQualifiedIdentifierType(expression);
-          break;
-        default: {
-          // Exhaustiveness check: every `Expression` union member has its
-          // own `case` above. If a new variant is ever added to
-          // `Expression` (`@suzumiyaaoba/tpeg-core`) without a
-          // corresponding case here, `expression` is no longer
-          // assignable to `never` and this line fails to COMPILE --
-          // catching the omission at build time instead of silently
-          // falling through to "unknown" the way `ActionExpression` and
-          // `QualifiedIdentifier` both did before this check existed
-          // (confirmed: every rule using a semantic action inferred as
-          // `unknown`, and `analyzeDependencies` in `type-integration.ts`
-          // silently returned no dependencies for such a rule -- neither
-          // was flagged by `tsc`, since the switch's own `default` branch
-          // is reachable code, not a type error).
-          const exhaustive: never = expression;
-          const unknownType =
-            "type" in exhaustive
-              ? (exhaustive as { type: string }).type
-              : "unknown";
-          inferredType = {
-            typeString: "unknown",
-            nullable: false,
-            isArray: false,
-            baseType: "unknown",
-            imports: [],
-            documentation: `Unknown expression type: ${unknownType}`,
-          };
-        }
-      }
-
       // Apply custom type mappings if available
-      inferredType = this.applyCustomTypeMappings(inferredType);
+      const inferredType = this.applyCustomTypeMappings(
+        this.inferExpressionTypeUncached(expression),
+      );
 
       // Cache the result if enabled
       if (this.options.enableCaching) {
@@ -656,6 +598,91 @@ export class TypeInferenceEngine {
       return inferredType;
     } finally {
       this.context.currentDepth--;
+    }
+  }
+
+  /**
+   * The per-node-type dispatch inside {@link inferExpressionType}, split
+   * out so the public method only owns the depth guard + cache
+   * bookkeeping around it.
+   */
+  private inferExpressionTypeUncached(expression: Expression): InferredType {
+    switch (expression.type) {
+      case "StringLiteral":
+        return this.inferStringLiteralType(expression);
+      case "CharacterClass":
+        return this.inferCharacterClassType(expression);
+      case "Identifier":
+        return this.inferIdentifierType(expression);
+      case "AnyChar":
+        return this.inferAnyCharType(expression);
+      case "Sequence":
+        return this.inferSequenceType(expression);
+      case "Choice":
+        return this.inferChoiceType(expression);
+      case "Group":
+        return this.inferGroupType(expression);
+      case "Star":
+        return this.inferStarType(expression);
+      case "Plus":
+        return this.inferPlusType(expression);
+      case "Optional":
+        return this.inferOptionalType(expression);
+      case "Quantified":
+        return this.inferQuantifiedType(expression);
+      case "PositiveLookahead":
+      case "NegativeLookahead":
+        return this.inferLookaheadType(expression);
+      case "Cut":
+        // The `~` cut/commit marker: consumes no input and, per
+        // `generateSequence` in packages/parser/src/codegen.ts, is
+        // dropped entirely rather than emitted as a `sequence(...)`
+        // argument -- so, like a lookahead, it contributes nothing to
+        // the result type.
+        return {
+          typeString: "void",
+          nullable: false,
+          isArray: false,
+          baseType: "void",
+          imports: [],
+          documentation: this.options.generateDocumentation
+            ? "Cut/commit marker - no result"
+            : undefined,
+        };
+      case "LabeledExpression":
+        return this.inferLabeledExpressionType(expression);
+      case "ActionExpression":
+        return this.inferActionExpressionType(expression);
+      case "QualifiedIdentifier":
+        return this.inferQualifiedIdentifierType(expression);
+      default: {
+        // Exhaustiveness check: every `Expression` union member has its
+        // own `case` above. If a new variant is ever added to
+        // `Expression` (`@suzumiyaaoba/tpeg-core`) without a
+        // corresponding case here, `expression` is no longer
+        // assignable to `never` and this line fails to COMPILE --
+        // catching the omission at build time instead of silently
+        // falling through to "unknown" the way `ActionExpression` and
+        // `QualifiedIdentifier` both did before this check existed
+        // (confirmed: every rule using a semantic action inferred as
+        // `unknown`, and `analyzeDependencies` in `type-integration.ts`
+        // silently returned no dependencies for such a rule -- neither
+        // was flagged by `tsc`, since the switch's own `default` branch
+        // is reachable code, not a type error).
+        const exhaustive: never = expression;
+        const unknownType =
+          "type" in exhaustive
+            ? (exhaustive as { type: string }).type
+            : "unknown";
+        return {
+          typeString: "unknown",
+          nullable: false,
+          isArray: false,
+          baseType: "unknown",
+          imports: [],
+          documentation: `Unknown expression type: ${unknownType}`,
+        };
+      }
     }
   }
 

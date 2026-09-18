@@ -248,6 +248,112 @@ export const createJsExprTracker = () => {
   };
 };
 
+/** The tracker object `createJsExprTracker` returns -- named so the
+ * shared scanning helpers below can take it as a parameter type. */
+export type JsExprTracker = ReturnType<typeof createJsExprTracker>;
+
+const isJsWhitespace = (ch: string | undefined): boolean =>
+  ch === " " || ch === "\t" || ch === "\n" || ch === "\r";
+
+/**
+ * Handles a `/` inside scanned JavaScript source: where `tracker` says a
+ * value is expected, the `/` opens a regex literal -- e.g. `= /}/` or
+ * `if (ok) /}/` (a `)` closing a control-statement paren is followed by a
+ * statement, so `exprExpected` is true there too) -- skipped atomically
+ * via `scanRegexLiteral` so its contents can't be misread as braces,
+ * quotes, or comments (a `}` inside the pattern used to decrement the
+ * caller's brace depth and desync the whole scan). A `/` that isn't a
+ * well-formed regex, or isn't in a value position, is a division
+ * operator -- an ordinary punctuator, after which an operand follows.
+ * Returns the offset just past the token. Shared by every JS-aware
+ * scanner (`scanJsToBlockClose`, `codeContainsIdentifier`, and
+ * `grammar.ts`'s rule-body scan) so the regex-vs-division decision can't
+ * drift between them.
+ */
+export const advanceJsSlash = (
+  input: string,
+  pos: number,
+  tracker: JsExprTracker,
+): number => {
+  if (tracker.exprExpected) {
+    const regexEnd = scanRegexLiteral(input, pos);
+    if (regexEnd !== -1) {
+      tracker.operand();
+      return regexEnd;
+    }
+  }
+  tracker.punct("/");
+  return pos + 1;
+};
+
+/**
+ * Extracts the identifier-ish word starting at `pos` (the caller has
+ * already checked `JS_IDENTIFIER_START`), returning the word text and
+ * the offset just past it. Exposed separately from `advanceJsToken` for
+ * `codeContainsIdentifier`, which needs the word itself, not just its
+ * tracker effect.
+ */
+export const scanJsWord = (
+  input: string,
+  pos: number,
+): { word: string; end: number } => {
+  let end = pos + 1;
+  while (end < input.length && JS_IDENTIFIER_CONT.test(input[end] ?? "")) {
+    end++;
+  }
+  return { word: input.slice(pos, end), end };
+};
+
+/**
+ * Advances the JS-expression tracker over the single token starting at
+ * `pos` and returns the offset just past it: an identifier-ish word, a
+ * digit, a paren/brace/bracket, a postfix `++`/`--`, whitespace (one
+ * offset, no tracker effect), or any other punctuator. `{`/`}` go
+ * through `tracker.openBrace`/`closeBrace` -- callers that additionally
+ * track a brace DEPTH intercept those characters first and still
+ * delegate the tracker update to this function. Multi-character token
+ * shapes with their own skip rules -- string/template literals,
+ * comments, and `/` (regex-vs-division, see `advanceJsSlash`) -- are the
+ * caller's own cases, checked before delegating.
+ */
+export const advanceJsToken = (
+  input: string,
+  pos: number,
+  tracker: JsExprTracker,
+): number => {
+  const ch = input[pos];
+  if (JS_IDENTIFIER_START.test(ch ?? "")) {
+    const { word, end } = scanJsWord(input, pos);
+    tracker.word(word);
+    return end;
+  }
+  if (ch === "{") {
+    tracker.openBrace();
+    return pos + 1;
+  }
+  if (ch === "}") {
+    tracker.closeBrace();
+    return pos + 1;
+  }
+  if (ch !== undefined && ch >= "0" && ch <= "9") {
+    tracker.operand();
+  } else if (ch === "(") {
+    tracker.openParen();
+  } else if (ch === ")") {
+    tracker.closeParen();
+  } else if (ch === "]") {
+    tracker.operand();
+  } else if ((ch === "+" || ch === "-") && input[pos + 1] === ch) {
+    // Postfix `++`/`--` ends an operand.
+    tracker.operand();
+    return pos + 2;
+  } else if (ch !== undefined && !isJsWhitespace(ch)) {
+    // Any other punctuator cannot end an operand, so a value is expected.
+    tracker.punct(ch);
+  }
+  return pos + 1;
+};
+
 /**
  * Advances past a regex literal starting at `start` (which must point at
  * the opening `/`), honoring `\` escapes and `[...]` character classes (a
@@ -335,14 +441,12 @@ const scanJsToBlockClose = (input: string, pos: number): number => {
 
     if (ch === "{") {
       braceDepth++;
-      tracker.openBrace();
-      i++;
+      i = advanceJsToken(input, i, tracker);
       continue;
     }
     if (ch === "}") {
       braceDepth--;
-      i++;
-      tracker.closeBrace();
+      i = advanceJsToken(input, i, tracker);
       if (braceDepth === 0) {
         return i;
       }
@@ -361,70 +465,11 @@ const scanJsToBlockClose = (input: string, pos: number): number => {
       i = skipBlockComment(input, i);
       continue;
     }
-    if (ch === "/" && tracker.exprExpected) {
-      const regexEnd = scanRegexLiteral(input, i);
-      if (regexEnd !== -1) {
-        i = regexEnd;
-        tracker.operand();
-        continue;
-      }
-      // Not a well-formed regex -- a division operator, which expects an
-      // operand next.
-      tracker.punct("/");
-      i++;
+    if (ch === "/") {
+      i = advanceJsSlash(input, i, tracker);
       continue;
     }
-    if (ch === "/" && !tracker.exprExpected) {
-      // Division operator -- an operand follows.
-      tracker.punct("/");
-      i++;
-      continue;
-    }
-    if (JS_IDENTIFIER_START.test(ch ?? "")) {
-      let wordEnd = i + 1;
-      while (
-        wordEnd < input.length &&
-        JS_IDENTIFIER_CONT.test(input[wordEnd] ?? "")
-      ) {
-        wordEnd++;
-      }
-      tracker.word(input.slice(i, wordEnd));
-      i = wordEnd;
-      continue;
-    }
-    if (ch !== undefined && ch >= "0" && ch <= "9") {
-      tracker.operand();
-      i++;
-      continue;
-    }
-    if (ch === "(") {
-      tracker.openParen();
-      i++;
-      continue;
-    }
-    if (ch === ")") {
-      tracker.closeParen();
-      i++;
-      continue;
-    }
-    if (ch === "]") {
-      tracker.operand();
-      i++;
-      continue;
-    }
-    if ((ch === "+" || ch === "-") && input[i + 1] === ch) {
-      // Postfix `++`/`--` ends an operand.
-      tracker.operand();
-      i += 2;
-      continue;
-    }
-    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") {
-      i++;
-      continue;
-    }
-    // Any other punctuator cannot end an operand, so a value is expected.
-    tracker.punct(ch ?? "");
-    i++;
+    i = advanceJsToken(input, i, tracker);
   }
 
   return -1;
@@ -510,79 +555,18 @@ export const codeContainsIdentifier = (code: string, name: string): boolean => {
       i = skipBlockComment(code, i);
       continue;
     }
-    if (ch === "/" && tracker.exprExpected) {
-      const regexEnd = scanRegexLiteral(code, i);
-      if (regexEnd !== -1) {
-        i = regexEnd;
-        tracker.operand();
-        continue;
-      }
-      tracker.punct("/");
-      i++;
-      continue;
-    }
-    if (ch === "/" && !tracker.exprExpected) {
-      tracker.punct("/");
-      i++;
+    if (ch === "/") {
+      i = advanceJsSlash(code, i, tracker);
       continue;
     }
     if (JS_IDENTIFIER_START.test(ch ?? "")) {
-      let wordEnd = i + 1;
-      while (
-        wordEnd < code.length &&
-        JS_IDENTIFIER_CONT.test(code[wordEnd] ?? "")
-      ) {
-        wordEnd++;
-      }
-      const word = code.slice(i, wordEnd);
+      const { word, end } = scanJsWord(code, i);
       if (word === name) return true;
       tracker.word(word);
-      i = wordEnd;
+      i = end;
       continue;
     }
-    if (ch !== undefined && ch >= "0" && ch <= "9") {
-      tracker.operand();
-      i++;
-      continue;
-    }
-    if (ch === "(") {
-      tracker.openParen();
-      i++;
-      continue;
-    }
-    if (ch === ")") {
-      tracker.closeParen();
-      i++;
-      continue;
-    }
-    if (ch === "{") {
-      tracker.openBrace();
-      i++;
-      continue;
-    }
-    if (ch === "}") {
-      tracker.closeBrace();
-      i++;
-      continue;
-    }
-    if (ch === "]") {
-      tracker.operand();
-      i++;
-      continue;
-    }
-    if ((ch === "+" || ch === "-") && code[i + 1] === ch) {
-      tracker.operand();
-      i += 2;
-      continue;
-    }
-    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") {
-      i++;
-      continue;
-    }
-    // Any other punctuator cannot end an operand, so a value is expected --
-    // the same rule `scanJsToBlockClose` applies to `{`, `}`, `(`, `=`, ...
-    tracker.punct(ch ?? "");
-    i++;
+    i = advanceJsToken(code, i, tracker);
   }
   return false;
 };

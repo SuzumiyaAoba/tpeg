@@ -61,6 +61,8 @@ export {
   generateQualifiedIdentifierCode,
   generateStringLiteralCode,
   generateCharacterClassCode,
+  generateQuantifiedCode,
+  generateLabeledExpressionCode,
   collectTopLevelLabels,
   filterReferencedLabels,
   collectTransformFunctions,
@@ -68,6 +70,12 @@ export {
   wrapWithMonitoring,
   wrapWithTransform,
   buildQualifiedIdentifierWarnings,
+  forEachSequenceElement,
+  sequenceCombinatorFor,
+  sequenceHasCutFollowedByElement,
+  quantifiedCombinatorFor,
+  collectUsedCombinators,
+  type UsedCombinatorsContext,
 } from "./codegen";
 export { escapeStringLiteral } from "./constants";
 

@@ -28,10 +28,9 @@ import {
 } from "@suzumiyaaoba/tpeg-core";
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
-  JS_IDENTIFIER_CONT,
-  JS_IDENTIFIER_START,
+  advanceJsSlash,
+  advanceJsToken,
   createJsExprTracker,
-  scanRegexLiteral,
   skipBlockComment,
   skipLineComment,
   skipStringLiteral,
@@ -220,51 +219,6 @@ const isRuleBoundaryAfterWhitespace = (
 };
 
 /**
- * Advances the JS-expression tracker over the token starting at `pos` --
- * an identifier-ish word, a digit, a paren/bracket, a postfix `++`/`--`,
- * or any other punctuator -- and returns the offset just past it. Feeds
- * the regex-vs-division heuristic the `/` case consults inside
- * action/transform bodies (`createJsExprTracker`). Whitespace and
- * characters that can't affect the expectation consume one offset.
- */
-const advanceJsToken = (
-  input: string,
-  pos: number,
-  tracker: ReturnType<typeof createJsExprTracker>,
-): number => {
-  const char = input[pos];
-  if (JS_IDENTIFIER_START.test(char ?? "")) {
-    let wordEnd = pos + 1;
-    while (
-      wordEnd < input.length &&
-      JS_IDENTIFIER_CONT.test(input[wordEnd] ?? "")
-    ) {
-      wordEnd++;
-    }
-    tracker.word(input.slice(pos, wordEnd));
-    return wordEnd;
-  }
-  if (char !== undefined && char >= "0" && char <= "9") {
-    tracker.operand();
-  } else if (char === "(") {
-    tracker.openParen();
-  } else if (char === ")") {
-    tracker.closeParen();
-  } else if (char === "]") {
-    tracker.operand();
-  } else if ((char === "+" || char === "-") && input[pos + 1] === char) {
-    // Postfix `++`/`--` ends an operand.
-    tracker.operand();
-    return pos + 2;
-  } else if (char !== undefined && !isLineBreakOrSpaceOrTab(char)) {
-    // Any other punctuator cannot end an operand, so a value is
-    // expected next.
-    tracker.punct(char);
-  }
-  return pos + 1;
-};
-
-/**
  * Bounded expression parser for grammar rules.
  *
  * This parser stops at the next rule definition or the enclosing grammar
@@ -346,32 +300,17 @@ const grammarRuleExpression: Parser<Expression> = (
     }
 
     if (char === "/" && activeBraceDepth > 0) {
-      // A `/` inside an action/transform body where a value is expected
-      // opens a regex literal -- e.g. `= /}/` or `if (ok) /}/` (a `)`
-      // closing a control-statement paren is followed by a statement, so
-      // `tracker.exprExpected` is true there too) -- whose contents must
-      // not be mistaken for braces, quotes, or comments. Without this, a
-      // `}` inside the pattern decremented `activeBraceDepth` and desynced
-      // the whole boundary scan. A `/` that does not start a well-formed
-      // regex here is a division operator instead.
-      if (tracker.exprExpected) {
-        const regexEnd = scanRegexLiteral(input, endPos);
-        if (regexEnd !== -1) {
-          endPos = regexEnd;
-          tracker.operand();
-          continue;
-        }
-      }
-      // Division operator inside an action body -- an operand follows.
-      tracker.punct("/");
-      endPos++;
+      // Regex-vs-division inside an action/transform body -- see
+      // `advanceJsSlash`'s doc comment in `brace-scanner.ts` for the
+      // heuristic (a `}` inside a regex pattern must not decrement
+      // `activeBraceDepth`, or the whole boundary scan desyncs).
+      endPos = advanceJsSlash(input, endPos, tracker);
       continue;
     }
 
     if (char === "{") {
       activeBraceDepth++;
-      tracker.openBrace();
-      endPos++;
+      endPos = advanceJsToken(input, endPos, tracker);
       continue;
     }
 
@@ -392,8 +331,7 @@ const grammarRuleExpression: Parser<Expression> = (
         break;
       }
       activeBraceDepth--;
-      tracker.closeBrace();
-      endPos++;
+      endPos = advanceJsToken(input, endPos, tracker);
       continue;
     }
 
