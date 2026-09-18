@@ -6,10 +6,10 @@
     "moduleResolution": "bundler",
     "declaration": true,
     "outDir": "dist",
-    "rootDir": ".",
+    "rootDir": "./src",
     "skipLibCheck": true,
     "types": ["bun"]
   },
-  "include": ["index.ts", "*.ts", "src/**/*"],
+  "include": ["src/**/*"],
   "exclude": ["dist", "node_modules"]
 }

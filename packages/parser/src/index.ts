@@ -63,8 +63,10 @@ export {
   generateCharacterClassCode,
   collectTopLevelLabels,
   filterReferencedLabels,
+  collectTransformFunctions,
   wrapWithAction,
   wrapWithMonitoring,
+  wrapWithTransform,
   buildQualifiedIdentifierWarnings,
 } from "./codegen";
 export { escapeStringLiteral } from "./constants";
@@ -91,6 +93,7 @@ export {
   computeFirstSets,
   predictiveFilterForExpression,
   firstSetsDisjoint,
+  assertNoNullableRepetition,
   type CharRangeLiteral,
   type FirstSet,
   type GrammarFirstSetAnalysis,
@@ -164,12 +167,19 @@ export {
   promoteGlobalCuts,
 } from "./ast-optimize";
 
-// Export performance utilities
+// Export performance utilities. `collectRuleDependencies` and
+// `findRecursiveRuleNames` are the dependency-graph machinery
+// `analyzeGrammarPerformance` is built on -- exported (not just the
+// analysis wrappers) so `@suzumiyaaoba/tpeg-generator`'s own, differently-
+// thresholded analysis can share this exact walk rather than
+// hand-maintaining a driftable copy.
 export {
   hashString,
   stringInterner,
   analyzeExpressionComplexity,
   analyzeGrammarPerformance,
+  collectRuleDependencies,
+  findRecursiveRuleNames,
   PerformanceMonitor,
   globalPerformanceMonitor,
 } from "./performance-utils";
@@ -188,115 +198,9 @@ export {
 // Note: sepBy and sepBy1 are stable exports, token may have compatibility issues
 export { sepBy, sepBy1 } from "@suzumiyaaoba/tpeg-combinator";
 
-import type { Parser } from "@suzumiyaaoba/tpeg-core";
-import {
-  choice as coreChoice,
-  map,
-  sequence,
-  star,
-} from "@suzumiyaaoba/tpeg-core";
-import { characterClass } from "./character-class";
-import { expression } from "./composition";
-import { grammarDefinition } from "./grammar";
-import { identifier } from "./identifier";
-import { qualifiedIdentifier } from "./module";
-import { stringLiteral } from "./string-literal";
-import { transformDefinition } from "./transforms";
-import type { BasicSyntaxNode, GrammarDefinition } from "./types";
-import { optionalWhitespaceOrComment } from "./whitespace-utils";
-
-/**
- * Combined parser for all basic TPEG syntax elements.
- * Attempts to parse string literals, character classes, qualified
- * identifiers (`module.rule`), or plain identifiers.
- *
- * @returns Parser<BasicSyntaxNode> Parser that matches any basic syntax element
- *
- * @example
- * ```typescript
- * const result1 = basicSyntax('"hello"', 0);
- * // result1.success === true, result1.val.type === "StringLiteral"
- *
- * const result2 = basicSyntax('[a-z]', 0);
- * // result2.success === true, result2.val.type === "CharacterClass"
- *
- * const result3 = basicSyntax('identifier', 0);
- * // result3.success === true, result3.val.type === "Identifier"
- *
- * const result4 = basicSyntax('math.expr', 0);
- * // result4.success === true, result4.val.type === "QualifiedIdentifier"
- * ```
- */
-export const basicSyntax: Parser<BasicSyntaxNode> = coreChoice(
-  stringLiteral,
-  characterClass,
-  qualifiedIdentifier,
-  identifier,
-);
-
-/**
- * Combined parser for all TPEG expression elements including composition operators.
- * Supports sequences, choices, groups, and basic syntax elements.
- *
- * @returns Parser<Expression> Parser that matches any TPEG expression
- *
- * @example
- * ```typescript
- * // Parse basic syntax
- * const result1 = tpegExpression('"hello"', 0);
- *
- * // Parse sequence
- * const result2 = tpegExpression('"hello" " " "world"', 0);
- *
- * // Parse choice
- * const result3 = tpegExpression('"true" / "false"', 0);
- *
- * // Parse group with complex precedence
- * const result4 = tpegExpression('("a" / "b") "c"', 0);
- * ```
- */
-export const tpegExpression = expression();
-
-/**
- * Parses a complete `.tpeg` file: a single `grammar Name { ... }` block,
- * optionally followed by one or more `transforms Name@language { ... }`
- * blocks. The transforms are attached to the returned grammar's
- * `transforms` array, exactly as `GrammarDefinition.transforms` expects,
- * so the result can be passed directly to `generateTypeScriptParser` (or
- * the optimized/Eta generators) to get transform-aware generated code.
- *
- * @example
- * ```typescript
- * const result = parse(tpegFile)(`
- *   grammar Calculator {
- *     number = [0-9]+
- *   }
- *
- *   transforms Evaluator@typescript {
- *     number(captures: string) -> Result<number> {
- *       return { success: true, value: parseInt(captures, 10) };
- *     }
- *   }
- * `);
- * ```
- */
-export const tpegFile: Parser<GrammarDefinition> = map(
-  sequence(
-    grammarDefinition,
-    star(
-      map(
-        sequence(optionalWhitespaceOrComment, transformDefinition),
-        ([, transform]) => transform,
-      ),
-    ),
-  ),
-  ([grammar, transforms]) => ({
-    ...grammar,
-    ...(transforms.length > 0
-      ? { transforms: [...(grammar.transforms ?? []), ...transforms] }
-      : {}),
-  }),
-);
+// Export the combined entry-level parsers (defined in `combined.ts` so
+// this module stays a pure re-export barrel)
+export { basicSyntax, tpegExpression, tpegFile } from "./combined";
 
 // Export module system parsers
 export * from "./module";

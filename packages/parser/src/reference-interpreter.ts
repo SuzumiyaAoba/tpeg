@@ -315,8 +315,11 @@ export const makeReferenceInterpreter = (
             }
             // A zero-width match only loops forever when unbounded --
             // an explicit `max` already bounds the loop above, mirroring
-            // `quantified`'s own guard in `packages/core/src/repetition.ts`.
-            if (expr.max === undefined && r.next === p) {
+            // `quantified`'s own guard in `packages/core/src/repetition.ts`,
+            // which is gated on `!Number.isFinite(limit)`: `max` spelled
+            // as `Infinity` is unbounded too, so the same guard applies
+            // (without it, this interpreter itself would loop forever).
+            if (!Number.isFinite(limit) && r.next === p) {
               return NG(true);
             }
             p = r.next;

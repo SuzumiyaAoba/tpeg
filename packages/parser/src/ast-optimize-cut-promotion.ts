@@ -238,52 +238,101 @@ const structurallyEligible = (ctx: CutSiteContext): boolean =>
   !ctx.underLookahead && !ctx.underZeroableRepetition;
 
 /**
- * Clause 3: is every reference site of rule `ruleName`, transitively up to
- * the grammar's start rule (`grammar.rules[0]`), itself eligible (clause
- * 1 + structural guard) and FIRST-disjoint from its own ancestor `Choice`
- * siblings (clause 2)? `visiting` guards against a reference cycle (see
- * the module doc comment) -- encountering a rule already being visited
- * refuses promotion rather than looping forever.
+ * Clause 3, computed for EVERY rule at once: the set of rule names whose
+ * every reference site is itself eligible (clause 1 + structural guard)
+ * and FIRST-disjoint from its own ancestor `Choice` siblings (clause 2),
+ * transitively up to the grammar's start rule (`grammar.rules[0]`).
  *
- * A rule with zero reference sites that is NOT the start rule is refused:
- * this codebase cannot prove such a rule is ever reachable from the start
- * rule at all (dead code, or reachable only through some mechanism this
- * walk doesn't model), so it cannot prove the one thing this whole
- * function exists to prove.
+ * This is the least fixpoint of `safe(r) = (r == rules[0]) || (sites(r)
+ * nonempty && every site s of r: siteOk(s) && safe(s.fromRule))`, where
+ * `siteOk` bundles the two per-site checks. A worklist propagates `true`
+ * only along reference edges, so each site is examined O(1) times total
+ * rather than once per *path* through the reference graph -- the earlier
+ * per-cut recursive formulation rechecked shared subgraphs once per
+ * incoming path, which is `2^n` on a diamond-shaped reference DAG of n
+ * levels (and carried a `visiting` set purely to terminate on cycles --
+ * the fixpoint needs neither, since a cyclic component with no safe
+ * entry simply never reaches `true`).
+ *
+ * A rule with zero reference sites that is NOT the start rule is never
+ * in the result: this codebase cannot prove such a rule is ever
+ * reachable from the start rule at all (dead code, or reachable only
+ * through some mechanism this walk doesn't model), so it cannot prove
+ * the one thing this check exists to prove.
  */
-const referenceChainIsSafe = (
-  ruleName: string,
+const computeSafeReferenceChains = (
   grammar: GrammarDefinition,
   analysis: GrammarFirstSetAnalysis,
   referenceSites: ReadonlyMap<
     string,
     ReadonlyArray<{ fromRule: string; site: IdentifierSite }>
   >,
-  visiting: Set<string>,
-): boolean => {
-  if (grammar.rules[0]?.name === ruleName) return true;
-  if (visiting.has(ruleName)) return false;
+): ReadonlySet<string> => {
+  const safe = new Set<string>();
+  // `dependents[f]` = the rules that f references (the rules whose
+  // safety depends on f's): the reverse edges of the reference graph,
+  // restricted to rules that have sites at all.
+  const dependents = new Map<string, string[]>();
+  // `pending[r]` = how many of r's reference sites are still waiting on
+  // their `fromRule` to become safe. Rules with ANY site failing its own
+  // per-site check can never be safe and stay out of `pending` entirely
+  // (their count would never reach zero anyway, since that site's
+  // `fromRule` flipping can't fix the site itself).
+  const pending = new Map<string, number>();
+  // `siteCount[r][f]` = how many of r's sites have `fromRule === f` --
+  // the amount to decrement `pending[r]` by when f becomes safe.
+  const siteCount = new Map<string, Map<string, number>>();
 
-  const sites = referenceSites.get(ruleName);
-  if (!sites || sites.length === 0) return false;
-
-  visiting.add(ruleName);
-  try {
-    return sites.every(
-      ({ fromRule, site }) =>
-        structurallyEligible(site) &&
-        nearestChoiceIsDisjoint(site, analysis) &&
-        referenceChainIsSafe(
-          fromRule,
-          grammar,
-          analysis,
-          referenceSites,
-          visiting,
-        ),
-    );
-  } finally {
-    visiting.delete(ruleName);
+  for (const [ruleName, sites] of referenceSites) {
+    if (sites.length === 0) continue;
+    if (
+      sites.some(
+        ({ site }) =>
+          !structurallyEligible(site) ||
+          !nearestChoiceIsDisjoint(site, analysis),
+      )
+    ) {
+      continue; // a site failing its own check: r can never be safe
+    }
+    pending.set(ruleName, sites.length);
+    const counts = new Map<string, number>();
+    for (const { fromRule } of sites) {
+      counts.set(fromRule, (counts.get(fromRule) ?? 0) + 1);
+    }
+    // One `dependents` entry per DISTINCT fromRule -- a rule appearing
+    // once per shared site would otherwise decrement `pending` once per
+    // loop visit, double-counting past `siteCount`.
+    for (const fromRule of counts.keys()) {
+      const list = dependents.get(fromRule);
+      if (list) {
+        list.push(ruleName);
+      } else {
+        dependents.set(fromRule, [ruleName]);
+      }
+    }
+    siteCount.set(ruleName, counts);
   }
+
+  const queue: string[] = [];
+  const markSafe = (name: string): void => {
+    safe.add(name);
+    queue.push(name);
+  };
+  const startName = grammar.rules[0]?.name;
+  if (startName !== undefined) markSafe(startName);
+
+  while (queue.length > 0) {
+    const fromRule = queue.pop() as string;
+    for (const dependent of dependents.get(fromRule) ?? []) {
+      if (safe.has(dependent)) continue;
+      const left =
+        (pending.get(dependent) ?? 0) -
+        (siteCount.get(dependent)?.get(fromRule) ?? 0);
+      pending.set(dependent, left);
+      if (left === 0) markSafe(dependent);
+    }
+  }
+  return safe;
 };
 
 /** Builds a map from rule name to every site (across the whole grammar)
@@ -316,12 +365,8 @@ const buildReferenceSiteMap = (
 const promoteCutsInExpression = (
   expr: Expression,
   ruleName: string,
-  grammar: GrammarDefinition,
   analysis: GrammarFirstSetAnalysis,
-  referenceSites: ReadonlyMap<
-    string,
-    ReadonlyArray<{ fromRule: string; site: IdentifierSite }>
-  >,
+  safeRules: ReadonlySet<string>,
 ): { expr: Expression; promotedCount: number } => {
   let promotedCount = 0;
   const visit = (e: Expression, ctx: CutSiteContext): Expression => {
@@ -339,13 +384,7 @@ const promoteCutsInExpression = (
               sawNonNullable &&
               structurallyEligible(ctx) &&
               nearestChoiceIsDisjoint(ctx, analysis) &&
-              referenceChainIsSafe(
-                ruleName,
-                grammar,
-                analysis,
-                referenceSites,
-                new Set(),
-              );
+              safeRules.has(ruleName);
             if (eligible) promotedCount++;
             return eligible ? { ...el, global: true } : el;
           }
@@ -418,14 +457,21 @@ export const promoteGlobalCuts = (
   analysis: GrammarFirstSetAnalysis,
 ): { grammar: GrammarDefinition; promotedCount: number } => {
   const referenceSites = buildReferenceSiteMap(grammar);
+  // Clause 3's transitive reference-chain check is a fixed, whole-grammar
+  // fact per rule name -- computed once here (worklist fixpoint, see
+  // `computeSafeReferenceChains`) rather than re-walked per `Cut`.
+  const safeRules = computeSafeReferenceChains(
+    grammar,
+    analysis,
+    referenceSites,
+  );
   let promotedCount = 0;
   const rules: RuleDefinition[] = grammar.rules.map((rule) => {
     const { expr, promotedCount: ruleCount } = promoteCutsInExpression(
       rule.pattern,
       rule.name,
-      grammar,
       analysis,
-      referenceSites,
+      safeRules,
     );
     promotedCount += ruleCount;
     return { ...rule, pattern: expr };

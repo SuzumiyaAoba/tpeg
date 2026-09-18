@@ -108,6 +108,7 @@
  * whether one is already present.
  */
 
+import { mapChildExpressions } from "@suzumiyaaoba/tpeg-core";
 import { containsCut, containsLabel } from "./ast-optimize-shared";
 import type { GrammarFirstSetAnalysis } from "./first-sets";
 import {
@@ -362,21 +363,10 @@ const insertCutsInExpression = (
       }
       return createChoice(buildCutGroups(processed, analysis));
     }
-    case "Group":
-    case "Star":
-    case "Plus":
-    case "Optional":
-    case "Quantified":
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-    case "LabeledExpression":
-    case "ActionExpression":
-      return {
-        ...expr,
-        expression: insertCutsInExpression(expr.expression, analysis),
-      };
     default:
-      return expr;
+      return mapChildExpressions(expr, (el) =>
+        insertCutsInExpression(el, analysis),
+      );
   }
 };
 

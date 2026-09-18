@@ -2,566 +2,66 @@
  * Grammar-level structural validation for `tpeg-generator`'s Eta-based
  * code generator (`eta-generator.ts`).
  *
- * ## Why this file still duplicates `packages/parser/src/grammar-validation.ts`
- * and `first-sets.ts`'s nullability machinery for THESE FOUR checks
+ * This used to be a ~450-line hand-maintained duplicate of the checks in
+ * `packages/parser/src/grammar-validation.ts` and `first-sets.ts`
+ * (duplicate rule names, `QualifiedIdentifier`/local-rule-name
+ * collisions, left recursion, cut-only patterns, unbounded repetition
+ * over a nullable body), kept in sync "by hand" with no automated check.
+ * That arrangement had already produced drift once (the duplicated
+ * `ActionExpression` dependency-walk gap documented in this package's
+ * `performance-utils.ts`), and produced it again when `tpeg-parser`'s
+ * copies moved to linear-time graph algorithms (a Tarjan SCC pass for
+ * left recursion, worklist fixpoints for nullability) while the
+ * duplicates here still carried the original O(rules x edges)
+ * per-rule-reachability and full-rescan-fixpoint implementations --
+ * quadratic on a long rule-reference chain, on a code path
+ * `generateGrammar` runs unconditionally before generating anything.
  *
- * Correction to an earlier version of this comment: `tpeg-generator` DOES
- * depend on `tpeg-parser` (see this package's `package.json`) -- that
- * dependency was added for `eta-generator.ts` to reuse `tpeg-parser`'s
- * `codegen.ts` building blocks (identifier reference resolution, string/
- * char-class escaping, action-expression wrapping; see the repo root
- * `CLAUDE.md`'s architecture notes) after this package's OWN prior copies
- * of those were found to have drifted out of sync with `codegen.ts`'s
- * fixes. A newer check with the identical failure mode --
- * `validateGeneratedIdentifiers` (rule-name/label/transform-parameter
- * collisions with a reserved word or an emitted import) -- is imported
- * directly from `tpeg-parser` in `eta-generator.ts` for exactly that
- * reason, rather than duplicated here.
+ * `tpeg-generator` already depends on `tpeg-parser` (see this package's
+ * `package.json` -- added so `eta-generator.ts` could share
+ * `codegen.ts`'s identifier-resolution/escaping/action-wrapping building
+ * blocks, and `validateGeneratedIdentifiers`, after earlier copies of
+ * THOSE were found to have drifted the same way), so this module now
+ * delegates to `tpeg-parser`'s implementations directly -- the same
+ * `validateGrammar` + `assertNoNullableRepetition` pair
+ * `packages/parser/src/codegen.ts` runs, in the same order -- rather
+ * than keeping a third copy that can silently fall behind again.
  *
- * The four checks still duplicated in THIS file (duplicate rule names,
- * left recursion, a cut-only pattern, unbounded repetition over a
- * nullable body) predate that dependency being added and haven't been
- * revisited since: `packages/cli/src/cli.ts` generates code via
- * `tpeg-parser`'s `generateTypeScriptParser`/
- * `generateOptimizedTypeScriptParser` directly, not via this Eta-based
- * generator, so the `tpeg` CLI never exercises this file's own path, and
- * nothing has forced the two to be reconciled. Before this file existed,
- * `generateGrammar` below ran no structural validation at all: a
- * duplicate rule name would make an equivalent FIRST-set-style analysis
- * oscillate, a left-recursive grammar would compile to a parser that
- * stack-overflows at runtime instead of failing at generation time, and
- * an unbounded repetition over a nullable body (`("a"?)*`) would compile
- * to a parser that throws an infinite-loop error at RUNTIME on any input
- * reaching that rule, rather than being rejected up front the same way
- * `tpeg-parser`'s two generators already reject it.
- *
- * Replacing these four with a direct `tpeg-parser` import (matching
- * `validateGeneratedIdentifiers` above) is a reasonable follow-up, not
- * done here to keep that change scoped on its own -- see
- * `shouldMemoize`'s doc comment in `eta-generator.ts` for an identical
- * judgment call already made for a different piece of `tpeg-parser`-only
- * analysis. This file duplicates only the minimum needed to reject the
- * three grammar shapes above at generation time: it deliberately does NOT
- * port `tpeg-parser`'s full FIRST-set analysis (`first-sets.ts`'s
- * `analyzeFirstSets`, `predictiveChoice` filter derivation, etc.) -- none
- * of that is needed for validation, only for `tpeg-parser`'s optimizing
- * codegen path, which this generator doesn't have.
- *
- * Keep this in sync BY HAND with `packages/parser/src/grammar-validation.ts`
- * and the nullability half of `packages/parser/src/first-sets.ts` if either
- * changes; there is no automated check tying the two together.
+ * One deliberate consequence: the nullable-repetition check now runs
+ * AFTER `validateGrammar`'s transform-function-name check (that check
+ * lives inside `validateGrammar`), where the old local copy ran it
+ * before. Only which error is reported FIRST changes when a single
+ * grammar violates both categories at once; both are still rejections
+ * either way.
  */
 
-import type { Expression, GrammarDefinition } from "@suzumiyaaoba/tpeg-core";
-// Imported rather than duplicated, for the same reason
-// `validateGeneratedIdentifiers` is (see this module's doc comment): the
-// transform-function name checks are pure `GrammarDefinition` analysis
-// with no Eta-specific inputs, so a second copy here would only drift.
-import { assertValidTransformFunctionNames } from "@suzumiyaaoba/tpeg-parser";
-
-// --- Nullability (ported from `packages/parser/src/first-sets.ts`'s
-// `isNullableUncached`/`computeNullableRules` -- see that module's doc
-// comment for the full rationale; only the subset needed by the two
-// checks below is reproduced here) --------------------------------------
-
-const isNullableUncached = (
-  expr: Expression,
-  nullableRules: ReadonlyMap<string, boolean>,
-): boolean => {
-  switch (expr.type) {
-    case "StringLiteral":
-      return expr.value === "";
-    case "CharacterClass":
-      return false;
-    case "AnyChar":
-      return false;
-    case "Identifier":
-      return nullableRules.get(expr.name) ?? true;
-    case "QualifiedIdentifier":
-      return true;
-    case "Sequence":
-      return expr.elements.every((el) => isNullableUncached(el, nullableRules));
-    case "Choice":
-      return expr.alternatives.some((alt) =>
-        isNullableUncached(alt, nullableRules),
-      );
-    case "Group":
-      return isNullableUncached(expr.expression, nullableRules);
-    case "Star":
-    case "Optional":
-      return true;
-    case "Plus":
-      return isNullableUncached(expr.expression, nullableRules);
-    case "Quantified":
-      return (
-        expr.min === 0 || isNullableUncached(expr.expression, nullableRules)
-      );
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-      return true;
-    case "Cut":
-      return true;
-    case "LabeledExpression":
-    case "ActionExpression":
-      return isNullableUncached(expr.expression, nullableRules);
-    default:
-      return true;
-  }
-};
-
-/** Rule-name -> "might match zero characters" fixpoint. Monotone
- * (`false -> true` only), so safe even on a grammar with duplicate rule
- * names -- whichever declaration sets a shared entry `true` first, it
- * stays `true`. */
-const computeNullableRules = (
-  grammar: GrammarDefinition,
-): Map<string, boolean> => {
-  const nullable = new Map<string, boolean>(
-    grammar.rules.map((r) => [r.name, false]),
-  );
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const rule of grammar.rules) {
-      if (nullable.get(rule.name)) continue;
-      if (isNullableUncached(rule.pattern, nullable)) {
-        nullable.set(rule.name, true);
-        changed = true;
-      }
-    }
-  }
-  return nullable;
-};
-
-// --- Duplicate rule names -----------------------------------------------
-
-const findDuplicateRuleNames = (grammar: GrammarDefinition): string[] => {
-  const seen = new Set<string>();
-  const duplicates = new Set<string>();
-  for (const rule of grammar.rules) {
-    if (seen.has(rule.name)) duplicates.add(rule.name);
-    seen.add(rule.name);
-  }
-  return [...duplicates].sort();
-};
-
-// --- QualifiedIdentifier / local-rule-name collisions (ported from
-// `grammar-validation.ts`'s
-// `collectQualifiedIdentifierCollisions`/`findQualifiedIdentifierCollisions`)
-// -------------------------------------------------------------------------
-//
-// Deliberately does NOT flag a bare `Identifier` referencing something
-// outside this grammar's own rules -- `generateIdentifier` below (mirroring
-// `packages/parser/src/codegen.ts`'s `generateIdentifierCode`) treats an
-// unresolved `Identifier` as an intentional escape hatch for binding a
-// hand-written parser into generated code, falling through to `return
-// name;` rather than an error. Only a `QualifiedIdentifier` whose `module`
-// part collides with a rule actually declared in this grammar is checked
-// -- that node type is never used for the external-binding escape hatch
-// (see its own doc comment in `packages/parser/src/types.ts`), so this
-// narrower check has no legitimate use to break.
-
-interface QualifiedIdentifierCollision {
-  readonly ruleName: string;
-  readonly refersTo: string;
-}
-
-const collectQualifiedIdentifierCollisions = (
-  expr: Expression,
-  ruleName: string,
-  ruleNames: ReadonlySet<string>,
-  out: QualifiedIdentifierCollision[],
-): void => {
-  switch (expr.type) {
-    case "QualifiedIdentifier":
-      if (ruleNames.has(expr.module)) {
-        out.push({
-          ruleName,
-          refersTo: `${expr.module}.${expr.name}`,
-        });
-      }
-      return;
-    case "Sequence":
-      for (const el of expr.elements) {
-        collectQualifiedIdentifierCollisions(el, ruleName, ruleNames, out);
-      }
-      return;
-    case "Choice":
-      for (const alt of expr.alternatives) {
-        collectQualifiedIdentifierCollisions(alt, ruleName, ruleNames, out);
-      }
-      return;
-    case "Group":
-    case "LabeledExpression":
-    case "ActionExpression":
-    case "Star":
-    case "Plus":
-    case "Optional":
-    case "Quantified":
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-      collectQualifiedIdentifierCollisions(
-        expr.expression,
-        ruleName,
-        ruleNames,
-        out,
-      );
-      return;
-    default:
-      return;
-  }
-};
-
-const findQualifiedIdentifierCollisions = (
-  grammar: GrammarDefinition,
-): QualifiedIdentifierCollision[] => {
-  const ruleNames = new Set(grammar.rules.map((rule) => rule.name));
-  const found: QualifiedIdentifierCollision[] = [];
-  for (const rule of grammar.rules) {
-    collectQualifiedIdentifierCollisions(
-      rule.pattern,
-      rule.name,
-      ruleNames,
-      found,
-    );
-  }
-  return found;
-};
-
-// --- Left recursion (ported from `grammar-validation.ts`'s
-// `zeroOffsetRuleRefs`/`findLeftRecursiveRules`) --------------------------
-
-const zeroOffsetRuleRefs = (
-  expr: Expression,
-  nullableRules: ReadonlyMap<string, boolean>,
-): ReadonlySet<string> => {
-  switch (expr.type) {
-    case "Identifier":
-      return new Set([expr.name]);
-    case "Sequence": {
-      const refs = new Set<string>();
-      for (const el of expr.elements) {
-        if (el.type === "Cut") continue;
-        for (const name of zeroOffsetRuleRefs(el, nullableRules)) {
-          refs.add(name);
-        }
-        if (!isNullableUncached(el, nullableRules)) break;
-      }
-      return refs;
-    }
-    case "Choice": {
-      const refs = new Set<string>();
-      for (const alt of expr.alternatives) {
-        for (const name of zeroOffsetRuleRefs(alt, nullableRules)) {
-          refs.add(name);
-        }
-      }
-      return refs;
-    }
-    case "Group":
-    case "LabeledExpression":
-    case "ActionExpression":
-    case "Star":
-    case "Plus":
-    case "Optional":
-    case "Quantified":
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-      return zeroOffsetRuleRefs(expr.expression, nullableRules);
-    default:
-      return new Set();
-  }
-};
-
-const findLeftRecursiveRules = (grammar: GrammarDefinition): string[] => {
-  const nullableRules = computeNullableRules(grammar);
-  const graph = new Map<string, ReadonlySet<string>>();
-  for (const rule of grammar.rules) {
-    graph.set(rule.name, zeroOffsetRuleRefs(rule.pattern, nullableRules));
-  }
-
-  const recursive = new Set<string>();
-  for (const start of graph.keys()) {
-    const seen = new Set<string>();
-    const stack = [...(graph.get(start) ?? [])];
-    while (stack.length > 0) {
-      const name = stack.pop() as string;
-      if (name === start) {
-        recursive.add(start);
-        break;
-      }
-      if (seen.has(name)) continue;
-      seen.add(name);
-      for (const next of graph.get(name) ?? []) stack.push(next);
-    }
-  }
-  return [...recursive].sort();
-};
-
-// --- Cut-only patterns (ported from `grammar-validation.ts`'s
-// `isCutOnlyPattern`/`containsCutOnlyPattern`/`findCutOnlyRules`) --------
-
-const isCutOnlyPattern = (expr: Expression): boolean =>
-  expr.type === "Cut" ||
-  (expr.type === "Sequence" &&
-    expr.elements.length > 0 &&
-    expr.elements.every((el) => el.type === "Cut"));
-
-const containsCutOnlyPattern = (
-  expr: Expression,
-  context: "sequenceElement" | "other",
-): boolean => {
-  if (expr.type === "Cut") {
-    return context !== "sequenceElement";
-  }
-  if (expr.type === "Sequence") {
-    if (isCutOnlyPattern(expr)) return true;
-    return expr.elements.some((el) =>
-      containsCutOnlyPattern(el, "sequenceElement"),
-    );
-  }
-  if (expr.type === "Choice") {
-    return expr.alternatives.some((alt) =>
-      containsCutOnlyPattern(alt, "other"),
-    );
-  }
-  if (
-    expr.type === "Group" ||
-    expr.type === "Star" ||
-    expr.type === "Plus" ||
-    expr.type === "Optional" ||
-    expr.type === "Quantified" ||
-    expr.type === "PositiveLookahead" ||
-    expr.type === "NegativeLookahead" ||
-    expr.type === "LabeledExpression" ||
-    expr.type === "ActionExpression"
-  ) {
-    return containsCutOnlyPattern(expr.expression, "other");
-  }
-  return false;
-};
-
-const findCutOnlyRules = (grammar: GrammarDefinition): string[] => {
-  const flagged: string[] = [];
-  for (const rule of grammar.rules) {
-    if (containsCutOnlyPattern(rule.pattern, "other")) {
-      flagged.push(rule.name);
-    }
-  }
-  return flagged;
-};
-
-// --- Unbounded repetition over a nullable body (ported from
-// `first-sets.ts`'s `collectNullableRepetitions`/`assertNoNullableRepetition`,
-// minus the FIRST-set analysis neither check actually needs) ------------
-
-interface NullableRepetitionIssue {
-  readonly ruleName: string;
-  readonly nodeType: "Star" | "Plus" | "Quantified";
-}
-
-const collectNullableRepetitions = (
-  expr: Expression,
-  ruleName: string,
-  nullableRules: ReadonlyMap<string, boolean>,
-  issues: NullableRepetitionIssue[],
-): void => {
-  switch (expr.type) {
-    case "Star":
-    case "Plus":
-      if (isProvablyNullable(expr.expression, nullableRules)) {
-        issues.push({ ruleName, nodeType: expr.type });
-      }
-      collectNullableRepetitions(
-        expr.expression,
-        ruleName,
-        nullableRules,
-        issues,
-      );
-      return;
-    case "Quantified":
-      // Non-finite `max` counts as unbounded here too, matching the
-      // tpeg-parser copy of this check (`first-sets.ts`).
-      if (
-        (expr.max === undefined || !Number.isFinite(expr.max)) &&
-        isProvablyNullable(expr.expression, nullableRules)
-      ) {
-        issues.push({ ruleName, nodeType: "Quantified" });
-      }
-      collectNullableRepetitions(
-        expr.expression,
-        ruleName,
-        nullableRules,
-        issues,
-      );
-      return;
-    case "Sequence":
-      for (const element of expr.elements) {
-        collectNullableRepetitions(element, ruleName, nullableRules, issues);
-      }
-      return;
-    case "Choice":
-      for (const alt of expr.alternatives) {
-        collectNullableRepetitions(alt, ruleName, nullableRules, issues);
-      }
-      return;
-    case "Group":
-    case "Optional":
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-    case "LabeledExpression":
-    case "ActionExpression":
-      collectNullableRepetitions(
-        expr.expression,
-        ruleName,
-        nullableRules,
-        issues,
-      );
-      return;
-    default:
-      return;
-  }
-};
+import type { GrammarDefinition } from "@suzumiyaaoba/tpeg-core";
+import {
+  analyzeFirstSets,
+  assertNoNullableRepetition,
+  validateGrammar,
+} from "@suzumiyaaoba/tpeg-parser";
 
 /**
- * "Provably nullable" variant of `isNullableUncached` for the
- * REJECTION check in `collectNullableRepetitions` below -- mirrors
- * `packages/parser/src/first-sets.ts`'s `isProvablyNullable`, which
- * exists for exactly this asymmetry: the fixpoint computation treats
- * an unresolved `Identifier`/`QualifiedIdentifier` as nullable because
- * that's the safe direction for FIRST-set analysis, but for a
- * *rejection* it is exactly backwards -- `ext*` over an external rule
- * reference was being rejected even though nothing in the grammar can
- * prove `ext` nullable, making the external escape hatch unusable
- * under any unbounded repetition (#113). An external parser that is
- * nullable at runtime still hits `zeroOrMore`'s zero-progress guard
- * (`createInfiniteLoopError` in tpeg-core), the correct layer for that
- * case.
- */
-const isProvablyNullable = (
-  expr: Expression,
-  nullableRules: ReadonlyMap<string, boolean>,
-): boolean => {
-  switch (expr.type) {
-    case "StringLiteral":
-      return expr.value === "";
-    case "CharacterClass":
-    case "AnyChar":
-      return false;
-    case "Identifier":
-      return nullableRules.get(expr.name) ?? false;
-    case "QualifiedIdentifier":
-      return false;
-    case "Sequence":
-      return expr.elements.every((el) => isProvablyNullable(el, nullableRules));
-    case "Choice":
-      return expr.alternatives.some((alt) =>
-        isProvablyNullable(alt, nullableRules),
-      );
-    case "Group":
-      return isProvablyNullable(expr.expression, nullableRules);
-    case "Star":
-    case "Optional":
-      return true;
-    case "Plus":
-      return isProvablyNullable(expr.expression, nullableRules);
-    case "Quantified":
-      return (
-        expr.min === 0 || isProvablyNullable(expr.expression, nullableRules)
-      );
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-    case "Cut":
-      return true;
-    case "LabeledExpression":
-    case "ActionExpression":
-      return isProvablyNullable(expr.expression, nullableRules);
-    default:
-      return false;
-  }
-};
-
-const findNullableRepetitions = (
-  grammar: GrammarDefinition,
-  nullableRules: ReadonlyMap<string, boolean>,
-): NullableRepetitionIssue[] => {
-  const issues: NullableRepetitionIssue[] = [];
-  for (const rule of grammar.rules) {
-    collectNullableRepetitions(rule.pattern, rule.name, nullableRules, issues);
-  }
-  return issues;
-};
-
-/**
- * Validates `grammar` for the same structural problems
- * `packages/parser/src/grammar-validation.ts`'s `validateGrammar` and
- * `packages/parser/src/first-sets.ts`'s `assertNoNullableRepetition`
- * reject, throwing on the first category found: duplicate rule names, a
- * `QualifiedIdentifier` whose `module` part collides with a
- * locally-declared rule name, left recursion (direct, indirect, or
- * hidden behind a nullable prefix), a cut-only pattern (`~` on its own,
- * matching nothing), or an unbounded repetition over a nullable body.
+ * Validates `grammar` for structural problems that have no well-defined
+ * PEG semantics, throwing on the first category found -- identical to
+ * what `tpeg-parser`'s own generators run (`codegen.ts` and
+ * `codegen-optimized.ts`): duplicate rule names, a `QualifiedIdentifier`
+ * whose `module` part collides with a locally-declared rule name, left
+ * recursion (direct, indirect, or hidden behind a nullable prefix), a
+ * cut-only pattern (`~` on its own, matching nothing), invalid transform
+ * function names, or an unbounded repetition over a nullable body.
  * Called by `generateGrammar` (`eta-generator.ts`) before generating any
  * code. Deliberately does NOT reject a bare `Identifier` referencing
- * something outside this grammar's own rules -- see
- * `collectQualifiedIdentifierCollisions`'s doc comment for why.
+ * something outside this grammar's own rules -- that's the documented
+ * escape hatch for binding a hand-written parser into generated code
+ * (`generateIdentifierCode`, `packages/parser/src/codegen.ts`).
  *
- * @throws {Error} on the first validation failure found, in the order
- *   listed above.
+ * @throws {Error} on the first validation failure found.
  */
 export const validateGrammarForEtaGenerator = (
   grammar: GrammarDefinition,
 ): void => {
-  const duplicates = findDuplicateRuleNames(grammar);
-  if (duplicates.length > 0) {
-    throw new Error(
-      `Duplicate rule definition: ${duplicates.join(", ")} -- each rule name must be declared exactly once.`,
-    );
-  }
-
-  const collisions = findQualifiedIdentifierCollisions(grammar);
-  if (collisions.length > 0) {
-    const details = collisions
-      .map(
-        ({ ruleName, refersTo }) =>
-          `${ruleName} -> ${refersTo} (the part before "." is itself a local rule name in this grammar -- likely two separate tokens mis-parsed as one qualified reference, not an intentional cross-module reference)`,
-      )
-      .join("; ");
-    throw new Error(`Reference to an undefined rule: ${details}`);
-  }
-
-  const leftRecursive = findLeftRecursiveRules(grammar);
-  if (leftRecursive.length > 0) {
-    throw new Error(
-      `Left-recursive rule(s): ${leftRecursive.join(", ")} -- a PEG parser cannot recognize left recursion at runtime; it re-invokes the same rule at the same position without consuming any input first, until the call stack overflows. Rewrite using repetition instead of left-recursive self-reference (e.g. "expr = expr op term / term" becomes "expr = term (op term)*").`,
-    );
-  }
-
-  const cutOnly = findCutOnlyRules(grammar);
-  if (cutOnly.length > 0) {
-    throw new Error(
-      `\`~\` cannot be a rule body (or sub-expression) on its own (rule(s): ${cutOnly.join(", ")}) -- \`~\` only has meaning as one of several elements of a sequence (e.g. "a" ~ "b"); a rule, group, choice alternative, or repetition/lookahead body made up of nothing but \`~\` doesn't match anything.`,
-    );
-  }
-
-  const nullableRules = computeNullableRules(grammar);
-  const nullableRepetitions = findNullableRepetitions(grammar, nullableRules);
-  if (nullableRepetitions.length > 0) {
-    const description = nullableRepetitions
-      .map(
-        (issue) =>
-          `rule '${issue.ruleName}': ${issue.nodeType} over a nullable expression`,
-      )
-      .join("; ");
-    throw new Error(
-      `Grammar contains unbounded repetition over a nullable (possibly zero-width) expression -- this has no well-defined PEG semantics, since the repetition could succeed without ever consuming input: ${description}`,
-    );
-  }
-
-  // Transform functions bind to rules BY NAME (see
-  // `assertValidTransformFunctionNames` in tpeg-parser): a name matching
-  // no rule is silently dropped from generated output, and a name
-  // repeated within one set silently overwrites the earlier function --
-  // rejected here identically to `validateGrammar`.
-  assertValidTransformFunctionNames(grammar);
+  validateGrammar(grammar);
+  assertNoNullableRepetition(grammar, analyzeFirstSets(grammar));
 };

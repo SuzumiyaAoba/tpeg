@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { generateOptimizedTypeScriptParser } from "./codegen-optimized";
 import { analyzeFirstSets } from "./first-sets";
 import { grammarDefinition } from "./grammar";
-import { isRuleFusable, planFusion } from "./regex-fusion";
+import { emitFusedExpression, isRuleFusable, planFusion } from "./regex-fusion";
 import {
   createActionExpression,
   createAnyChar,
@@ -1098,6 +1098,140 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
     const result = fused("12+345", ORIGIN);
     expect(result.success).toBe(true);
     if (result.success) expect(result.val).toBe(5);
+  });
+
+  it("reconstructs a single-element Sequence's value as the element's BARE value, not a 1-tuple -- matching unfused codegen's lone-part collapse (regression: emit produced `[v]` where unfused produces `v`)", async () => {
+    // A nested 1-element Sequence reached as a CHILD of a fused region:
+    // unfused `sequence(literal("a"), literal("b"), literal("c"))` yields
+    // `["a","b","c"]` -- the inner Sequence collapses to its element, so
+    // its contribution is `"b"`, not `["b"]`.
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createSequence([
+            createStringLiteral("a", '"'),
+            createSequence([createStringLiteral("b", '"')]),
+            createStringLiteral("c", '"'),
+          ]),
+        ),
+      ],
+    );
+    const rule = grammar.rules[0];
+    if (!rule) throw new Error("expected rule");
+    const analysis = analyzeFirstSets(grammar);
+    expect(isRuleFusable(rule, analysis)).toBe(true);
+
+    const r = await compileRuleFor(grammar, "r");
+    const result = r("abc", ORIGIN);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toEqual(["a", "b", "c"]);
+      expect(result.next).toBe(3);
+    }
+  });
+
+  it("reconstructs a WHOLE-RULE single-element Sequence as a bare value too (emitFusedExpression on Sequence([x]) must equal emit on x alone)", async () => {
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createSequence([createStringLiteral("a", '"')]),
+        ),
+      ],
+    );
+    const rule = grammar.rules[0];
+    if (!rule) throw new Error("expected rule");
+    const analysis = analyzeFirstSets(grammar);
+    expect(isRuleFusable(rule, analysis)).toBe(true);
+
+    // Unit level: the emitted value expression must be the element's
+    // own, not an array wrapping it.
+    const fusedExpr = emitFusedExpression(
+      createSequence([createStringLiteral("a", '"')]),
+    );
+    const bareExpr = emitFusedExpression(createStringLiteral("a", '"'));
+    expect(fusedExpr.source).toBe(bareExpr.source);
+    expect(fusedExpr.valueExpr).toBe(bareExpr.valueExpr);
+
+    const r = await compileRuleFor(grammar, "r");
+    const result = r("a", ORIGIN);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("a");
+      expect(result.next).toBe(1);
+    }
+  });
+
+  it("compiles an empty Choice to a never-matching regex rather than crashing emit (regression: `Reduce of empty array with no initial value`) -- unfused codegen's `choice()` always fails, and so must the fused path", async () => {
+    const empty = createChoice([]);
+
+    // Unit level: emit must not throw, and the emitted regex must never
+    // match anything.
+    const fusedExpr = emitFusedExpression(empty);
+    expect(fusedExpr.source).toBe("(?!)");
+    const sticky = new RegExp(`^(?:${fusedExpr.source})`, "yu");
+    for (const input of ["", "a", "abc"]) {
+      sticky.lastIndex = 0;
+      expect(sticky.exec(input)).toBeNull();
+    }
+
+    // End to end: `Choice([])` is fusable (both gates are vacuous on an
+    // empty alternative list), so a hand-built rule whose pattern IS an
+    // empty Choice compiles through `regexFusedMap` and must fail on
+    // every input -- exactly what unfused `choice()` does.
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [createRuleDefinition("r", empty)],
+    );
+    const rule = grammar.rules[0];
+    if (!rule) throw new Error("expected rule");
+    const analysis = analyzeFirstSets(grammar);
+    expect(isRuleFusable(rule, analysis)).toBe(true);
+
+    const generated = generateOptimizedTypeScriptParser(grammar, {
+      includeImports: false,
+      includeTypes: false,
+      optimize: true,
+      enableRegexFusion: true,
+    });
+    expect(generated.code).toContain("regexFusedMap(");
+
+    const r = await compileRuleFor(grammar, "r");
+    for (const input of ["", "a", "abc"]) {
+      expect(r(input, ORIGIN).success).toBe(false);
+    }
+  });
+
+  it("reconstructs an empty Sequence as `[]`, matching unfused `sequence()` (leftFactorChoices produces trailing `Sequence([])` nodes)", async () => {
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "r",
+          createSequence([createStringLiteral("a", '"'), createSequence([])]),
+        ),
+      ],
+    );
+    const rule = grammar.rules[0];
+    if (!rule) throw new Error("expected rule");
+    const analysis = analyzeFirstSets(grammar);
+    expect(isRuleFusable(rule, analysis)).toBe(true);
+
+    const r = await compileRuleFor(grammar, "r");
+    const result = r("a", ORIGIN);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // Unfused: sequence(literal("a"), sequence()) -> ["a", []].
+      expect(result.val).toEqual(["a", []]);
+      expect(result.next).toBe(1);
+    }
   });
 });
 

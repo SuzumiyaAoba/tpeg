@@ -691,6 +691,18 @@ const emit = (expr: Expression, counter: GroupCounter): Emitted => {
     case "Group":
       return emit(expr.expression, counter);
     case "Sequence": {
+      // A single-element Sequence must NOT get a 1-tuple value: unfused
+      // codegen (`generateSequence`/`generateOptimizedSequence`) returns
+      // a lone, unlabeled, cut-free element's parser directly, so its
+      // value is the element's own bare value -- not `[value]`. The
+      // label/cut conditions that would keep the array shape can't occur
+      // inside a fused region anyway (`isStructurallyFusable` rejects
+      // LabeledExpression and Cut). An empty Sequence (`elements` can be
+      // empty after `leftFactorChoices`'s trailing-prefix factoring)
+      // keeps the `[]` below, matching unfused `sequence()`.
+      if (expr.elements.length === 1) {
+        return emit(expr.elements[0] as Expression, counter);
+      }
       const parts = expr.elements.map((el) => emit(el, counter));
       return {
         pattern: parts.map((p) => p.pattern).join(""),
@@ -698,6 +710,16 @@ const emit = (expr: Expression, counter: GroupCounter): Emitted => {
       };
     }
     case "Choice": {
+      // An empty Choice can never match -- unfused codegen emits
+      // `choice()`, which always fails. `(?!)` is the never-matching
+      // regex (a negative lookahead over the empty pattern, which would
+      // always succeed, negated); `valueExpr` is dead code either way
+      // since `m` only exists when the match succeeded. Without this
+      // case the `reduceRight` below would throw `Reduce of empty array
+      // with no initial value` at codegen time.
+      if (expr.alternatives.length === 0) {
+        return { pattern: "(?!)", valueExpr: "undefined" };
+      }
       const markerIndices: number[] = [];
       const altPatterns: string[] = [];
       const altValueExprs: string[] = [];

@@ -120,6 +120,151 @@ export const skipTrailingWhitespaceAndComments = (
 };
 
 /**
+ * Skips a TPEG character class body starting at `pos` (which points at
+ * `[`), respecting `\]` escapes, and returns the offset just past the
+ * closing `]` (or end of input). The content must be skipped atomically:
+ * a class like `[^"]` can contain a quote character that isn't a string
+ * literal delimiter at all.
+ */
+const skipCharClassContent = (input: string, pos: number): number => {
+  let i = pos + 1;
+  while (i < input.length && input[i] !== "]") {
+    if (input[i] === "\\") i++;
+    i++;
+  }
+  return Math.min(i + 1, input.length);
+};
+
+/**
+ * Decides whether `checkPos` -- the offset of the first non-whitespace
+ * character following a whitespace run inside a rule body -- starts a
+ * rule boundary. Only meaningful at `activeBraceDepth === 0` (the caller
+ * checks); inside an action/transform body the same characters are
+ * ordinary JavaScript. The boundary shapes:
+ *
+ * - `}`: can ONLY be the enclosing grammar block's own closing brace --
+ *   a "}" inside a string literal or character class is never visible at
+ *   this point (the main scan loop skips those bodies atomically). This
+ *   check intentionally doesn't require a line break: `grammar G
+ *   { r = "x" }` (a same-line block) ends the rule here too.
+ * - `@`: never part of `expression()`'s own grammar -- it can only start
+ *   a grammarItem annotation (`@key`/`@key: value`), whether
+ *   block-level or attached to the next rule.
+ * - `transforms`: a whole-word match can only start a `transforms
+ *   Name@language { ... }` grammarItem -- `expression()`'s grammar has
+ *   no "@"/"->" syntax, so it can't be a rule reference followed by
+ *   that block's tokens. (Checked as a whole word so a rule named e.g.
+ *   `transformsFoo` is unaffected.)
+ * - `identifier <ws/comments> =`: unambiguously the next rule's header
+ *   -- `ruleDefinition` allows whitespace AND comments between name and
+ *   "=", and "=" can never begin an expression element, so the
+ *   identifier can't be a sequence element continuing THIS rule. An
+ *   `identifier (` shape is deliberately NOT a boundary: `name(...) ->
+ *   T {...}` isn't a valid grammarItem without the `transforms`
+ *   keyword, and treating "(" as one would break a legitimate
+ *   multi-line sequence starting with a rule reference followed by a
+ *   group.
+ */
+const isRuleBoundaryAfterWhitespace = (
+  input: string,
+  checkPos: number,
+): boolean => {
+  const boundaryChar = input[checkPos];
+  if (boundaryChar === "}") {
+    return true;
+  }
+  if (boundaryChar === GRAMMAR_SYMBOLS.ANNOTATION_PREFIX) {
+    return true;
+  }
+  if (boundaryChar === undefined || !IDENTIFIER_START_CHAR.test(boundaryChar)) {
+    return false;
+  }
+
+  let identEnd = checkPos + 1;
+  while (
+    identEnd < input.length &&
+    IDENTIFIER_CONT_CHAR.test(input[identEnd] ?? "")
+  ) {
+    identEnd++;
+  }
+
+  if (
+    input.startsWith(GRAMMAR_KEYWORDS.TRANSFORMS, checkPos) &&
+    identEnd === checkPos + GRAMMAR_KEYWORDS.TRANSFORMS.length
+  ) {
+    return true;
+  }
+
+  // Everything `optionalWhitespaceOrComment` accepts -- whitespace
+  // INCLUDING line breaks, `//` line comments, and `/* */` block
+  // comments -- because that is exactly the separator `ruleDefinition`
+  // puts between a rule's name and its "=".
+  let afterIdent = identEnd;
+  while (afterIdent < input.length) {
+    if (isLineBreakOrSpaceOrTab(input[afterIdent])) {
+      afterIdent++;
+      continue;
+    }
+    if (input[afterIdent] === "/" && input[afterIdent + 1] === "/") {
+      afterIdent = skipLineComment(input, afterIdent);
+      continue;
+    }
+    if (input[afterIdent] === "/" && input[afterIdent + 1] === "*") {
+      afterIdent = skipBlockComment(input, afterIdent);
+      continue;
+    }
+    break;
+  }
+
+  return afterIdent < input.length && input[afterIdent] === "=";
+};
+
+/**
+ * Advances the JS-expression tracker over the token starting at `pos` --
+ * an identifier-ish word, a digit, a paren/bracket, a postfix `++`/`--`,
+ * or any other punctuator -- and returns the offset just past it. Feeds
+ * the regex-vs-division heuristic the `/` case consults inside
+ * action/transform bodies (`createJsExprTracker`). Whitespace and
+ * characters that can't affect the expectation consume one offset.
+ */
+const advanceJsToken = (
+  input: string,
+  pos: number,
+  tracker: ReturnType<typeof createJsExprTracker>,
+): number => {
+  const char = input[pos];
+  if (JS_IDENTIFIER_START.test(char ?? "")) {
+    let wordEnd = pos + 1;
+    while (
+      wordEnd < input.length &&
+      JS_IDENTIFIER_CONT.test(input[wordEnd] ?? "")
+    ) {
+      wordEnd++;
+    }
+    tracker.word(input.slice(pos, wordEnd));
+    return wordEnd;
+  }
+  if (char !== undefined && char >= "0" && char <= "9") {
+    tracker.operand();
+  } else if (char === "(") {
+    tracker.openParen();
+  } else if (char === ")") {
+    tracker.closeParen();
+  } else if (char === "]") {
+    tracker.operand();
+  } else if ((char === "+" || char === "-") && input[pos + 1] === char) {
+    // Postfix `++`/`--` ends an operand.
+    tracker.operand();
+    return pos + 2;
+  } else if (char !== undefined && !isLineBreakOrSpaceOrTab(char)) {
+    // Any other punctuator cannot end an operand, so a value is
+    // expected next.
+    tracker.punct(char);
+  }
+  return pos + 1;
+};
+
+/**
  * Bounded expression parser for grammar rules.
  *
  * This parser stops at the next rule definition or the enclosing grammar
@@ -176,26 +321,16 @@ const grammarRuleExpression: Parser<Expression> = (
       continue;
     }
 
-    // A character class, e.g. `[^"]`, can contain a quote character that
-    // isn't a string literal delimiter at all - skip its content atomically
-    // (respecting `\]` escapes) so it's never mistaken for the start of a
-    // string literal above. Only at brace depth 0, though: inside an
-    // action/transform body a `[` is ordinary JavaScript (member access,
-    // array literal, computed key), not a TPEG character class - treating
-    // it as one ends the fake "class" at the first `]` even when that `]`
-    // sits inside a string (e.g. `x["]"]`), after which the leftover `"`
-    // opens a phantom string literal that swallows the rest of the file.
+    // Only at brace depth 0 is `[` a TPEG character class -- inside an
+    // action/transform body it's ordinary JavaScript (member access,
+    // array literal, computed key), and misreading `x["]"]`'s `"` as a
+    // string start swallowed the rest of the file before this guard.
     // Inside a body, `[`/`]` fall through to the generic punctuator
     // handling below (`[` can't end an operand, `]` ends one), and any
     // string inside the brackets is still skipped by the string case
     // above before its contents can be misread.
     if (char === "[" && activeBraceDepth === 0) {
-      let i = endPos + 1;
-      while (i < input.length && input[i] !== "]") {
-        if (input[i] === "\\") i++;
-        i++;
-      }
-      endPos = Math.min(i + 1, input.length);
+      endPos = skipCharClassContent(input, endPos);
       tracker.operand();
       continue;
     }
@@ -210,7 +345,7 @@ const grammarRuleExpression: Parser<Expression> = (
       continue;
     }
 
-    if (char === "/" && activeBraceDepth > 0 && tracker.exprExpected) {
+    if (char === "/" && activeBraceDepth > 0) {
       // A `/` inside an action/transform body where a value is expected
       // opens a regex literal -- e.g. `= /}/` or `if (ok) /}/` (a `)`
       // closing a control-statement paren is followed by a statement, so
@@ -219,17 +354,14 @@ const grammarRuleExpression: Parser<Expression> = (
       // `}` inside the pattern decremented `activeBraceDepth` and desynced
       // the whole boundary scan. A `/` that does not start a well-formed
       // regex here is a division operator instead.
-      const regexEnd = scanRegexLiteral(input, endPos);
-      if (regexEnd !== -1) {
-        endPos = regexEnd;
-        tracker.operand();
-        continue;
+      if (tracker.exprExpected) {
+        const regexEnd = scanRegexLiteral(input, endPos);
+        if (regexEnd !== -1) {
+          endPos = regexEnd;
+          tracker.operand();
+          continue;
+        }
       }
-      tracker.punct("/");
-      endPos++;
-      continue;
-    }
-    if (char === "/" && activeBraceDepth > 0 && !tracker.exprExpected) {
       // Division operator inside an action body -- an operand follows.
       tracker.punct("/");
       endPos++;
@@ -288,177 +420,19 @@ const grammarRuleExpression: Parser<Expression> = (
         checkPos++;
       }
 
-      if (checkPos < input.length) {
-        const boundaryChar = input[checkPos];
-
-        // A bare "}" reached here can ONLY be the enclosing grammar
-        // block's own closing brace: a "}" inside a string literal or
-        // character class (e.g. `sep = " }"`, `chars = [ }]`) is never
-        // independently visible at this point at all -- the main scan
-        // loop above skips a string/character-class body atomically
-        // (the `"`/`'`/"[" cases), landing past its closing delimiter in
-        // one step, long before this whitespace-triggered lookahead ever
-        // runs on what's inside it. And `activeBraceDepth === 0` already
-        // rules out an action/quantifier block's own "}" (their `{`/`}`
-        // are depth-tracked by the main loop's own "{"/"}" cases,
-        // independent of this lookahead). So no additional
-        // `crossedLineBreak` requirement is needed -- and dropping it
-        // fixes a real gap: `grammar G { r = "x" }` (a same-line grammar
-        // block, `}` reached without ever crossing a line break) used to
-        // fall through this check entirely, silently absorbing the
-        // block's own closing brace into `r`'s slice instead of
-        // recognizing it as the boundary it is.
-        if (boundaryChar === "}" && activeBraceDepth === 0) {
-          foundEnd = true;
-          break;
-        }
-
-        // An annotation ("@key" or "@key: value") is never part of
-        // `expression()`'s own grammar -- unlike an identifier (which
-        // could legitimately continue a multi-line sequence, hence the
-        // "= " lookahead just below), a leading "@" can ONLY start a new
-        // grammarItem (a grammar-block-level annotation, or a rule-level
-        // one immediately preceding the next rule definition). Without
-        // this, a trailing annotation right after a rule -- e.g.
-        // `mul_op = "*" / "/"` followed on the next line by `@skip:
-        // whitespace` -- gets silently absorbed into `mul_op`'s own
-        // slice (nothing else in this scan recognizes "@" as a
-        // boundary), relying entirely on `expression()` stopping short
-        // and the caller re-parsing the leftover as its own grammarItem
-        // -- exactly the "did this rule consume its whole slice"
-        // ambiguity this function's full-consumption check (below) exists
-        // to catch, so a genuine annotation must be excluded from it by
-        // being recognized as a boundary here instead.
-        if (
-          activeBraceDepth === 0 &&
-          boundaryChar === GRAMMAR_SYMBOLS.ANNOTATION_PREFIX
-        ) {
-          foundEnd = true;
-          break;
-        }
-
-        if (
-          activeBraceDepth === 0 &&
-          boundaryChar &&
-          IDENTIFIER_START_CHAR.test(boundaryChar)
-        ) {
-          let identEnd = checkPos + 1;
-          while (
-            identEnd < input.length &&
-            IDENTIFIER_CONT_CHAR.test(input[identEnd] ?? "")
-          ) {
-            identEnd++;
-          }
-
-          // A whole-word "transforms" here can ONLY start a new grammarItem
-          // (transformDefinition, see transforms.ts) - unlike a plain
-          // identifier, expression()'s own grammar has no "@"/"->"/brace-
-          // parameter syntax at all, so "transforms" can never legitimately
-          // continue a multi-line sequence as an ordinary rule reference
-          // immediately followed by a `transforms Name@language { ... }`
-          // block's own tokens. Without this, this scan doesn't stop before
-          // "transforms" the way it already does before "}"/"@" above,
-          // greedily absorbs the whole transforms block into the CURRENT
-          // rule's slice, and fails once expression() stops short at that
-          // block's "@" with no boundary check having caught it first (a
-          // genuine production parse failure, not merely a self-hosting-PoC
-          // gap - see packages/parser/src/self-hosted/README.md). This is
-          // narrowly the whole word "transforms", not a prefix (checked via
-          // identEnd === checkPos + keyword-length, not identText.startsWith)
-          // so a rule legitimately named e.g. "transformsFoo" is unaffected.
-          if (
-            activeBraceDepth === 0 &&
-            input.startsWith(GRAMMAR_KEYWORDS.TRANSFORMS, checkPos) &&
-            identEnd === checkPos + GRAMMAR_KEYWORDS.TRANSFORMS.length
-          ) {
-            foundEnd = true;
-            break;
-          }
-
-          // Everything `optionalWhitespaceOrComment` accepts --
-          // whitespace INCLUDING line breaks, `//` line comments, and
-          // `/* */` block comments -- because that is exactly the
-          // separator `ruleDefinition` puts between a rule's name and
-          // its "=". `identifier <any of those> =` is unambiguously the
-          // next rule's start: "=" can never begin an expression
-          // element, so the identifier can't be a sequence element
-          // continuing THIS rule's body either. (This used to skip only
-          // same-line space/tab plus block comments, so `y\n= "b"` -- a
-          // rule header `ruleDefinition` itself accepts -- was never
-          // detected as a boundary whenever a preceding rule existed:
-          // that rule's slice silently absorbed the whole `y\n= "b"`
-          // instead of stopping here, and the resulting error even
-          // pointed back at the PRECEDING rule.)
-          let afterIdent = identEnd;
-          while (afterIdent < input.length) {
-            if (isLineBreakOrSpaceOrTab(input[afterIdent])) {
-              afterIdent++;
-              continue;
-            }
-            if (input[afterIdent] === "/" && input[afterIdent + 1] === "/") {
-              afterIdent = skipLineComment(input, afterIdent);
-              continue;
-            }
-            if (input[afterIdent] === "/" && input[afterIdent + 1] === "*") {
-              afterIdent = skipBlockComment(input, afterIdent);
-              continue;
-            }
-            break;
-          }
-
-          // "=" means a rule definition follows ("name = pattern"). Note
-          // this deliberately does *not* also treat "identifier(" as a
-          // boundary: `grammarItem`'s transform alternative is
-          // transformDefinition, which requires a literal "transforms"
-          // keyword (see transforms.ts) - a bare "name(params) -> Type {...}"
-          // is never a valid grammarItem on its own, so there's nothing to
-          // guard against there, and treating "(" as a boundary would
-          // instead break a legitimate multi-line sequence whose next line
-          // happens to start with "identifier (...)" (e.g. a rule reference
-          // immediately followed by a group).
-          if (afterIdent < input.length && input[afterIdent] === "=") {
-            foundEnd = true;
-            break;
-          }
-        }
+      if (
+        activeBraceDepth === 0 &&
+        isRuleBoundaryAfterWhitespace(input, checkPos)
+      ) {
+        foundEnd = true;
+        break;
       }
     }
 
     // Track whether a `/` encountered inside an action body could open a
     // regex literal (see the `tracker` declaration above). The values
     // produced while outside an action are never consulted.
-    if (JS_IDENTIFIER_START.test(char ?? "")) {
-      let wordEnd = endPos + 1;
-      while (
-        wordEnd < input.length &&
-        JS_IDENTIFIER_CONT.test(input[wordEnd] ?? "")
-      ) {
-        wordEnd++;
-      }
-      tracker.word(input.slice(endPos, wordEnd));
-      endPos = wordEnd;
-      continue;
-    }
-    if (char !== undefined && char >= "0" && char <= "9") {
-      tracker.operand();
-    } else if (char === "(") {
-      tracker.openParen();
-    } else if (char === ")") {
-      tracker.closeParen();
-    } else if (char === "]") {
-      tracker.operand();
-    } else if ((char === "+" || char === "-") && input[endPos + 1] === char) {
-      // Postfix `++`/`--` ends an operand.
-      tracker.operand();
-      endPos += 2;
-      continue;
-    } else if (char !== undefined && !isLineBreakOrSpaceOrTab(char)) {
-      // Any other punctuator cannot end an operand, so a value is
-      // expected next.
-      tracker.punct(char);
-    }
-
-    endPos++;
+    endPos = advanceJsToken(input, endPos, tracker);
   }
 
   // Create a substring that only includes the current rule expression

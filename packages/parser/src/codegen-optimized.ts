@@ -51,8 +51,11 @@ import {
   wrapWithTransform,
 } from "./codegen";
 import {
+  forEachSequenceElement,
   grammarHasGlobalCut,
+  sequenceCombinatorFor,
   sequenceHasCutFollowedByElement,
+  sequenceNeedsOrdinaryCommit,
 } from "./codegen";
 import type { GrammarFirstSetAnalysis } from "./first-sets";
 import {
@@ -651,51 +654,27 @@ export class OptimizedTPEGCodeGenerator {
         break;
       }
       case "Sequence": {
-        // Mirrors `generateOptimizedSequence`'s own decision exactly
-        // (both its early no-cut shortcut and its later general-case
-        // one boil down to the same rule: a sequence with exactly one
-        // SURVIVING, non-`Cut` element and no label is returned bare,
-        // never passed through `sequence(...)`/`captureSequence(...)`)
-        // -- see the identical fix/comment in `codegen.ts`'s own
-        // `collectUsedCombinators` for the concrete unused-import shape
-        // this avoids (e.g. `~ "a"`, a Cut-then-single-element sequence).
-        const hasLabel = collectTopLevelLabels(expr).length > 0;
-        const nonCutElementCount = expr.elements.filter(
-          (el) => el.type !== "Cut",
-        ).length;
-        const isBareSinglePassthrough = nonCutElementCount === 1 && !hasLabel;
-        if (!isBareSinglePassthrough) {
-          combinators.add(hasLabel ? "captureSequence" : "sequence");
+        // Mirrors `generateOptimizedSequence`'s own decisions exactly,
+        // via the same shared helpers `codegen.ts` uses:
+        // `sequenceCombinatorFor` decides whether the sequence goes
+        // through `sequence(...)`/`captureSequence(...)` at all or is
+        // returned BARE (both `generateOptimizedSequence`'s early no-cut
+        // shortcut and its later general-case one boil down to the same
+        // rule: exactly one SURVIVING, non-`Cut` element and no label),
+        // and `sequenceNeedsOrdinaryCommit` decides whether any ordinary
+        // `commit(...)` is emitted -- when this IS the start rule's own
+        // top-level Sequence, OR a Cut here was marked `global: true` by
+        // `promoteGlobalCuts`, `commitAtTopLevel` (tpeg-combinator) is
+        // emitted instead, and a trailing/follower-less Cut emits
+        // neither. See `codegen.ts`'s identical `collectUsedCombinators`
+        // for the concrete unused-import shapes (e.g. `~ "a"`, `"a" ~`)
+        // guessing either decision used to leave behind.
+        const sequenceCombinator = sequenceCombinatorFor(expr);
+        if (sequenceCombinator !== null) {
+          combinators.add(sequenceCombinator);
         }
-        // Mirrors codegen.ts's identical guard: when this IS the start
-        // rule's own top-level Sequence, OR a Cut here was marked
-        // `global: true` by `promoteGlobalCuts`, it emits
-        // `commitAtTopLevel` (tpeg-combinator) instead of `commit`
-        // (tpeg-core) -- see generateOptimizedSequence -- so `commit`
-        // must not be added to the tpeg-core import set in that case.
-        // Also mirrors codegen.ts's fix for a trailing (or otherwise
-        // follower-less) Cut: `commit(...)` is only ever emitted for a
-        // non-`Cut` element that comes AFTER a qualifying Cut, so "a
-        // qualifying Cut exists somewhere" alone isn't enough -- see
-        // codegen.ts's identical `collectUsedCombinators` fix for the
-        // concrete unused-import shape (e.g. `"a" ~`) this avoids.
-        {
-          let committed = false;
-          let committingCutIsGlobal = false;
-          let needsOrdinaryCommit = false;
-          for (const el of expr.elements) {
-            if (el.type === "Cut") {
-              committed = true;
-              committingCutIsGlobal = el.global === true;
-              continue;
-            }
-            if (committed && !isStartRuleTopLevel && !committingCutIsGlobal) {
-              needsOrdinaryCommit = true;
-            }
-          }
-          if (needsOrdinaryCommit) {
-            combinators.add("commit");
-          }
+        if (sequenceNeedsOrdinaryCommit(expr, isStartRuleTopLevel)) {
+          combinators.add("commit");
         }
         for (const element of expr.elements) {
           if (element.type === "Cut") continue;
@@ -1132,25 +1111,16 @@ export class OptimizedTPEGCodeGenerator {
     // (tpeg-core) -- see `commitAtTopLevel`'s doc comment in
     // `packages/combinator/src/logic.ts` for the soundness condition.
     const parts: string[] = [];
-    let committed = false;
-    let committingCutIsGlobal = false;
-    for (const el of expr.elements) {
-      if (el.type === "Cut") {
-        committed = true;
-        committingCutIsGlobal = el.global === true;
-        continue;
-      }
+    forEachSequenceElement(expr.elements, (el, committed, cutIsGlobal) => {
       const code = this.generateOptimizedExpression(el);
-      if (!committed) {
-        parts.push(code);
-      } else {
-        parts.push(
-          isStartRuleTopLevel || committingCutIsGlobal
+      parts.push(
+        !committed
+          ? code
+          : isStartRuleTopLevel || cutIsGlobal
             ? `commitAtTopLevel(${code})`
             : `commit(${code})`,
-        );
-      }
-    }
+      );
+    });
 
     if (parts.length === 0) {
       return "sequence()";

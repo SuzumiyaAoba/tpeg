@@ -74,6 +74,10 @@
  * asserted.
  */
 
+import {
+  forEachExpression,
+  mapChildExpressions,
+} from "@suzumiyaaoba/tpeg-core";
 import { containsLabel, isShapeSensitiveRule } from "./ast-optimize-shared";
 import type {
   CharacterClass,
@@ -104,36 +108,15 @@ const collectOwnFatalSignal = (
   expr: Expression,
   refs: Set<string>,
 ): boolean => {
-  switch (expr.type) {
-    case "Cut":
-    case "QualifiedIdentifier":
-      return true;
-    case "Identifier":
-      refs.add(expr.name);
-      return false;
-    case "Sequence":
-      return expr.elements.reduce(
-        (acc, el) => collectOwnFatalSignal(el, refs) || acc,
-        false,
-      );
-    case "Choice":
-      return expr.alternatives.reduce(
-        (acc, alt) => collectOwnFatalSignal(alt, refs) || acc,
-        false,
-      );
-    case "Group":
-    case "Star":
-    case "Plus":
-    case "Optional":
-    case "Quantified":
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-    case "LabeledExpression":
-    case "ActionExpression":
-      return collectOwnFatalSignal(expr.expression, refs);
-    default:
-      return false;
-  }
+  let found = false;
+  forEachExpression(expr, (node) => {
+    if (node.type === "Cut" || node.type === "QualifiedIdentifier") {
+      found = true;
+    } else if (node.type === "Identifier") {
+      refs.add(node.name);
+    }
+  });
+  return found;
 };
 
 /**
@@ -149,28 +132,56 @@ const collectOwnFatalSignal = (
 const computeFatalReachability = (
   grammar: GrammarDefinition,
 ): ReadonlyMap<string, boolean> => {
-  const referencedBy = new Map<string, ReadonlySet<string>>();
+  // `dependents[name]` = the rules that reference `name` -- the reverse
+  // edges of the reference graph, so `true` can be pushed from a rule to
+  // everything that references it instead of re-scanning every rule's
+  // reference list once per propagation step. The naive fixpoint this
+  // replaces was O(rules^2) on a reference chain (one full pass per
+  // propagation step -- `r0 -> r1 -> ... -> rN -> <cut>` needed N passes);
+  // the worklist propagates each `true` along each edge exactly once.
+  const dependents = new Map<string, string[]>();
+  const refsOf = new Map<string, ReadonlySet<string>>();
   const result = new Map<string, boolean>();
+  const queue: string[] = [];
+
   for (const rule of grammar.rules) {
     const refs = new Set<string>();
-    result.set(rule.name, collectOwnFatalSignal(rule.pattern, refs));
-    referencedBy.set(rule.name, refs);
+    const own = collectOwnFatalSignal(rule.pattern, refs);
+    result.set(rule.name, own);
+    refsOf.set(rule.name, refs);
+    for (const ref of refs) {
+      const list = dependents.get(ref);
+      if (list) {
+        list.push(rule.name);
+      } else {
+        dependents.set(ref, [rule.name]);
+      }
+    }
   }
 
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const rule of grammar.rules) {
-      if (result.get(rule.name)) continue;
-      const refs = referencedBy.get(rule.name);
-      // An `Identifier` this grammar has no rule for (`?? true`) is an
-      // externally-supplied parser reference -- unresolvable here, so
-      // conservatively assume it could fail fatally, the same direction
-      // `first-sets.ts`'s `isNullable` takes for an unresolved reference.
-      if (refs && [...refs].some((name) => result.get(name) ?? true)) {
-        result.set(rule.name, true);
-        changed = true;
-      }
+  // Seed the queue with every rule already known to reach a `Cut`:
+  // an own `Cut`/`QualifiedIdentifier`, or a reference to a name this
+  // grammar has no rule for (unresolvable here -- conservatively assumed
+  // to be able to fail fatally, the same direction `first-sets.ts`'s
+  // `isNullable` takes for an unresolved reference).
+  for (const rule of grammar.rules) {
+    if (result.get(rule.name)) {
+      queue.push(rule.name);
+      continue;
+    }
+    const refs = refsOf.get(rule.name);
+    if (refs && [...refs].some((name) => !result.has(name))) {
+      result.set(rule.name, true);
+      queue.push(rule.name);
+    }
+  }
+
+  while (queue.length > 0) {
+    const name = queue.pop() as string;
+    for (const dependent of dependents.get(name) ?? []) {
+      if (result.get(dependent)) continue;
+      result.set(dependent, true);
+      queue.push(dependent);
     }
   }
   return result;
@@ -364,21 +375,8 @@ const leftFactorExpression = (
       );
       return tryLeftFactorChoice(createChoice(factoredAlternatives), ctx);
     }
-    case "Group":
-    case "Star":
-    case "Plus":
-    case "Optional":
-    case "Quantified":
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-    case "LabeledExpression":
-    case "ActionExpression":
-      return {
-        ...expr,
-        expression: leftFactorExpression(expr.expression, ctx),
-      };
     default:
-      return expr;
+      return mapChildExpressions(expr, (el) => leftFactorExpression(el, ctx));
   }
 };
 

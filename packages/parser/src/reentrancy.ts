@@ -320,14 +320,70 @@ const walk = (expr: Expression, ctx: WalkContext): InvocationResult => {
 };
 
 /**
- * Iterative fixpoint (same shape as `first-sets.ts`'s `analyzeFirstSets`)
- * computing, for every rule, the full transitive set of rule names
+ * Rule names `expr` references through an `Identifier` reachable at
+ * offset zero from `expr`'s own start -- `walk`'s traversal restricted
+ * to collecting the names themselves rather than looking up their
+ * (in-progress) fixpoint sets. Since `walk(Identifier).total` is exactly
+ * `ruleInvocableAtZero.get(name)`, `walk(expr).total` always equals the
+ * union of `table[d]` over every `d` this collects -- which is what lets
+ * `computeRuleInvocableAtZero` propagate along these edges incrementally
+ * instead of re-walking every rule's whole pattern each pass.
+ */
+const collectZeroOffsetDependencies = (
+  expr: Expression,
+  nullableRules: ReadonlyMap<string, boolean>,
+  into: Set<string>,
+): void => {
+  switch (expr.type) {
+    case "Identifier":
+      into.add(expr.name);
+      return;
+    case "Sequence":
+      for (const el of expr.elements) {
+        collectZeroOffsetDependencies(el, nullableRules, into);
+        // Same early-break as `walkSequence`: nothing past the first
+        // non-nullable element is still at offset 0.
+        if (!isNullable(el, nullableRules)) return;
+      }
+      return;
+    case "Choice":
+      for (const alt of expr.alternatives) {
+        collectZeroOffsetDependencies(alt, nullableRules, into);
+      }
+      return;
+    case "Group":
+    case "Star":
+    case "Plus":
+    case "Optional":
+    case "Quantified":
+    case "LabeledExpression":
+    case "ActionExpression":
+    case "PositiveLookahead":
+    case "NegativeLookahead":
+      collectZeroOffsetDependencies(expr.expression, nullableRules, into);
+      return;
+    default:
+      // StringLiteral, CharacterClass, AnyChar, QualifiedIdentifier, Cut
+      // -- no `Identifier` to collect.
+      return;
+  }
+};
+
+/**
+ * Computes, for every rule, the full transitive set of rule names
  * invocable at offset 0 from that rule's own start -- always including
  * the rule's own name, since `Identifier` resolution needs "does this
  * name eventually reach itself or another shared rule," not just "what
  * does this rule call directly." Terminates because each rule's set is
  * monotonically growing and bounded by the total number of rules in the
  * grammar.
+ *
+ * Worklist propagation over the zero-offset dependency graph
+ * (`collectZeroOffsetDependencies`), the same shape `first-sets.ts`'s
+ * `analyzeFirstSets` now uses: when a rule's set grows, only rules that
+ * directly depend on it are revisited. The full-rescan fixpoint this
+ * replaced re-walked every rule's whole pattern once per propagation
+ * hop, so a chain `r0 -> r1 -> ... -> rN` took O(rules^2) walks.
  */
 const computeRuleInvocableAtZero = (
   grammar: GrammarDefinition,
@@ -337,19 +393,71 @@ const computeRuleInvocableAtZero = (
     grammar.rules.map((r) => [r.name, new Set([r.name])]),
   );
 
-  let changed = true;
-  while (changed) {
-    changed = false;
-    const ctx: WalkContext = { ruleInvocableAtZero: table, nullableRules };
-    for (const rule of grammar.rules) {
-      const result = walk(rule.pattern, ctx).total;
-      const existing = table.get(rule.name) as Set<string>;
-      for (const name of result) {
-        if (!existing.has(name)) {
-          existing.add(name);
-          changed = true;
-        }
+  // dependents.get(d) = every rule whose zero-offset traversal reaches
+  // `d`, i.e. whose `total` must absorb `table[d]` whenever it grows.
+  // A name that isn't a declared rule (an external parser reference --
+  // `walk`'s `Identifier` case returns `EMPTY_RESULT` for it) has no
+  // table entry, so depending on it can never add anything.
+  const dependents = new Map<string, Set<string>>();
+  const directDeps = new Map<string, ReadonlySet<string>>();
+  for (const rule of grammar.rules) {
+    const deps = new Set<string>();
+    collectZeroOffsetDependencies(rule.pattern, nullableRules, deps);
+    deps.delete(rule.name); // self-edge is subsumed by the seed below
+    directDeps.set(rule.name, deps);
+    for (const dep of deps) {
+      let set = dependents.get(dep);
+      if (!set) {
+        set = new Set();
+        dependents.set(dep, set);
       }
+      set.add(rule.name);
+    }
+  }
+
+  // Delta propagation: `pending.get(r)` holds exactly the names added to
+  // `table[r]` since `r` was last dequeued, so each (edge, name) pair is
+  // merged once -- re-merging a dependency's WHOLE set on every growth
+  // would make a single edge cost O(rules^2) on a long chain.
+  const pending = new Map<string, string[]>();
+  const inQueue = new Set<string>();
+  const queue: string[] = [];
+  const absorb = (rule: string, names: Iterable<string>): void => {
+    const target = table.get(rule) as Set<string>;
+    let delta = pending.get(rule);
+    if (!delta) {
+      delta = [];
+      pending.set(rule, delta);
+    }
+    for (const name of names) {
+      if (!target.has(name)) {
+        target.add(name);
+        delta.push(name);
+      }
+    }
+    if (delta.length > 0 && !inQueue.has(rule)) {
+      queue.push(rule);
+      inQueue.add(rule);
+    }
+  };
+
+  // Seed: each rule's set starts as {own name} plus each direct
+  // dependency's own name (every declared dep's seed) -- equivalent to
+  // one pass of the old full-rescan loop.
+  for (const rule of grammar.rules) {
+    absorb(rule.name, [rule.name]);
+    for (const dep of directDeps.get(rule.name) as ReadonlySet<string>) {
+      if (table.has(dep)) absorb(rule.name, [dep]);
+    }
+  }
+
+  while (queue.length > 0) {
+    const dep = queue.pop() as string;
+    inQueue.delete(dep);
+    const delta = pending.get(dep) as string[];
+    pending.set(dep, []);
+    for (const dependent of dependents.get(dep) ?? []) {
+      absorb(dependent, delta);
     }
   }
 
@@ -490,21 +598,43 @@ const minimizeByDominance = (
   }
 
   // Walks the sole-caller chain from `start` to its end -- the highest
-  // ancestor reachable via a run of unique-caller edges. A cycle guard
-  // (soleCaller edges always point to a DIFFERENT rule, but a chain
-  // could still loop back through several of them) returns `null`
-  // rather than ever looping forever; a cycle simply means nothing here
-  // dominates any rule on it.
+  // ancestor reachable via a run of unique-caller edges. `soleCaller` is
+  // a function (each node has at most one successor), so every node on a
+  // chain shares its outcome: memoizing the whole walked path turns the
+  // per-rule walks from O(chain^2) on a long caller chain into O(chain)
+  // total. A cycle guard (soleCaller edges always point to a DIFFERENT
+  // rule, but a chain could still loop back through several of them)
+  // returns `null` rather than ever looping forever; a cycle simply
+  // means nothing here dominates any rule on it -- and every node that
+  // reaches the same cycle is likewise undominated, so `null` is safe
+  // to memoize too.
+  const rootMemo = new Map<string, string | null>();
   const rootOf = (start: string): string | null => {
-    const visited = new Set<string>([start]);
+    const memoized = rootMemo.get(start);
+    if (memoized !== undefined) return memoized;
+    const path: string[] = [start];
+    const onPath = new Set<string>([start]);
     let current = start;
+    let result: string | null;
     while (true) {
       const next = soleCaller.get(current);
-      if (next === undefined) return current;
-      if (visited.has(next)) return null;
-      visited.add(next);
+      if (next === undefined || onPath.has(next)) {
+        // Chain end, or a loop back onto this walk's own path (a cycle:
+        // nothing on it is dominated).
+        result = next === undefined ? current : null;
+        break;
+      }
+      const memo = rootMemo.get(next);
+      if (memo !== undefined) {
+        result = memo;
+        break;
+      }
+      onPath.add(next);
+      path.push(next);
       current = next;
     }
+    for (const name of path) rootMemo.set(name, result);
+    return result;
   };
 
   const minimized = new Set<string>();

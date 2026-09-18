@@ -95,6 +95,7 @@
  * action-bearing ones.
  */
 
+import { mapChildExpressions } from "@suzumiyaaoba/tpeg-core";
 import { isShapeSensitiveRule } from "./ast-optimize-shared";
 import {
   ALL_CHARS,
@@ -253,24 +254,10 @@ const degenerateNegativeLookaheadsInExpression = (
           degenerateNegativeLookaheadsInExpression(alt, analysis),
         ),
       );
-    case "Group":
-    case "Star":
-    case "Plus":
-    case "Optional":
-    case "Quantified":
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-    case "LabeledExpression":
-    case "ActionExpression":
-      return {
-        ...expr,
-        expression: degenerateNegativeLookaheadsInExpression(
-          expr.expression,
-          analysis,
-        ),
-      };
     default:
-      return expr;
+      return mapChildExpressions(expr, (el) =>
+        degenerateNegativeLookaheadsInExpression(el, analysis),
+      );
   }
 };
 

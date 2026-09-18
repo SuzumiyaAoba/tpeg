@@ -337,6 +337,25 @@ describe("validateGrammar: left recursion", () => {
       }),
     ).not.toThrow();
   });
+
+  it("a long non-recursive reference chain is validated in linear time (regression: the per-rule reachability DFS was O(rules x edges))", () => {
+    // `findLeftRecursiveRules` used to run a fresh DFS from EVERY rule --
+    // a 50,000-rule reference chain made `validateGrammar` quadratic
+    // (~minutes) inside both generators. The Tarjan SCC pass now used is
+    // O(rules + edges); this grammar must validate quickly AND be
+    // accepted, since a chain is not a cycle.
+    const chainLength = 50_000;
+    const rules = [];
+    for (let i = 0; i < chainLength; i++) {
+      rules.push(createRuleDefinition(`r${i}`, createIdentifier(`r${i + 1}`)));
+    }
+    rules.push(
+      createRuleDefinition(`r${chainLength}`, createStringLiteral("z", '"')),
+    );
+    const grammar = createGrammarDefinition("Big", [], rules);
+
+    expect(() => validateGrammar(grammar)).not.toThrow();
+  });
 });
 
 // A `QualifiedIdentifier` (`module.name`) whose `module` part collides

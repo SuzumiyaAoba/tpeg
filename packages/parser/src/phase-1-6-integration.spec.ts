@@ -5,7 +5,6 @@
  */
 
 import { describe, expect, test } from "vite-plus/test";
-import { type Parser, parse } from "@suzumiyaaoba/tpeg-core";
 import {
   documentationComment,
   grammarAnnotation,
@@ -14,9 +13,7 @@ import {
   ruleDefinition,
   singleLineComment,
 } from "./index";
-
-// Helper function for easier testing
-const testParse = <T>(parser: Parser<T>, input: string) => parse(parser)(input);
+import { testParse } from "./test-utils";
 
 describe("Phase 1.6 Integration Tests", () => {
   describe("exported parsers from index", () => {

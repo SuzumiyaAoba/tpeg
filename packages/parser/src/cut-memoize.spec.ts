@@ -5,14 +5,13 @@
  */
 
 import { describe, expect, test } from "vite-plus/test";
-import { type Parser, parse } from "@suzumiyaaoba/tpeg-core";
+import { type Parser } from "@suzumiyaaoba/tpeg-core";
 import { promoteGlobalCuts } from "./ast-optimize";
 import { generateTypeScriptParser } from "./codegen";
 import { generateOptimizedTypeScriptParser } from "./codegen-optimized";
 import { analyzeFirstSets } from "./first-sets";
 import { grammarDefinition } from "./grammar";
-
-const testParse = <T>(parser: Parser<T>, input: string) => parse(parser)(input);
+import { testParse } from "./test-utils";
 
 describe("`~` cut operator, parsed from grammar text", () => {
   test("commits an alternative once matched, instead of backtracking to a sibling", async () => {

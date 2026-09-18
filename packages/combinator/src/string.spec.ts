@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { parse } from "@suzumiyaaoba/tpeg-core";
 import { literal } from "@suzumiyaaoba/tpeg-core";
 import { commit, sequence } from "@suzumiyaaoba/tpeg-core";
+import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   anyQuotedString,
   between,
@@ -51,6 +52,30 @@ describe("string combinators", () => {
         // that fatal failure as its own.
         expect(result.val).toBe("aaxzb");
         expect(result.next).toBe(5);
+      }
+    });
+
+    it("re-raises an abort (resource-limit) failure from `condition` instead of swallowing it into a partial-text success", () => {
+      // `takeUntil` is documented as "always succeeds," but an `abort`
+      // failure (see `ParseError.abort`, `@suzumiyaaoba/tpeg-core`'s
+      // types.ts) is not an ordinary or even a fatal non-match -- it
+      // means a resource limit was hit mid-parse, and it must abort the
+      // whole parse rather than being treated as "condition didn't match
+      // here, keep scanning." Previously this loop ignored the flag and
+      // returned the text scanned so far as a success.
+      const aborting: Parser<unknown> = (_input, pos) => ({
+        success: false,
+        error: {
+          message: "Recursion depth limit exceeded",
+          pos,
+          fatal: true,
+          abort: true,
+        },
+      });
+      const result = takeUntil(aborting)("abc", 0);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.abort).toBe(true);
       }
     });
   });

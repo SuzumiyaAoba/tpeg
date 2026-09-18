@@ -5,6 +5,7 @@
  * This is a basic implementation supporting core TPEG features.
  */
 
+import { childExpressions, someExpression } from "@suzumiyaaoba/tpeg-core";
 import { codeContainsIdentifier } from "./brace-scanner";
 import { escapeStringLiteral } from "./constants";
 import { analyzeFirstSets, assertNoNullableRepetition } from "./first-sets";
@@ -193,38 +194,25 @@ const containsGlobalCut = (expr: Expression): boolean => {
       // element exists) has nothing after it either way.
       return false;
     case "Sequence": {
-      // Mirrors `generateSequence`'s `committingCutIsGlobal` state
-      // exactly: REASSIGNED (not OR'd) on every `Cut` encountered, so
-      // only the MOST RECENT `Cut` before an element decides whether
-      // that element gets wrapped in `commitAtTopLevel(...)` -- matters
-      // when a `Sequence` somehow carries more than one `Cut`.
-      let committingCutIsGlobal = false;
-      let committed = false;
-      for (const el of expr.elements) {
-        if (el.type === "Cut") {
-          committed = true;
-          committingCutIsGlobal = el.global === true;
-          continue;
+      // Uses the same commit state machine as `generateSequence` (see
+      // `forEachSequenceElement`): only the MOST RECENT `Cut` before an
+      // element decides whether that element gets wrapped in
+      // `commitAtTopLevel(...)` -- matters when a `Sequence` somehow
+      // carries more than one `Cut`.
+      let found = false;
+      forEachSequenceElement(expr.elements, (el, committed, cutIsGlobal) => {
+        if ((committed && cutIsGlobal) || containsGlobalCut(el)) {
+          found = true;
+          return true;
         }
-        if (committed && committingCutIsGlobal) return true;
-        if (containsGlobalCut(el)) return true;
-      }
-      return false;
+        return undefined;
+      });
+      return found;
     }
-    case "Choice":
-      return expr.alternatives.some(containsGlobalCut);
-    case "Group":
-    case "Star":
-    case "Plus":
-    case "Optional":
-    case "Quantified":
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-    case "LabeledExpression":
-    case "ActionExpression":
-      return containsGlobalCut(expr.expression);
     default:
-      return false;
+      // Every other node type has no position-sensitive semantics here:
+      // just recurse into whatever children it has.
+      return childExpressions(expr).some(containsGlobalCut);
   }
 };
 
@@ -233,6 +221,39 @@ const containsGlobalCut = (expr: Expression): boolean => {
  * check. */
 export const grammarHasGlobalCut = (grammar: GrammarDefinition): boolean =>
   grammar.rules.some((rule) => containsGlobalCut(rule.pattern));
+
+/**
+ * Iterates the non-`Cut` elements of a `Sequence`, tracking the commit
+ * state machine `generateSequence`/`generateOptimizedSequence` use to
+ * decide each element's `commit(...)`/`commitAtTopLevel(...)` wrapper:
+ * `committed` becomes true at the first `Cut`, and `cutIsGlobal` is
+ * REASSIGNED (not OR'd) at each `Cut`, so only the MOST RECENT `Cut`
+ * before an element decides its wrapper. The callback may return `true`
+ * to stop the iteration early. Shared by every site that must mirror
+ * that state machine exactly (the sequence generators, the
+ * `collectUsedCombinators` import scans, and the `containsGlobalCut`/
+ * `sequenceHasCutFollowedByElement` predicates) so they can never
+ * disagree about which wrapper -- if any -- a given element gets.
+ */
+export const forEachSequenceElement = (
+  elements: readonly Expression[],
+  onElement: (
+    element: Expression,
+    committed: boolean,
+    cutIsGlobal: boolean,
+  ) => boolean | void,
+): void => {
+  let committed = false;
+  let committingCutIsGlobal = false;
+  for (const el of elements) {
+    if (el.type === "Cut") {
+      committed = true;
+      committingCutIsGlobal = el.global === true;
+      continue;
+    }
+    if (onElement(el, committed, committingCutIsGlobal) === true) return;
+  }
+};
 
 /**
  * `true` iff `elements` (a `Sequence`'s own elements) contains a `Cut`
@@ -249,51 +270,77 @@ export const grammarHasGlobalCut = (grammar: GrammarDefinition): boolean =>
 export const sequenceHasCutFollowedByElement = (
   elements: readonly Expression[],
 ): boolean => {
-  let committed = false;
-  for (const el of elements) {
-    if (el.type === "Cut") {
-      committed = true;
-      continue;
+  let found = false;
+  forEachSequenceElement(elements, (_el, committed) => {
+    if (committed) {
+      found = true;
+      return true;
     }
-    if (committed) return true;
-  }
-  return false;
+    return undefined;
+  });
+  return found;
+};
+
+/**
+ * Returns the combinator a `Sequence` is emitted through --
+ * `"captureSequence"` when it has top-level labels, `"sequence"`
+ * otherwise -- or `null` when `generateSequence`/
+ * `generateOptimizedSequence` return it BARE (exactly one surviving
+ * non-`Cut` element and no label, per the Capture Structure Reference
+ * Table -- see `generateSequence`'s doc comment). Shared by both
+ * generators' `collectUsedCombinators` so the import decision and the
+ * codegen decision can never disagree: adding `sequence` unconditionally
+ * left it unused whenever a rule's pattern reduced to the bare shape
+ * (e.g. `~ "a"`), an actual `noUnusedLocals` error in generated code.
+ */
+export const sequenceCombinatorFor = (
+  expr: Sequence,
+): "sequence" | "captureSequence" | null => {
+  const hasLabel = collectTopLevelLabels(expr).length > 0;
+  const nonCutElementCount = expr.elements.filter(
+    (el) => el.type !== "Cut",
+  ).length;
+  if (nonCutElementCount === 1 && !hasLabel) return null;
+  return hasLabel ? "captureSequence" : "sequence";
+};
+
+/**
+ * `true` iff `generateSequence`/`generateOptimizedSequence` emit an
+ * ordinary `commit(...)` (tpeg-core) call anywhere in this `Sequence` --
+ * i.e. some non-`Cut` element follows a `Cut` that is neither at the
+ * start rule's top level (where `commitAtTopLevel` is emitted instead)
+ * nor marked `global: true`. A `Cut` with nothing non-`Cut` after it
+ * (e.g. a trailing `~`) contributes no `commit` call at all. Shared by
+ * both generators' `collectUsedCombinators` so the tpeg-core `commit`
+ * import is added exactly when generated code uses it.
+ */
+export const sequenceNeedsOrdinaryCommit = (
+  expr: Sequence,
+  isStartRuleTopLevel: boolean,
+): boolean => {
+  let needs = false;
+  forEachSequenceElement(expr.elements, (_el, committed, cutIsGlobal) => {
+    if (committed && !isStartRuleTopLevel && !cutIsGlobal) {
+      needs = true;
+      return true;
+    }
+    return undefined;
+  });
+  return needs;
 };
 
 /** Does `expr` contain an `Identifier`/`QualifiedIdentifier` naming
  * `ruleName` anywhere in its subtree? Used by
- * {@link isRuleReferencedAnywhere}. */
-const containsReferenceTo = (expr: Expression, ruleName: string): boolean => {
-  switch (expr.type) {
-    case "Identifier":
-      return expr.name === ruleName;
-    case "QualifiedIdentifier":
-      // A cross-module reference can never name a LOCAL rule -- see
-      // `grammar-validation.ts`'s `collectQualifiedIdentifierCollisions`,
-      // which rejects the one shape where it plausibly could (a
-      // `module` part colliding with a local rule name) before codegen
-      // ever runs.
-      return false;
-    case "Sequence":
-      return expr.elements.some((el) => containsReferenceTo(el, ruleName));
-    case "Choice":
-      return expr.alternatives.some((alt) =>
-        containsReferenceTo(alt, ruleName),
-      );
-    case "Group":
-    case "Star":
-    case "Plus":
-    case "Optional":
-    case "Quantified":
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-    case "LabeledExpression":
-    case "ActionExpression":
-      return containsReferenceTo(expr.expression, ruleName);
-    default:
-      return false;
-  }
-};
+ * {@link isRuleReferencedAnywhere}. A `QualifiedIdentifier` can't match:
+ * a cross-module reference never names a LOCAL rule -- see
+ * `grammar-validation.ts`'s `collectQualifiedIdentifierCollisions`,
+ * which rejects the one shape where it plausibly could (a `module` part
+ * colliding with a local rule name) before codegen ever runs. */
+const containsReferenceTo = (expr: Expression, ruleName: string): boolean =>
+  someExpression(
+    expr,
+    (node) => node.type === "Identifier" && node.name === ruleName,
+  );
 
 /**
  * Is `ruleName` referenced (by a bare `Identifier`) from ANYWHERE in
@@ -1105,25 +1152,16 @@ export class TPEGCodeGenerator {
     // value would leak out bare instead of merged.
     const hasLabel = collectTopLevelLabels(expr).length > 0;
     const parts: string[] = [];
-    let committed = false;
-    let committingCutIsGlobal = false;
-    for (const el of expr.elements) {
-      if (el.type === "Cut") {
-        committed = true;
-        committingCutIsGlobal = el.global === true;
-        continue;
-      }
+    forEachSequenceElement(expr.elements, (el, committed, cutIsGlobal) => {
       const code = this.generateExpression(el);
-      if (!committed) {
-        parts.push(code);
-      } else {
-        parts.push(
-          isStartRuleTopLevel || committingCutIsGlobal
+      parts.push(
+        !committed
+          ? code
+          : isStartRuleTopLevel || cutIsGlobal
             ? `commitAtTopLevel(${code})`
             : `commit(${code})`,
-        );
-      }
-    }
+      );
+    });
     if (parts.length === 0) {
       return "sequence()";
     }
@@ -1238,59 +1276,25 @@ export class TPEGCodeGenerator {
         break;
       }
       case "Sequence": {
-        // Mirrors `generateSequence`'s own decision exactly: a sequence
-        // with exactly one surviving (non-`Cut`) element and no label is
-        // returned BARE (that element's own generated code, unwrapped --
-        // see that function's doc comment for why, tied to the Capture
-        // Structure Reference Table), never passed through
-        // `sequence(...)`/`captureSequence(...)` at all. Adding the
-        // import unconditionally here left it unused whenever a rule's
-        // pattern reduced to exactly that shape (e.g. `~ "a"`, where the
-        // Cut is dropped and "a" is the sole remaining element) --
-        // `codegen.ts`'s own doc comments (further down) call out
-        // keeping saved generated output `tsc --noEmit`-clean under
-        // `noUnusedLocals` as a real, checked property, which this
-        // violated.
-        const hasLabel = collectTopLevelLabels(expr).length > 0;
-        const nonCutElementCount = expr.elements.filter(
-          (el) => el.type !== "Cut",
-        ).length;
-        const isBareSinglePassthrough = nonCutElementCount === 1 && !hasLabel;
-        if (!isBareSinglePassthrough) {
-          combinators.add(hasLabel ? "captureSequence" : "sequence");
+        // Mirrors `generateSequence`'s own decisions exactly, via the
+        // same shared helpers it uses: `sequenceCombinatorFor` decides
+        // whether the sequence goes through `sequence(...)`/
+        // `captureSequence(...)` at all or is returned BARE (exactly one
+        // surviving non-`Cut` element, no label -- see
+        // `generateSequence`'s doc comment for why, tied to the Capture
+        // Structure Reference Table), and `sequenceNeedsOrdinaryCommit`
+        // decides whether any `commit(...)` call is emitted (only for a
+        // non-`Cut` element AFTER a non-top-level, non-global `Cut` -- a
+        // trailing `~` contributes none). Guessing either shape left an
+        // unused import behind (e.g. `~ "a"`, `"a" ~`) -- the same
+        // `noUnusedLocals`-clean invariant this file's other doc
+        // comments already call out and check for.
+        const sequenceCombinator = sequenceCombinatorFor(expr);
+        if (sequenceCombinator !== null) {
+          combinators.add(sequenceCombinator);
         }
-        // Mirrors `generateSequence`'s actual per-element decision exactly
-        // (not just "a non-global Cut exists somewhere in this Sequence"):
-        // `commit(...)` is only ever emitted for a non-`Cut` element that
-        // comes AFTER a (non-start-rule-top-level, non-global) `Cut` -- a
-        // `Cut` with nothing non-`Cut` after it (e.g. a trailing `~`, or
-        // one immediately followed only by another `Cut`) contributes no
-        // `commit(...)` call to the generated code at all. Adding the
-        // import on "a qualifying Cut exists" alone left an unused
-        // `commit` import behind for that shape (e.g. `"a" ~`) -- the
-        // same `noUnusedLocals`-clean invariant this file's other doc
-        // comments (above, and `wrapWithAction`'s) already call out and
-        // check for. A Sequence can contain at most one Cut in practice
-        // (see ast-optimize.ts), but this loop mirrors
-        // `generateSequence`'s state machine exactly rather than assuming
-        // that.
-        {
-          let committed = false;
-          let committingCutIsGlobal = false;
-          let needsOrdinaryCommit = false;
-          for (const el of expr.elements) {
-            if (el.type === "Cut") {
-              committed = true;
-              committingCutIsGlobal = el.global === true;
-              continue;
-            }
-            if (committed && !isStartRuleTopLevel && !committingCutIsGlobal) {
-              needsOrdinaryCommit = true;
-            }
-          }
-          if (needsOrdinaryCommit) {
-            combinators.add("commit");
-          }
+        if (sequenceNeedsOrdinaryCommit(expr, isStartRuleTopLevel)) {
+          combinators.add("commit");
         }
         for (const element of expr.elements) {
           if (element.type === "Cut") continue;

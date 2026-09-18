@@ -16,6 +16,7 @@
  * untouched.
  */
 
+import { mapChildExpressions } from "@suzumiyaaoba/tpeg-core";
 import type { CharacterClass, Expression, GrammarDefinition } from "./types";
 import { createChoice, createSequence } from "./types";
 
@@ -97,21 +98,10 @@ const mergeCharacterClassesInExpression = (expr: Expression): Expression => {
         ? (mergedAlternatives[0] as Expression)
         : createChoice(mergedAlternatives);
     }
-    case "Group":
-    case "Star":
-    case "Plus":
-    case "Optional":
-    case "Quantified":
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-    case "LabeledExpression":
-    case "ActionExpression":
-      return {
-        ...expr,
-        expression: mergeCharacterClassesInExpression(expr.expression),
-      };
     default:
-      return expr;
+      // Unary wrappers ({...expr, expression: rewritten}) and leaf
+      // passthrough -- the shared skeleton covers both.
+      return mapChildExpressions(expr, mergeCharacterClassesInExpression);
   }
 };
 

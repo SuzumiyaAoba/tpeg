@@ -3,13 +3,13 @@
   "version": "0.0.1",
   "license": "MIT",
   "files": [
-    "*.ts",
+    "src",
     "dist",
     "README.md",
     "package.json"
   ],
   "type": "module",
-  "module": "index.ts",
+  "module": "src/index.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -17,7 +17,7 @@
     }
   },
   "scripts": {
-    "dev": "bun run ./index.ts",
+    "dev": "bun run ./src/index.ts",
     "typecheck": "tsc --noEmit",
     "build": "cd ../.. && vp -C packages/ast pack"
   },

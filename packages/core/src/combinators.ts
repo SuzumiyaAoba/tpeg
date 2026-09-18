@@ -798,6 +798,22 @@ export const reject =
       });
     }
 
+    // An `abort` failure (resource-limit hit -- see `ParseError.abort` in
+    // types.ts) must not be inverted into a success like an ordinary -- or
+    // even `fatal` -- child failure: re-raise it so it aborts the whole
+    // parse, exactly like `notPredicate` (`./lookahead.ts`) already does for
+    // the identical "child failure means my success" shape. (`FAIL`/
+    // `FAIL_FATAL` are singletons whose `error` getter materializes the
+    // watermark, so guard on the singleton check first to keep the hot path
+    // read-free.)
+    if (
+      result !== FAIL &&
+      result !== FAIL_FATAL &&
+      result.error.abort === true
+    ) {
+      return result;
+    }
+
     restoreFailureWatermark(snapshot);
     return {
       success: true,

@@ -6,10 +6,10 @@
  */
 
 import type {
-  Expression,
   GrammarDefinition,
   RuleDefinition,
 } from "@suzumiyaaoba/tpeg-core";
+import { forEachExpression } from "@suzumiyaaoba/tpeg-core";
 import {
   type GrammarTypeInference,
   type InferredType,
@@ -185,69 +185,28 @@ export class TypeIntegrationEngine {
   private analyzeDependencies(rule: RuleDefinition): string[] {
     const dependencies = new Set<string>();
 
-    const traverse = (expr: Expression): void => {
-      switch (expr.type) {
-        case "Identifier":
-          dependencies.add(expr.name);
-          break;
-        case "Sequence":
-          expr.elements.forEach(traverse);
-          break;
-        case "Choice":
-          expr.alternatives.forEach(traverse);
-          break;
-        case "Group":
-        case "Star":
-        case "Plus":
-        case "Optional":
-        case "Quantified":
-        case "PositiveLookahead":
-        case "NegativeLookahead":
-        case "LabeledExpression":
-        case "ActionExpression":
-          // Traversing into an action's own wrapped expression (not just
-          // treating the action as a leaf) matters even though the
-          // action's OWN result type is `unknown`
-          // (`inferActionExpressionType`, `type-inference.ts`): the
-          // labels/rules the wrapped expression references are still
-          // real dependencies for circular-dependency detection and for
-          // the "Dependencies: ..." doc comment this analysis feeds
-          // below. Before this case existed, every rule using a semantic
-          // action silently reported zero dependencies, with no warning
-          // -- a `switch` with no `default` doesn't fail to compile just
-          // because one union member goes unhandled.
-          traverse(expr.expression);
-          break;
-        case "StringLiteral":
-        case "CharacterClass":
-        case "AnyChar":
-        case "Cut":
-          // These types have no sub-expressions, so no dependencies
-          break;
-        case "QualifiedIdentifier":
-          // A `module.rule` reference points OUTSIDE this grammar's own
-          // rule set (see `inferQualifiedIdentifierType`'s doc comment,
-          // `type-inference.ts`) -- not a dependency edge in this
-          // grammar's local rule graph, and nothing further to traverse
-          // into.
-          break;
-        default: {
-          // Exhaustiveness check, matching the established pattern
-          // elsewhere in this repo (e.g. `packages/samples/src/arith/
-          // calculator.ts`) -- see the identical guard in
-          // `inferExpressionType` (`type-inference.ts`) for why this
-          // matters here specifically: a switch with no `default`
-          // silently does nothing for an unhandled union member instead
-          // of failing to compile.
-          const exhaustiveCheck: never = expr;
-          throw new Error(
-            `Unhandled expression type in dependency analysis: ${(exhaustiveCheck as { type: string }).type}`,
-          );
-        }
+    // The traversal goes through `forEachExpression`/`childExpressions`
+    // (@suzumiyaaoba/tpeg-core), which descends into an `ActionExpression`'s
+    // own wrapped expression (not treating the action as a leaf): the
+    // labels/rules that expression references are still real dependencies
+    // for circular-dependency detection and for the "Dependencies: ..."
+    // doc comment this analysis feeds below, even though the action's OWN
+    // result type is `unknown` (`inferActionExpressionType`,
+    // `type-inference.ts`). Before that traversal was shared, a
+    // hand-written switch here omitted the `ActionExpression` case and
+    // every rule using a semantic action silently reported zero
+    // dependencies.
+    //
+    // `QualifiedIdentifier` nodes match no case below: a `module.rule`
+    // reference points OUTSIDE this grammar's own rule set (see
+    // `inferQualifiedIdentifierType`'s doc comment, `type-inference.ts`)
+    // -- not a dependency edge in this grammar's local rule graph.
+    forEachExpression(rule.pattern, (node) => {
+      if (node.type === "Identifier") {
+        dependencies.add(node.name);
       }
-    };
+    });
 
-    traverse(rule.pattern);
     return Array.from(dependencies);
   }
 

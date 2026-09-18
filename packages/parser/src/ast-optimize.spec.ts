@@ -774,6 +774,48 @@ grammar NoCutSub {
     const factored = leftFactorChoices(grammar);
     expect(factored.rules[0]?.pattern).toEqual(grammar.rules[0]?.pattern);
   });
+
+  it("computes fatal reachability over a long reference chain in one pass -- a chain r0 -> r1 -> ... -> rN -> <cut> must still refuse factoring, without the O(rules^2) full-rescan-per-step fixpoint", () => {
+    // 20,000 intermediate rules: the old fixpoint needed one full pass
+    // per propagation step (quadratic); the worklist pushes `true` along
+    // each reference edge once. The assertion that matters semantically
+    // (not just performance-wise): `r0` CAN reach a `Cut` through the
+    // chain, so `s`'s `r0`-prefixed alternatives must remain unfactored.
+    const chainLength = 20_000;
+    const rules = [
+      createRuleDefinition(
+        "s",
+        createChoice([
+          createSequence([
+            createIdentifier("r0"),
+            createStringLiteral("a", '"'),
+          ]),
+          createSequence([
+            createIdentifier("r0"),
+            createStringLiteral("b", '"'),
+          ]),
+          createIdentifier("r0"),
+        ]),
+      ),
+    ];
+    for (let i = 0; i < chainLength; i++) {
+      rules.push(createRuleDefinition(`r${i}`, createIdentifier(`r${i + 1}`)));
+    }
+    rules.push(
+      createRuleDefinition(
+        `r${chainLength}`,
+        createSequence([
+          createStringLiteral("x", '"'),
+          createCut(),
+          createStringLiteral("y", '"'),
+        ]),
+      ),
+    );
+    const grammar = createGrammarDefinition("Chain", [], rules);
+
+    const factored = leftFactorChoices(grammar);
+    expect(factored.rules[0]?.pattern).toEqual(grammar.rules[0]?.pattern);
+  });
 });
 
 /** Compiles `grammar`'s `ruleName` rule to a runnable parser via
@@ -2934,6 +2976,107 @@ describe("promoteGlobalCuts", () => {
       0,
     );
     const { promotedCount } = promote(withCuts);
+    expect(promotedCount).toBe(0);
+  });
+
+  it("handles a deep diamond-shaped reference DAG without exponential blowup (regression: the per-cut recursive referenceChainIsSafe rechecked shared subgraphs once per incoming path -> 2^n)", () => {
+    // s = p0 q0; level i: p_i = "a" p_{i+1} q_{i+1}, q_i = "b" p_{i+1}
+    // q_{i+1}; bottom: pN/qN reference `leaf`, which holds the cut. Every
+    // rule at level i+1 has exactly two reference sites (from p_i and
+    // q_i), so the reference graph from `leaf` up to `s` is a 60-level
+    // diamond -- 2^60 distinct paths under the old per-path recursion,
+    // 60 levels under the worklist fixpoint.
+    const levels = 60;
+    const rules = [
+      createRuleDefinition(
+        "s",
+        createSequence([createIdentifier("p0"), createIdentifier("q0")]),
+      ),
+    ];
+    for (let i = 0; i < levels; i++) {
+      for (const [name, lit] of [
+        [`p${i}`, "a"],
+        [`q${i}`, "b"],
+      ] as const) {
+        rules.push(
+          createRuleDefinition(
+            name,
+            createSequence([
+              createStringLiteral(lit, '"'),
+              createIdentifier(`p${i + 1}`),
+              createIdentifier(`q${i + 1}`),
+            ]),
+          ),
+        );
+      }
+    }
+    rules.push(
+      createRuleDefinition(
+        `p${levels}`,
+        createSequence([
+          createIdentifier("leaf"),
+          createStringLiteral("e", '"'),
+        ]),
+      ),
+      createRuleDefinition(
+        `q${levels}`,
+        createSequence([
+          createIdentifier("leaf"),
+          createStringLiteral("f", '"'),
+        ]),
+      ),
+      createRuleDefinition(
+        "leaf",
+        createSequence([
+          createStringLiteral("x", '"'),
+          createCut(),
+          createStringLiteral("y", '"'),
+        ]),
+      ),
+    );
+    const grammar = createGrammarDefinition("Dag", [], rules);
+
+    const { grammar: promoted, promotedCount } = promote(grammar);
+    // Every link of the chain is safe (no lookahead ancestor, no
+    // zeroable repetition, no enclosing Choice at any site), so the cut
+    // is still promoted -- the fixpoint must reach the same verdict the
+    // old recursion did, not merely terminate faster.
+    expect(promotedCount).toBe(1);
+    const leafCuts = collectCuts(
+      promoted.rules[promoted.rules.length - 1]?.pattern as Expression,
+    );
+    expect(leafCuts.length).toBe(1);
+    expect(leafCuts[0]?.type === "Cut" && leafCuts[0].global).toBe(true);
+  });
+
+  it("still refuses promotion when the chain up from a cut hits a reference cycle (the fixpoint must agree with the old `visiting` guard)", () => {
+    // loop references itself, so `loop`'s reference sites include one
+    // from `loop` itself -- a cycle that never grounds out at the start
+    // rule. The old recursion's `visiting` set caught this; the worklist
+    // must too (a cyclic component with no safe entry never reaches
+    // `true`).
+    const grammar = createGrammarDefinition(
+      "Cycle",
+      [],
+      [
+        createRuleDefinition("s", createIdentifier("loop")),
+        createRuleDefinition(
+          "loop",
+          createChoice([
+            createSequence([
+              createStringLiteral("l", '"'),
+              createIdentifier("loop"),
+            ]),
+            createSequence([
+              createStringLiteral("x", '"'),
+              createCut(),
+              createStringLiteral("y", '"'),
+            ]),
+          ]),
+        ),
+      ],
+    );
+    const { promotedCount } = promote(grammar);
     expect(promotedCount).toBe(0);
   });
 });

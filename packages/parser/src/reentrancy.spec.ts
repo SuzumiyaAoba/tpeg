@@ -357,4 +357,39 @@ describe("analyzeReentrancy", () => {
     // was never made in the first place, cut-awareness or not.
     expect([...reentrantRules]).toEqual([]);
   });
+
+  it("a long unfactored chain converges via worklist propagation (regression: the full-rescan fixpoint re-walked every pattern once per hop)", () => {
+    // ri = r(i+1) "a" / r(i+1) "b" for i < N, plus a terminal literal
+    // rule: every r1..rN is invoked by both alternatives of its caller,
+    // so all of them are reentrant. The old fixpoint needed one full
+    // re-walk of every rule's pattern per propagation hop -- ~N passes
+    // over a chain -- while the worklist version propagates each new
+    // entry along its dependents edges exactly once.
+    const N = 2_000;
+    const rules = [];
+    for (let i = 0; i < N; i++) {
+      rules.push(
+        createRuleDefinition(
+          `r${i}`,
+          createChoice([
+            createSequence([
+              createIdentifier(`r${i + 1}`),
+              createStringLiteral("a", '"'),
+            ]),
+            createSequence([
+              createIdentifier(`r${i + 1}`),
+              createStringLiteral("b", '"'),
+            ]),
+          ]),
+        ),
+      );
+    }
+    rules.push(createRuleDefinition(`r${N}`, createStringLiteral("z", '"')));
+    const grammar = createGrammarDefinition("Chain", [], rules);
+
+    const { reentrantRules } = analyzeReentrancy(grammar);
+    expect(reentrantRules.size).toBe(N); // r1..rN; r0 is the entry point
+    expect(reentrantRules.has("r0")).toBe(false);
+    expect(reentrantRules.has(`r${N}`)).toBe(true);
+  });
 });

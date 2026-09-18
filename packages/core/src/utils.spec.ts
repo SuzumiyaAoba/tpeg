@@ -513,6 +513,27 @@ describe("Utils", () => {
         }
       }
     });
+
+    it("caps the column at the line's real length for an offset past end of input", () => {
+      // An out-of-range offset must not make the column scan walk past
+      // the input's end (an O(offset) loop over `codePointAt` returning
+      // `undefined`) nor report a column wider than the line itself.
+      expect(offsetToPos("ab\ncd", 100)).toEqual({
+        offset: 100,
+        line: 2,
+        column: 2,
+      });
+      // Still bounded even for an offset far beyond anything real.
+      expect(offsetToPos("ab\ncd", Number.MAX_SAFE_INTEGER).column).toBe(2);
+    });
+
+    it("reports the last (empty) line for an offset past a trailing newline", () => {
+      expect(offsetToPos("ab\n", 50)).toEqual({
+        offset: 50,
+        line: 2,
+        column: 0,
+      });
+    });
   });
 
   describe("prependContext", () => {

@@ -206,6 +206,50 @@ describe("analyzeGrammarPerformance recursion detection", () => {
       ),
     ).toBe(true);
   });
+
+  it("classifies mixed cycle/non-cycle rules correctly on a large graph, in linear time (regression: the per-rule canReach DFS was O(rules x edges))", () => {
+    // A 50,000-rule reference chain plus one self-loop and one mutual
+    // cycle. The old implementation re-ran a full DFS per rule --
+    // ~9.4s at 10k rules, minutes here; the Tarjan SCC pass this now
+    // uses is O(rules + edges).
+    const chainLength = 50_000;
+    const rules = [
+      createRuleDefinition("self", createIdentifier("self")),
+      createRuleDefinition(
+        "cycA",
+        createSequence([
+          createIdentifier("cycB"),
+          createStringLiteral("a", '"'),
+        ]),
+      ),
+      createRuleDefinition(
+        "cycB",
+        createSequence([
+          createIdentifier("cycA"),
+          createStringLiteral("b", '"'),
+        ]),
+      ),
+    ];
+    for (let i = 0; i < chainLength; i++) {
+      rules.push(createRuleDefinition(`r${i}`, createIdentifier(`r${i + 1}`)));
+    }
+    rules.push(
+      createRuleDefinition(`r${chainLength}`, createStringLiteral("z", '"')),
+    );
+    const grammar = createGrammarDefinition("Big", [], rules);
+
+    const analysis = analyzeGrammarPerformance(grammar);
+    const rec = (name: string) =>
+      analysis.ruleComplexity.get(name)?.hasRecursion;
+
+    // SCC members: recursive.
+    expect(rec("self")).toBe(true);
+    expect(rec("cycA")).toBe(true);
+    expect(rec("cycB")).toBe(true);
+    // Chain members merely REFERENCE the (non-cyclic) chain -- not cycles.
+    expect(rec("r0")).toBe(false);
+    expect(rec(`r${chainLength}`)).toBe(false);
+  });
 });
 
 describe("left recursion: end-to-end behavior", () => {

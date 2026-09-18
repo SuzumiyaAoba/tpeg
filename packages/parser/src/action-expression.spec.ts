@@ -4,7 +4,6 @@
  */
 
 import { describe, expect, test } from "vite-plus/test";
-import { type Parser, parse } from "@suzumiyaaoba/tpeg-core";
 import { generateTypeScriptParser } from "./codegen";
 import { generateOptimizedTypeScriptParser } from "./codegen-optimized";
 import { expression } from "./composition";
@@ -30,7 +29,7 @@ import type {
   Sequence,
 } from "./types";
 
-const testParse = <T>(parser: Parser<T>, input: string) => parse(parser)(input);
+import { testParse } from "./test-utils";
 
 describe("ActionExpression parsing", () => {
   test("attaches an action to a single labeled expression", () => {

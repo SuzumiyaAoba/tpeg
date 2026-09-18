@@ -51,6 +51,7 @@
 
 import { ERROR_MESSAGES } from "./constants";
 import { computeNullableRules, isNullable } from "./first-sets";
+import { findRecursiveRuleNames } from "./performance-utils";
 import type { Expression, GrammarDefinition } from "./types";
 
 /** Whole-string JavaScript identifier shape -- what every emitted
@@ -148,25 +149,16 @@ const findLeftRecursiveRules = (grammar: GrammarDefinition): string[] => {
     graph.set(rule.name, zeroOffsetRuleRefs(rule.pattern, nullableRules));
   }
 
-  const recursive = new Set<string>();
-  for (const start of graph.keys()) {
-    // DFS over `start`'s own OUT-edges (not `start` itself as the first
-    // node) -- `start` is left-recursive iff that search can reach
-    // `start` again.
-    const seen = new Set<string>();
-    const stack = [...(graph.get(start) ?? [])];
-    while (stack.length > 0) {
-      const name = stack.pop() as string;
-      if (name === start) {
-        recursive.add(start);
-        break;
-      }
-      if (seen.has(name)) continue;
-      seen.add(name);
-      for (const next of graph.get(name) ?? []) stack.push(next);
-    }
-  }
-  return [...recursive].sort();
+  // A rule is left-recursive iff it can reach itself again through
+  // zero-offset edges -- i.e. iff it sits on a cycle in this graph.
+  // `findRecursiveRuleNames` computes exactly that (SCC size > 1 or a
+  // self-loop) in one O(rules + edges) Tarjan pass; the per-rule "can I
+  // reach myself" DFS this replaced was O(rules x edges), quadratic on a
+  // long reference chain, and `validateGrammar` runs unconditionally in
+  // both code generators. References to names that aren't rules of this
+  // grammar are harmless either way -- they have no out-edges in `graph`,
+  // so they can never complete a cycle.
+  return [...findRecursiveRuleNames(graph)].sort();
 };
 
 /** Rule names declared more than once in `grammar`. */

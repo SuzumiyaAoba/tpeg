@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import {
   buildQualifiedIdentifierWarnings,
   collectTopLevelLabels,
+  collectTransformFunctions,
   filterReferencedLabels,
   generateCharacterClassCode,
   generateIdentifierCode,
@@ -19,6 +20,7 @@ import {
   validateGeneratedIdentifiers,
   wrapWithAction,
   wrapWithMonitoring,
+  wrapWithTransform,
 } from "@suzumiyaaoba/tpeg-parser";
 import { Eta } from "eta";
 import { validateGrammarForEtaGenerator } from "./grammar-validation";
@@ -50,78 +52,7 @@ import type {
   Sequence,
   Star,
   StringLiteral,
-  TransformFunction,
 } from "./types";
-
-/**
- * Target language transform functions are matched against when a grammar
- * carries multiple `transforms ... @language { ... }` blocks.
- */
-const CODEGEN_TARGET_LANGUAGE = "typescript";
-
-/**
- * Builds a rule-name -> TransformFunction lookup for the TypeScript-targeted
- * transform set on a grammar. If more than one TypeScript transform set is
- * present, the first one (in declaration order) wins.
- */
-const collectTransformFunctions = (
-  grammar: GrammarDefinition,
-): Map<string, TransformFunction> => {
-  const byName = new Map<string, TransformFunction>();
-  const transformSet = grammar.transforms?.find(
-    (t) => t.transformSet.targetLanguage === CODEGEN_TARGET_LANGUAGE,
-  )?.transformSet;
-
-  if (!transformSet) {
-    return byName;
-  }
-
-  for (const fn of transformSet.functions) {
-    byName.set(fn.name, fn);
-  }
-
-  return byName;
-};
-
-/**
- * Wraps a rule's generated parser expression so that, on a successful parse,
- * the matching TypeScript transform function's body runs against the parse
- * result (the rule's capture structure) and its Result<T> return value
- * becomes the parser's own success/failure outcome.
- */
-const wrapWithTransform = (
-  ruleName: string,
-  parserCode: string,
-  transformFn: TransformFunction,
-): string => {
-  const paramName = transformFn.parameters[0]?.name ?? "captures";
-  return `(input, pos) => {
-  const __base = (${parserCode});
-  const __result = __base(input, pos);
-  if (!__result.success) return __result;
-  const __transformed = ((${paramName}) => {
-${transformFn.body}
-  })(__result.val);
-  if (!__transformed.success) {
-    return {
-      success: false,
-      error: {
-        message: __transformed.error ?? "Transform failed",
-        pos: __result.current,
-        parserName: "${ruleName}",
-        expected: "successful transform",
-        found: JSON.stringify(__result.val),
-      },
-    };
-  }
-  return {
-    success: true,
-    val: __transformed.value,
-    current: __result.current,
-    next: __result.next,
-  };
-}`;
-};
 
 /**
  * Eta-based TPEG code generator
@@ -196,10 +127,11 @@ export class EtaTPEGCodeGenerator {
    */
   async generateGrammar(grammar: GrammarDefinition): Promise<GeneratedCode> {
     // Rejects duplicate rule names, left recursion, a cut-only pattern,
-    // and unbounded repetition over a nullable body BEFORE any code is
-    // generated -- see `grammar-validation.ts`'s module doc comment for
-    // why this package carries its own copy of these checks rather than
-    // importing `tpeg-parser`'s.
+    // invalid transform function names, and unbounded repetition over a
+    // nullable body BEFORE any code is generated -- the same
+    // `validateGrammar` + `assertNoNullableRepetition` pair
+    // `tpeg-parser`'s own generators run (see `grammar-validation.ts`'s
+    // module doc comment for why this delegates rather than duplicating).
     validateGrammarForEtaGenerator(grammar);
 
     globalPerformanceMonitor.start("eta-grammar-generation");
@@ -245,11 +177,9 @@ export class EtaTPEGCodeGenerator {
     // failure modes (e.g. a rule named `class`, or one named `literal`
     // colliding with `import { literal }`). Imported directly from
     // `tpeg-parser` (already a real dependency of this package -- see
-    // `collectTopLevelLabels`/`wrapWithAction`/etc. above) rather than
-    // duplicated into this package's own `grammar-validation.ts`, unlike
-    // that file's other checks -- see this call's sibling
-    // `validateGrammarForEtaGenerator` for why THOSE are a deliberate,
-    // pre-existing duplication this fix doesn't revisit.
+    // `collectTopLevelLabels`/`wrapWithAction`/etc. above), like
+    // `validateGrammarForEtaGenerator` now does for the rest of the
+    // structural checks.
     validateGeneratedIdentifiers(grammar, {
       namePrefix: this.options.namePrefix,
       importedBindings: importedBindingsWithPerformance,

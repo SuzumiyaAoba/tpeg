@@ -3,10 +3,7 @@
  */
 
 import { describe, expect, test } from "vite-plus/test";
-import { type Parser, parse } from "@suzumiyaaoba/tpeg-core";
-
-// Helper function for easier testing
-const testParse = <T>(parser: Parser<T>, input: string) => parse(parser)(input);
+import { testParse } from "./test-utils";
 import {
   documentationComment,
   grammarAnnotation,

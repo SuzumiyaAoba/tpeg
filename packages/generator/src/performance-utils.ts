@@ -1,64 +1,41 @@
 /**
- * Performance analysis utilities for code generation
+ * Performance analysis utilities for the Eta-based code generator.
  *
- * Lightweight version focused on code generation needs.
+ * The dependency-graph machinery (`collectRuleDependencies`,
+ * `findRecursiveRuleNames`, `PerformanceMonitor`/
+ * `globalPerformanceMonitor`) is re-exported from `tpeg-parser`, whose
+ * `performance-utils.ts` is the canonical implementation. This module
+ * used to hand-maintain a ~400-line duplicate of that file ("keep them
+ * in sync; there is no automated check tying the two together"), and the
+ * copies had already drifted both ways: an `ActionExpression`-traversal
+ * gap was found and fixed independently in each, and this copy's
+ * quadratic `canReach` recursion check had to be re-ported after
+ * `tpeg-parser`'s moved to an iterative Tarjan SCC pass.
+ *
+ * What stays local is only the ANALYSIS layer, because this package's
+ * thresholds genuinely differ from `tpeg-parser`'s (its
+ * `analyzeExpressionComplexity` counts `hasRecursion` toward "high" and
+ * uses `nodeCount > 50`/`depth > 10` and `> 20`/`> 5`; the ones below
+ * are tighter and don't consume the recursion flag) -- and they drive
+ * `eta-generator.ts`'s `shouldMemoize`/`memoize`-import decisions.
  */
 
+import { childExpressions } from "@suzumiyaaoba/tpeg-core";
+import {
+  collectRuleDependencies,
+  findRecursiveRuleNames,
+} from "@suzumiyaaoba/tpeg-parser";
 import type {
-  ActionExpression,
-  Choice,
   Expression,
   ExpressionComplexity,
   GrammarDefinition,
   GrammarPerformance,
-  Group,
-  Identifier,
-  LabeledExpression,
-  NegativeLookahead,
-  Optional,
-  Plus,
-  PositiveLookahead,
-  Quantified,
-  Sequence,
-  Star,
 } from "./types";
 
-/**
- * Simple performance monitoring for generation timing
- */
-export class PerformanceMonitor {
-  // A stack of start times per operation, not a single timestamp:
-  // same-name `start` calls can nest (a monitored recursive rule
-  // re-enters its own start/end pair), and a lone `Map<string, number>`
-  // silently dropped the outer measurement (#109).
-  private timers = new Map<string, number[]>();
-
-  start(name: string): void {
-    const stack = this.timers.get(name);
-    if (stack) {
-      stack.push(performance.now());
-    } else {
-      this.timers.set(name, [performance.now()]);
-    }
-  }
-
-  end(name: string): number {
-    const stack = this.timers.get(name);
-    if (!stack || stack.length === 0) {
-      return 0;
-    }
-    const startTime = stack.pop() as number;
-    if (stack.length === 0) {
-      this.timers.delete(name);
-    }
-    return performance.now() - startTime;
-  }
-}
-
-/**
- * Global performance monitor instance
- */
-export const globalPerformanceMonitor = new PerformanceMonitor();
+export {
+  PerformanceMonitor,
+  globalPerformanceMonitor,
+} from "@suzumiyaaoba/tpeg-parser";
 
 /**
  * Analyze the complexity of a single expression
@@ -83,54 +60,13 @@ export function analyzeExpressionComplexity(
   function analyze(expression: Expression, currentDepth: number): void {
     nodeCount++;
     depth = Math.max(depth, currentDepth);
-
-    switch (expression.type) {
-      case "Sequence":
-        for (const element of (expression as Sequence).elements) {
-          analyze(element, currentDepth + 1);
-        }
-        break;
-      case "Choice":
-        for (const alternative of (expression as Choice).alternatives) {
-          analyze(alternative, currentDepth + 1);
-        }
-        break;
-      case "Star":
-        analyze((expression as Star).expression, currentDepth + 1);
-        break;
-      case "Plus":
-        analyze((expression as Plus).expression, currentDepth + 1);
-        break;
-      case "Optional":
-        analyze((expression as Optional).expression, currentDepth + 1);
-        break;
-      case "Group":
-        analyze((expression as Group).expression, currentDepth + 1);
-        break;
-      case "LabeledExpression":
-        analyze((expression as LabeledExpression).expression, currentDepth + 1);
-        break;
-      case "Quantified":
-        analyze((expression as Quantified).expression, currentDepth + 1);
-        break;
-      case "PositiveLookahead":
-        analyze((expression as PositiveLookahead).expression, currentDepth + 1);
-        break;
-      case "NegativeLookahead":
-        analyze((expression as NegativeLookahead).expression, currentDepth + 1);
-        break;
-      case "ActionExpression":
-        // An action's own wrapped expression counts toward complexity
-        // just like any other nesting -- omitting this case (as an
-        // earlier version of this function did) undercounted `nodeCount`/
-        // `depth` for every rule with a semantic action, treating the
-        // whole action-wrapped subtree as a single depth-0 leaf. See
-        // `collectRuleDependencies`'s identical case below and
-        // `packages/type-inference/src/type-integration.ts`'s
-        // `analyzeDependencies`, which fixed the same gap for its own
-        // (separate) dependency walk.
-        analyze((expression as ActionExpression).expression, currentDepth + 1);
-        break;
+    // `childExpressions` descends into an `ActionExpression`'s wrapped
+    // expression, so the action's subtree counts toward complexity like
+    // any other nesting -- treating it as a leaf (as an earlier version
+    // of this function did) undercounted `nodeCount`/`depth` for every
+    // rule with a semantic action.
+    for (const child of childExpressions(expression)) {
+      analyze(child, currentDepth + 1);
     }
   }
 
@@ -214,108 +150,4 @@ export function analyzeGrammarPerformance(
     optimizationSuggestions,
     ruleComplexity,
   };
-}
-
-/**
- * Collect the names of rules directly referenced from an expression
- *
- * This is a hand-maintained duplicate of `packages/parser/src/
- * performance-utils.ts`'s function of the same name (see this package's
- * `grammar-validation.ts` module doc comment for why the duplication
- * exists at all) -- keep the `ActionExpression` case below in sync if
- * either changes; there is no automated check tying the two together.
- * A missing `ActionExpression` case here previously made a rule reference
- * reachable only through a semantic action invisible to
- * `findRecursiveRuleNames`, undercounting recursion; the identical gap
- * was found and fixed independently in the `tpeg-parser` copy.
- */
-function collectRuleDependencies(
-  expr: Expression,
-  dependencies: Set<string>,
-): void {
-  switch (expr.type) {
-    case "Identifier":
-      dependencies.add((expr as Identifier).name);
-      break;
-    case "Sequence":
-      for (const element of (expr as Sequence).elements) {
-        collectRuleDependencies(element, dependencies);
-      }
-      break;
-    case "Choice":
-      for (const alternative of (expr as Choice).alternatives) {
-        collectRuleDependencies(alternative, dependencies);
-      }
-      break;
-    case "Star":
-    case "Plus":
-    case "Optional":
-    case "Group":
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-    case "LabeledExpression":
-    case "Quantified":
-    case "ActionExpression":
-      // `ActionExpression` traversed into (not treated as a leaf) for the
-      // same reason `analyzeExpressionComplexity`'s `analyze` above does:
-      // a rule reference reachable only through a semantic action's own
-      // wrapped expression (e.g. `x = ( y ) { ... }`) is a real
-      // dependency for `findRecursiveRuleNames` below -- omitting this
-      // case (as an earlier version of this function did) made every
-      // such reference invisible, so a genuinely recursive rule whose
-      // only self-reference sits inside an action silently reported
-      // `hasRecursion: false`, which both `shouldMemoize` and the
-      // `memoize` import decision (`eta-generator.ts`) rely on. See
-      // `packages/type-inference/src/type-integration.ts`'s
-      // `analyzeDependencies`, which fixed the identical gap for its own
-      // dependency walk.
-      collectRuleDependencies(
-        (
-          expr as
-            | Star
-            | Plus
-            | Optional
-            | Group
-            | PositiveLookahead
-            | NegativeLookahead
-            | LabeledExpression
-            | Quantified
-            | ActionExpression
-        ).expression,
-        dependencies,
-      );
-      break;
-  }
-}
-
-/**
- * Finds every rule name that is part of a reference cycle in the given
- * dependency graph, whether direct (A -> A) or indirect (A -> B -> A).
- */
-function findRecursiveRuleNames(
-  dependencies: Map<string, Set<string>>,
-): Set<string> {
-  const recursive = new Set<string>();
-
-  const canReach = (
-    from: string,
-    target: string,
-    visited: Set<string>,
-  ): boolean => {
-    for (const next of dependencies.get(from) ?? []) {
-      if (next === target) return true;
-      if (visited.has(next)) continue;
-      visited.add(next);
-      if (canReach(next, target, visited)) return true;
-    }
-    return false;
-  };
-
-  for (const ruleName of dependencies.keys()) {
-    if (canReach(ruleName, ruleName, new Set())) {
-      recursive.add(ruleName);
-    }
-  }
-
-  return recursive;
 }

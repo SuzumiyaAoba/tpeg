@@ -527,9 +527,17 @@ export const offsetToPos = (input: string, offset: number): Pos => {
       ? 0
       : (lineStartOffsets[lineStartsBefore - 1] as number);
 
+  // The column walk is bounded by `input.length`, not just `offset`: a
+  // caller passing an out-of-range offset (e.g. a hand-built ParseError
+  // whose `pos` overshoots the input, or `pos` on a different, shorter
+  // input than the watermark recorded it against) must not make this an
+  // O(offset) loop over `codePointAt` returning `undefined` forever past
+  // the end -- and the column itself cannot exceed the line's real length
+  // either way.
+  const columnEnd = Math.min(offset, input.length);
   let column = 0;
   let i = lineStart;
-  while (i < offset) {
+  while (i < columnEnd) {
     const codePoint = input.codePointAt(i);
     i += codePoint !== undefined && codePoint > 0xffff ? 2 : 1;
     column++;

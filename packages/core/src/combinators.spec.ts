@@ -1120,6 +1120,42 @@ describe("reject", () => {
       expect(unrelated.error.found).toBe("a");
     }
   });
+
+  // Mirrors `notPredicate`'s abort guard (`./lookahead.ts`,
+  // `limits.spec.ts`'s "propagates through negative lookahead" test):
+  // `reject` turns a child failure into its own success, but an `abort`
+  // failure (a resource-limit hit -- see `ParseError.abort` in types.ts)
+  // is not an ordinary non-match and must keep aborting the whole parse
+  // rather than being inverted. Previously `reject` treated it like any
+  // other failure and returned success.
+  it("re-raises an abort failure instead of inverting it into a success", () => {
+    const aborting: Parser<unknown> = (_input, pos) => ({
+      success: false,
+      error: {
+        message: "Recursion depth limit exceeded",
+        pos,
+        fatal: true,
+        abort: true,
+      },
+    });
+    const result = reject(aborting)("a", 0);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.abort).toBe(true);
+    }
+  });
+
+  it("still succeeds on a fatal (cut/commit) child failure that is NOT an abort", () => {
+    // The abort guard above must not change the ordinary `reject`
+    // contract: a non-aborting fatal failure is still "the parser failed"
+    // and therefore a `reject` success.
+    const result = reject(commit(lit("z")))("a", 0);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBeNull();
+      expect(result.next).toBe(0);
+    }
+  });
 });
 
 describe("lazy", () => {

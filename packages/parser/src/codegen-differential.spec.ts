@@ -434,4 +434,42 @@ describe("codegen differential fuzzing (base generator vs. every optimization va
     },
     60000 * FUZZ_SCALE,
   );
+
+  test("oracle: Quantified with max: Infinity over a nullable body returns a fatal failure, not an infinite loop (regression)", () => {
+    // `quantified` (`packages/core/src/repetition.ts`) gates its
+    // zero-width guard on `!Number.isFinite(limit)`, so a `max` spelled
+    // `Number.POSITIVE_INFINITY` is just as unbounded as `undefined`.
+    // The oracle used to check `expr.max === undefined` only, leaving
+    // `max: Infinity` UNGUARDED -- on a nullable body the interpreter
+    // itself looped forever. `.tpeg` surface syntax can't write
+    // `Infinity` (only `{n,}` -> `undefined`), so this is hand-built.
+    const grammar: GrammarDefinition = {
+      type: "GrammarDefinition",
+      name: "G",
+      rules: [
+        {
+          type: "RuleDefinition",
+          name: "start",
+          pattern: {
+            type: "Quantified",
+            min: 0,
+            max: Number.POSITIVE_INFINITY,
+            expression: {
+              type: "Optional",
+              expression: {
+                type: "StringLiteral",
+                value: "a",
+                quote: '"',
+              },
+            },
+          },
+        },
+      ],
+    } as GrammarDefinition;
+
+    const oracle = referenceRecognize(grammar);
+    // Must return (fatal -- matching `quantified`'s infinite-loop error)
+    // rather than hang: a pre-fix oracle never returned at all here.
+    expect(oracle("")).toBe("FATAL");
+  });
 });

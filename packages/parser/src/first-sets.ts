@@ -363,15 +363,15 @@ export const isNullable = (
 
 /**
  * Computes the FIRST set of `elements[from..]` as a suffix of a
- * `Sequence` -- the recursive core of `sequenceFirstSet`, split out so a
+ * `Sequence` -- the core of `sequenceFirstSet`, split out so a
  * `NegativeLookahead` element can subtract `alwaysMatchesSet` from
  * everything that follows it in the same nullable-prefix run (see module
  * doc comment: `FIRST(!a b) = FIRST(b) \ ALWAYS_FIRST(a)`).
  *
  * Elements before index `from` have already been unioned in by the
  * caller; this function only accounts for `elements[from]` onward, and
- * mirrors the original loop's "stop after the first non-nullable element"
- * behavior exactly (see the two base-case returns below).
+ * stops contributing at the first non-nullable element (see the two
+ * passes below).
  */
 const sequenceFirstSetFrom = (
   elements: readonly Expression[],
@@ -379,16 +379,42 @@ const sequenceFirstSetFrom = (
   ctx: ReadonlyMap<string, FirstSet>,
   nullableRules: ReadonlyMap<string, boolean>,
 ): FirstSet => {
-  if (from >= elements.length) return EMPTY_FIRST_SET;
-  const element = elements[from] as Expression;
-  const own = firstSetOfExpression(element, ctx, nullableRules);
-  if (!isNullable(element, nullableRules)) return own;
-
-  let rest = sequenceFirstSetFrom(elements, from + 1, ctx, nullableRules);
-  if (element.type === "NegativeLookahead") {
-    rest = differenceFirstSet(rest, alwaysMatchesSet(element.expression));
+  // Iterative version of the original right-recursive formulation, which
+  // overflowed the call stack on a `Sequence` of ~50k+ (possibly-)
+  // nullable elements: recursion depth equaled the length of the nullable
+  // prefix starting at `from`. The recursion computed, at element i,
+  // `own_i` and -- only while element i is nullable -- unioned it with
+  // f(i+1) (subtracting `alwaysMatchesSet` across a `!a` element); a
+  // non-nullable element i returned `own_i` alone without ever evaluating
+  // the suffix. So only the nullable prefix at `from`, plus its first
+  // non-nullable terminator, contributes.
+  //
+  // Pass 1 (forward): find that terminator's index. Elements past it are
+  // never consulted, exactly like the recursion's early `return own`.
+  let last = elements.length - 1;
+  for (let i = from; i < elements.length; i++) {
+    if (!isNullable(elements[i] as Expression, nullableRules)) {
+      last = i;
+      break;
+    }
   }
-  return unionFirstSets(own, rest);
+
+  // Pass 2 (backward): fold each element's own FIRST set into the running
+  // suffix, mirroring the recursion -- at `last` the running suffix is
+  // `EMPTY_FIRST_SET`, so `unionFirstSets(own, EMPTY)` is `own`, matching
+  // the recursive `return own`; every element before `last` is nullable
+  // by construction (and a `NegativeLookahead` is always nullable, so the
+  // subtraction can never wrongly fire on the terminator).
+  let rest = EMPTY_FIRST_SET;
+  for (let i = last; i >= from; i--) {
+    const element = elements[i] as Expression;
+    const own = firstSetOfExpression(element, ctx, nullableRules);
+    if (element.type === "NegativeLookahead") {
+      rest = differenceFirstSet(rest, alwaysMatchesSet(element.expression));
+    }
+    rest = unionFirstSets(own, rest);
+  }
+  return rest;
 };
 
 const sequenceFirstSet = (
@@ -506,27 +532,127 @@ export const firstSetOfExpression = (
   }
 };
 
+/**
+ * Collects every rule name `Identifier`s in `expr` reference, into `into`.
+ * Deliberately over-approximates the actual data-flow dependency: it
+ * counts an `Identifier` in ANY position (e.g. after a `Sequence`'s
+ * non-nullable terminator, or inside a lookahead), even where the
+ * fixpoint evaluation above never reads that rule's value. For the
+ * worklist-driven fixpoints below that's safe -- an over-wide edge can
+ * only cause a redundant recomputation, never a missed update -- and it
+ * keeps the dependency graph static instead of depending on the
+ * still-converging state.
+ *
+ * Iterative (explicit stack) rather than recursive: a parsed grammar's
+ * nesting depth is bounded by the grammar parser's own recursion guard,
+ * but a hand-built AST can nest arbitrarily.
+ */
+const collectRuleReferences = (expr: Expression, into: Set<string>): void => {
+  const stack: Expression[] = [expr];
+  while (stack.length > 0) {
+    const node = stack.pop() as Expression;
+    switch (node.type) {
+      case "Identifier":
+        into.add(node.name);
+        break;
+      case "Sequence":
+        for (const element of node.elements) stack.push(element);
+        break;
+      case "Choice":
+        for (const alt of node.alternatives) stack.push(alt);
+        break;
+      case "Group":
+      case "Star":
+      case "Plus":
+      case "Optional":
+      case "Quantified":
+      case "PositiveLookahead":
+      case "NegativeLookahead":
+      case "LabeledExpression":
+      case "ActionExpression":
+        stack.push(node.expression);
+        break;
+      default:
+        // StringLiteral / CharacterClass / AnyChar / Cut /
+        // QualifiedIdentifier: no in-grammar rule reference.
+        break;
+    }
+  }
+};
+
+/**
+ * Maps a referenced rule name to the indexes (into `rules`) of every
+ * rule whose pattern references it -- the reverse dependency edges both
+ * worklist fixpoints below propagate change notifications along.
+ */
+const buildRuleDependents = (
+  rules: readonly { readonly name: string; readonly pattern: Expression }[],
+): Map<string, number[]> => {
+  const dependents = new Map<string, number[]>();
+  for (let i = 0; i < rules.length; i++) {
+    const refs = new Set<string>();
+    collectRuleReferences((rules[i] as (typeof rules)[number]).pattern, refs);
+    for (const name of refs) {
+      const list = dependents.get(name);
+      if (list) {
+        list.push(i);
+      } else {
+        dependents.set(name, [i]);
+      }
+    }
+  }
+  return dependents;
+};
+
 /** Exported for `grammar-validation.ts`'s left-recursion check, which
  * needs nullability but not full FIRST sets. Safe to call directly on a
  * grammar with duplicate rule names (unlike `analyzeFirstSets`'s FIRST-set
  * fixpoint below): `nullable` is Boolean and only ever moves `false ->
  * true`, never back, so two `RuleDefinition`s sharing a name can't make
  * this oscillate the way two different FIRST sets can -- whichever one
- * sets the shared entry `true` first, it stays `true`. */
+ * sets the shared entry `true` first, it stays `true`.
+ *
+ * Worklist-driven rather than a recompute-everything fixpoint loop: the
+ * old `while (changed)` formulation re-evaluated EVERY rule on every
+ * pass and needed one pass per step a `false -> true` transition
+ * propagated along a reference chain, so a grammar of n rules chained
+ * `r1 = r2`, `r2 = r3`, ... cost O(n^2) evaluations (tens of thousands
+ * of rules -- reachable in generated/concatenated grammars -- never
+ * finished). Here a rule is re-evaluated only when a rule it references
+ * actually flipped, so each rule evaluates at most once per incoming
+ * dependency edge plus once: O(rules + edges) evaluations total. Same
+ * least fixpoint -- a flip still notifies every referencing rule through
+ * `dependents`, so no update is ever missed -- computed with far less
+ * redundant work. */
 export const computeNullableRules = (
   grammar: GrammarDefinition,
 ): Map<string, boolean> => {
   const nullable = new Map<string, boolean>(
     grammar.rules.map((r) => [r.name, false]),
   );
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const rule of grammar.rules) {
-      if (nullable.get(rule.name)) continue;
-      if (isNullableUncached(rule.pattern, nullable)) {
-        nullable.set(rule.name, true);
-        changed = true;
+  const dependents = buildRuleDependents(grammar.rules);
+
+  // Worklist of rule INDEXES (not names) so two `RuleDefinition`s sharing
+  // a name each still get their own evaluation -- either may be the one
+  // to flip the shared `nullable` entry, matching the old pass loop's
+  // "any duplicate can set it" behavior.
+  const queue: number[] = grammar.rules.map((_, i) => i);
+  const inQueue = new Set<number>(queue);
+  let head = 0;
+  while (head < queue.length) {
+    const i = queue[head++] as number;
+    inQueue.delete(i);
+    const rule = grammar.rules[i] as (typeof grammar.rules)[number];
+    // Already `true` can't go back (monotone), so a rule whose shared
+    // name was flipped by a duplicate earlier in the queue is done.
+    if (nullable.get(rule.name)) continue;
+    if (isNullableUncached(rule.pattern, nullable)) {
+      nullable.set(rule.name, true);
+      for (const dependent of dependents.get(rule.name) ?? []) {
+        if (!inQueue.has(dependent)) {
+          inQueue.add(dependent);
+          queue.push(dependent);
+        }
       }
     }
   }
@@ -583,15 +709,41 @@ export const analyzeFirstSets = (
     ...new Map(grammar.rules.map((r) => [r.name, r])).values(),
   ];
 
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const rule of uniqueRules) {
-      const next = firstSetOfExpression(rule.pattern, firstSets, nullableRules);
-      const prev = firstSets.get(rule.name) as FirstSet;
-      if (!firstSetsEqual(prev, next)) {
-        firstSets.set(rule.name, next);
-        changed = true;
+  // Same worklist-driven fixpoint as `computeNullableRules` above, for
+  // the identical reason: the old `while (changed)` pass loop cost one
+  // full re-evaluation of every rule per step a change propagated along
+  // a reference chain -- O(n^2) on `r1 = r2`, `r2 = r3`, ... -- while a
+  // worklist re-evaluates a rule only when a referenced rule's FIRST set
+  // actually changed. `firstSetOfExpression` is monotone in `firstSets`
+  // (union of literal sets and rule lookups; the only subtraction,
+  // `differenceFirstSet`, removes a constant syntactic set -- see its doc
+  // comment), so values still converge to the same least fixpoint, just
+  // without re-deriving unchanged rules on every pass.
+  const dependents = buildRuleDependents(uniqueRules);
+  const patternByName = new Map<string, Expression>(
+    uniqueRules.map((r) => [r.name, r.pattern]),
+  );
+  const queue: string[] = uniqueRules.map((r) => r.name);
+  const inQueue = new Set<string>(queue);
+  let head = 0;
+  while (head < queue.length) {
+    const name = queue[head++] as string;
+    inQueue.delete(name);
+    const next = firstSetOfExpression(
+      patternByName.get(name) as Expression,
+      firstSets,
+      nullableRules,
+    );
+    const prev = firstSets.get(name) as FirstSet;
+    if (!firstSetsEqual(prev, next)) {
+      firstSets.set(name, next);
+      for (const dependent of dependents.get(name) ?? []) {
+        const depName = (uniqueRules[dependent] as (typeof uniqueRules)[number])
+          .name;
+        if (!inQueue.has(depName)) {
+          inQueue.add(depName);
+          queue.push(depName);
+        }
       }
     }
   }
@@ -720,58 +872,98 @@ export const firstSetsDisjoint = (a: FirstSet, b: FirstSet): boolean => {
  */
 const EMPTY_VISITED_RULES: ReadonlySet<string> = new Set();
 
+/**
+ * Upper bound on how many rule references `canCommitWithoutConsuming`
+ * follows along a single reference chain before answering `true` (the
+ * conservative "cannot rule it out" direction -- the alternative is
+ * simply always attempted, never skipped, so this can only cost a
+ * fast-path, never skip a `fatal`-producing alternative). Bounds the
+ * call-stack depth of the `Identifier` case below for pathological
+ * grammars (e.g. tens of thousands of rules chained `r1 = r2`, `r2 = r3`,
+ * ...), which would otherwise overflow it.
+ */
+const MAX_CAN_COMMIT_REFERENCE_DEPTH = 10_000;
+
 export const canCommitWithoutConsuming = (
   expr: Expression,
   analysis: GrammarFirstSetAnalysis,
   visitedRules: ReadonlySet<string> = EMPTY_VISITED_RULES,
 ): boolean => {
-  switch (expr.type) {
-    case "Cut":
-      return true;
-    case "Sequence": {
-      for (const element of expr.elements) {
-        if (canCommitWithoutConsuming(element, analysis, visitedRules)) {
-          return true;
+  // `onPath` holds exactly the rule names on the current reference chain
+  // (added before descending into a rule's pattern, removed on the way
+  // back) -- the same set the previous implementation built by copying
+  // (`new Set([...visitedRules, name])`) on every hop, minus an O(depth)
+  // copy per reference.
+  const onPath = new Set(visitedRules);
+
+  // Per-rule answers, memoized for this one top-level call. Without it,
+  // a DAG-shaped reference graph (e.g. `r0 = r1 r1`, `r1 = r2 r2`, ...)
+  // re-evaluates the same rule once per path reaching it -- exponential
+  // in the chain length. Reuse is exact for every grammar this function
+  // can legitimately see: a rule's answer can only depend on `onPath`
+  // when its subtree references a rule already on the path, i.e. a
+  // zero-consumption reference cycle -- left recursion -- which
+  // `grammar-validation.ts`'s `validateGrammar` rejects before either
+  // codegen reaches this. On such a rejected-anyway grammar a memoized
+  // entry may differ from a fresh per-path evaluation, in either
+  // direction; both remain sound-or-safe approximations of an already
+  // undefined construct.
+  const ruleMemo = new Map<string, boolean>();
+
+  const visit = (node: Expression): boolean => {
+    switch (node.type) {
+      case "Cut":
+        return true;
+      case "Sequence": {
+        for (const element of node.elements) {
+          if (visit(element)) {
+            return true;
+          }
+          if (!isNullable(element, analysis.nullableRules)) return false;
         }
-        if (!isNullable(element, analysis.nullableRules)) return false;
+        return false;
       }
-      return false;
+      case "Choice":
+        // `tryOrderedCandidates` absorbs a `fatal` failure at THIS node's
+        // own boundary (see `commit`'s doc comment in
+        // `packages/core/src/combinators.ts`) -- a Cut inside one
+        // alternative never escapes through the Choice itself.
+        return false;
+      case "Group":
+      case "LabeledExpression":
+      case "ActionExpression":
+        return visit(node.expression);
+      case "Optional":
+      case "Star":
+      case "Plus":
+      case "Quantified":
+        return visit(node.expression);
+      case "PositiveLookahead":
+      case "NegativeLookahead":
+        // Both `andPredicate` and `notPredicate` absorb a `fatal` child
+        // failure at their own boundary -- see `lookahead.ts`.
+        return false;
+      case "Identifier": {
+        if (onPath.has(node.name)) return true;
+        const pattern = analysis.rulePatterns.get(node.name);
+        if (!pattern) return true;
+        const cached = ruleMemo.get(node.name);
+        if (cached !== undefined) return cached;
+        if (onPath.size >= MAX_CAN_COMMIT_REFERENCE_DEPTH) return true;
+        onPath.add(node.name);
+        const result = visit(pattern);
+        onPath.delete(node.name);
+        ruleMemo.set(node.name, result);
+        return result;
+      }
+      case "QualifiedIdentifier":
+        return true;
+      default:
+        return false;
     }
-    case "Choice":
-      // `tryOrderedCandidates` absorbs a `fatal` failure at THIS node's
-      // own boundary (see `commit`'s doc comment in
-      // `packages/core/src/combinators.ts`) -- a Cut inside one
-      // alternative never escapes through the Choice itself.
-      return false;
-    case "Group":
-    case "LabeledExpression":
-    case "ActionExpression":
-      return canCommitWithoutConsuming(expr.expression, analysis, visitedRules);
-    case "Optional":
-    case "Star":
-    case "Plus":
-    case "Quantified":
-      return canCommitWithoutConsuming(expr.expression, analysis, visitedRules);
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-      // Both `andPredicate` and `notPredicate` absorb a `fatal` child
-      // failure at their own boundary -- see `lookahead.ts`.
-      return false;
-    case "Identifier": {
-      if (visitedRules.has(expr.name)) return true;
-      const pattern = analysis.rulePatterns.get(expr.name);
-      if (!pattern) return true;
-      return canCommitWithoutConsuming(
-        pattern,
-        analysis,
-        new Set([...visitedRules, expr.name]),
-      );
-    }
-    case "QualifiedIdentifier":
-      return true;
-    default:
-      return false;
-  }
+  };
+
+  return visit(expr);
 };
 
 /**

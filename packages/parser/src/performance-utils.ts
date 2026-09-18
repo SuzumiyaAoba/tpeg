@@ -5,6 +5,7 @@
  * for grammar parsing and code generation operations.
  */
 
+import { childExpressions, forEachExpression } from "@suzumiyaaoba/tpeg-core";
 import type { Expression, GrammarDefinition } from "./types";
 
 /**
@@ -86,44 +87,13 @@ export function analyzeExpressionComplexity(
     nodeCount++;
     maxDepth = Math.max(maxDepth, depth);
 
-    switch (expr.type) {
-      case "Sequence":
-        for (const element of expr.elements) {
-          analyze(element, depth + 1);
-        }
-        break;
-      case "Choice":
-        for (const alternative of expr.alternatives) {
-          analyze(alternative, depth + 1);
-        }
-        break;
-      case "Star":
-      case "Plus":
-      case "Optional":
-      case "Group":
-        analyze(expr.expression, depth + 1);
-        break;
-      case "PositiveLookahead":
-      case "NegativeLookahead":
-        analyze(expr.expression, depth + 1);
-        break;
-      case "LabeledExpression":
-        analyze(expr.expression, depth + 1);
-        break;
-      case "Quantified":
-        analyze(expr.expression, depth + 1);
-        break;
-      case "ActionExpression":
-        // A rule reference reachable only through a semantic action's own
-        // wrapped expression (e.g. `x = ( y ) { ... }`) must still count
-        // toward this rule's complexity -- omitting this case undercounts
-        // `nodeCount`/`depth` for every action-bearing rule. Mirrors
-        // `packages/generator/src/performance-utils.ts`'s identical case
-        // (see that file's own comment for the gap this closes) and
-        // `packages/type-inference/src/type-integration.ts`'s
-        // `analyzeDependencies`, which fixed the same gap for its own walk.
-        analyze(expr.expression, depth + 1);
-        break;
+    // `childExpressions` includes an `ActionExpression`'s wrapped
+    // expression, so a rule reference reachable only through a semantic
+    // action (e.g. `x = ( y ) { ... }`) still counts toward this rule's
+    // complexity -- an earlier hand-written switch here omitted that case
+    // and undercounted `nodeCount`/`depth` for every action-bearing rule.
+    for (const child of childExpressions(expr)) {
+      analyze(child, depth + 1);
     }
   }
 
@@ -237,63 +207,30 @@ export function analyzeGrammarPerformance(grammar: GrammarDefinition): {
 }
 
 /**
- * Collect rule dependencies from an expression
+ * Collect rule dependencies from an expression: the name of every
+ * `Identifier` (local rule reference) in its subtree. `QualifiedIdentifier`
+ * nodes are skipped -- a `module.rule` reference points outside this
+ * grammar's own rule set.
  *
- * `packages/generator/src/performance-utils.ts` hand-maintains a duplicate
- * of this function (that package's `grammar-validation.ts` module doc
- * comment explains why the duplication exists at all) -- keep the
- * `ActionExpression` case below in sync if either changes; there is no
- * automated check tying the two together.
+ * The traversal goes through `forEachExpression`/`childExpressions`
+ * (`@suzumiyaaoba/tpeg-core`), which descends into an `ActionExpression`'s
+ * wrapped expression -- a rule reference reachable only through a semantic
+ * action (e.g. `x = ( y ) { ... }`) is a real dependency for
+ * `findRecursiveRuleNames`; omitting that case (as earlier hand-written
+ * switches in this repo did, in three separate copies) made such a
+ * reference invisible and reported `hasRecursion: false` for a genuinely
+ * recursive rule. Exported so `tpeg-generator` shares this exact walk
+ * instead of hand-maintaining a second copy.
  */
-function collectRuleDependencies(
+export function collectRuleDependencies(
   expr: Expression,
   dependencies: Set<string>,
 ): void {
-  switch (expr.type) {
-    case "Identifier":
-      dependencies.add(expr.name);
-      break;
-    case "Sequence":
-      for (const element of expr.elements) {
-        collectRuleDependencies(element, dependencies);
-      }
-      break;
-    case "Choice":
-      for (const alternative of expr.alternatives) {
-        collectRuleDependencies(alternative, dependencies);
-      }
-      break;
-    case "Star":
-    case "Plus":
-    case "Optional":
-    case "Group":
-      collectRuleDependencies(expr.expression, dependencies);
-      break;
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-      collectRuleDependencies(expr.expression, dependencies);
-      break;
-    case "LabeledExpression":
-      collectRuleDependencies(expr.expression, dependencies);
-      break;
-    case "Quantified":
-      collectRuleDependencies(expr.expression, dependencies);
-      break;
-    case "ActionExpression":
-      // Traversed into (not treated as a leaf) for the same reason
-      // `analyzeExpressionComplexity`'s `analyze` above does: a rule
-      // reference reachable only through a semantic action's own wrapped
-      // expression (e.g. `x = ( y ) { ... }`) is a real dependency for
-      // `findRecursiveRuleNames` below -- omitting this case made every
-      // such reference invisible, so a genuinely recursive rule whose only
-      // self-reference sits inside an action silently reported
-      // `hasRecursion: false`. Mirrors
-      // `packages/generator/src/performance-utils.ts`'s identical case and
-      // `packages/type-inference/src/type-integration.ts`'s
-      // `analyzeDependencies`, which fixed the same gap for its own walk.
-      collectRuleDependencies(expr.expression, dependencies);
-      break;
-  }
+  forEachExpression(expr, (node) => {
+    if (node.type === "Identifier") {
+      dependencies.add(node.name);
+    }
+  });
 }
 
 /**
@@ -339,29 +276,15 @@ function collectLeftmostRuleDependencies(
         collectLeftmostRuleDependencies(alternative, dependencies);
       }
       break;
-    case "Star":
-    case "Plus":
-    case "Optional":
-    case "Group":
-      collectLeftmostRuleDependencies(expr.expression, dependencies);
-      break;
-    case "PositiveLookahead":
-    case "NegativeLookahead":
-      collectLeftmostRuleDependencies(expr.expression, dependencies);
-      break;
-    case "LabeledExpression":
-      collectLeftmostRuleDependencies(expr.expression, dependencies);
-      break;
-    case "Quantified":
-      collectLeftmostRuleDependencies(expr.expression, dependencies);
-      break;
-    case "ActionExpression":
-      // Same reasoning as `collectRuleDependencies` above: a self-reference
-      // reachable only through a semantic action's wrapped expression is
-      // still tried at the same starting position (the action itself
-      // consumes no input of its own), so it must be visible to
-      // left-recursion detection too.
-      collectLeftmostRuleDependencies(expr.expression, dependencies);
+    default:
+      // Every remaining container node (the unary wrappers, including
+      // `ActionExpression` -- a self-reference reachable only through a
+      // semantic action's wrapped expression is still tried at the same
+      // starting position, the action itself consuming no input) yields
+      // exactly one child here; leaf nodes yield none.
+      for (const child of childExpressions(expr)) {
+        collectLeftmostRuleDependencies(child, dependencies);
+      }
       break;
   }
 }
@@ -371,32 +294,105 @@ function collectLeftmostRuleDependencies(
  * dependency graph, whether direct (A -> A) or indirect (A -> B -> ... -> A).
  * References to names outside the graph (e.g. rules imported from another
  * module) are not tracked as dependencies and can't participate in a cycle.
+ *
+ * A rule is on a cycle exactly when it belongs to a strongly connected
+ * component of size > 1, or has a self-loop -- so this is one iterative
+ * Tarjan SCC pass over the whole graph, O(rules + edges). The `canReach(
+ * rule, rule)`-per-rule DFS this replaces was O(rules x edges) (a
+ * 10,000-rule reference chain took ~9.4s inside every
+ * `generateOptimizedTypeScriptParser` call, which runs this analysis
+ * unconditionally) and recursed as deep as the chain itself.
  */
-function findRecursiveRuleNames(
-  dependencies: Map<string, Set<string>>,
+export function findRecursiveRuleNames(
+  dependencies: ReadonlyMap<string, ReadonlySet<string>>,
 ): Set<string> {
   const recursive = new Set<string>();
+  const index = new Map<string, number>();
+  const lowlink = new Map<string, number>();
+  const onStack = new Set<string>();
+  const sccStack: string[] = [];
+  let nextIndex = 0;
 
-  const canReach = (
-    from: string,
-    target: string,
-    visited: Set<string>,
-  ): boolean => {
-    for (const next of dependencies.get(from) ?? []) {
-      if (next === target) return true;
-      if (visited.has(next)) continue;
-      visited.add(next);
-      if (canReach(next, target, visited)) return true;
-    }
-    return false;
-  };
+  for (const root of dependencies.keys()) {
+    if (index.has(root)) continue;
+    // Iterative DFS: each work entry carries a node plus the iterator
+    // over its successors, so the post-order lowlink merge into the
+    // parent happens exactly when a node's frame completes.
+    index.set(root, nextIndex);
+    lowlink.set(root, nextIndex);
+    nextIndex++;
+    sccStack.push(root);
+    onStack.add(root);
+    const work: { node: string; it: Iterator<string> }[] = [
+      {
+        node: root,
+        it: dependencies.get(root)?.values() ?? [][Symbol.iterator](),
+      },
+    ];
 
-  for (const ruleName of dependencies.keys()) {
-    if (canReach(ruleName, ruleName, new Set())) {
-      recursive.add(ruleName);
+    while (work.length > 0) {
+      const frame = work[work.length - 1] as {
+        node: string;
+        it: Iterator<string>;
+      };
+      const step = frame.it.next();
+      if (step.done) {
+        work.pop();
+        const node = frame.node;
+        const parentFrame = work[work.length - 1];
+        if (parentFrame) {
+          // Tree edge parent -> node: fold node's lowlink into parent's.
+          lowlink.set(
+            parentFrame.node,
+            Math.min(
+              lowlink.get(parentFrame.node) as number,
+              lowlink.get(node) as number,
+            ),
+          );
+        }
+        if (lowlink.get(node) === index.get(node)) {
+          // `node` is an SCC root: everything above it on `sccStack` is
+          // its component.
+          const scc: string[] = [];
+          for (;;) {
+            const member = sccStack.pop() as string;
+            onStack.delete(member);
+            scc.push(member);
+            if (member === node) break;
+          }
+          if (scc.length > 1) {
+            for (const member of scc) recursive.add(member);
+          } else if ((dependencies.get(node) as Set<string>).has(node)) {
+            // Singleton component: recursive only via a self-loop.
+            recursive.add(node);
+          }
+        }
+        continue;
+      }
+      const succ = step.value;
+      if (!dependencies.has(succ)) continue; // unresolvable: a dead end
+      if (!index.has(succ)) {
+        index.set(succ, nextIndex);
+        lowlink.set(succ, nextIndex);
+        nextIndex++;
+        sccStack.push(succ);
+        onStack.add(succ);
+        work.push({
+          node: succ,
+          it: dependencies.get(succ)?.values() ?? [][Symbol.iterator](),
+        });
+      } else if (onStack.has(succ)) {
+        // Back/cross edge to a node still on the SCC stack.
+        lowlink.set(
+          frame.node,
+          Math.min(
+            lowlink.get(frame.node) as number,
+            index.get(succ) as number,
+          ),
+        );
+      }
     }
   }
-
   return recursive;
 }
 

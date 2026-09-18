@@ -806,3 +806,126 @@ describe("findNullableRepetitions / assertNoNullableRepetition", () => {
     ]);
   });
 });
+
+describe("scalability regressions", () => {
+  // Regression: `sequenceFirstSetFrom` used to recurse once per nullable
+  // Sequence element, so a rule with tens of thousands of `e?` elements
+  // (reachable in generated/concatenated grammars) overflowed the call
+  // stack inside `analyzeFirstSets`. Now iterative; 200k elements must
+  // not throw.
+  it("handles a Sequence of 200k nullable elements without a stack overflow", () => {
+    const elements = Array.from({ length: 200_000 }, () =>
+      createOptional(createStringLiteral("a", '"')),
+    );
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [createRuleDefinition("r", createSequence(elements))],
+    );
+    const fs = analyzeFirstSets(grammar).firstSets.get("r");
+    expect(fs?.unknown).toBe(false);
+    expect(hasChar(fs, "a")).toBe(true);
+  });
+
+  // Regression: `canCommitWithoutConsuming` used to re-evaluate a
+  // referenced rule once per path reaching it, so a DAG-shaped reference
+  // graph (`r_i = r_{i+1} r_{i+1}`) cost 2^n evaluations -- a ~30-rule
+  // grammar already took seconds. Now memoized per rule per call.
+  it("evaluates a diamond-shaped rule-reference DAG in linear time", () => {
+    const n = 60;
+    const rules = [];
+    for (let i = 0; i < n; i++) {
+      rules.push(
+        createRuleDefinition(
+          `r${i}`,
+          createSequence([
+            createIdentifier(`r${i + 1}`),
+            createIdentifier(`r${i + 1}`),
+          ]),
+        ),
+      );
+    }
+    // Leaf: nullable, no Cut -> the whole chain must answer `false`.
+    rules.push(
+      createRuleDefinition(
+        `r${n}`,
+        createOptional(createStringLiteral("a", '"')),
+      ),
+    );
+    const grammar = createGrammarDefinition("T", [], rules);
+    const analysis = analyzeFirstSets(grammar);
+    expect(canCommitWithoutConsuming(createIdentifier("r0"), analysis)).toBe(
+      false,
+    );
+  });
+
+  it("still propagates a reachable Cut through a diamond-shaped DAG", () => {
+    const n = 60;
+    const rules = [];
+    for (let i = 0; i < n; i++) {
+      rules.push(
+        createRuleDefinition(
+          `r${i}`,
+          createSequence([
+            createIdentifier(`r${i + 1}`),
+            createIdentifier(`r${i + 1}`),
+          ]),
+        ),
+      );
+    }
+    rules.push(createRuleDefinition(`r${n}`, createSequence([createCut()])));
+    const grammar = createGrammarDefinition("T", [], rules);
+    const analysis = analyzeFirstSets(grammar);
+    expect(canCommitWithoutConsuming(createIdentifier("r0"), analysis)).toBe(
+      true,
+    );
+  });
+
+  // Regression: both fixpoints (`computeNullableRules` and the FIRST-set
+  // pass in `analyzeFirstSets`) used to recompute every rule on every
+  // pass, needing one pass per step a change propagated along a
+  // reference chain -- O(n^2), which never finished on a 50k-rule chain.
+  // The worklist re-evaluates a rule only when a dependency changed.
+  it("converges a 50k-rule reference chain without quadratic blowup", () => {
+    const n = 50_000;
+    const rules = [];
+    for (let i = 0; i < n; i++) {
+      rules.push(createRuleDefinition(`r${i}`, createIdentifier(`r${i + 1}`)));
+    }
+    rules.push(
+      createRuleDefinition(
+        `r${n}`,
+        createOptional(createStringLiteral("a", '"')),
+      ),
+    );
+    const grammar = createGrammarDefinition("T", [], rules);
+    const analysis = analyzeFirstSets(grammar);
+    // The whole chain is nullable and shares the leaf's FIRST set.
+    expect(analysis.nullableRules.get("r0")).toBe(true);
+    const fs = analysis.firstSets.get("r0");
+    expect(fs?.unknown).toBe(false);
+    expect(hasChar(fs, "a")).toBe(true);
+  });
+
+  it("bounds rule-reference following depth conservatively (answer: true) on a deeper-than-cap chain", () => {
+    // 10_000 is the reference-chain depth cap; a longer chain must not
+    // overflow the stack -- the answer degrades to the conservative
+    // "cannot rule it out" instead.
+    const n = 20_000;
+    const rules = [];
+    for (let i = 0; i < n; i++) {
+      rules.push(createRuleDefinition(`r${i}`, createIdentifier(`r${i + 1}`)));
+    }
+    rules.push(
+      createRuleDefinition(
+        `r${n}`,
+        createOptional(createStringLiteral("a", '"')),
+      ),
+    );
+    const grammar = createGrammarDefinition("T", [], rules);
+    const analysis = analyzeFirstSets(grammar);
+    expect(canCommitWithoutConsuming(createIdentifier("r0"), analysis)).toBe(
+      true,
+    );
+  });
+});

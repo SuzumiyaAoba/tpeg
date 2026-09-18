@@ -3,6 +3,8 @@ import {
   anyChar,
   charClass,
   choice,
+  FAIL,
+  FAIL_FATAL,
   getCharAt,
   literal,
   map,
@@ -55,6 +57,13 @@ const unicodeEscape = map(
  * `notPredicate`'s identical treatment of its own probe
  * (`@suzumiyaaoba/tpeg-core`'s `lookahead.ts`), which makes sense given
  * this function's own scan is equivalent to `(!condition anyChar)*`.
+ *
+ * The single exception is an `abort` failure (resource-limit hit -- see
+ * `ParseError.abort` in `@suzumiyaaoba/tpeg-core`'s types.ts), which
+ * `notPredicate` also re-raises rather than inverting: it is re-raised
+ * unchanged below so a limit always aborts the whole parse instead of
+ * being swallowed as "keep scanning" and silently returning the text
+ * consumed so far as a success.
  */
 export const takeUntil =
   <T>(condition: Parser<T>, _parserName?: string): Parser<string> =>
@@ -67,6 +76,19 @@ export const takeUntil =
       const condResult = condition(input, currentPos);
       if (condResult.success) {
         break;
+      }
+
+      // An `abort` failure must abort the whole parse, not be treated as
+      // "condition didn't match here" (see the doc comment above).
+      // `FAIL`/`FAIL_FATAL` are singletons whose `error` getter
+      // materializes the farthest-failure watermark, so guard on the
+      // singleton check first to keep this hot loop read-free.
+      if (
+        condResult !== FAIL &&
+        condResult !== FAIL_FATAL &&
+        condResult.error.abort === true
+      ) {
+        return condResult;
       }
 
       const char = getCharAt(input, currentPos);
