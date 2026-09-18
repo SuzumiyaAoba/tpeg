@@ -51,6 +51,27 @@ describe("TPEG Code Generation", () => {
       expect(result.exports).toEqual(["hello"]);
     });
 
+    test("should report the PREFIXED name in exports (the name a consumer would actually import)", () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition("hello", createStringLiteral("hello"))],
+        [],
+      );
+
+      const generator = new TPEGCodeGenerator({
+        language: "typescript",
+        namePrefix: "g_",
+      });
+      const result = generator.generateGrammar(grammar);
+
+      expect(result.code).toContain("export const g_hello");
+      // Previously `exports` listed the unprefixed "hello" even though
+      // only `g_hello` exists in the emitted code (eta-generator has
+      // always pushed the prefixed name).
+      expect(result.exports).toEqual(["g_hello"]);
+    });
+
     test("should generate character class parser", () => {
       const grammar = createGrammarDefinition(
         "TestGrammar",

@@ -206,12 +206,17 @@ export const arrayToCSV = (
   const escapeField = (field: string): string => {
     const fieldStr = String(field);
 
-    // If field contains comma, quote, or newline, wrap in quotes
+    // If field contains comma, quote, or newline, wrap in quotes. A field
+    // whose stringification differs from its own trim must ALSO be quoted:
+    // `unquotedField` trims surrounding whitespace on the read side (see
+    // above), so writing ` John ` unquoted would read back as `John` --
+    // silent data loss on a write/parse round trip.
     if (
       fieldStr.includes(",") ||
       fieldStr.includes('"') ||
       fieldStr.includes("\n") ||
-      fieldStr.includes("\r")
+      fieldStr.includes("\r") ||
+      fieldStr !== fieldStr.trim()
     ) {
       // Escape quotes by doubling them
       const escaped = fieldStr.replace(/"/g, '""');

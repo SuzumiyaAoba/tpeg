@@ -23,6 +23,7 @@ import {
   createChoice,
   createGrammarDefinition,
   createIdentifier,
+  createLabeledExpression,
   createNegativeLookahead,
   createOptional,
   createQualifiedIdentifier,
@@ -30,6 +31,11 @@ import {
   createSequence,
   createStar,
   createStringLiteral,
+  createTransformDefinition,
+  createTransformFunction,
+  createTransformParameter,
+  createTransformReturnType,
+  createTransformSet,
 } from "./types";
 
 /** Parses `.tpeg` source text (wrapped in a `grammar G { ... }` block) and
@@ -963,5 +969,239 @@ describe("validateGrammar: transform function names (issues #65/#66)", () => {
         optimize: true,
       }),
     ).toThrow(/declares 2 parameters/);
+  });
+});
+
+/**
+ * Everything `validateGeneratedIdentifiers` checks beyond name-vs-name
+ * collisions: (a) the emitted name must itself be a well-formed JS
+ * identifier -- the grammar parser can only produce identifier-shaped
+ * names, but `generateTypeScriptParser` also accepts a hand-built
+ * `GrammarDefinition`, where "my-rule" used to emit `export const
+ * my-rule` (a SyntaxError) with no diagnostic; and (b) a bare
+ * `Identifier` resolving to NO local rule -- the external-parser escape
+ * hatch, emitted verbatim -- must not land on a reserved word, an
+ * internal `__*` codegen binding, or a runtime import, where it could
+ * never mean "the caller's parser" (an import collision binds the
+ * reference to the combinator itself: `literal(input, pos)` returns a
+ * `Parser`, not a `ParseResult`).
+ */
+describe("validateGeneratedIdentifiers: emitted-name shape and external references", () => {
+  it.each(["my-rule", "123abc", "foo bar", "a.b"])(
+    "rejects a non-identifier-shaped rule name %j (hand-built AST)",
+    (name) => {
+      const grammar = createGrammarDefinition(
+        "G",
+        [],
+        [createRuleDefinition(name, createStringLiteral("a", '"'))],
+      );
+      expect(() =>
+        validateGeneratedIdentifiers(grammar, {
+          namePrefix: "",
+          importedBindings: [],
+        }),
+      ).toThrow(/not a valid JavaScript identifier/);
+    },
+  );
+
+  it("accepts a rule name that only becomes identifier-shaped through the prefix", () => {
+    // `g` + `123` emits `export const g123` -- perfectly valid, so the
+    // check must look at the EMITTED name, not the raw rule name.
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [createRuleDefinition("123", createStringLiteral("a", '"'))],
+    );
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "g",
+        importedBindings: [],
+      }),
+    ).not.toThrow();
+  });
+
+  it("end-to-end: both generators reject a malformed rule name from a hand-built AST", () => {
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [createRuleDefinition("my-rule", createStringLiteral("a", '"'))],
+    );
+    expect(() => generateTypeScriptParser(grammar)).toThrow(
+      /not a valid JavaScript identifier/,
+    );
+    expect(() =>
+      generateOptimizedTypeScriptParser(grammar, { optimize: true }),
+    ).toThrow(/not a valid JavaScript identifier/);
+  });
+
+  it("rejects a non-identifier-shaped capture label (hand-built AST)", () => {
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createLabeledExpression("my-label", createStringLiteral("a", '"')),
+        ),
+      ],
+    );
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: [],
+      }),
+    ).toThrow(
+      /capture label named "my-label".*not a valid JavaScript identifier/,
+    );
+  });
+
+  it("rejects a QualifiedIdentifier with a non-identifier module part (emits `foo-bar.baz` -> `(foo - bar).baz` mis-parse)", () => {
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createQualifiedIdentifier("foo-bar", "baz"),
+        ),
+      ],
+    );
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: [],
+      }),
+    ).toThrow(/module part "foo-bar" is not a valid JavaScript identifier/);
+  });
+
+  it("rejects a QualifiedIdentifier with a non-identifier NAME part (`a.b-c` parses as `(a.b) - c`)", () => {
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [createRuleDefinition("start", createQualifiedIdentifier("a", "b-c"))],
+    );
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: [],
+      }),
+    ).toThrow(/name part "b-c" is not a valid JavaScript identifier/);
+  });
+
+  it("rejects a transform parameter that isn't identifier-shaped (hand-built AST)", () => {
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [createRuleDefinition("start", createStringLiteral("a", '"'))],
+      [
+        createTransformDefinition(
+          createTransformSet("X", "typescript", [
+            createTransformFunction(
+              "start",
+              [createTransformParameter("foo-bar", "string")],
+              createTransformReturnType("R"),
+              "return r;",
+            ),
+          ]),
+        ),
+      ],
+    );
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: [],
+      }),
+    ).toThrow(/parameter named "foo-bar".*not a valid JavaScript identifier/);
+  });
+
+  it("rejects an external parser reference colliding with a runtime import (silent mis-binding to the combinator)", () => {
+    // `literal` resolves to no local rule, so it's emitted verbatim --
+    // where the string literal in the same grammar forces
+    // `import { literal }`, binding the reference to the COMBINATOR
+    // (`literal(input, pos)` returns a `Parser`, not a `ParseResult`).
+    const grammar = grammarFromSource('start = "x" literal');
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: ["Parser", "literal", "sequence", "untagCapture"],
+      }),
+    ).toThrow(/external parser "literal".*collides with a runtime import/);
+  });
+
+  it("accepts an external parser reference when nothing imports that name (the escape hatch still works)", () => {
+    const grammar = grammarFromSource("start = myExternal");
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: ["Parser", "untagCapture"],
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects an external parser reference that is a reserved word (`sequence(..., function)` is a SyntaxError)", () => {
+    const grammar = grammarFromSource("start = function");
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: [],
+      }),
+    ).toThrow(/external parser "function".*reserved word/);
+  });
+
+  it("rejects an external parser reference named like an internal `__*` binding", () => {
+    for (const name of ["__base", "__result", "__transformed"]) {
+      const grammar = grammarFromSource(`start = ${name}`);
+      expect(() =>
+        validateGeneratedIdentifiers(grammar, {
+          namePrefix: "",
+          importedBindings: [],
+        }),
+      ).toThrow(/code generator itself declares/);
+    }
+  });
+
+  it("rejects a non-identifier-shaped external reference (hand-built AST -- `foo-bar` parses as `foo - bar`)", () => {
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [createRuleDefinition("start", createIdentifier("foo-bar"))],
+    );
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "",
+        importedBindings: [],
+      }),
+    ).toThrow(/external parser "foo-bar".*not a valid JavaScript identifier/);
+  });
+
+  it("does NOT check LOCAL rule references against the bare name -- `namePrefix + name` is what gets emitted", () => {
+    // `b` IS a local rule, so `start = b` emits the prefixed name --
+    // the bare-identifier checks (reserved word, imports) must not fire
+    // on `b` itself even if `b` were an import name.
+    const grammar = grammarFromSource('start = b\nb = "a"');
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "g_",
+        importedBindings: ["b"],
+      }),
+    ).not.toThrow();
+  });
+
+  it("end-to-end: both generators reject an external reference colliding with an emitted import", () => {
+    const grammar = grammarFromSource('start = "x" literal');
+    expect(() =>
+      generateTypeScriptParser(grammar, {
+        includeImports: true,
+        includeTypes: true,
+      }),
+    ).toThrow(/collides with a runtime import/);
+    expect(() =>
+      generateOptimizedTypeScriptParser(grammar, {
+        language: "typescript",
+        includeImports: true,
+        includeTypes: true,
+        optimize: true,
+      }),
+    ).toThrow(/collides with a runtime import/);
   });
 });

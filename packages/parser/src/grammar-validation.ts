@@ -756,6 +756,7 @@ export const validateGeneratedIdentifiers = (
   options: GeneratedIdentifierCheckOptions,
 ): void => {
   const importedBindings = new Set(options.importedBindings);
+  const localRuleNames = new Set(grammar.rules.map((rule) => rule.name));
 
   // The checks below validate `namePrefix + rule.name` as a whole against
   // reserved words and imports, but a prefix that is not itself
@@ -777,6 +778,18 @@ export const validateGeneratedIdentifiers = (
 
   for (const rule of grammar.rules) {
     const emittedName = options.namePrefix + rule.name;
+    // Parser-produced rule names are always `[a-zA-Z_][a-zA-Z0-9_]*`, but
+    // `generateTypeScriptParser` also accepts a hand-built
+    // `GrammarDefinition` -- a name like "my-rule" emits `export const
+    // my-rule`, a SyntaxError in the generated file. Check the whole
+    // emitted name's shape before the reserved-word/import checks, since
+    // a malformed name slips through both ("my-rule" is not a reserved
+    // word and collides with no import).
+    if (!JS_IDENTIFIER_FULL.test(emittedName)) {
+      throw new Error(
+        `Rule name "${rule.name}" generates to "${emittedName}", which is not a valid JavaScript identifier -- the emitted \`export const ${emittedName}\` would fail to parse. Rule names must match /[a-zA-Z_$][a-zA-Z0-9_$]*/.`,
+      );
+    }
     if (JS_RESERVED_WORDS.has(emittedName)) {
       throw new Error(
         `Rule name "${rule.name}" generates to the reserved word "${emittedName}", which cannot be used as a TypeScript \`const\` declaration name -- rename the rule${options.namePrefix ? "" : " (or pass a --name-prefix that makes the emitted name safe)"}.`,
@@ -800,7 +813,16 @@ export const validateGeneratedIdentifiers = (
       // INSIDE the inner `(() => { ... })()` IIFE scope, so a label like
       // `__base` legally shadows the wrapper's own `const __base`
       // binding rather than colliding with it (#115). A JS reserved
-      // word still can't be a binding name anywhere, IIFE or not.
+      // word still can't be a binding name anywhere, IIFE or not --
+      // and neither can a label that isn't identifier-shaped at all
+      // (`const { my-label } = $$` -- reachable from a hand-built AST,
+      // since the grammar parser itself only produces identifier-shaped
+      // labels).
+      if (!JS_IDENTIFIER_FULL.test(label)) {
+        throw new Error(
+          `Rule "${rule.name}" has a capture label named "${label}", which is not a valid JavaScript identifier -- the emitted \`const { ${label} } = ...\` destructure would fail to parse. Label names must match /[a-zA-Z_$][a-zA-Z0-9_$]*/.`,
+        );
+      }
       if (JS_RESERVED_WORDS.has(label)) {
         throw new Error(
           `Rule "${rule.name}" has a capture label named "${label}", which cannot be used as a destructured variable name (\`const { ${label} } = ...\`) in generated code -- rename the label.`,
@@ -825,6 +847,22 @@ export const validateGeneratedIdentifiers = (
       qualifiedRefs,
     );
     for (const ref of qualifiedRefs) {
+      // Both parts must be identifier-shaped before the reserved-word/
+      // import checks below can mean anything: `foo.bar-baz` emits
+      // verbatim as `foo.bar-baz`, which is not a SyntaxError but parses
+      // as `(foo.bar) - baz` -- a silent mis-parse. Reachable only from
+      // a hand-built AST (the grammar parser's qualified-identifier rule
+      // only produces identifier-shaped parts).
+      if (!JS_IDENTIFIER_FULL.test(ref.module)) {
+        throw new Error(
+          `Rule "${rule.name}" references "${ref.module}.${ref.name}", whose module part "${ref.module}" is not a valid JavaScript identifier -- the generated code emits it verbatim in expression position, where it mis-parses. Module parts must match /[a-zA-Z_$][a-zA-Z0-9_$]*/.`,
+        );
+      }
+      if (!JS_IDENTIFIER_FULL.test(ref.name)) {
+        throw new Error(
+          `Rule "${rule.name}" references "${ref.module}.${ref.name}", whose name part "${ref.name}" is not a valid JavaScript identifier -- the emitted \`${ref.module}.${ref.name}\` would mis-parse (e.g. "a.b-c" parses as \`(a.b) - c\`).`,
+        );
+      }
       if (JS_RESERVED_WORDS.has(ref.module)) {
         throw new Error(
           `Rule "${rule.name}" references "${ref.module}.${ref.name}", whose module part "${ref.module}" is a JavaScript reserved word -- the generated code emits it verbatim in expression position, which is a SyntaxError. Rename the module (e.g. via an import alias).`,
@@ -836,6 +874,51 @@ export const validateGeneratedIdentifiers = (
         );
       }
     }
+
+    // A bare `Identifier` resolving to no LOCAL rule is the external-
+    // parser escape hatch (`generateIdentifierCode` emits it verbatim,
+    // unprefixed) -- but verbatim emission can only work if the emitted
+    // name is actually free for the caller to bind. A name colliding
+    // with an import this grammar's generated code already emits (e.g.
+    // `rule = literal` alongside a string literal, which forces
+    // `import { literal }`) silently binds the reference to the
+    // COMBINATOR -- `literal(input, pos)` then returns a `Parser`, not
+    // a `ParseResult`, so `sequence`/`choice` treat the call as a
+    // failure carrying `error: undefined` rather than parsing anything
+    // (and a caller CAN'T supply their own `literal` binding: it would
+    // be a duplicate-declaration SyntaxError against the import). A
+    // reserved word is a SyntaxError outright (`sequence(..., function)`),
+    // and an internal `__*` name either resolves to a wrapper's own
+    // `const __*` binding (a self-referential TDZ ReferenceError) or
+    // stays unbound -- none can ever mean "the caller's parser", so all
+    // three are rejected here, exactly as the `QualifiedIdentifier`
+    // module-part check above rejects the same collisions there.
+    forEachExpression(rule.pattern, (node) => {
+      if (node.type !== "Identifier" || localRuleNames.has(node.name)) {
+        return;
+      }
+      const name = node.name;
+      if (!JS_IDENTIFIER_FULL.test(name)) {
+        throw new Error(
+          `Rule "${rule.name}" references external parser "${name}", which is not a valid JavaScript identifier -- the generated code emits it verbatim in expression position, where it mis-parses (e.g. "foo-bar" parses as \`foo - bar\`).`,
+        );
+      }
+      if (JS_RESERVED_WORDS.has(name)) {
+        throw new Error(
+          `Rule "${rule.name}" references external parser "${name}", which is a JavaScript reserved word -- the generated code emits it verbatim in expression position, which is a SyntaxError. Reference the external parser under a different name.`,
+        );
+      }
+      if (RESERVED_INTERNAL_RULE_NAMES.has(name)) {
+        throw new Error(
+          `Rule "${rule.name}" references external parser "${name}", a name the code generator itself declares inside an action/transform-wrapped rule's body -- the emitted reference would resolve to that internal binding (or nothing at all), never to the caller's parser. Reference the external parser under a different name.`,
+        );
+      }
+      if (importedBindings.has(name)) {
+        throw new Error(
+          `Rule "${rule.name}" references external parser "${name}", which collides with a runtime import this grammar's generated code also needs -- the emitted reference would resolve to that imported combinator (a function returning a Parser, not a Parser), silently mis-binding instead of calling the intended parser. Reference the external parser under a different name (e.g. wrap it in a differently-named rule or alias it at the call site).`,
+        );
+      }
+    });
   }
 
   for (const transformDef of grammar.transforms ?? []) {
@@ -850,7 +933,15 @@ export const validateGeneratedIdentifiers = (
         // function parameter inside `wrapWithTransform`'s emitted arrow,
         // where it legally shadows the wrapper-scope `__*` bindings, so
         // `RESERVED_INTERNAL_RULE_NAMES` doesn't apply to it either
-        // (#115; see the label check above).
+        // (#115; see the label check above). The identifier-shape check
+        // guards the same hand-built-AST hole as the rule/label checks:
+        // a parameter named "foo-bar" emits `=> (foo-bar) => ...`, a
+        // SyntaxError.
+        if (!JS_IDENTIFIER_FULL.test(param.name)) {
+          throw new Error(
+            `Transform function "${fn.name}" has a parameter named "${param.name}", which is not a valid JavaScript identifier -- the emitted arrow's parameter list would fail to parse. Parameter names must match /[a-zA-Z_$][a-zA-Z0-9_$]*/.`,
+          );
+        }
         if (JS_RESERVED_WORDS.has(param.name)) {
           throw new Error(
             `Transform function "${fn.name}" has a parameter named "${param.name}", which cannot be used as a function parameter name in generated code -- rename the parameter.`,

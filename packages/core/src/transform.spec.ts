@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 import { lit } from "./basic";
+import { choice, seq } from "./combinators";
+import { optional } from "./repetition";
 import { filter, map, mapError, mapResult, tap } from "./transform";
 import type { ParseSuccess } from "./types";
+import { parse } from "./utils";
 
 describe("map", () => {
   it("should transform the result value", () => {
@@ -123,6 +126,68 @@ describe("filter", () => {
     )(input, pos);
 
     expect(result.success).toBe(false);
+  });
+
+  // Mirrors `reject`'s identical fix (`./combinators.ts`): a predicate
+  // failure happens AFTER a successful child match, so no leaf `fail()`
+  // ever ran -- nothing recorded "value satisfying predicate" into the
+  // shared farthest-failure watermark. A combinator that swallows the
+  // concrete failure (`optional`/`zeroOrMore` turn a child failure into
+  // their own success without re-forwarding `expected`) then lost the
+  // predicate's expectation entirely: a later genuine failure's
+  // aggregated `expected` listed only the leaf's labels.
+  it("records its expectation in the watermark so a swallowing combinator can't drop it", () => {
+    // On "a": `filter(lit("a"), ...)` matches "a" then fails the
+    // predicate; `optional` turns that into a `[]` success; `lit("b")`
+    // then fails genuinely. The final error must include BOTH
+    // "value satisfying predicate" and `"b"`.
+    const result = parse(
+      seq(optional(filter(lit("a"), () => false, "not a")), lit("b")),
+    )("a");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const expected = Array.isArray(result.error.expected)
+        ? result.error.expected
+        : [result.error.expected];
+      expect(expected).toContain("value satisfying predicate");
+      expect(expected).toContain('"b"');
+    }
+  });
+
+  // Same fix `notPredicate`/`reject` got on their probe-success paths:
+  // the child SUCCEEDED, so its internal sub-failures are speculative
+  // noise -- and when one sits deeper than the predicate's own failure
+  // position, leaving it in place made `fail()` a no-op, losing the
+  // predicate's expectation (and suppressing later genuine failures).
+  it("restores the watermark before recording, so deeper child noise can't suppress the predicate's expectation", () => {
+    // The child `seq(lit("a"), choice(lit("bx"), lit("b")))` succeeds on
+    // "ab" but records `'"bx"'` at pos 2 internally. `optional` swallows
+    // `filter`'s concrete failure; `lit("c")` then fails at pos 0 --
+    // previously invisible because the child's pos-2 record owned the
+    // watermark: the error said `Expected "bx", found "end of input"`,
+    // naming neither the predicate nor `"c"`.
+    const result = parse(
+      seq(
+        optional(
+          filter(
+            seq(lit("a"), choice(lit("bx"), lit("b"))),
+            () => false,
+            "rejected",
+          ),
+        ),
+        lit("c"),
+      ),
+    )("ab");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.pos).toBe(0);
+      const expected = Array.isArray(result.error.expected)
+        ? result.error.expected
+        : [result.error.expected];
+      expect(expected).toContain("value satisfying predicate");
+      expect(expected).toContain('"c"');
+      expect(expected).not.toContain('"bx"');
+    }
   });
 });
 

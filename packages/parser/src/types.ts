@@ -209,7 +209,7 @@ export const createCharacterClass = (
  * @returns CharRange object
  */
 export const createCharRange = (start: string, end?: string): CharRange =>
-  end ? { start, end } : { start };
+  end !== undefined ? { start, end } : { start };
 
 /**
  * Create an Identifier AST node

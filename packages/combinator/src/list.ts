@@ -1,6 +1,8 @@
 import type { NonEmptyArray, Parser } from "@suzumiyaaoba/tpeg-core";
 import {
+  createFailure,
   isFatalFailure,
+  isValidOffset,
   literal,
   map,
   notPredicate,
@@ -45,6 +47,17 @@ export const sepBy = <T, S>(
   // failure from `rest` past that point (fatal or not) must propagate
   // rather than be reinterpreted as "empty".
   const parser: Parser<T[]> = (input, pos) => {
+    // Same out-of-contract-`pos` guard every leaf parser already applies
+    // (`isValidOffset`, `@suzumiyaaoba/tpeg-core`): an invalid offset must
+    // fail here rather than fall into the "no first element -> []" branch
+    // below and echo itself back as a bogus zero-width success. `pos ===
+    // input.length` stays legal -- an empty list at EOF.
+    if (!isValidOffset(pos) || pos > input.length) {
+      return createFailure("Expected a valid position", pos, {
+        parserName: parserName ?? "sepBy",
+      });
+    }
+
     const first = value(input, pos);
     if (!first.success) {
       if (isFatalFailure(first)) return first;

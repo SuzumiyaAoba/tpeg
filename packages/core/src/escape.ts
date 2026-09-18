@@ -56,6 +56,18 @@ export const escapeStringLiteral = (value: string): string => {
       result += `\\x${code.toString(16).padStart(2, "0")}`;
       continue;
     }
+    if (code >= 0xd800 && code <= 0xdfff) {
+      // A LONE surrogate code unit (the only way one reaches this loop:
+      // `for...of` yields a well-formed pair as a single astral char,
+      // whose code point is > 0xffff and takes the raw-`char` branch
+      // below). Emitting it verbatim would put an unpaired surrogate
+      // byte sequence into the generated source -- unencodable in UTF-8,
+      // so a file write either errors or silently substitutes U+FFFD,
+      // and the generated parser then matches the WRONG character.
+      // `\uXXXX` spells the same code unit in plain ASCII instead.
+      result += `\\u${code.toString(16).padStart(4, "0")}`;
+      continue;
+    }
     result += char;
   }
   return result;

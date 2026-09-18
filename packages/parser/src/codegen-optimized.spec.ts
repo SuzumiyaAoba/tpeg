@@ -190,6 +190,19 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
     expect(result.code).not.toContain("g_foo");
   });
 
+  it("reports the PREFIXED name in exports, matching codegen.ts and eta-generator.ts", () => {
+    const grammar = createGrammarDefinition(
+      "Test",
+      [],
+      [createRuleDefinition("hello", createStringLiteral("hello", '"'))],
+    );
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      namePrefix: "g_",
+    });
+    expect(result.code).toContain("export const g_hello");
+    expect(result.exports).toEqual(["g_hello"]);
+  });
+
   it("generates character class / negated character class / AnyChar code that actually parses input", async () => {
     const core = await import("@suzumiyaaoba/tpeg-core");
 

@@ -63,5 +63,11 @@ export const dirnameOf = (path: string): string => {
 export const moduleNameFromPath = (modulePath: string): string => {
   const parts = modulePath.split("/");
   const filename = parts[parts.length - 1];
-  return filename ? filename.replace(/\.tpeg$/, "") : "unknown";
+  // `filename.replace` alone can still yield "" -- a final segment that is
+  // nothing but the extension (`".tpeg"`, `"dir/.tpeg"`) strips down to an
+  // empty string, which is no more usable a module name than a missing
+  // segment: it would register/alias the module under "", which no
+  // `Module.rule` reference (identifiers are non-empty) can ever name.
+  const name = filename ? filename.replace(/\.tpeg$/, "") : "";
+  return name || "unknown";
 };

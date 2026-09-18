@@ -1,6 +1,6 @@
 import { isFatalFailure } from "./failure";
 import type { NonEmptyArray, Parser } from "./types";
-import { createFailure, offsetToPos } from "./utils";
+import { createFailure, isValidOffset, offsetToPos } from "./utils";
 
 /**
  * Creates a standardized infinite loop error for repetition parsers.
@@ -72,6 +72,17 @@ const createInfiniteLoopError = (
 export const optional =
   <T>(parser: Parser<T>): Parser<[T] | []> =>
   (input: string, pos) => {
+    // Same out-of-contract-`pos` guard every leaf parser already applies
+    // (`isValidOffset`, `./utils.ts`): an invalid offset must fail here
+    // rather than fall into the "no match -> empty array" branch below
+    // and echo itself back as a bogus zero-width success. `pos ===
+    // input.length` stays legal -- a legitimate empty match at EOF.
+    if (!isValidOffset(pos) || pos > input.length) {
+      return createFailure("Expected a valid position", pos, {
+        parserName: "optional",
+      });
+    }
+
     const result = parser(input, pos);
 
     if (result.success) {
@@ -122,6 +133,17 @@ export const opt = optional;
 export const zeroOrMore =
   <T>(parser: Parser<T>, parserName = "zeroOrMore"): Parser<T[]> =>
   (input: string, pos) => {
+    // Same out-of-contract-`pos` guard as `optional` above: without it a
+    // `NaN`/negative/fractional `pos` made the loop below see an immediate
+    // child failure and return `{ val: [], current: pos, next: pos }` --
+    // a bogus success echoing the invalid offset back out. `pos ===
+    // input.length` stays legal -- an empty run at EOF.
+    if (!isValidOffset(pos) || pos > input.length) {
+      return createFailure("Expected a valid position", pos, {
+        parserName,
+      });
+    }
+
     const results: T[] = [];
     let currentPos = pos;
 
@@ -137,8 +159,16 @@ export const zeroOrMore =
         break;
       }
 
-      // Check for infinite loop (position doesn't advance)
-      if (result.next === currentPos) {
+      // Check for infinite loop (position doesn't advance). Written as
+      // `!(result.next > currentPos)` rather than `result.next ===
+      // currentPos`: a `next` that is NaN (`NaN > x` is always false) or
+      // somehow behind `currentPos` is every bit as non-terminating as a
+      // zero-width match -- `next = currentPos` was only the COMMON
+      // shape of "no progress", not the only one. A child parser
+      // violating the `next > current` success invariant has no
+      // well-defined repetition semantics; flag it here, loudly,
+      // instead of looping forever.
+      if (!(result.next > currentPos)) {
         return createInfiniteLoopError(input, currentPos, parserName);
       }
 
@@ -179,6 +209,15 @@ export const star = zeroOrMore;
 export const oneOrMore =
   <T>(parser: Parser<T>, parserName = "oneOrMore"): Parser<NonEmptyArray<T>> =>
   (input: string, pos) => {
+    // Same out-of-contract-`pos` guard as `zeroOrMore` above. A first
+    // iteration on an honest child would fail anyway, but the contract
+    // is enforced here regardless of caller -- see `optional`.
+    if (!isValidOffset(pos) || pos > input.length) {
+      return createFailure("Expected a valid position", pos, {
+        parserName,
+      });
+    }
+
     const results: T[] = [];
     let currentPos = pos;
     let isFirstIteration = true;
@@ -207,8 +246,11 @@ export const oneOrMore =
         break;
       }
 
-      // Check for infinite loop (position doesn't advance)
-      if (result.next === currentPos) {
+      // Check for infinite loop (position doesn't advance) -- see
+      // `zeroOrMore` above for why this is `!(result.next >
+      // currentPos)` rather than `result.next === currentPos` (a `NaN`
+      // or backwards `next` is equally non-terminating).
+      if (!(result.next > currentPos)) {
         return createInfiniteLoopError(
           input,
           currentPos,
@@ -284,6 +326,16 @@ export const quantified = <T>(
   }
 
   return (input: string, pos) => {
+    // Same out-of-contract-`pos` guard as `zeroOrMore` above: with `min
+    // === 0` (or after `min` satisfied matches) this parser's own return
+    // is a zero-width success, so it must not be reachable at an invalid
+    // offset. `pos === input.length` stays legal.
+    if (!isValidOffset(pos) || pos > input.length) {
+      return createFailure("Expected a valid position", pos, {
+        parserName,
+      });
+    }
+
     const results: T[] = [];
     let currentPos = pos;
     let count = 0;
@@ -342,8 +394,10 @@ export const quantified = <T>(
       // forever (confirmed: `optional`'s zero-width match makes `limit`
       // itself already `Infinity`, so the tail loop never terminates on
       // its own either), pushing an unboundedly growing array the whole
-      // time.
-      if (!Number.isFinite(limit) && result.next === currentPos) {
+      // time. `!(result.next > currentPos)` rather than `result.next ===
+      // currentPos`, same as `zeroOrMore` above: a `NaN` or backwards
+      // `next` is equally non-terminating.
+      if (!Number.isFinite(limit) && !(result.next > currentPos)) {
         return createInfiniteLoopError(
           input,
           currentPos,

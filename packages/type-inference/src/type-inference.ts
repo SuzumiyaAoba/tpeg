@@ -256,6 +256,24 @@ const circularDependencyPlaceholder = (ruleName: string): InferredType => ({
   documentation: `Circular dependency detected in rule ${ruleName}`,
 });
 
+/** Whole-string JavaScript identifier shape -- the condition under which
+ * a capture label can be emitted as a bare object-literal property name
+ * in an inferred type string (`{ a: T }`). */
+const TS_IDENTIFIER_FULL = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
+
+/**
+ * Renders a capture label as an object-literal property name: bare when
+ * identifier-shaped (keeping `{ a: T }` output unchanged for every label
+ * the grammar parser can produce), `JSON.stringify`-quoted otherwise.
+ * A label like `my-label` -- reachable only from a hand-built AST, since
+ * the grammar parser's identifier rule can't produce one -- used to emit
+ * `{ my-label: T }`, a SyntaxError in any file `type-integration.ts`
+ * writes the typeString into; `{ "my-label": T }` is legal TypeScript
+ * and preserves the actual runtime key.
+ */
+const labelPropertyKey = (label: string): string =>
+  TS_IDENTIFIER_FULL.test(label) ? label : JSON.stringify(label);
+
 /**
  * Type inference engine for TPEG grammars
  *
@@ -843,7 +861,7 @@ export class TypeInferenceEngine {
       const allImports = fields.flatMap((f) => f.type.imports);
 
       return {
-        typeString: `{ ${fields.map((f) => `${f.key}: ${f.type.typeString}`).join(", ")} }`,
+        typeString: `{ ${fields.map((f) => `${labelPropertyKey(f.key)}: ${f.type.typeString}`).join(", ")} }`,
         nullable: false,
         isArray: false,
         baseType: "object",
@@ -1158,7 +1176,7 @@ export class TypeInferenceEngine {
     const innerType = this.inferExpressionType(expression.expression);
 
     return {
-      typeString: `{ ${expression.label}: ${innerType.typeString} }`,
+      typeString: `{ ${labelPropertyKey(expression.label)}: ${innerType.typeString} }`,
       nullable: false,
       isArray: false,
       baseType: "object",

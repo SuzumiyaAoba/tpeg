@@ -2,6 +2,7 @@ import { ASCII_CHARS } from "./char-tables";
 import type { Expectation } from "./failure";
 import { fail } from "./failure";
 import type { NonEmptyArray, NonEmptyString, Parser } from "./types";
+import { isValidOffset } from "./utils";
 
 /**
  * Represents a character class specification - either a single character or a range
@@ -149,12 +150,17 @@ const makeCharClassParser =
     expectation: Expectation,
   ): Parser<string> =>
   (input: string, pos: number) => {
-    // One bounds compare, before any decode. `(pos >>> 0)` folds the
-    // negative-offset guard `getCharAt` used to do into the same
-    // compare (a negative `pos` becomes a huge unsigned value, which is
-    // always >= any real `input.length`), and keeps `pos` in Smi range
-    // for the `charCodeAt` below.
-    if (pos >>> 0 >= input.length) return fail(input, pos, expectation);
+    // One validity+bounds pair of compares, before any decode.
+    // `isValidOffset` (`./utils.ts`) first: `(pos >>> 0)` alone folds a
+    // negative `pos` into a huge unsigned value (always >= any real
+    // `input.length`) but lets a fractional/`NaN`/`>= 2**32` `pos`
+    // through to `charCodeAt`/`codePointAt`, which coerce the index
+    // (truncate/`NaN`) and used to return bogus successes like
+    // `{ current: 0.5, next: 1.5 }`. Then the ordinary bounds compare,
+    // which keeps `pos` in Smi range for the `charCodeAt` below.
+    if (!isValidOffset(pos) || pos >= input.length) {
+      return fail(input, pos, expectation);
+    }
 
     const code = input.charCodeAt(pos);
 
@@ -280,18 +286,25 @@ export const charClassRun = (
   const expectation: Expectation = { label: expected, parserName };
 
   return (input: string, pos: number) => {
-    // Same bounds guard as `makeCharClassParser` above (see its own
-    // comment): `(pos >>> 0)` folds a negative `pos` into a huge unsigned
-    // value, always >= any real `input.length`. Without this, a negative
-    // `pos` would reach the `while` loop below with `offset < input.length`
+    // Same validity+bounds guard pair as `makeCharClassParser` above
+    // (see its own comment), split into two branches here because
+    // reaching end-of-input legitimately produces an empty run (`min =
+    // 0`) rather than a failure, while an out-of-contract `pos` must
+    // always fail. Without the `isValidOffset` half, a negative `pos`
+    // would reach the `while` loop below with `offset < input.length`
     // vacuously true, and `charCodeAt`/`codePointAt` at a negative index
     // return `NaN`/`undefined` -- which, under `negated = true`, satisfies
     // `matchesSpecsSlow(undefined, ...) !== true` as a "match", walking
     // `offset` further negative and returning garbage from
-    // `input.slice(pos, ...)`. Unreachable via the public `parse()` entry
+    // `input.slice(pos, ...)`; a fractional/`NaN`/`>= 2**32` `pos`
+    // slipped past `(pos >>> 0)`'s negative-fold the same way it did in
+    // `makeCharClassParser`. Unreachable via the public `parse()` entry
     // point (which never calls a parser with `pos < 0`), but every other
     // leaf parser in this file enforces it regardless of caller.
-    if (pos >>> 0 >= input.length) {
+    if (!isValidOffset(pos) || pos > input.length) {
+      return fail(input, pos, expectation);
+    }
+    if (pos >= input.length) {
       if (min === 1) return fail(input, pos, expectation);
       return { success: true, val: [], current: pos, next: pos };
     }

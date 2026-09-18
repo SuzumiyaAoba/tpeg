@@ -24,6 +24,7 @@ import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   choice,
   createFailure,
+  isValidOffset,
   literal,
   map,
   seq,
@@ -82,6 +83,16 @@ import type {
  * implementation.
  */
 const whitespace: Parser<void> = (input, pos) => {
+  // An out-of-contract `pos` (`isValidOffset`, `@suzumiyaaoba/tpeg-core`)
+  // must fail rather than echo itself back in a bogus success -- see the
+  // identical guard on `optionalWhitespaceOrComment`
+  // (`./whitespace-utils.ts`), which this scanner mirrors.
+  if (!isValidOffset(pos) || pos > input.length) {
+    return createFailure("Expected a valid position", pos, {
+      parserName: "whitespace",
+    });
+  }
+
   let i = pos;
   while (i < input.length) {
     const char = input[i];

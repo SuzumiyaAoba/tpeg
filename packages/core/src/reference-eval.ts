@@ -261,7 +261,11 @@ export const evalSpec = (spec: Spec, input: string, pos: number): Result => {
           if (r.fatal) return r;
           break;
         }
-        if (r.next === p) {
+        // `!(r.next > p)`, mirroring `zeroOrMore`'s loop guard in
+        // `./repetition.ts` exactly: a `NaN` or backwards `next` is
+        // equally non-terminating, so the oracle flags it as the same
+        // fatal zero-progress violation.
+        if (!(r.next > p)) {
           return NG(true);
         }
         p = r.next;
@@ -272,7 +276,7 @@ export const evalSpec = (spec: Spec, input: string, pos: number): Result => {
     case "plus": {
       const first = evalSpec(spec.expression, input, pos);
       if (!first.ok) return first;
-      if (first.next === pos) {
+      if (!(first.next > pos)) {
         return NG(true);
       }
       let p = first.next;
@@ -282,7 +286,7 @@ export const evalSpec = (spec: Spec, input: string, pos: number): Result => {
           if (r.fatal) return r;
           break;
         }
-        if (r.next === p) {
+        if (!(r.next > p)) {
           return NG(true);
         }
         p = r.next;
@@ -320,8 +324,9 @@ export const evalSpec = (spec: Spec, input: string, pos: number): Result => {
         // `Number.POSITIVE_INFINITY`, an explicit spelling of unbounded
         // that `spec.max === undefined` alone would miss, leaving this
         // oracle hanging in lockstep with the exact bug it exists to
-        // catch instead of ever revealing it.
-        if (!Number.isFinite(limit) && r.next === p) {
+        // catch instead of ever revealing it. `!(r.next > p)` here too,
+        // for the same reason as the `"star"`/`"plus"` cases above.
+        if (!Number.isFinite(limit) && !(r.next > p)) {
           return NG(true);
         }
         p = r.next;

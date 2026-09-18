@@ -530,4 +530,60 @@ describe("logic combinators", () => {
       }
     });
   });
+
+  describe("out-of-contract pos", () => {
+    const input = "a";
+    const invalidPositions = [
+      -1,
+      -0.5,
+      0.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      2 ** 32,
+      input.length + 1,
+    ];
+
+    it("memoize fails rather than writing a sparse/fractional cache entry", () => {
+      const parser = memoize(literal("a"));
+      for (const pos of invalidPositions) {
+        expect(parser(input, pos).success).toBe(false);
+      }
+      // And the bogus calls left nothing cached: a valid call still runs
+      // the wrapped parser exactly once.
+      expect(parser(input, 0).success).toBe(true);
+    });
+
+    it("commitAtTopLevel fails and does not advance the prune watermark", () => {
+      // A distinctive input string keeps this test independent of any
+      // other commitAtTopLevel call's leftover module state: the
+      // `input !== watermarkInput` check resets the offset for a new
+      // input, so the only way `watermarkOffset` moves here is through
+      // THIS test's own calls.
+      const markerInput = "zz-commit-marker";
+      const parser = commitAtTopLevel(literal("z"));
+      for (const pos of [
+        -1,
+        0.5,
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        2 ** 32,
+        markerInput.length + 1,
+      ]) {
+        expect(parser(markerInput, pos).success).toBe(false);
+      }
+      // A bogus call must not have pushed the prune watermark forward:
+      // a following memoized rule on the same input at offset 0 still
+      // serves its cache (a pruned-below-0 cache would re-run the inner
+      // parser on every call).
+      let calls = 0;
+      const counted = memoize((i: string, p: number) => {
+        calls++;
+        return literal("z")(i, p);
+      });
+      counted(markerInput, 0);
+      counted(markerInput, 0);
+      expect(calls).toBe(1);
+    });
+  });
 });

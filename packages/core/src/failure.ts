@@ -60,7 +60,7 @@
  */
 
 import type { ParseError, ParseFailure } from "./types";
-import { getCharAt } from "./utils";
+import { getCharAt, isValidOffset } from "./utils";
 
 /**
  * A leaf parser's static description of what it was looking for --
@@ -134,6 +134,20 @@ export const fail = (
   pos: number,
   exp: Expectation,
 ): ParseFailure => {
+  // An out-of-contract `pos` must not enter the watermark: `Infinity`
+  // satisfies `pos > watermarkPos` unconditionally and would pin the
+  // farthest-failure position to `Infinity` for the rest of this input's
+  // parse; `NaN` compares false everywhere but still lands in
+  // `watermarkPos` on a fresh input; `pos > input.length` produces an
+  // error offset no formatter can map back to a source location
+  // (`validateParseError` in `./error.ts` rejects `pos >= 0` violations).
+  // The call still fails -- `FAIL` is returned regardless -- only the
+  // diagnostic record is skipped. `pos === input.length` is a legitimate
+  // "end of input" record and is kept.
+  if (!isValidOffset(pos) || pos > input.length) {
+    return FAIL;
+  }
+
   if (input !== watermarkInput) {
     watermarkInput = input;
     watermarkPos = pos;
@@ -318,6 +332,11 @@ export const mergeFailureWatermark = (
   expected: readonly Expectation[],
 ): void => {
   if (expected.length === 0) return;
+  // Same out-of-contract-`pos` defense as `fail` above: a replayed
+  // snapshot position that is somehow invalid (e.g. produced by a
+  // hand-written parser bypassing the leaf guards) must not pin the
+  // watermark to `Infinity`/`NaN`/past-EOF.
+  if (!isValidOffset(pos) || pos > input.length) return;
   if (input !== watermarkInput) {
     watermarkInput = input;
     watermarkPos = pos;
@@ -366,6 +385,15 @@ export const mergeFailureWatermark = (
  * A no-op if `input`/`pos` no longer match the current watermark (this
  * failure is no longer the farthest one recorded, so there is nothing
  * live to rename) or no entry has a matching `label`.
+ *
+ * When several tied entries share `label` (they differ in `parserName`,
+ * per `expectationSeen`), only the LAST one is renamed: the entry a
+ * just-run parser contributed is the most recently appended one with
+ * that label, while earlier same-label entries belong to previously
+ * recorded (possibly already-renamed) expectations and must keep their
+ * own attribution. Renaming every match would let a later
+ * `withDetailedError` call silently retitle a sibling alternative's
+ * expectation to its own name.
  */
 export const renameWatermarkExpectation = (
   input: string,
@@ -374,7 +402,58 @@ export const renameWatermarkExpectation = (
   parserName: string,
 ): void => {
   if (input !== watermarkInput || pos !== watermarkPos) return;
-  watermarkExpected = watermarkExpected.map((e) =>
-    e.label === label ? { label, parserName } : e,
+  let last = -1;
+  for (let i = watermarkExpected.length - 1; i >= 0; i--) {
+    if (watermarkExpected[i]?.label === label) {
+      last = i;
+      break;
+    }
+  }
+  if (last === -1) return;
+  watermarkExpected = watermarkExpected.map((e, i) =>
+    i === last ? { label, parserName } : e,
+  );
+};
+
+/**
+ * Retitles, to `parserName`, exactly the watermark entries recorded
+ * AFTER `snapshot` was taken -- the precise set of expectations the
+ * just-finished call contributed. This is a strictly narrower targeting
+ * than {@link renameWatermarkExpectation}, which matches by label text
+ * and therefore also retitles entries other parsers recorded earlier
+ * that merely share the label -- or, when the wrapped parser's own
+ * failure was recorded at a NEARER position than the current farthest
+ * one (so `fail()` ignored it entirely), retitles an unrelated parser's
+ * expectation wholesale (`Expected "b"` attributed to a wrapper that
+ * never expected `"b"`).
+ *
+ * The "new" boundary is positional: if this call advanced the farthest
+ * position, `fail()` replaced `watermarkExpected` wholesale, so every
+ * current entry is new; if it merely tied at the same position, entries
+ * appended past `snapshot.expected.length` are the new ones (entries
+ * are only ever appended, never removed, at an unchanged position). If
+ * the watermark somehow sits at an EARLIER position than the snapshot
+ * (an internal `restoreFailureWatermark` rolled it back), nothing can
+ * be attributed reliably and this is a no-op.
+ *
+ * `@suzumiyaaoba/tpeg-combinator`'s `withDetailedError` pairs this with
+ * {@link snapshotFailureWatermark} taken immediately before running its
+ * wrapped parser -- see its source for the call pattern.
+ */
+export const renameWatermarkExpectationsSince = (
+  input: string,
+  snapshot: FailureWatermarkSnapshot,
+  parserName: string,
+): void => {
+  if (input !== watermarkInput) return;
+  const firstNew =
+    watermarkPos > snapshot.pos
+      ? 0
+      : watermarkPos === snapshot.pos
+        ? snapshot.expected.length
+        : watermarkExpected.length;
+  if (firstNew >= watermarkExpected.length) return;
+  watermarkExpected = watermarkExpected.map((e, i) =>
+    i >= firstNew ? { label: e.label, parserName } : e,
   );
 };

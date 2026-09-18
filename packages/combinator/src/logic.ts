@@ -7,8 +7,10 @@ import type {
 import {
   FAIL,
   FAIL_FATAL,
+  createFailure,
   guardedParserCall,
   isFailure,
+  isValidOffset,
   mergeFailureWatermark,
   offsetToPos,
   snapshotFailureWatermark,
@@ -79,7 +81,13 @@ export const commitAtTopLevel =
       watermarkInput = input;
       watermarkOffset = 0;
     }
-    if (pos > watermarkOffset) {
+    // An out-of-contract `pos` must not advance the prune watermark: the
+    // child call below fails on its own (every leaf parser enforces
+    // `isValidOffset`), and folding e.g. `pos = 2**31` into
+    // `watermarkOffset` would let subsequent `memoize` caches discard
+    // entries that are still reachable (a correctness-safe but real
+    // perf regression -- see `memoize`'s doc comment).
+    if (isValidOffset(pos) && pos <= input.length && pos > watermarkOffset) {
       watermarkOffset = pos;
     }
 
@@ -246,6 +254,17 @@ export const memoize = <T>(
   let insertionOrder: number[] | null = null;
 
   const memoizedParser: Parser<T> = (input: string, pos: number) => {
+    // Same out-of-contract-`pos` guard every leaf parser already applies
+    // (`isValidOffset`, `@suzumiyaaoba/tpeg-core`): the child would fail
+    // anyway, but letting the call reach the cache code first would write
+    // a sparse `cache[pos - base]` entry for an out-of-range offset, or a
+    // fractional-property entry for `pos = 0.5`.
+    if (!isValidOffset(pos) || pos > input.length) {
+      return createFailure("Expected a valid position", pos, {
+        parserName: parserName ?? "memoize",
+      });
+    }
+
     if (input !== cachedInput || !cache) {
       // A different input than the last call (or the very first call):
       // this is a new parse. Start a fresh table rather than retaining

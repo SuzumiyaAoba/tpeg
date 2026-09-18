@@ -84,6 +84,19 @@ describe("Grammar Types Factory Functions", () => {
         end: "z",
       });
     });
+
+    it("should preserve an explicitly-passed empty-string end", () => {
+      // Every sibling factory in this module distinguishes "argument not
+      // passed" (`undefined`) from "argument passed" with `!== undefined`;
+      // this one used a truthiness check, so `createCharRange("a", "")`
+      // silently dropped the caller's `end` and produced the same node as
+      // `createCharRange("a")` -- hiding the (admittedly degenerate) input.
+      const node = createCharRange("a", "");
+      expect(node).toEqual({
+        start: "a",
+        end: "",
+      });
+    });
   });
 
   describe("createIdentifier", () => {

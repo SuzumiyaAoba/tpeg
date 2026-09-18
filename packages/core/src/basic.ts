@@ -2,7 +2,7 @@ import { ASCII_CHARS } from "./char-tables";
 import type { Expectation } from "./failure";
 import { fail } from "./failure";
 import type { NonEmptyString, ParseResult, Parser } from "./types";
-import { advancePos, getCharAt, nextPos } from "./utils";
+import { advancePos, getCharAt, isValidOffset, nextPos } from "./utils";
 
 /**
  * Parser that parses any single character from the input.
@@ -83,7 +83,15 @@ export const anyChar = (parserName = "anyChar"): Parser<string> => {
     // Same hot-path shape as `charClass`/`negatedCharClass`
     // (`./char-class.ts`'s `makeCharClassParser`), with both membership
     // tests removed -- `anyChar` matches everything but end-of-input.
-    if (pos >>> 0 >= input.length) return fail(input, pos, expectation);
+    // `isValidOffset` first: `(pos >>> 0)` alone folds a negative `pos`
+    // into a huge unsigned value, but a fractional/`NaN`/`>= 2**32` `pos`
+    // used to pass it and reach `charCodeAt`/`codePointAt`, which coerce
+    // the index (truncate/`NaN`) and returned bogus successes like
+    // `{ current: 0.5, next: 1.5 }` or an empty-string match at
+    // `pos = 2**32` (`./utils.ts`).
+    if (!isValidOffset(pos) || pos >= input.length) {
+      return fail(input, pos, expectation);
+    }
 
     const code = input.charCodeAt(pos);
     if (code < 128) {
@@ -177,6 +185,19 @@ const parseSimpleString = <T extends string>(
   // Fast path for ASCII-only strings with no newlines
   const offset = pos;
 
+  // An out-of-contract `pos` must fail BEFORE the length check below:
+  // `offset + str.length > input.length` is `false` for `offset = -1`
+  // (`-1 + 1 = 0 > len` never holds), after which `input.startsWith(str,
+  // -1)` CLAMPS the start index to 0 and "matches" a character that was
+  // never at `pos` -- likewise `startsWith(str, 0.5)`/`(str, NaN)`
+  // truncate/coerce to 0. Every other leaf parser already rejects such
+  // positions (`./utils.ts`'s `isValidOffset`); `pos = input.length`
+  // remains a legal offset that simply has no characters left to match,
+  // handled by the length check as before.
+  if (!isValidOffset(offset)) {
+    return fail(input, pos, expectation);
+  }
+
   // Check if the input has enough characters left. The failure position is
   // `input.length` (not `pos`, the literal's start) so `found` derives to
   // "end of input" -- a real character may well sit AT `pos` (there's just
@@ -243,6 +264,14 @@ const parseComplexString = <T extends string>(
   expectation: Expectation,
 ): ParseResult<T> => {
   const offset = pos;
+
+  // Same out-of-contract-`pos` guard as `parseSimpleString` above (see
+  // its comment): `startsWith`/`slice` would otherwise clamp or truncate
+  // a negative/fractional/`NaN` offset into a real index and "match" a
+  // character that was never at `pos`.
+  if (!isValidOffset(offset)) {
+    return fail(input, pos, expectation);
+  }
 
   // Check if the input has enough characters left. See
   // `parseSimpleString`'s equivalent branch for why the failure position

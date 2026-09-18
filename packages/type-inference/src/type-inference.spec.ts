@@ -180,6 +180,27 @@ describe("TypeInferenceEngine", () => {
       expect(result.typeString).toBe('{ a: "y" }');
     });
 
+    it("should quote a non-identifier capture label instead of emitting a SyntaxError object type", () => {
+      // A label like "my-label" is only reachable from a hand-built AST
+      // (the grammar parser's identifier rule can't produce one); emitting
+      // it bare would produce `{ my-label: ... }`, which fails to parse
+      // once type-integration writes the typeString into an
+      // `export type ... = ...;` alias. Quoting preserves the actual
+      // runtime key.
+      const result = engine.inferExpressionType(
+        createLabeledExpression("my-label", createStringLiteral("x", '"')),
+      );
+      expect(result.typeString).toBe('{ "my-label": "x" }');
+
+      const sequence = engine.inferExpressionType(
+        createSequence([
+          createLabeledExpression("a-b", createStringLiteral("x", '"')),
+          createLabeledExpression('c"d', createStringLiteral("y", '"')),
+        ]),
+      );
+      expect(sequence.typeString).toBe('{ "a-b": "x", "c\\"d": "y" }');
+    });
+
     it("should infer choice types as unions", () => {
       const choice = createChoice([
         createStringLiteral("yes", '"'),

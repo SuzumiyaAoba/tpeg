@@ -12,6 +12,7 @@ import {
   positive,
 } from "./lookahead";
 import { createTestPos } from "./test-utils";
+import { parse } from "./utils";
 
 // See `combinators.spec.ts`'s identical `beforeEach` -- the farthest-failure
 // watermark (`./failure.ts`) is module-global, keyed by input string VALUE.
@@ -217,6 +218,39 @@ describe("notPredicate", () => {
     const pos = createTestPos(1); // at end of input
     const result = notPredicate(lit("b"))(input, pos);
     expect(result.success).toBe(true); // fails to match "b", so notPredicate succeeds
+  });
+
+  it("discards the successful probe's internal records, so deeper probe noise can't suppress its own expectation (regression)", () => {
+    // The probe `seq(lit("a"), choice(lit("bx"), lit("b")))` succeeds on
+    // "ab", but its first choice alternative records `'"bx"'` at pos 2
+    // along the way. Without restoring the pre-probe watermark before
+    // recording its own failure, `!`'s `fail(input, 0, ...)` was ignored
+    // (0 < 2) and the final error pointed at end-of-input expecting
+    // '"bx"' -- though the actual failure is the `!` rejecting at pos 0.
+    const result = parse(
+      notPredicate(seq(lit("a"), choice(lit("bx"), lit("b")))),
+    )("ab");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.pos).toBe(0);
+      expect(result.error.expected).toBe("pattern not to match");
+      expect(result.error.message).toBe(
+        'Expected pattern not to match, found "a"',
+      );
+    }
+  });
+
+  it("does not merge a tried-and-failed probe alternative into its own expectation", () => {
+    // Probe `choice(lit("b"), lit("a"))` succeeds via 'a' on "a", after
+    // 'b' recorded `'"b"'` at the same pos. Before the restore, the
+    // diagnostic showed "Expected "b" or pattern not to match" -- the
+    // '"b"' describes an alternative INSIDE the forbidden pattern, not
+    // something this position could legitimately match.
+    const result = parse(notPredicate(choice(lit("b"), lit("a"))))("a");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.expected).toBe("pattern not to match");
+    }
   });
 });
 

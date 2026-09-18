@@ -202,6 +202,19 @@ describe("CSV Parser", () => {
 
       expect(result).toBe(expected);
     });
+
+    it("quotes fields with significant leading/trailing whitespace so they survive a write/parse round trip", () => {
+      // `unquotedField` trims on the read side, so writing ` John `
+      // unquoted would read back as `John` -- silent data loss.
+      const data = [{ name: "  John  ", note: "hi" }];
+
+      const written = arrayToCSV(data);
+      expect(written).toBe('name,note\n"  John  ",hi');
+      expect(parseCSV(written)).toEqual([
+        ["name", "note"],
+        ["  John  ", "hi"],
+      ]);
+    });
   });
 
   describe("Error Handling", () => {

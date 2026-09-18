@@ -323,4 +323,36 @@ describe("Complex Error Formatting Scenarios", () => {
     expect(result).toContain("line 2");
     expect(result).toContain("2 | b");
   });
+
+  it('rejects error objects whose pos is outside the offset contract (regression: `typeof pos === "number" && pos >= 0` accepted fractional and infinite positions -- a fractional pos reported a misaligned line/column and Infinity silently dropped the source context instead of surfacing the malformed error)', () => {
+    const input = "abc\nxyz";
+    for (const pos of [1.5, Number.NaN, Infinity, -Infinity, -1, 2 ** 32]) {
+      expect(() => formatParseError({ message: "Error", pos }, input)).toThrow(
+        "Invalid error object",
+      );
+    }
+  });
+
+  it("still accepts a pos past input.length (offsetToPos deliberately tolerates errors recorded against a different, shorter input)", () => {
+    const result = formatParseError({ message: "Error", pos: 100 }, "abc", {
+      colorize: false,
+    });
+    expect(result).toContain("Error");
+  });
+
+  it("normalizes a NaN maxLineLength to the minimum instead of appending '...' to every line", () => {
+    // `clampValue`'s Math.min/Math.max chain propagates NaN, so a NaN
+    // `maxLineLength` used to stay NaN -- and `truncateLine`'s
+    // `width > NaN` comparison is always false, making it append "..."
+    // to every line regardless of length. NaN now normalizes to the
+    // minimum (40), so a short line must come through untruncated.
+    const result = formatParseError(
+      { message: "Error", pos: 0 },
+      "short line",
+      { colorize: false, maxLineLength: Number.NaN },
+    );
+
+    expect(result).toContain("short line");
+    expect(result).not.toContain("short line...");
+  });
 });

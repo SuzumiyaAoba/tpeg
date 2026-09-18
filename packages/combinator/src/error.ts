@@ -1,5 +1,9 @@
 import type { ParseFailure, Parser } from "@suzumiyaaoba/tpeg-core";
-import { getCharAt, renameWatermarkExpectation } from "@suzumiyaaoba/tpeg-core";
+import {
+  getCharAt,
+  renameWatermarkExpectationsSince,
+  snapshotFailureWatermark,
+} from "@suzumiyaaoba/tpeg-core";
 
 /**
  * Creates a parser with detailed error reporting that includes context and position information.
@@ -17,6 +21,12 @@ export const withDetailedError = <T>(
   parserName: string,
 ): Parser<T> => {
   return (input: string, pos: number) => {
+    // Snapshot the farthest-failure watermark BEFORE running the wrapped
+    // parser: the rename below must retitle exactly the entries THIS
+    // call contributed -- never expectations other parsers recorded
+    // earlier (see `renameWatermarkExpectationsSince`, `tpeg-core`'s
+    // `failure.ts`).
+    const watermarkBefore = snapshotFailureWatermark();
     const result = parser(input, pos);
 
     if (!result.success) {
@@ -27,21 +37,14 @@ export const withDetailedError = <T>(
       const failurePos = failure.error.pos ?? pos;
 
       // Keep the shared farthest-failure watermark in sync with this
-      // rename -- see `renameWatermarkExpectation`'s doc comment
+      // rename -- see `renameWatermarkExpectationsSince`'s doc comment
       // (`tpeg-core`'s `failure.ts`) for why: without this, a `choice`
       // this parser is one alternative of re-forwards the RENAMED
       // failure as a SECOND, differently-named expectation for the same
       // label once this rename turns `result` from the `FAIL` singleton
       // into a plain object, doubling the resulting error message and
       // dropping `parserName` from it entirely.
-      const originalLabels = Array.isArray(failure.error.expected)
-        ? failure.error.expected
-        : failure.error.expected !== undefined
-          ? [failure.error.expected]
-          : [];
-      for (const label of originalLabels) {
-        renameWatermarkExpectation(input, failurePos, label, parserName);
-      }
+      renameWatermarkExpectationsSince(input, watermarkBefore, parserName);
       // `getCharAt`, not `input[failurePos]`: the latter indexes by raw
       // UTF-16 code unit, so a failure positioned on an astral character
       // (e.g. an emoji) would return a lone, unpaired surrogate instead of

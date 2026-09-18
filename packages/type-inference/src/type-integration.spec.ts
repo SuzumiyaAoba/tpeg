@@ -691,4 +691,152 @@ describe("TypeIntegrationEngine", () => {
       );
     });
   });
+
+  describe("Malformed hand-built name validation", () => {
+    it("should quote a non-identifier capture label instead of emitting a SyntaxError object type", () => {
+      // A label like "my-label" is only reachable from a hand-built AST
+      // (the grammar parser's identifier rule can't produce one); emitting
+      // it bare would produce `{ my-label: ... }`, which fails to parse
+      // once this typeString is written into an `export type ... = ...;`
+      // alias. Quoting preserves the actual runtime key the generated
+      // parser assigns via mergeCaptures.
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "LabelGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "item",
+            createSequence([
+              createLabeledExpression(
+                "my-label",
+                createStringLiteral("x", '"'),
+              ),
+            ]),
+          ),
+        ],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+
+      expect(typedGrammar.typeDefinitions).toContain(
+        'export type ItemResult = { "my-label": "x" };',
+      );
+    });
+
+    it("should reject a rule name whose PascalCase form is not a valid identifier", () => {
+      // "123abc" -> pascalCase "123abc" -> `export type 123abcResult`
+      // would be a SyntaxError; reject at generation time instead.
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "DigitGrammar",
+        [],
+        [createRuleDefinition("123abc", createStringLiteral("x", '"'))],
+      );
+
+      expect(() => engine.createTypedGrammar(grammar)).toThrow(
+        /not a valid TypeScript identifier/,
+      );
+    });
+
+    it("should reject a rule name that PascalCases to the empty string", () => {
+      // "---" splits entirely into separators -> generated name "" ->
+      // `export type Result` silently detaches the type from the rule.
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "DashGrammar",
+        [],
+        [createRuleDefinition("---", createStringLiteral("x", '"'))],
+      );
+
+      expect(() => engine.createTypedGrammar(grammar)).toThrow(
+        /not a valid TypeScript identifier/,
+      );
+    });
+
+    it("should reject an invalid typeNamespace", () => {
+      const badEngine = new TypeIntegrationEngine({
+        typeNamespace: "not a namespace",
+      });
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "NsGrammar",
+        [],
+        [createRuleDefinition("a", createStringLiteral("x", '"'))],
+      );
+
+      expect(() => badEngine.createTypedGrammar(grammar)).toThrow(
+        /not a valid TypeScript namespace name/,
+      );
+    });
+
+    it("should accept a dotted typeNamespace", () => {
+      const nsEngine = new TypeIntegrationEngine({
+        typeNamespace: "Outer.Inner",
+      });
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "NsGrammar",
+        [],
+        [createRuleDefinition("a", createStringLiteral("x", '"'))],
+      );
+
+      const typedGrammar = nsEngine.createTypedGrammar(grammar);
+      expect(typedGrammar.typeDefinitions).toContain(
+        "export namespace Outer.Inner {",
+      );
+    });
+
+    it("should reject a non-identifier grammar name in generateParserInterface", () => {
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "My Grammar",
+        [],
+        [createRuleDefinition("a", createStringLiteral("x", '"'))],
+      );
+      const typedGrammar = engine.createTypedGrammar(grammar);
+
+      expect(() => engine.generateParserInterface(typedGrammar)).toThrow(
+        /not a valid TypeScript identifier/,
+      );
+    });
+
+    it("should emit a non-identifier rule name as a quoted interface method", () => {
+      // `{ "my-rule"(input: string): ... }` is legal TypeScript; quoting
+      // keeps the actual runtime method name instead of emitting
+      // `my-rule(input...)` -- a SyntaxError.
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "QuotedGrammar",
+        [],
+        [createRuleDefinition("my-rule", createStringLiteral("x", '"'))],
+      );
+      const typedGrammar = engine.createTypedGrammar(grammar);
+      const parserInterface = engine.generateParserInterface(typedGrammar);
+
+      expect(parserInterface).toContain(
+        '"my-rule"(input: string): ParseResult<MyRuleResult>;',
+      );
+    });
+
+    it("should reject a rule name whose type reference is invalid in generateParserInterface", () => {
+      // The method name can be quoted, but `ParseResult<123abcResult>`
+      // cannot -- reject rather than emit a broken type reference.
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "IfaceGrammar",
+        [],
+        [createRuleDefinition("a", createStringLiteral("x", '"'))],
+      );
+      const typedGrammar = engine.createTypedGrammar(grammar);
+      typedGrammar.rules.push({
+        ...createRuleDefinition("123abc", createStringLiteral("y", '"')),
+        inferredType: {
+          typeString: '"y"',
+          nullable: false,
+          isArray: false,
+          baseType: "string",
+          imports: [],
+        },
+        hasCircularDependency: false,
+        dependencies: [],
+      });
+
+      expect(() => engine.generateParserInterface(typedGrammar)).toThrow(
+        /not a valid TypeScript identifier/,
+      );
+    });
+  });
 });

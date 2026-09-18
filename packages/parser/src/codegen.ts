@@ -1192,7 +1192,11 @@ export class TPEGCodeGenerator {
         index === 0 && startRuleIsSafeForCommitAtTopLevel,
       );
       parts.push(ruleCode);
-      exports.push(rule.name);
+      // The emitted declaration is `export const <namePrefix><rule.name>`,
+      // so the exports list records the prefixed name -- the name a
+      // consumer would actually import (matching eta-generator.ts, which
+      // has always pushed the prefixed name).
+      exports.push(this.options.namePrefix + rule.name);
     });
 
     // Combine all parts

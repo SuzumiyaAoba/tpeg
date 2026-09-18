@@ -212,6 +212,19 @@ describe("tpeg CLI", () => {
     expect(stdout).toContain("export const number");
   });
 
+  it("accepts a .tpeg file saved with a UTF-8 BOM (a real file artifact, e.g. Windows editors)", () => {
+    // Without the strip in `run`, the BOM lands at position 0, the
+    // `grammar` keyword fails to match, and the reported `found:` value
+    // is an invisible character -- the file looks perfectly valid to the
+    // user. tsc/node strip BOMs from source files the same way.
+    const inputPath = join(dir, "bom.tpeg");
+    writeFileSync(inputPath, `\ufeff${SIMPLE_GRAMMAR}`, "utf8");
+
+    const { exitCode, stdout } = captureOutput(() => run([inputPath]));
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("export const number");
+  });
+
   it("reports an unknown option through the normal error format instead of a raw stack trace", () => {
     const inputPath = join(dir, "grammar.tpeg");
     writeFileSync(inputPath, SIMPLE_GRAMMAR, "utf8");
@@ -268,6 +281,21 @@ describe("tpeg CLI", () => {
     expect(exitCode).toBe(1);
     expect(stdout).toBe("");
     expect(stderr).toContain(`could not write "${outputPath}"`);
+  });
+
+  it("rejects an explicit empty -o path instead of silently writing to stdout", () => {
+    // `-o ""` parses as an empty-string output path; a truthiness check on
+    // `options.output` would treat it as "no -o given" and dump the
+    // generated code on stdout, discarding the user's intent entirely.
+    const inputPath = join(dir, "grammar.tpeg");
+    writeFileSync(inputPath, SIMPLE_GRAMMAR, "utf8");
+
+    const { exitCode, stdout, stderr } = captureOutput(() =>
+      run([inputPath, "-o", ""]),
+    );
+    expect(exitCode).toBe(1);
+    expect(stdout).toBe("");
+    expect(stderr).toContain('could not write ""');
   });
 
   it("applies --name-prefix to generated exports", () => {

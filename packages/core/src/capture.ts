@@ -8,7 +8,7 @@
 
 import { tryOrderedCandidates } from "./combinators";
 import type { Parser } from "./types";
-import { createFailure, isFailure } from "./utils";
+import { createFailure, isFailure, isValidOffset } from "./utils";
 
 /**
  * Captured value type represents a structured object with labeled fields
@@ -168,6 +168,16 @@ export const captureSequence = <P extends Parser<unknown>[]>(
   CapturedValue | { [K in keyof P]: P[K] extends Parser<infer T> ? T : never }
 > => {
   return (input: string, pos: number) => {
+    // Same out-of-contract-`pos` guard `sequence` applies
+    // (`./combinators.ts`): an invalid offset must fail here rather than
+    // fall into the zero-element branch below and echo itself back as a
+    // bogus zero-width success. `pos === input.length` stays legal.
+    if (!isValidOffset(pos) || pos > input.length) {
+      return createFailure("Expected a valid position", pos, {
+        parserName: "captureSequence",
+      });
+    }
+
     if (parsers.length === 0) {
       return {
         success: true as const,

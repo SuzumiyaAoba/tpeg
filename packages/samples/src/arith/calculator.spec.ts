@@ -45,6 +45,15 @@ describe("Calculator", () => {
       // expect(calculateDirect("+(2 * 3)")).toBe(6);
     });
 
+    it("accepts whitespace between a sign and its number, like the AST path does", () => {
+      // DirectFactor's signed arm used to lack the `_` after the sign
+      // that Factor's arm gets via NumberLiteral's own leading whitespace
+      // -- `calculate("- 5")` succeeded while `calculateDirect("- 5")`
+      // threw, two different answers to the same expression.
+      expect(calculateDirect("- 5")).toBe(-5);
+      expect(calculate("- 5")).toBe(-5);
+    });
+
     it("should handle whitespace correctly", () => {
       expect(calculateDirect("  1  +  2  ")).toBe(3);
       expect(calculateDirect("1\t*\t3")).toBe(3);

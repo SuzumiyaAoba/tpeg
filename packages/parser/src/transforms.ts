@@ -15,6 +15,7 @@ import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   choice,
   createFailure,
+  isValidOffset,
   literal,
   map,
   seq as sequence,
@@ -69,6 +70,17 @@ const languageSeparator: Parser<string> = literal(
  * Parse supported target language
  */
 const targetLanguage: Parser<string> = (input: string, pos: number) => {
+  // An out-of-contract `pos` (`isValidOffset`, `@suzumiyaaoba/tpeg-core`)
+  // must fail rather than reach `startsWith` below, which CLAMPS its
+  // position argument into `0..input.length` -- a negative/`NaN`/
+  // fractional `pos` would otherwise match a language keyword at index 0
+  // and report `{ current: pos, next: pos + lang.length }`.
+  if (!isValidOffset(pos) || pos > input.length) {
+    return createFailure("Expected a valid position", pos, {
+      parserName: "targetLanguage",
+    });
+  }
+
   const supportedLanguages = [
     SUPPORTED_LANGUAGES.TYPESCRIPT,
     SUPPORTED_LANGUAGES.PYTHON,
@@ -502,6 +514,16 @@ const TRANSFORM_WS_CHARS: ReadonlySet<string> = new Set([
  * attachment.
  */
 const docCollectingSeparator: Parser<string[]> = (input, pos) => {
+  // An out-of-contract `pos` (`isValidOffset`, `@suzumiyaaoba/tpeg-core`)
+  // must fail rather than echo itself back in a bogus success -- see the
+  // identical guard on `optionalWhitespaceOrComment`
+  // (`./whitespace-utils.ts`), whose scanning rule this mirrors.
+  if (!isValidOffset(pos) || pos > input.length) {
+    return createFailure("Expected a valid position", pos, {
+      parserName: "docCollectingSeparator",
+    });
+  }
+
   const docs: string[] = [];
   let i = pos;
   while (i < input.length) {

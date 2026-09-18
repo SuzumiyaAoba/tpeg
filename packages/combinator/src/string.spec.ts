@@ -55,6 +55,27 @@ describe("string combinators", () => {
       }
     });
 
+    it("does not let a swallowed probe's deeper internal failure outrank the genuine failure that follows the scan", () => {
+      // A multi-element `condition` probed at offset p can record an
+      // expectation at p+k (wherever its own inner attempt got before
+      // failing) -- PAST the offset where the scan actually stops, where
+      // it used to merge into or outrank the real failure reported by
+      // whatever comes next. On "aab": the probe at offset 0 sees "a"
+      // then "a" != "b" and records 'expected "b"' AT offset 1; the probe
+      // at offset 1 then matches "ab", so the scan stops there and
+      // `lit("!")` fails at the same offset. The restored watermark must
+      // report only '"!"' -- a '"b"' expectation at an offset where "ab"
+      // just matched is phantom noise from the swallowed probe.
+      const condition = sequence(literal("a"), literal("b"));
+      const parser = sequence(takeUntil(condition), literal("!"));
+      const result = parse(parser)("aab");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.pos).toBe(1);
+        expect(result.error.expected).toBe('"!"');
+      }
+    });
+
     it("re-raises an abort (resource-limit) failure from `condition` instead of swallowing it into a partial-text success", () => {
       // `takeUntil` is documented as "always succeeds," but an `abort`
       // failure (see `ParseError.abort`, `@suzumiyaaoba/tpeg-core`'s

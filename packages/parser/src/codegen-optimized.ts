@@ -459,7 +459,10 @@ export class OptimizedTPEGCodeGenerator {
         index === 0 && this.startRuleIsSafeForCommitAtTopLevel,
       );
       parts.push(ruleCode);
-      exports.push(stringInterner.intern(rule.name));
+      // Same as codegen.ts's generateGrammar: record the PREFIXED name
+      // (`export const <namePrefix><rule.name>` is what's actually
+      // emitted), matching eta-generator.ts.
+      exports.push(stringInterner.intern(this.options.namePrefix + rule.name));
     });
 
     // Add performance monitoring if enabled

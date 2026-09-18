@@ -1,5 +1,5 @@
 import type { ParseError, ParseResult } from "./types";
-import { isFailure, offsetToPos } from "./utils";
+import { isFailure, isValidOffset, offsetToPos } from "./utils";
 
 /**
  * Internationalization message definitions for error formatting.
@@ -238,7 +238,14 @@ const clampValue = (
   max: number,
   name: string,
 ): number => {
-  const normalized = Math.max(min, Math.min(max, Math.floor(value)));
+  // `Math.min`/`Math.max` propagate NaN, so a NaN `value` would sail
+  // through unchanged and poison downstream math (e.g. a NaN
+  // `maxLineLength` makes `truncateLine` append "..." to every line,
+  // since `width > NaN` is always false). Normalize NaN to `min`;
+  // +/-Infinity still clamp correctly to max/min.
+  const normalized = Number.isNaN(value)
+    ? min
+    : Math.max(min, Math.min(max, Math.floor(value)));
 
   if (value !== normalized) {
     console.warn(
@@ -484,7 +491,16 @@ const validateParseError = (error: unknown): error is ParseError => {
   }
 
   const err = error as ParseError;
-  return typeof err.pos === "number" && err.pos >= 0;
+  // Same offset contract the parsers themselves enforce
+  // (`isValidOffset`, `./utils.ts`): a fractional, `NaN`, infinite, or
+  // >=2^32 `pos` cannot point into any input, but `typeof`/`>= 0` alone
+  // used to let it through -- `offsetToPos` would then report a
+  // misaligned line/column (fractional) or a line past the input's end
+  // (`Infinity`), silently degrading the diagnostic this function exists
+  // to produce. An offset past `input.length` stays accepted here:
+  // `offsetToPos` deliberately tolerates it (bounded column walk, see
+  // its own doc comment) for errors recorded against a different input.
+  return isValidOffset(err.pos);
 };
 
 /**

@@ -177,4 +177,54 @@ describe("list combinators", () => {
       expect(parse(parser)("b").success).toBe(false);
     });
   });
+
+  describe("out-of-contract pos", () => {
+    const input = "a,a";
+    const invalidPositions = [
+      -1,
+      -0.5,
+      0.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      2 ** 32,
+      input.length + 1,
+    ];
+
+    // `sepBy`/`commaSeparated` can produce a zero-width `[]` success
+    // without any element having matched -- they must not echo an
+    // invalid `pos` back through that path (see `position-contract.spec.ts`
+    // in `tpeg-core`).
+    it("sepBy fails rather than returning a bogus empty list", () => {
+      const parser = sepBy(literal("a"), literal(","));
+      for (const pos of invalidPositions) {
+        expect(parser(input, pos).success).toBe(false);
+      }
+    });
+
+    it("commaSeparated fails rather than returning a bogus empty list", () => {
+      const parser = commaSeparated(literal("a"));
+      for (const pos of invalidPositions) {
+        expect(parser(input, pos).success).toBe(false);
+      }
+    });
+
+    it("sepBy1 and commaSeparated1 fail too", () => {
+      const s1 = sepBy1(literal("a"), literal(","));
+      const c1 = commaSeparated1(literal("a"));
+      for (const pos of invalidPositions) {
+        expect(s1(input, pos).success).toBe(false);
+        expect(c1(input, pos).success).toBe(false);
+      }
+    });
+
+    it("sepBy still returns [] on a legitimate non-match at pos === input.length", () => {
+      const result = sepBy(literal("a"), literal(","))(input, input.length);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val).toEqual([]);
+        expect(result.next).toBe(input.length);
+      }
+    });
+  });
 });

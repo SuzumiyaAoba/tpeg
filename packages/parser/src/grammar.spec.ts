@@ -1277,7 +1277,11 @@ grammar Example {
       // Sanity check that the generator actually produced parseable
       // grammars (otherwise this test would trivially pass on 0 cases).
       expect(tested).toBeGreaterThan(200);
-    });
+      // ~1800 `grammarDefinition` parses (300 grammars x up to 6) at ~3ms
+      // apiece sits right at Vitest's 5000ms default timeout and timed out
+      // intermittently in CI with no real diff -- the same headroom
+      // `codegen-differential.spec.ts` gives its fuzz loop.
+    }, 30000);
 
     // Companion baseline: inserting plain horizontal whitespace (not a
     // comment) at any space must ALSO never change the parsed AST -- this
@@ -1311,7 +1315,9 @@ grammar Example {
         }
       }
       expect(tested).toBeGreaterThan(150);
-    });
+      // ~1200 `grammarDefinition` parses -- same intermittent-timeout
+      // exposure as the metamorphic test above.
+    }, 20000);
   });
 
   describe("JavaScript-aware rule-boundary and action-body scanning", () => {

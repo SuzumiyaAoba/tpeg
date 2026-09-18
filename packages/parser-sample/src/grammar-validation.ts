@@ -138,9 +138,18 @@ async function validateGrammars(): Promise<ValidationResult[]> {
       console.log(); // Empty line between files
     }
   } catch (dirError) {
-    console.error(
-      `❌ Failed to read examples directory: ${dirError instanceof Error ? dirError.message : String(dirError)}`,
-    );
+    const message = `Failed to read examples directory: ${dirError instanceof Error ? dirError.message : String(dirError)}`;
+    console.error(`❌ ${message}`);
+    // Record the infrastructure failure as a failed result so `main`'s
+    // exit code reflects it -- previously this logged to stderr but still
+    // exited 0 with "0/0 grammars successful", silently passing.
+    results.push({
+      grammar: EXAMPLES_DIR,
+      success: false,
+      error: message,
+      rules: 0,
+      annotations: 0,
+    });
   }
 
   return results;

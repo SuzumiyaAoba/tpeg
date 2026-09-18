@@ -1233,6 +1233,31 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
       expect(result.next).toBe(1);
     }
   });
+
+  it("rejects a multi-code-point range endpoint instead of silently truncating to its first code point (matching tpeg-core's compileSpecs on the unfused path)", () => {
+    // Hand-built AST only -- the grammar parser's `charRange` can't
+    // produce this. Unfused codegen emits `charClass(["ab", "z"])`,
+    // which `compileSpecs` rejects at construction; the fused path used
+    // to take `codePointAt(0)` and emit `a-z` with no diagnostic.
+    const cls = createCharacterClass([createCharRange("ab", "z")], false);
+    expect(() => emitFusedExpression(cls)).toThrow(/not exactly one character/);
+    // A standalone (non-range) endpoint with more than one code point is
+    // rejected the same way.
+    const single = createCharacterClass([createCharRange("ab")], false);
+    expect(() => emitFusedExpression(single)).toThrow(
+      /not exactly one character/,
+    );
+  });
+
+  it("rejects a backwards range (start > end) with a clear message instead of an opaque RegExp SyntaxError", () => {
+    // `compileSpecs` on the unfused path rejects `["z", "a"]` the same
+    // way; here it would otherwise surface only when the generated code
+    // constructs `new RegExp("[\\u{7a}-\\u{61}]")`.
+    const cls = createCharacterClass([createCharRange("z", "a")], false);
+    expect(() => emitFusedExpression(cls)).toThrow(
+      /start \(U\+7A\) is greater than end \(U\+61\)/,
+    );
+  });
 });
 
 /** Parses `src`, generates it with `enableRegexFusion: true` and the

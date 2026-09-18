@@ -108,6 +108,51 @@ describe("error combinators", () => {
         expect(result.error.parserName).toBe("MyParser");
       }
     });
+
+    it("keeps each named alternative's attribution when two share the same label (regression: renaming matched by label text and retitled the earlier alternative's entry too)", () => {
+      // Alt1's `literal("x")` records `{'"x"',literal}`; its rename turns
+      // it into `{'"x"',ParserA}`. Alt2's `literal("x")` then appends a
+      // NEW `{'"x"',literal}` (distinct by parserName -- see
+      // `failure.spec.ts`'s pinned "equal label, different parserName"
+      // case). Renaming by label text retitled BOTH entries to
+      // "ParserB", so the final error claimed parserName "ParserB" --
+      // though alt1 was ParserA's. The snapshot-based rename only
+      // retitles entries the wrapped call itself contributed.
+      const result = parse(
+        choice(named(literal("x"), "ParserA"), named(literal("x"), "ParserB")),
+      )("y");
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        // Both attributions survive -- same label kept distinct per the
+        // pinned semantics -- so no single parserName is reportable.
+        expect(result.error.expected).toEqual(['"x"', '"x"']);
+        expect(result.error.parserName).toBeUndefined();
+      }
+    });
+
+    it("does not retitle a farther-position expectation the wrapped parser never contributed", () => {
+      // On "ax": alt1's seq records `{'"b"',literal}` at pos 1 (the
+      // farthest failure). Alt2's `literal("q")` fails at pos 0 -- its
+      // `fail()` record is ignored as nearer, so ParserB contributed
+      // NOTHING to the watermark. The old label-based rename still
+      // retitled the '"b"' entry to "ParserB" (the materialized error
+      // withDetailedError read reported '"b"' as its own expectation),
+      // yielding `ParserB: Expected "b"` though ParserB only ever
+      // expected "q". With contribution-scoped renaming the '"b"'
+      // entry keeps its 'literal' attribution; ParserB's forwarded
+      // claim lands as its own separate entry, so parserName is
+      // ambiguous and omitted.
+      const result = parse(
+        choice(seq(literal("a"), literal("b")), named(literal("q"), "ParserB")),
+      )("ax");
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.pos).toBe(1);
+        expect(result.error.parserName).not.toBe("ParserB");
+      }
+    });
   });
 
   describe("labeled", () => {

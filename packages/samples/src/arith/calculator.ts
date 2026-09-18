@@ -371,10 +371,12 @@ export const DirectFactor: Parser<number> = choice(
     ),
     ([, , , value]) => value,
   ),
-  // Signed number
+  // Signed number -- `_` after the sign matches `Factor`'s signed arm
+  // above (where `NumberLiteral` carries its own leading whitespace), so
+  // "- 5" parses the same way on the direct and AST paths.
   map(
-    seq(_, choice(lit("+"), lit("-")), NumberParser, _),
-    ([, operator, value]) => (operator === "+" ? +value : -value),
+    seq(_, choice(lit("+"), lit("-")), _, NumberParser, _),
+    ([, operator, , value]) => (operator === "+" ? +value : -value),
   ),
   // Regular number
   map(seq(_, NumberParser, _), ([, value]) => value),

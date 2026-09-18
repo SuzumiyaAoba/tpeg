@@ -604,13 +604,38 @@ const escapeRegexLiteral = (s: string): string =>
 const codePointEscape = (cp: number): string => `\\u{${cp.toString(16)}}`;
 
 /** Renders a `CharacterClass`'s ranges as a `[...]`/`[^...]` bracket
- * expression body (no enclosing capturing group). */
+ * expression body (no enclosing capturing group). Validates each range
+ * endpoint the same way `@suzumiyaaoba/tpeg-core`'s `compileSpecs`
+ * (`char-class.ts`) does for the UNFUSED path -- this module bypasses
+ * that runtime validation entirely, so without the same checks here a
+ * hand-built `CharacterClass` with a multi-code-point endpoint (`["ab",
+ * "z"]`) would silently truncate to its first code point (`a-z`) instead
+ * of throwing the way `charClass("ab")` does, and a backwards range
+ * would surface as an opaque `RegExp` "Range out of order" SyntaxError
+ * instead of the clear message below. */
 const charClassBracketExpr = (expr: CharacterClass): string => {
   const body = expr.ranges
     .map((r) => {
+      // `[...s].length` counts code points, matching compileSpecs'
+      // `codePointCount` exactly (an astral character is one).
+      if ([...r.start].length !== 1) {
+        throw new Error(
+          `Invalid character class range bound: "${r.start}" is not exactly one character`,
+        );
+      }
       const startCp = r.start.codePointAt(0) as number;
       if (r.end === undefined) return codePointEscape(startCp);
+      if ([...r.end].length !== 1) {
+        throw new Error(
+          `Invalid character class range bound: "${r.end}" is not exactly one character`,
+        );
+      }
       const endCp = r.end.codePointAt(0) as number;
+      if (startCp > endCp) {
+        throw new Error(
+          `Invalid character class range: ["${r.start}", "${r.end}"] -- start (U+${startCp.toString(16).toUpperCase()}) is greater than end (U+${endCp.toString(16).toUpperCase()})`,
+        );
+      }
       return `${codePointEscape(startCp)}-${codePointEscape(endCp)}`;
     })
     .join("");

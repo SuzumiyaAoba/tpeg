@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from "vite-plus/test";
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
+import { choice, literal, parse } from "@suzumiyaaoba/tpeg-core";
 import {
   applyRepetition,
   optionalExpression,
@@ -396,6 +397,25 @@ describe("repetition operators", () => {
       for (const input of ["item{2}{4}", "item**", "item?+", "item*{3}"]) {
         const result = parser(input, pos);
         expect(result.success).toBe(false);
+      }
+    });
+
+    it("does not leak the second-operator probe's speculative failures into the farthest-failure watermark (regression: the probe is only inspected for `.success`, but its internal sub-failures used to stay recorded -- on \"item{2}{4}\" the probe's `,` expectation landed at offset 9, deeper than the real error at 7, so a swallowed chained-operator failure misreported position AND expectation)", () => {
+      // `repetitionOperator` is `choice("*", "+", "?", {n,m})`: probing it
+      // at the "{4}" suffix fails the three literal alternatives at
+      // offset 7 AND `rangeCount`/`minCount`'s "," literal at offset 9
+      // before `exactCount` matches -- records that must all be rolled
+      // back when the probe succeeds, since only the probe's success
+      // matters here.
+      const parser = choice(withRepetition(itemParser), literal("item{2}X"));
+      const result = parse(parser)("item{2}{4}");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        // `literal("item{2}X")` fails at offset 7 ("{" vs "X") -- the
+        // genuine farthest failure. Without the restore, the probe's
+        // speculative `","` record at offset 9 outranks it entirely.
+        expect(result.error.pos).toBe(7);
+        expect(result.error.expected).toBe('"item{2}X"');
       }
     });
   });

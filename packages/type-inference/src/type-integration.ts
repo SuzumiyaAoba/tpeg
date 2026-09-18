@@ -33,6 +33,22 @@ const docCommentLines = (text: string): string[] =>
     .split(/\r\n|\r|\n/)
     .map((line) => `   * ${line}`);
 
+/** Whole-string TypeScript identifier shape -- what every name this
+ * module emits as a type alias, interface, namespace segment, type-guard
+ * function, or interface method must satisfy. The grammar parser only
+ * produces `[a-zA-Z_][a-zA-Z0-9_]*` names, but a hand-built
+ * `GrammarDefinition` can carry anything (`"my-rule"`, `"123abc"`,
+ * `"a.b"`) -- the checks below turn those into a clear generation-time
+ * error instead of an `export type 123abcResult = ...`/`a.b(input...)`-shaped
+ * SyntaxError buried in the emitted definitions. */
+const TS_IDENTIFIER_FULL = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
+
+/** `TS_IDENTIFIER_FULL` per `.`-separated segment -- `namespace A.B` is
+ * legal TypeScript (nested namespaces), so `typeNamespace` gets the
+ * dotted form of the same check. */
+const TS_DOTTED_IDENTIFIER_FULL =
+  /^[a-zA-Z_$][a-zA-Z0-9_$]*(\.[a-zA-Z_$][a-zA-Z0-9_$]*)*$/;
+
 /**
  * Enhanced rule information with type inference
  */
@@ -243,11 +259,25 @@ export class TypeIntegrationEngine {
             `Rules ${[...names].map((n) => `"${n}"`).join(", ")} all generate the type name "${generated}Result" (PascalCase collision) -- rename the rules so their generated names are distinct.`,
           );
         }
+        // Check `generated` itself, not `${generated}Result`: a rule
+        // named entirely of separators ("---") produces `generated ===
+        // ""`, where `"" + "Result"` is a perfectly valid identifier
+        // that silently detaches the type name from the rule name.
+        if (!TS_IDENTIFIER_FULL.test(generated)) {
+          throw new Error(
+            `Rule name "${[...names][0] as string}" generates the type name "${generated}Result", which is not a valid TypeScript identifier -- the emitted \`export type ${generated}Result = ...\` would fail to parse. Rule names must consist of ASCII letters, digits, "_", and "-" only (and must not start with a digit).`,
+          );
+        }
       }
     }
 
     // Add namespace if specified
     if (this.options.typeNamespace) {
+      if (!TS_DOTTED_IDENTIFIER_FULL.test(this.options.typeNamespace)) {
+        throw new Error(
+          `typeNamespace "${this.options.typeNamespace}" is not a valid TypeScript namespace name -- \`export namespace ${this.options.typeNamespace} {\` would fail to parse. Use dotted identifiers only (e.g. "My.Grammar").`,
+        );
+      }
       typeDefinitions.push(`export namespace ${this.options.typeNamespace} {`);
     }
 
@@ -498,6 +528,16 @@ export class TypeIntegrationEngine {
   generateParserInterface(typedGrammar: TypedGrammarDefinition): string {
     const interfaceLines: string[] = [];
 
+    // `${name}Parser` is emitted as the interface identifier -- a
+    // hand-built grammar carrying a non-identifier name would produce a
+    // SyntaxError-shaped declaration with no diagnostic otherwise (same
+    // class of defect `generateTypeDefinitions` now rejects).
+    if (!TS_IDENTIFIER_FULL.test(typedGrammar.name)) {
+      throw new Error(
+        `Grammar name "${typedGrammar.name}" is not a valid TypeScript identifier -- the emitted \`export interface ${typedGrammar.name}Parser {\` would fail to parse.`,
+      );
+    }
+
     interfaceLines.push("/**");
     interfaceLines.push(
       ` * Generated parser interface for ${typedGrammar.name} grammar`,
@@ -526,8 +566,25 @@ export class TypeIntegrationEngine {
         interfaceLines.push("   */");
       }
 
+      // A non-identifier rule name (reachable only from a hand-built
+      // grammar) is emitted as a quoted method signature --
+      // `"my-rule"(input: string): ...` -- which is legal TypeScript and
+      // preserves the actual method name a consumer would call, rather
+      // than emitting `my-rule(input...)` (a SyntaxError). The type
+      // reference can't be quoted the same way, so a name whose
+      // PascalCase form still isn't an identifier (`"123abc"` ->
+      // `ParseResult<123abcResult>`) is rejected outright -- the same
+      // check `generateTypeDefinitions` applies to its own output.
+      const methodName = TS_IDENTIFIER_FULL.test(rule.name)
+        ? rule.name
+        : JSON.stringify(rule.name);
+      if (!TS_IDENTIFIER_FULL.test(resultType)) {
+        throw new Error(
+          `Rule name "${rule.name}" generates the type name "${resultType}", which is not a valid TypeScript identifier -- the emitted \`ParseResult<${resultType}>\` reference would fail to parse.`,
+        );
+      }
       interfaceLines.push(
-        `  ${rule.name}(input: string): ParseResult<${resultType}>;`,
+        `  ${methodName}(input: string): ParseResult<${resultType}>;`,
       );
     }
 

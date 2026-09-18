@@ -3,14 +3,18 @@ import {
   anyChar,
   charClass,
   choice,
+  createFailure,
   FAIL,
   FAIL_FATAL,
   getCharAt,
+  isValidOffset,
   literal,
   map,
   nextPos,
   notPredicate,
+  restoreFailureWatermark,
   seq,
+  snapshotFailureWatermark,
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
 import { labeled, named } from "./error";
@@ -68,7 +72,22 @@ const unicodeEscape = map(
 export const takeUntil =
   <T>(condition: Parser<T>, _parserName?: string): Parser<string> =>
   (input: string, pos: number) => {
+    // An out-of-contract `pos` (`isValidOffset`, `@suzumiyaaoba/tpeg-core`)
+    // must fail rather than echo itself back in a bogus success:
+    // `currentPos < input.length` is vacuously false for `NaN` and
+    // vacuously true for a negative `pos`, either way returning
+    // `{ current: pos, next: pos }` (or worse, `input.slice` coercing a
+    // negative `startPos`) as if a real scan had run. A `pos` past the
+    // end of input is out of contract too: `pos === input.length` is a
+    // legitimate empty scan at EOF, anything further is not.
+    if (!isValidOffset(pos) || pos > input.length) {
+      return createFailure("Expected a valid position", pos, {
+        parserName: "takeUntil",
+      });
+    }
+
     const startPos = pos;
+    const watermarkBeforeScan = snapshotFailureWatermark();
 
     let currentPos = startPos;
 
@@ -96,6 +115,22 @@ export const takeUntil =
 
       currentPos = nextPos(char, currentPos);
     }
+
+    // Every failed `condition` probe above is internal to the scan -- it
+    // is swallowed by construction (the scan just keeps going), so its
+    // watermark records are speculative noise, exactly like the probe
+    // failures `notPredicate` rolls back before recording its own
+    // expectation (`@suzumiyaaoba/tpeg-core`'s `lookahead.ts`). Left in
+    // place they do real damage: a multi-element `condition` can record
+    // an expectation at an offset PAST `currentPos` (wherever its own
+    // inner attempt got before failing), which then outranks or merges
+    // into a genuine failure reported by whatever follows this parser --
+    // e.g. `seq(takeUntil(seq(lit("a"), lit("b"))), lit("!"))` on "aab"
+    // used to report `Expected "b" or "!"` at offset 1, claiming a "b"
+    // was expected at the very offset where "ab" had just matched. The
+    // `abort` path above deliberately skips this restore -- a limit hit
+    // is a real diagnostic, not probe noise.
+    restoreFailureWatermark(watermarkBeforeScan);
 
     return {
       success: true,

@@ -1,3 +1,8 @@
+import {
+  fail,
+  restoreFailureWatermark,
+  snapshotFailureWatermark,
+} from "./failure";
 import type { ParseError, ParseFailure, ParseSuccess, Parser } from "./types";
 
 /**
@@ -118,12 +123,34 @@ export const filter =
     parserName = "filter",
   ): Parser<T> =>
   (input: string, pos) => {
+    // Snapshot before running the child, for the same reason
+    // `notPredicate` (`./lookahead.ts`) and `reject` (`./combinators.ts`)
+    // snapshot before their probes: if the child SUCCEEDS but the
+    // predicate rejects the value, every sub-failure the child left in
+    // the watermark is speculative noise from its successful match -- and
+    // when any of it sits deeper than `result.current`, it would make
+    // this parser's own `fail()` below a no-op (pos < watermarkPos),
+    // losing the predicate's expectation entirely.
+    const snapshot = snapshotFailureWatermark();
     const result = parser(input, pos);
 
     if (result.success) {
       if (predicate(result.val)) {
         return result;
       }
+
+      // Restore BEFORE recording (see the snapshot comment above), then
+      // record `filter`'s own expectation into the shared farthest-
+      // failure watermark, exactly like `notPredicate` and `reject` do on
+      // their failing paths: the child SUCCEEDED here, so no leaf `fail()`
+      // ran and nothing else will have registered this position -- a
+      // swallowed failure (e.g. inside `optional`) would otherwise leave
+      // no trace of the predicate that was actually tried.
+      restoreFailureWatermark(snapshot);
+      fail(input, result.current, {
+        label: "value satisfying predicate",
+        parserName,
+      });
 
       const error: ParseError = {
         message: errorMessage,

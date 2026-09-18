@@ -92,7 +92,8 @@ export interface Identifier {
 
 /**
  * Any character dot (.) node in TPEG grammar AST.
- * Matches any single character except newline.
+ * Matches any single Unicode code point (including newline); fails only
+ * at end of input. See `anyChar` in `./basic.ts`.
  *
  * @example
  * ```typescript
@@ -748,7 +749,7 @@ export const createCharacterClass = (
  * ```
  */
 export const createCharRange = (start: string, end?: string): CharRange =>
-  end ? { start, end } : { start };
+  end !== undefined ? { start, end } : { start };
 
 /**
  * Create an Identifier AST node.

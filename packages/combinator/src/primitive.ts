@@ -3,6 +3,8 @@ import {
   any,
   charClass,
   choice,
+  createFailure,
+  isValidOffset,
   literal,
   map,
   not,
@@ -29,6 +31,19 @@ export const spaces = map(zeroOrMore(whitespace), (chars) => chars.join(""));
  * `token()` only needs the resulting position, never the skipped text.
  */
 const skipWhitespace: Parser<undefined> = (input, pos) => {
+  // An out-of-contract `pos` (`isValidOffset`, `@suzumiyaaoba/tpeg-core`)
+  // must fail rather than echo itself back in a bogus success:
+  // `offset < input.length` is vacuously false for `NaN` and vacuously
+  // true for a negative `pos`, either way returning
+  // `{ current: pos, next: pos }` as if a real scan had run. A `pos`
+  // past the end of input is out of contract too: `pos === input.length`
+  // is a legitimate empty scan at EOF, anything further is not.
+  if (!isValidOffset(pos) || pos > input.length) {
+    return createFailure("Expected a valid position", pos, {
+      parserName: "skipWhitespace",
+    });
+  }
+
   let offset = pos;
 
   while (offset < input.length) {
@@ -147,6 +162,17 @@ export const alphaNum = charClass(["a", "z"], ["A", "Z"], ["0", "9"]);
  * Parser that matches the start of input or start of a line.
  */
 export const startOfLine = (): Parser<null> => (input: string, pos) => {
+  // Same out-of-contract-`pos` guard as `skipWhitespace`/`takeUntil`
+  // (`./string.ts`): an invalid offset must fail rather than read
+  // `input[pos - 1]` -- for a `pos` one past `input.length` right after a
+  // trailing "\n", that read hits the newline itself and reported a
+  // "line start" beyond EOF.
+  if (!isValidOffset(pos) || pos > input.length) {
+    return createFailure("Expected a valid position", pos, {
+      parserName: "startOfLine",
+    });
+  }
+
   // Recognize LF, bare CR, and CRLF as line terminators. A position between
   // the CR and LF of a CRLF pair is deliberately not a line start: the pair
   // is one logical newline, and `offsetToPos` uses the same boundary rule.

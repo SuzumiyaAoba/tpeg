@@ -9,7 +9,7 @@ import {
 } from "./failure";
 import type { Parser } from "./types";
 import type { ParseSuccess } from "./types";
-import { isFailure } from "./utils";
+import { createFailure, isFailure, isValidOffset } from "./utils";
 
 /**
  * Pre-allocated success result base object for memory optimization.
@@ -113,6 +113,16 @@ const createSuccessResult = (pos: number): ParseSuccess<undefined> => ({
 export const andPredicate =
   <T>(parser: Parser<T>, _parserName = "andPredicate"): Parser<undefined> =>
   (input: string, pos) => {
+    // Same out-of-contract-`pos` guard every leaf parser already applies
+    // (`isValidOffset`, `./utils.ts`): a probe must not run at an invalid
+    // offset. The child would fail anyway; this makes the contract local
+    // rather than dependent on the child's own guard.
+    if (!isValidOffset(pos) || pos > input.length) {
+      return createFailure("Expected a valid position", pos, {
+        parserName: _parserName,
+      });
+    }
+
     const result = parser(input, pos);
 
     // Relay the child's failure rather than re-wrapping it with an
@@ -307,6 +317,18 @@ export const notPredicate = <T>(
   };
 
   return (input: string, pos: number) => {
+    // Same out-of-contract-`pos` guard as `andPredicate` above, placed
+    // before the snapshot: at an invalid offset the child's failure below
+    // would be INVERTED into a bogus zero-width success (`!e` succeeding
+    // at `pos = NaN`), which is precisely what this guard must prevent.
+    // `pos === input.length` stays legal -- `!e` at EOF is a legitimate
+    // probe.
+    if (!isValidOffset(pos) || pos > input.length) {
+      return createFailure("Expected a valid position", pos, {
+        parserName,
+      });
+    }
+
     // Snapshot before probing: a failure inside `parser` is not evidence
     // about the input -- it's the EXPECTED, desired outcome that makes
     // this negative lookahead succeed, unlike an ordinary backtracking
@@ -338,6 +360,19 @@ export const notPredicate = <T>(
       return createSuccessResult(pos);
     }
 
+    // Discard the probe's internal records before recording this
+    // parser's own expectation, for the same reason the failure path
+    // above restores: the probe SUCCEEDED, so every sub-failure it left
+    // in the watermark (a tried-and-failed choice alternative, a deeper
+    // abandoned attempt) is speculative noise -- unlike a `choice`
+    // alternative, nothing at this position can proceed by matching
+    // them, since matching them is exactly what this `!` forbids. The
+    // restore is also load-bearing for the `fail()` call itself: a probe
+    // whose internals recorded past `pos` would leave `fail` comparing
+    // `pos` against that deeper watermark and dropping "pattern not to
+    // match" entirely -- and a later genuine failure's own `fail()`
+    // calls would be ignored the same way.
+    restoreFailureWatermark(snapshot);
     return fail(input, pos, expectation);
   };
 };

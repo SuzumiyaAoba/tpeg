@@ -22,7 +22,7 @@
 import type { Expectation } from "./failure";
 import { fail } from "./failure";
 import type { Parser } from "./types";
-import { advancePos } from "./utils";
+import { advancePos, isValidOffset } from "./utils";
 
 /** The raw result of a successful `regexFused` match: `text` is the
  * whole match (`RegExpExecArray[0]`), `groups` is every capturing group
@@ -57,6 +57,17 @@ export const regexFused = (
     parserName: "regexFused",
   };
   return (input: string, pos: number) => {
+    // An out-of-contract `pos` must fail BEFORE reaching `re.lastIndex`:
+    // assigning a negative/fractional/`NaN` `lastIndex` makes `exec`
+    // coerce it to 0 (`ToLength`) and match at index 0 anyway, handing
+    // back `current`/`next` values that claim a match happened at the
+    // caller's (impossible) position -- `next = NaN` in the worst case,
+    // which defeated `zeroOrMore`'s loop guard (`./repetition.ts`).
+    // `pos = input.length` stays legal: an empty-match-capable `source`
+    // may genuinely match "" at end of input.
+    if (!isValidOffset(pos) || pos > input.length) {
+      return fail(input, pos, expectation);
+    }
     re.lastIndex = pos;
     const m = re.exec(input);
     if (m === null) {
@@ -102,6 +113,12 @@ export const regexFusedMap = <T>(
     parserName: "regexFused",
   };
   return (input: string, pos: number) => {
+    // Same out-of-contract-`pos` guard as `regexFused` above (see its
+    // comment): `re.lastIndex` coerces a negative/fractional/`NaN`
+    // position to 0 instead of failing.
+    if (!isValidOffset(pos) || pos > input.length) {
+      return fail(input, pos, expectation);
+    }
     re.lastIndex = pos;
     const m = re.exec(input);
     if (m === null) {

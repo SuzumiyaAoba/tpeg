@@ -22,7 +22,9 @@ import {
   map,
   oneOrMore,
   optional,
+  restoreFailureWatermark,
   seq,
+  snapshotFailureWatermark,
 } from "@suzumiyaaoba/tpeg-core";
 import { scanBalancedBraces } from "./brace-scanner";
 import type { Expression, Optional, Plus, Quantified, Star } from "./types";
@@ -211,10 +213,21 @@ export const withRepetition = <T extends Expression>(
     }
     const [repetitionOp] = opResult.val;
 
+    // Probe for a second operator: only `.success` is inspected, so its
+    // internal sub-failures (the `*`/`+`/`?` alternatives that each failed
+    // before e.g. a `{n}` probe matched) are speculative noise when the
+    // probe succeeds -- restored below before returning the concrete
+    // failure, so a later swallowed failure doesn't report
+    // `Expected "*" or "+" or "?"` at a position whose actual problem was
+    // a second repetition operator. On the probe-FAILED path the records
+    // are kept: they genuinely describe what could follow a postfix
+    // expression, same as `optionalRepetitionOperator`'s own records.
+    const secondOpSnapshot = snapshotFailureWatermark();
     if (
       repetitionOp !== undefined &&
       repetitionOperator(input, opResult.next).success
     ) {
+      restoreFailureWatermark(secondOpSnapshot);
       // A second repetition operator immediately chained onto the first
       // (`item{2}{4}`, `item**`, `item?+`, ...) is not a valid TPEG
       // construct -- `repetitionOperator` only ever consumes ONE operator

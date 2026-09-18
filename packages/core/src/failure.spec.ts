@@ -25,6 +25,7 @@ import {
   materializeParseError,
   mergeFailureWatermark,
   renameWatermarkExpectation,
+  renameWatermarkExpectationsSince,
   resetFailureWatermark,
   restoreFailureWatermark,
   snapshotFailureWatermark,
@@ -350,6 +351,90 @@ describe("renameWatermarkExpectation", () => {
     const error = materializeParseError(false);
     expect(error.expected).toEqual(["digit", "letter"]);
     expect(error.parserName).toBeUndefined();
+  });
+
+  it("renames only the LAST same-label entry, preserving earlier same-label attributions", () => {
+    // Two tied entries can share `label` while differing in
+    // `parserName` (`expectationSeen` keeps them distinct -- pinned
+    // above). The entry a just-run parser contributed is the LAST one
+    // appended; renaming every match would retitle the earlier parser's
+    // entry to the new name as well -- `choice(named(lit("x"),"A"),
+    // named(lit("x"),"B"))` ended with both entries attributed to "B"
+    // and `parserName` falsely reporting "B" instead of being omitted.
+    fail("abcdef", 2, { label: "digit", parserName: "a" });
+    fail("abcdef", 2, { label: "digit" });
+    renameWatermarkExpectation("abcdef", 2, "digit", "b");
+    const error = materializeParseError(false);
+    // [{digit,a},{digit,b}] -- 'a' keeps its attribution, so no single
+    // parserName is reportable (rename-all would have yielded "b").
+    expect(error.expected).toEqual(["digit", "digit"]);
+    expect(error.parserName).toBeUndefined();
+  });
+});
+
+describe("renameWatermarkExpectationsSince", () => {
+  // Pairs with `snapshotFailureWatermark` taken immediately before a
+  // wrapped-parser call: retitles only the entries THAT call added, so
+  // a `withDetailedError` rename can no longer touch expectations other
+  // parsers recorded earlier (same-label siblings, or a farther-position
+  // expectation the wrapped call never reached).
+  it("renames all entries when the call advanced the farthest position", () => {
+    fail("abcdef", 1, { label: "near", parserName: "earlier" });
+    const before = snapshotFailureWatermark();
+    fail("abcdef", 4, { label: "far", parserName: "literal" });
+    renameWatermarkExpectationsSince("abcdef", before, "rule");
+    const error = materializeParseError(false);
+    // The pos-4 record wholesale-replaced the pos-1 one -- it's new.
+    expect(error.pos).toBe(4);
+    expect(error.expected).toBe("far");
+    expect(error.parserName).toBe("rule");
+  });
+
+  it("renames only entries appended after the snapshot when the position merely tied", () => {
+    fail("abcdef", 2, { label: "a-label", parserName: "earlier" });
+    const before = snapshotFailureWatermark();
+    fail("abcdef", 2, { label: "b-label", parserName: "literal" });
+    renameWatermarkExpectationsSince("abcdef", before, "rule");
+    const error = materializeParseError(false);
+    // [{a-label,earlier},{b-label,rule}] -- retitling the earlier entry
+    // too would have made parserName "rule" instead of ambiguous.
+    expect(error.expected).toEqual(["a-label", "b-label"]);
+    expect(error.parserName).toBeUndefined();
+  });
+
+  it("does not retitle an earlier parser's same-label entry", () => {
+    // The `choice(named(lit("x"),"A"), named(lit("x"),"B"))` shape:
+    // alt-B's own fresh record is renamed, alt-A's already-renamed one
+    // must keep "ParserA".
+    fail("abcdef", 2, { label: "digit", parserName: "ParserA" });
+    const before = snapshotFailureWatermark();
+    fail("abcdef", 2, { label: "digit", parserName: "literal" });
+    renameWatermarkExpectationsSince("abcdef", before, "ParserB");
+    const error = materializeParseError(false);
+    expect(error.expected).toEqual(["digit", "digit"]);
+    expect(error.parserName).toBeUndefined();
+  });
+
+  it("is a no-op when the call contributed nothing (its failure was nearer than the watermark)", () => {
+    // `choice(seq(lit("a"),lit("b")), named(lit("q"),"ParserB"))` on
+    // "ax": alt1 records "b" at pos 1; ParserB's own "q" record at pos 0
+    // is ignored by `fail()`. The label-based rename still retitled the
+    // "b" entry to "ParserB" -- a parser that never expected "b".
+    fail("abcdef", 4, { label: "far", parserName: "literal" });
+    const before = snapshotFailureWatermark();
+    fail("abcdef", 1, { label: "near", parserName: "literal" });
+    renameWatermarkExpectationsSince("abcdef", before, "ParserB");
+    const error = materializeParseError(false);
+    expect(error.pos).toBe(4);
+    expect(error.expected).toBe("far");
+    expect(error.parserName).toBe("literal");
+  });
+
+  it("is a no-op on a different input", () => {
+    const before = snapshotFailureWatermark();
+    fail("abcdef", 2, { label: "digit", parserName: "literal" });
+    renameWatermarkExpectationsSince("other-input", before, "rule");
+    expect(materializeParseError(false).parserName).toBe("literal");
   });
 });
 

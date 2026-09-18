@@ -257,6 +257,13 @@ export function run(argv: string[]): number {
     );
     return 1;
   }
+  // A UTF-8 BOM is a file-encoding artifact, not grammar content -- strip
+  // it the way tsc/node strip BOMs from source files. Without this, a
+  // BOM'd .tpeg file (the default from some Windows editors) fails at
+  // position 0 with an invisible `found:` character.
+  if (source.charCodeAt(0) === 0xfeff) {
+    source = source.slice(1);
+  }
 
   // `tpegModuleFile` (not `tpegFile`) so a `.tpeg` file whose top-level
   // `import "..."` statements the module system documents is accepted
@@ -424,7 +431,10 @@ export function run(argv: string[]): number {
     process.stderr.write(`warning: ${warning}\n`);
   }
 
-  if (options.output) {
+  // `options.output !== undefined`, not a truthiness check: an explicit
+  // `-o ""` must not silently fall back to stdout -- let `writeFileSync`
+  // reject the empty path and report it like any other bad output path.
+  if (options.output !== undefined) {
     try {
       writeFileSync(options.output, generated.code, "utf8");
     } catch (error) {

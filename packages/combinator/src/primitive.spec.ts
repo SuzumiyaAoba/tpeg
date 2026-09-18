@@ -200,6 +200,35 @@ describe("primitive combinators", () => {
       const result = startOfLine()("a\r\nb", 2);
       expect(result.success).toBe(false);
     });
+
+    it("should succeed at pos === input.length when the input ends with a newline", () => {
+      const result = startOfLine()("a\n", 2);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.next).toBe(2);
+      }
+    });
+
+    it("fails at an out-of-contract pos rather than reading input[pos - 1]", () => {
+      const sol = startOfLine();
+      // A pos one past the end of a newline-terminated input used to read
+      // input[input.length] -- the trailing "\n" itself -- and report a
+      // line start beyond EOF. The other entries cover the rest of the
+      // invalid-offset table (negative, fractional, NaN, Infinity,
+      // >= 2**32).
+      for (const pos of [
+        -1,
+        -0.5,
+        0.5,
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        Number.NEGATIVE_INFINITY,
+        2 ** 32,
+        3, // input.length + 1 -- the past-EOF newline read
+      ]) {
+        expect(sol("a\n", pos).success).toBe(false);
+      }
+    });
   });
 
   describe("EOF", () => {

@@ -9,6 +9,7 @@ import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   choice,
   createFailure,
+  isValidOffset,
   literal,
   map,
   oneOrMore,
@@ -58,6 +59,22 @@ export const optionalWhitespace: Parser<string> = map(
  * every call site this exists for already discards the value.
  */
 export const optionalWhitespaceOrComment: Parser<void> = (input, pos) => {
+  // An out-of-contract `pos` (`isValidOffset`, `@suzumiyaaoba/tpeg-core`)
+  // must fail rather than echo itself back in a bogus success:
+  // `i < input.length` is vacuously false for `NaN` and vacuously true
+  // for a negative `pos`, either way returning `{ current: pos, next:
+  // pos }` as if a real scan had run -- and `requiredWhitespaceOrComment`
+  // below keys its "did anything get consumed" check on `result.next ===
+  // pos`, which `NaN === NaN` makes FALSE, so an unguarded `NaN` would
+  // have been misread as a consumed separator. A `pos` past the end of
+  // input is out of contract too: `pos === input.length` is a legitimate
+  // empty scan at EOF, anything further is not.
+  if (!isValidOffset(pos) || pos > input.length) {
+    return createFailure("Expected a valid position", pos, {
+      parserName: "optionalWhitespaceOrComment",
+    });
+  }
+
   let i = pos;
   while (i < input.length) {
     const char = input[i] as (typeof WHITESPACE_CHARS)[number] | undefined;

@@ -16,7 +16,7 @@ import {
   snapshotFailureWatermark,
 } from "./failure";
 import type { ParseResult, Parser } from "./types";
-import { createFailure, isFailure } from "./utils";
+import { createFailure, isFailure, isValidOffset } from "./utils";
 
 /**
  * Shared ordered-choice trial loop: tries `parsers[i](input, pos)` in
@@ -146,6 +146,17 @@ export const sequence = <P extends Parser<unknown>[]>(
   ...parsers: P
 ): Parser<{ [K in keyof P]: P[K] extends Parser<infer T> ? T : never }> => {
   const sequenceParser = (input: string, pos: number) => {
+    // Same out-of-contract-`pos` guard every leaf parser already applies
+    // (`isValidOffset`, `./utils.ts`): an invalid offset must fail here
+    // rather than fall into the zero-element branch below (or have a
+    // first child's failure relayed as if it were this sequence's own
+    // reason). `pos === input.length` stays legal.
+    if (!isValidOffset(pos) || pos > input.length) {
+      return createFailure("Expected a valid position", pos, {
+        parserName: "sequence",
+      });
+    }
+
     if (parsers.length === 0) {
       return {
         success: true,
@@ -636,6 +647,18 @@ export const predictiveChoice = <T extends unknown[]>(
     input: string,
     pos: number,
   ): ParseResult<T[number]> => {
+    // Same out-of-contract-`pos` guard every leaf parser already applies
+    // (`isValidOffset`, `./utils.ts`): every candidate would fail at an
+    // invalid offset anyway, but `charCodeAt`/`codePointAt` on a
+    // fractional/negative `pos` would silently coerce the index first --
+    // the guard keeps this contract local and fails fast instead of
+    // wandering through the trie walk.
+    if (!isValidOffset(pos) || pos > input.length) {
+      return createFailure("Expected a valid position", pos, {
+        parserName: "predictiveChoice",
+      });
+    }
+
     if (pos >= input.length) {
       // EOF: no character to filter by, so every alternative is
       // attempted -- matches `choice`'s own behavior on an empty match
@@ -718,6 +741,17 @@ export const predictiveChoice = <T extends unknown[]>(
 export const withDefault =
   <T>(parser: Parser<T>, defaultValue: T): Parser<T> =>
   (input: string, pos) => {
+    // Same out-of-contract-`pos` guard every leaf parser already applies
+    // (`isValidOffset`, `./utils.ts`): an invalid offset must fail here
+    // rather than fall into the "swallow and return the default" branch
+    // below, which would echo the invalid offset back as a bogus
+    // zero-width success. `pos === input.length` stays legal.
+    if (!isValidOffset(pos) || pos > input.length) {
+      return createFailure("Expected a valid position", pos, {
+        parserName: "withDefault",
+      });
+    }
+
     const result = parser(input, pos);
 
     if (result.success) {
@@ -780,6 +814,17 @@ export const maybe = <T>(parser: Parser<T>): Parser<T | null> =>
 export const reject =
   <T>(parser: Parser<T>, parserName = "reject"): Parser<null> =>
   (input: string, pos) => {
+    // Same out-of-contract-`pos` guard as `notPredicate`
+    // (`./lookahead.ts`), placed before the snapshot: at an invalid
+    // offset the child's failure below would be INVERTED into a bogus
+    // zero-width success (`reject` succeeding at `pos = NaN`), which is
+    // precisely what this guard must prevent.
+    if (!isValidOffset(pos) || pos > input.length) {
+      return createFailure("Expected a valid position", pos, {
+        parserName,
+      });
+    }
+
     // Snapshot before probing, exactly like `notPredicate`
     // (`./lookahead.ts`) and for the identical reason: a failure inside
     // `parser` is not evidence about the input here -- it's the EXPECTED,
@@ -792,6 +837,26 @@ export const reject =
     const result = parser(input, pos);
 
     if (result.success) {
+      // Restore BEFORE recording, for the same reason the failure path
+      // below restores and `notPredicate` (`./lookahead.ts`) now does on
+      // its own identical probe-success path: the probe's internal
+      // records are speculative noise -- it SUCCEEDED, so any sub-failure
+      // it left behind (a tried-and-failed alternative, a deeper
+      // abandoned attempt) has nothing to do with why the surrounding
+      // parse failed. Left in place they would both pollute the
+      // diagnostic and -- when a probe sub-failure sits deeper than
+      // `pos` -- make this `fail()` call a no-op (pos < watermarkPos),
+      // losing "parser to fail" entirely and suppressing a later genuine
+      // failure's own `fail()` records the same way.
+      restoreFailureWatermark(snapshot);
+      // Record `reject`'s own expectation into the shared farthest-failure
+      // watermark, exactly like `notPredicate` does via its `fail()` call:
+      // if this failure is later swallowed by an enclosing `choice` (whose
+      // final error comes from the watermark, not from this concrete
+      // object), "parser to fail" still shows up among the reported
+      // expectations instead of being silently dropped in favor of the
+      // successful probe's internal sub-failures.
+      fail(input, pos, { label: "parser to fail", parserName });
       return createFailure("Expected parser to fail", pos, {
         parserName,
         expected: "parser to fail",

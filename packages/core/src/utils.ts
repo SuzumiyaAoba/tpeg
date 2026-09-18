@@ -152,6 +152,33 @@ export const getCharAt = (input: string, offset: number): string => {
 export const nextPos = (char: string, pos: number): number => pos + char.length;
 
 /**
+ * Whether `pos` is a well-formed parser offset at all: a non-negative
+ * integer below 2³² (so also below every possible string length -- a JS
+ * string cannot reach 2³² code units). Anything failing this check --
+ * negative, fractional, `NaN`, `Infinity`, or >= 2³² -- is outside the
+ * `Parser` contract entirely: it cannot point into `input`, yet raw
+ * string operations silently coerce it instead of failing --
+ * `input.startsWith(str, -1)`/`RegExp.lastIndex = -1` clamp the index to
+ * 0, `input.charCodeAt(0.5)` truncates to index 0, `(2 ** 32) >>> 0`
+ * wraps to 0. Leaf parsers that skipped this check therefore used to
+ * "match" at a position the caller never asked for and hand back
+ * `current`/`next` values violating the offset invariants -- worst case,
+ * `next = NaN`, which defeated `zeroOrMore`/`oneOrMore`'s
+ * `result.next === currentPos` loop guard (`NaN === NaN` is false) and
+ * looped forever (`./repetition.ts`).
+ *
+ * `pos >>> 0 === pos` says all of that in one compare: `ToUint32` is the
+ * identity exactly on the uint32 values -- negatives fold to huge
+ * (unequal) numbers, fractions/`NaN`/`Infinity` collapse to 0 or truncate
+ * (never equal), and anything >= 2³² wraps. `-0` passes, indexing
+ * identically to `0`. Note this says nothing about `input` itself: a
+ * caller still needs the ordinary `pos`/`input.length` bounds check for
+ * "is there a character here", which is why the two tests stay separate
+ * at the leaf sites rather than collapsing into one helper.
+ */
+export const isValidOffset = (pos: number): boolean => pos >>> 0 === pos;
+
+/**
  * Creates a failure result with detailed error information.
  *
  * This function creates a standardized ParseFailure object with all

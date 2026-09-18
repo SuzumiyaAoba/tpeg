@@ -136,6 +136,18 @@ describe("Module Resolution Engine", () => {
       expect(resolved.dependencies).toEqual([]);
     });
 
+    it("should resolve a module file saved with a UTF-8 BOM", async () => {
+      // A BOM is a file-encoding artifact, not grammar content -- without
+      // the strip in `loadModule`, a BOM'd module fails to parse at
+      // position 0 even though its content is identical.
+      mockFs.addFile("/test/utils.tpeg", `\ufeff${UTILS_MODULE}`);
+
+      const resolved = await resolver.resolveModule("utils.tpeg");
+
+      expect(resolved.filePath).toBe("/test/utils.tpeg");
+      expect(resolved.resolved).toBe(true);
+    });
+
     it("should resolve module with dependencies", async () => {
       mockFs.addFile("/test/base.tpeg", BASE_MODULE);
       mockFs.addFile("/test/utils.tpeg", UTILS_MODULE);

@@ -345,17 +345,27 @@ describe("charClassRun", () => {
       expect(result.success).toBe(false);
     });
 
-    it("succeeds with an empty array (min=0) rather than matching past a negative pos, negated", () => {
+    it("fails (min=0) rather than returning an empty array at a negative pos, negated", () => {
+      // A negative pos is outside the offset contract entirely -- NOT
+      // "already past the input", which is what an empty `min = 0` run
+      // means. Earlier this returned a bogus `{ val: [], next: -1 }`
+      // success; `isValidOffset` now rejects it like every other leaf.
       const result = charClassRun([["0", "9"]], 0, true)("abc", -1);
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.val).toEqual([]);
-        expect(result.next).toBe(-1);
-      }
+      expect(result.success).toBe(false);
     });
 
     it("fails (min=1) rather than matching past a negative pos, non-negated", () => {
       const result = charClassRun([["0", "9"]], 1)("123", -1);
+      expect(result.success).toBe(false);
+    });
+
+    it("fails at a fractional pos rather than truncating to index 0", () => {
+      const result = charClassRun([["0", "9"]], 0)("123", 0.5);
+      expect(result.success).toBe(false);
+    });
+
+    it("fails at a pos past input.length rather than reporting an empty run there", () => {
+      const result = charClassRun([["0", "9"]], 0)("123", 4);
       expect(result.success).toBe(false);
     });
 

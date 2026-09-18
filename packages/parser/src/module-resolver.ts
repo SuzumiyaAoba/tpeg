@@ -282,8 +282,15 @@ export class ModuleResolver {
         );
       }
 
-      // Read file content
-      const content = await this.context.fileSystem.readFile(filePath);
+      // Read file content, stripping a leading UTF-8 BOM: it's a
+      // file-encoding artifact, not grammar content -- without this, a
+      // BOM'd module file fails at position 0 with an invisible `found:`
+      // character. Done here (not in FileSystemInterface.readFile, which
+      // stays a faithful raw read) so custom file-system implementations
+      // get the same treatment.
+      const rawContent = await this.context.fileSystem.readFile(filePath);
+      const content =
+        rawContent.charCodeAt(0) === 0xfeff ? rawContent.slice(1) : rawContent;
 
       // Parse imports + the grammar block together, so the resolved module's
       // rules and @export declarations are actually available (e.g. to

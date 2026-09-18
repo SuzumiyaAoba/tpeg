@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { anyChar, literal } from "./basic";
+import { escapeStringLiteral } from "./escape";
 import {
   advancePos,
   createFailure,
@@ -600,6 +601,39 @@ describe("Utils", () => {
     it("should handle complex Unicode sequences", () => {
       const complex = "こんにちは🌍世界";
       expect(unicodeLength(complex)).toBe(8);
+    });
+  });
+
+  describe("escapeStringLiteral", () => {
+    it("escapes a LONE surrogate code unit as \\uXXXX instead of emitting it raw", () => {
+      // A raw lone surrogate is unencodable in UTF-8, so generated source
+      // containing one would either fail to write or silently decode to
+      // U+FFFD -- making the generated parser match the wrong character.
+      expect(escapeStringLiteral("\ud800")).toBe("\\ud800");
+      expect(escapeStringLiteral("\udfff")).toBe("\\udfff");
+      expect(escapeStringLiteral("a\ud800b")).toBe("a\\ud800b");
+    });
+
+    it("leaves a well-formed surrogate pair (one astral char) raw", () => {
+      // `for...of` yields the pair as a single code point (> 0xffff),
+      // which UTF-8 encodes fine -- no escape needed.
+      expect(escapeStringLiteral("\u{103ff}")).toBe("\u{103ff}");
+      expect(escapeStringLiteral("😀")).toBe("😀");
+    });
+
+    it("round-trips through JSON.parse: a lone surrogate escapes to the same code unit", () => {
+      // `\uXXXX` is a valid JSON escape, so `JSON.parse` reproduces the
+      // exact code unit the escape describes.
+      const value = "a\ud800b";
+      expect(JSON.parse(`"${escapeStringLiteral(value)}"`)).toBe(value);
+    });
+
+    it("still escapes backslash, quote, and control characters", () => {
+      expect(escapeStringLiteral("\\")).toBe("\\\\");
+      expect(escapeStringLiteral('"')).toBe('\\"');
+      expect(escapeStringLiteral("\n")).toBe("\\n");
+      expect(escapeStringLiteral("\x00")).toBe("\\x00");
+      expect(escapeStringLiteral("\x7f")).toBe("\\x7f");
     });
   });
 });

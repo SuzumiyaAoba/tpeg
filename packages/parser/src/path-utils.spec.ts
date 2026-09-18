@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import { dirnameOf, normalizeModulePath } from "./path-utils.js";
+import {
+  dirnameOf,
+  moduleNameFromPath,
+  normalizeModulePath,
+} from "./path-utils.js";
 
 describe("normalizeModulePath", () => {
   it("collapses `.` segments and duplicate separators", () => {
@@ -51,5 +55,25 @@ describe("dirnameOf", () => {
   // the relative `bar.tpeg` instead of `/bar.tpeg`.
   it('returns "/" for a root-level file', () => {
     expect(dirnameOf("/foo.tpeg")).toBe("/");
+  });
+});
+
+describe("moduleNameFromPath", () => {
+  it("strips the directory portion and `.tpeg` extension", () => {
+    expect(moduleNameFromPath("grammars/math.tpeg")).toBe("math");
+    expect(moduleNameFromPath("base.tpeg")).toBe("base");
+  });
+
+  it('returns "unknown" when the final segment is missing', () => {
+    expect(moduleNameFromPath("foo.tpeg/")).toBe("unknown");
+    expect(moduleNameFromPath("")).toBe("unknown");
+  });
+
+  // A final segment that is nothing but the extension stripped down to
+  // `""` via `replace`, not `"unknown"` -- a module registered/aliased
+  // under "" can never be named by a `Module.rule` reference.
+  it('returns "unknown" when the filename is only the extension', () => {
+    expect(moduleNameFromPath(".tpeg")).toBe("unknown");
+    expect(moduleNameFromPath("dir/.tpeg")).toBe("unknown");
   });
 });

@@ -13,7 +13,7 @@
  */
 
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
-import { createFailure } from "@suzumiyaaoba/tpeg-core";
+import { createFailure, isValidOffset } from "@suzumiyaaoba/tpeg-core";
 
 /**
  * Advances past a quoted string literal starting at `start` (which must
@@ -582,6 +582,17 @@ export const scanBalancedBraces: Parser<string> = (
   input: string,
   pos: number,
 ) => {
+  // An out-of-contract `pos` (`isValidOffset`, `@suzumiyaaoba/tpeg-core`)
+  // must fail rather than reach `indexOf` below: `indexOf("{", -1)`
+  // clamps the search start to 0 and `indexOf("{", NaN)` treats it as 0
+  // too, either way potentially finding a `{` that precedes the
+  // caller's actual position.
+  if (!isValidOffset(pos)) {
+    return createFailure("Expected a valid position", pos, {
+      parserName: "scanBalancedBraces",
+    });
+  }
+
   const openBracePos = input.indexOf("{", pos);
   if (openBracePos === -1) {
     return createFailure("Expected opening brace '{'", pos, {

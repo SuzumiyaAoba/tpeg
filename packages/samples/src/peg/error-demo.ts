@@ -114,8 +114,10 @@ function runDemo(): void {
   }
 }
 
-// Run the demo
-if (typeof require !== "undefined" && require.main === module) {
+// Run the demo -- `import.meta.main`, same entry-point guard every other
+// demo in this package uses. (`require.main === module` relied on Bun's
+// CJS-compat globals; `module` isn't defined under a plain ESM loader.)
+if (import.meta.main) {
   runDemo();
 }
 

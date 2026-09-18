@@ -20,7 +20,7 @@ import {
 } from "./failure";
 import { optional } from "./repetition";
 import type { Parser } from "./types";
-import { createFailure } from "./utils";
+import { createFailure, parse } from "./utils";
 
 // The farthest-failure watermark (`./failure.ts`) is module-global state
 // keyed by the input string's VALUE, not by test identity -- two unrelated
@@ -1154,6 +1154,63 @@ describe("reject", () => {
     if (result.success) {
       expect(result.val).toBeNull();
       expect(result.next).toBe(0);
+    }
+  });
+
+  // Mirrors `notPredicate`'s `fail(input, pos, expectation)` call
+  // (`./lookahead.ts`): a `reject` failure that a swallowing combinator
+  // discards -- `optional`/`zeroOrMore` convert a child's failure into
+  // their own success without re-forwarding a concrete failure's
+  // `expected` -- used to leave "parser to fail" out of the shared
+  // farthest-failure watermark entirely, so a later genuine failure's
+  // aggregated `expected` listed the probe's internal expectations but
+  // not the rejection that was actually tried at that position.
+  it("records its own expectation in the watermark so a swallowing combinator can't drop it", () => {
+    // On "a": `reject(lit("a"))` fails (the probe matched), `optional`
+    // turns that into a `[]` success, then `lit("b")` fails genuinely.
+    // The final error's `expected` must include "parser to fail"
+    // alongside `"b"` -- previously only `"b"` was there.
+    const result = parse(seq(optional(reject(lit("a"))), lit("b")))("a");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const expected = Array.isArray(result.error.expected)
+        ? result.error.expected
+        : [result.error.expected];
+      expect(expected).toContain("parser to fail");
+      expect(expected).toContain('"b"');
+    }
+  });
+
+  // `reject` now restores the pre-probe watermark before recording its
+  // own failure (same fix `notPredicate` got on its identical probe-
+  // success path): without it, a probe whose internals recorded DEEPER
+  // than `pos` left `fail(input, pos, ...)` a no-op -- the probe's stale
+  // records then owned the watermark, so a later genuine failure's own
+  // `fail()` calls were ignored too, producing an error about a position
+  // where nothing actually went wrong.
+  it("restores the watermark before recording, so deeper probe noise can't suppress later genuine failures", () => {
+    // On "ab": the probe `seq(lit("a"), choice(lit("bx"), lit("b")))`
+    // succeeds, but its first alternative records `'"bx"'` at pos 2.
+    // `optional` swallows `reject`'s concrete failure; `lit("c")` then
+    // fails at pos 0 -- previously invisible because the probe's pos-2
+    // record still owned the watermark: the final error said
+    // `Expected "bx", found "end of input"`, naming neither "parser to
+    // fail" nor `"c"`.
+    const result = parse(
+      seq(
+        optional(reject(seq(lit("a"), choice(lit("bx"), lit("b"))))),
+        lit("c"),
+      ),
+    )("ab");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.pos).toBe(0);
+      const expected = Array.isArray(result.error.expected)
+        ? result.error.expected
+        : [result.error.expected];
+      expect(expected).toContain("parser to fail");
+      expect(expected).toContain('"c"');
+      expect(expected).not.toContain('"bx"');
     }
   });
 });

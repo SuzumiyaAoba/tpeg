@@ -19,6 +19,7 @@ import {
   createFailure,
   createModularGrammarDefinition,
   createModuleInfo,
+  isValidOffset,
   literal,
   map,
   oneOrMore,
@@ -243,6 +244,19 @@ const grammarRuleExpression: Parser<Expression> = (
   input: string,
   pos: number,
 ) => {
+  // An out-of-contract `pos` (`isValidOffset`, `@suzumiyaaoba/tpeg-core`)
+  // must fail rather than drive the scan below: a fractional `pos` lets
+  // `input[endPos]` read `undefined` at every step until `endPos` walks
+  // past `input.length`, after which `input.slice(pos, endPos)` TRUNCATES
+  // the fractional index and parses the whole input as this rule's body
+  // -- a bogus success like `{ current: 0.5, next: 0.5 + n }`. A `pos`
+  // past the end of input is out of contract too.
+  if (!isValidOffset(pos) || pos > input.length) {
+    return createFailure("Expected a valid position", pos, {
+      parserName: "grammarRuleExpression",
+    });
+  }
+
   let endPos = pos;
   let foundEnd = false;
   let activeBraceDepth = 0;
