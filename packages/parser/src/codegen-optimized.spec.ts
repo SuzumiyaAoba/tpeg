@@ -1160,6 +1160,44 @@ describe("generateOptimizedTypeScriptParser: import precision (regression)", () 
     expect(result.imports.join(" ")).not.toMatch(/\bchoice\b/);
   });
 
+  it("an empty choice still imports 'choice' (emits choice(), not a bare passthrough)", () => {
+    // `generateChoiceCode` emits `choice()` for zero alternatives --
+    // the always-failing parser -- so `choice` must be imported. The
+    // import collector previously treated `length <= 1` identically and
+    // skipped it, leaving an unbound `choice()` in the generated module.
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [createRuleDefinition("start", createChoice([]))],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      language: "typescript",
+      includeImports: true,
+      enablePredictiveDispatch: false,
+    });
+    expect(result.imports.join(" ")).toMatch(/\bchoice\b/);
+    expect(result.code).toContain("untagCapture(choice())");
+  });
+
+  it("an empty choice still imports 'choice' with predictive dispatch enabled", () => {
+    // An empty Choice can never be predictive-dispatched (no alternative
+    // yields a filter), so the emitted `choice()` needs the import under
+    // the default option too.
+    const grammar = createGrammarDefinition(
+      "T",
+      [],
+      [createRuleDefinition("start", createChoice([]))],
+    );
+
+    const result = generateOptimizedTypeScriptParser(grammar, {
+      language: "typescript",
+      includeImports: true,
+    });
+    expect(result.imports.join(" ")).toMatch(/\bchoice\b/);
+    expect(result.code).toContain("untagCapture(choice())");
+  });
+
   it("a two-alternative choice still imports 'choice' (control case)", () => {
     const grammar = createGrammarDefinition(
       "T",

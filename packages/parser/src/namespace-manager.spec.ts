@@ -1032,6 +1032,42 @@ describe("NamespaceManager", () => {
       );
     });
 
+    it("does not flag the same rule reached through two aliases of ONE module (regression: resolveLocalRule threw NamespaceConflictError listing 'utils, utils' while checkNamespaceConflicts correctly reported no conflict)", () => {
+      // `import "utils.tpeg" as u1 { foo }; import "utils.tpeg" as u2 { foo };`
+      // brings utils' `foo` into scope twice -- but it is the exact same
+      // RuleDefinition, so the unqualified reference is unambiguous.
+      manager.registerModule(
+        createModuleFile("/proj/utils.tpeg", [
+          createModularGrammar("Utils", [createRule("foo")]),
+        ]),
+      );
+      manager.registerModule(
+        createModuleFile(
+          "/proj/main.tpeg",
+          [createGrammar("Main", [])],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "./utils.tpeg",
+              alias: "u1",
+              selective: ["foo"],
+            },
+            {
+              type: "ImportStatement",
+              modulePath: "./utils.tpeg",
+              alias: "u2",
+              selective: ["foo"],
+            },
+          ],
+        ),
+      );
+
+      expect(() => manager.checkNamespaceConflicts("main")).not.toThrow();
+      const resolved = manager.resolveLocalRule("foo", "main");
+      expect(resolved.moduleName).toBe("utils");
+      expect(resolved.isLocal).toBe(false);
+    });
+
     it("getAvailableRules exposes only the listed names", () => {
       registerBaseAndMain();
       expect(manager.getAvailableRules("minicalc").get("base")).toEqual(

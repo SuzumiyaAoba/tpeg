@@ -907,6 +907,33 @@ export class TypeInferenceEngine {
    * @returns Inferred type for choice
    */
   private inferChoiceType(expression: Choice): InferredType {
+    // A zero-alternative `Choice` is the AST shape `createChoice([])`
+    // produces -- unreachable from `.tpeg` grammar text (the parser's
+    // `choiceExpression` always yields at least two alternatives), but a
+    // legal input to this public API via a hand-built AST, and one the
+    // code generators accept: `generateChoiceCode` emits `choice()`,
+    // `tpeg-core`'s always-failing `Parser<never>` (`combinators.ts`'s
+    // `parsers.length === 0` branch). `never` is therefore the correct
+    // inferred type -- and the only safe one to produce here: joining
+    // zero member type strings would leave `typeString: ""`, which
+    // `type-integration.ts`'s `export type ${name}Result =
+    // ${typeString};` then writes out as `export type X = ;`, a
+    // SyntaxError in the generated file. As a union member `never` is
+    // also correct -- `"a" | never` collapses to `"a"` the same way the
+    // always-failing alternative collapses out of the runtime choice.
+    if (expression.alternatives.length === 0) {
+      return {
+        typeString: "never",
+        nullable: false,
+        isArray: false,
+        baseType: "never",
+        imports: [],
+        documentation: this.options.generateDocumentation
+          ? "Empty choice - can never match, so it produces no value"
+          : undefined,
+      };
+    }
+
     if (!this.options.inferUnionTypes) {
       return {
         typeString: "string",

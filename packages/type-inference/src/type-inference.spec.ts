@@ -212,6 +212,18 @@ describe("TypeInferenceEngine", () => {
       expect(result.baseType).toBe("union");
       expect(result.nullable).toBe(false);
     });
+
+    it("should infer a zero-alternative choice as never, matching choice()'s always-failing Parser<never> (regression: emitted typeString '', which type-integration wrote out as `export type X = ;`, a SyntaxError)", () => {
+      // Hand-built AST only -- the grammar parser always produces >=2
+      // alternatives, but `createChoice([])` is legal input to this API
+      // and to the code generators (which emit `choice()`).
+      const result = engine.inferExpressionType(createChoice([]));
+
+      expect(result.typeString).toBe("never");
+      expect(result.baseType).toBe("never");
+      expect(result.nullable).toBe(false);
+      expect(result.isArray).toBe(false);
+    });
   });
 
   describe("Repetition Operators", () => {

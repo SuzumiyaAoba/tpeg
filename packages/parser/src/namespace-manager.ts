@@ -375,7 +375,18 @@ export class NamespaceManager {
           listedButNotExported = targetModule;
           continue;
         }
-        providers.push({ moduleName: targetModule, rule: targetRule });
+        // The SAME rule reached through two aliases of ONE module
+        // (`import "utils.tpeg" as u1 { foo }; import "utils.tpeg" as
+        // u2 { foo };`) is a single provider, not an ambiguity -- a
+        // module's `moduleRules` maps each name to one `RuleDefinition`,
+        // so same `moduleName` means the identical rule object.
+        // `checkNamespaceConflicts` groups by resolved target module
+        // for the same reason; counting raw alias entries here made
+        // that setup throw `NamespaceConflictError` while conflict
+        // checking correctly reported none.
+        if (!providers.some((p) => p.moduleName === targetModule)) {
+          providers.push({ moduleName: targetModule, rule: targetRule });
+        }
       }
 
       if (providers.length === 1) {

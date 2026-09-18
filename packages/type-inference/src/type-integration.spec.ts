@@ -368,6 +368,54 @@ describe("TypeIntegrationEngine", () => {
       );
     });
 
+    it("emits `export type X = never;` for a zero-alternative Choice rule, not `export type X = ;` (regression: hand-built `createChoice([])` produced a SyntaxError in the generated definitions)", () => {
+      const engine = new TypeIntegrationEngine();
+
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition("start", createChoice([]))],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+
+      expect(typedGrammar.typeDefinitions).toContain(
+        "export type StartResult = never;",
+      );
+      expect(typedGrammar.typeDefinitions).not.toContain("= ;");
+    });
+
+    it("generates a `false` guard for a never result -- and for a union member -- rather than accepting every defined value (regression)", () => {
+      const options: Partial<TypeIntegrationOptions> = {
+        generateTypeGuards: true,
+      };
+      const engine = new TypeIntegrationEngine(options);
+
+      // `Choice(["a", emptyChoice])` infers `"a" | never`; the never
+      // member's guard must be `false`, not `value !== undefined` (which
+      // would make the whole union guard accept anything defined).
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition("start", createChoice([])),
+          createRuleDefinition(
+            "mixed",
+            createChoice([createStringLiteral("a", '"'), createChoice([])]),
+          ),
+        ],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+
+      expect(typedGrammar.typeDefinitions).toContain(
+        "export function isStartResult(value: unknown): value is StartResult {\n    return false;",
+      );
+      expect(typedGrammar.typeDefinitions).toContain(
+        'return (typeof value === "string" && value === "a") || (false);',
+      );
+    });
+
     it("generates a length- and per-member-checking guard for a tuple (Sequence) result", () => {
       // `("a" [0-9]+)` infers `[string, string[]]`-ish tuple -- the guard
       // must check the arity AND each slot, not merely `Array.isArray`,

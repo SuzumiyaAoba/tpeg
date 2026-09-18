@@ -633,7 +633,14 @@ export class OptimizedTPEGCodeGenerator {
         enableCharClassRun: this.options.enableCharClassRun,
         commitAfterAnyCut: false,
         choiceCombinatorFor: (choice) =>
-          choice.alternatives.length <= 1
+          // `generateChoiceCode` emits ONLY a single-alternative Choice
+          // bare; an EMPTY one still emits `choice()` (the always-failing
+          // parser -- `combinators.ts`'s zero-argument case), so `choice`
+          // must be imported for it. `<= 1` here previously grouped the
+          // empty case with the bare-passthrough case and skipped the
+          // import, leaving a `choice()` call with no `choice` binding in
+          // the generated module.
+          choice.alternatives.length === 1
             ? null
             : this.options.enablePredictiveDispatch &&
                 this.firstSetAnalysis !== null &&

@@ -409,6 +409,14 @@ export class TypeIntegrationEngine {
       // fallback below, "!== undefined" would be backwards here.
       return `${valueExpr} === undefined`;
     }
+    if (inferredType.baseType === "never") {
+      // An always-failing parser (a zero-alternative `Choice` -- see
+      // `inferChoiceType` in type-inference.ts) can never produce a
+      // value, so no runtime value is a `never`. Without this branch the
+      // generic fallback below would emit `value !== undefined`, which
+      // OR'd into an enclosing union guard accepts every defined value.
+      return "false";
+    }
     return `${valueExpr} !== undefined`;
   }
 
