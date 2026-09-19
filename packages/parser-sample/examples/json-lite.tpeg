@@ -1,5 +1,6 @@
 // JSON Lite Grammar Definition
-// A simplified JSON parser for demonstration
+// A simplified JSON parser for demonstration -- for strict JSON per
+// RFC 8259 see json.tpeg in this directory.
 grammar JsonLite {
   @version: "2.0"
   @author: "TPEG Team"

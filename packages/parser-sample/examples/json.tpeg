@@ -1,0 +1,68 @@
+// JSON Grammar Definition
+// Strict JSON, mirroring RFC 8259's ABNF productions one-to-one:
+//   https://www.rfc-editor.org/rfc/rfc8259
+//
+// Unlike json-lite.tpeg (a simplified recognizer), this grammar accepts
+// exactly what the RFC allows:
+//   * strings: only the eight legal escapes plus \uXXXX; unescaped
+//     control characters (U+0000-U+001F) are rejected
+//   * numbers: no leading zeros, and digits are required on both sides
+//     of "." and after "e"
+//   * a JSON text is exactly one value bracketed by insignificant
+//     whitespace (the trailing !. rejects trailing garbage)
+grammar Json {
+  @version: "1.0"
+  @author: "TPEG Team"
+  @description: "Strict JSON parser (RFC 8259)"
+  @license: "MIT"
+  @start: json
+
+  // JSON-text = ws value ws
+  json = ws value ws !.
+
+  // value = false / null / true / object / array / number / string
+  value = "false" / "null" / "true" / object / array / number / string
+
+  // object = begin-object [ member *( value-separator member ) ] end-object
+  object = begin_object (member (value_separator member)*)? end_object
+
+  // member = string name-separator value
+  member = string name_separator value
+
+  // array = begin-array [ value *( value-separator value ) ] end-array
+  array = begin_array (value (value_separator value)*)? end_array
+
+  // number = [ minus ] int [ frac ] [ exp ]
+  number = "-"? int frac? exp?
+  int = "0" / [1-9] digit*
+  frac = "." digit+
+  exp = [eE] [+\-]? digit+
+  digit = [0-9]
+
+  // string = quotation-mark *char quotation-mark
+  string = "\"" char* "\""
+
+  // char = unescaped / escape ( %x22 / %x5C / %x2F / %x62 / %x66 / %x6E
+  //        / %x72 / %x74 / %x75 4HEXDIG )
+  char = unescaped / escape ("\"" / "\\" / "/" / "b" / "f" / "n" / "r" / "t" / "u" hex{4})
+
+  // unescaped = %x20-21 / %x23-5B / %x5D-10FFFF -- anything except '"',
+  // '\', and the U+0000-U+001F control characters (raw newlines included).
+  unescaped = [^\x00-\x1f"\\]
+
+  // escape = %x5C -- the backslash introducing an escape sequence.
+  escape = "\\"
+  hex = [0-9a-fA-F]
+
+  // ws = *( %x20 / %x09 / %x0A / %x0D ) -- space, tab, LF, CR only.
+  ws = [ \t\n\r]*
+
+  // The six structural characters each absorb surrounding ws
+  // (begin-array = ws %x5B ws, name-separator = ws %x3A ws, etc.).
+  begin_array = ws "[" ws
+  begin_object = ws "{" ws
+  end_array = ws "]" ws
+  end_object = ws "}" ws
+  name_separator = ws ":" ws
+  value_separator = ws "," ws
+}

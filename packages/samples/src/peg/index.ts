@@ -3,6 +3,7 @@ import {
   any,
   charClass,
   choice,
+  lazy,
   lit,
   zeroOrMore as many,
   oneOrMore as many1,
@@ -366,7 +367,18 @@ export const Identifier = mapResult(
 export function Primary(input: string, pos: number): ParseResult<Expr> {
   return choice(
     map(seq(Identifier, not(LEFTARROW)), ($) => $[0]),
-    map(seq(OPEN, Expression, CLOSE), ($) => $[1]),
+    // `lazy(() => Expression)` is the recursion's depth guard: each
+    // nested parenthesized expression passes through `guardedParserCall`,
+    // so a grammar nesting past `PARSER_LIMITS.MAX_RECURSION_DEPTH` aborts
+    // cleanly instead of throwing `RangeError` (#114's fix class).
+    map(
+      seq(
+        OPEN,
+        lazy(() => Expression),
+        CLOSE,
+      ),
+      ($) => $[1],
+    ),
     Literal,
     Class,
     mapResult(

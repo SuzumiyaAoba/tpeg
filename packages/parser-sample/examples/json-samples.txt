@@ -1,0 +1,89 @@
+# JSON Input Samples -- strict RFC 8259
+# Pairs with examples/json.tpeg (grammar Json, entry rule `json`).
+# Every line above "## Error Cases" must fully parse; the lines under
+# "## Error Cases" must NOT (see examples.spec.ts's ERROR_CASES).
+# Note: the "[1,<TAB>2]" line below contains a literal TAB -- legal as
+# JSON whitespace -- while the error-case line "tab<TAB>inside" puts a
+# literal TAB inside a string, where control characters are illegal.
+
+## Simple Values
+"hello"
+""
+42
+-17
+0
+-0
+3.14
+0.5
+1e10
+-2.5E-3
+6.02e+23
+true
+false
+null
+
+## Strings and Escapes
+"esc \" \\ \/ \b \f \n \r \t"
+"é中😀"
+
+## Objects
+{}
+{"name": "John"}
+{"age": 25, "active": true}
+{"user": "alice", "score": 98.5, "verified": false}
+{"": ""}
+
+## Arrays
+[]
+[1, 2, 3]
+["a", "b", "c"]
+[true, false, null]
+[1,	2]
+
+## Nested Structures
+{"data": [1, 2, 3]}
+[{"id": 1}, {"id": 2}]
+{"users": [{"name": "John", "age": 25}, {"name": "Jane", "age": 30}]}
+[[[[["deep"]]]]]
+
+## Error Cases
+007
+-01
+01
++1
+1.
+.5
+1e
+1e+
+'single'
+"bad \x escape"
+"\u12"
+"tab	inside"
+"unterminated
+{name: "John"}
+{"a":1,}
+[1,]
+{"a" 1}
+[1 2]
+{"a":}
+{"a":01}
+true x
+undefined
+NaN
+Infinity
+[1,2
+nul
+{"a":1}}
+
+## Complex Example
+{
+  "name": "Example API",
+  "version": "1.0",
+  "endpoints": [
+    {"path": "/users", "method": "GET"},
+    {"path": "/posts", "method": "POST"}
+  ],
+  "escapes": "line\nbreak",
+  "unicode": "Aé中",
+  "active": true
+}

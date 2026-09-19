@@ -3,6 +3,7 @@ import {
   any,
   charClass,
   choice,
+  lazy,
   lit,
   map,
   not,
@@ -58,7 +59,18 @@ export const NumberLit = map(plus(Digit), ($) => Number.parseInt($.join("")));
  */
 export const Factor: Parser<number> = choice(
   map(
-    seq(_, lit("("), _, (input, pos) => Expr(input, pos), _, lit(")"), _),
+    // `lazy` does double duty here: `Expr` is declared below (TDZ), and
+    // routing the recursion through `guardedParserCall` makes deeply
+    // nested input fail cleanly instead of overflowing the stack (#114).
+    seq(
+      _,
+      lit("("),
+      _,
+      lazy(() => Expr),
+      _,
+      lit(")"),
+      _,
+    ),
     ($) => $[3],
   ),
   map(seq(_, NumberLit, _), ($) => $[1]),

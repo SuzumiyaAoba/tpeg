@@ -47,6 +47,7 @@ const SAMPLE_PAIRS = [
     entry: "expression",
   },
   { grammar: "json-lite.tpeg", samples: "json-inputs.txt", entry: "value" },
+  { grammar: "json.tpeg", samples: "json-samples.txt", entry: "json" },
 ] as const;
 
 /**
@@ -57,11 +58,54 @@ const SAMPLE_PAIRS = [
  */
 const CALCULATOR_ERROR_CASES = new Set(["1 +", "(1 + 2", "1 + 2)", "1 ++ 2"]);
 
+/**
+ * json-samples.txt's "## Error Cases" section: inputs strict RFC 8259
+ * JSON must reject -- leading zeros, missing digits around "." / "e",
+ * illegal or truncated escapes, a raw control character inside a string,
+ * unquoted keys, trailing commas, missing colons/commas/values, trailing
+ * garbage after the value, and unclosed or unterminated constructs.
+ */
+const JSON_ERROR_CASES = new Set([
+  "007",
+  "-01",
+  "01",
+  "+1",
+  "1.",
+  ".5",
+  "1e",
+  "1e+",
+  "'single'",
+  '"bad \\x escape"',
+  '"\\u12"',
+  '"tab\tinside"',
+  '"unterminated',
+  '{name: "John"}',
+  '{"a":1,}',
+  "[1,]",
+  '{"a" 1}',
+  "[1 2]",
+  '{"a":}',
+  '{"a":01}',
+  "true x",
+  "undefined",
+  "NaN",
+  "Infinity",
+  "[1,2",
+  "nul",
+  '{"a":1}}',
+]);
+
+const ERROR_CASES: Record<string, ReadonlySet<string>> = {
+  "calculator.tpeg": CALCULATOR_ERROR_CASES,
+  "json.tpeg": JSON_ERROR_CASES,
+};
+
 /** One sample per non-comment line; "##" sections are headers too. */
 const lineSamples = (file: string): string[] => {
   const raw = readFileSync(join(EXAMPLES_DIR, file), "utf-8");
-  // json-inputs.txt's trailing "## Complex Example" block is a single
-  // multi-line document, tested separately via documentSamples().
+  // A trailing "## Complex Example" block (json-inputs.txt,
+  // json-samples.txt) is a single multi-line document, tested
+  // separately via documentSamples().
   const complexIdx = raw.indexOf("## Complex Example");
   const head = complexIdx >= 0 ? raw.slice(0, complexIdx) : raw;
   return head
@@ -72,9 +116,9 @@ const lineSamples = (file: string): string[] => {
 
 /**
  * Whole-document inputs for grammars whose samples file is itself one
- * document (INI/CSV/LOG) plus json-inputs.txt's multi-line complex example.
- * For INI the "# ..." lines are valid comment content and stay; CSV/LOG
- * treat "# ..." lines as file headers and drop them.
+ * document (INI/CSV/LOG) plus the JSON samples' multi-line complex
+ * example. For INI the "# ..." lines are valid comment content and stay;
+ * CSV/LOG treat "# ..." lines as file headers and drop them.
  */
 const documentSamples = (file: string): string[] => {
   const raw = readFileSync(join(EXAMPLES_DIR, file), "utf-8");
@@ -93,7 +137,9 @@ const documentSamples = (file: string): string[] => {
         .filter((l) => l.trim().length > 0 && !l.trim().startsWith("#"))
         .join("\n"),
     );
-  } else if (file === "json-inputs.txt") {
+  } else {
+    // Any other samples file: a trailing "## Complex Example" section is
+    // a single multi-line document.
     const idx = raw.indexOf("## Complex Example");
     if (idx >= 0) {
       docs.push(raw.slice(idx).split("\n").slice(1).join("\n").trim());
@@ -180,9 +226,7 @@ describe("examples/*.tpeg regression", () => {
 
       it("fully consumes every per-line sample", () => {
         for (const input of lineSamples(pair.samples)) {
-          const mustFail =
-            pair.grammar === "calculator.tpeg" &&
-            CALCULATOR_ERROR_CASES.has(input);
+          const mustFail = ERROR_CASES[pair.grammar]?.has(input) ?? false;
           expect(fullyConsumes(input), `${JSON.stringify(input)}`).toBe(
             !mustFail,
           );

@@ -1776,6 +1776,55 @@ describe("validateGeneratedIdentifiers: emitted-name shape and external referenc
     ).not.toThrow();
   });
 
+  it("rejects an external parser reference colliding with a local rule's PREFIXED emitted name (silent mis-binding)", () => {
+    // `p_x` resolves to no local rule, so it's emitted verbatim -- but
+    // `namePrefix: "p_"` emits `export const p_x` for local rule `x`,
+    // which the reference then binds to (and a caller-supplied `p_x`
+    // binding would be shadowed by): the same silent mis-binding the
+    // import-collision check above guards, via a generated const.
+    const grammar = grammarFromSource('start = p_x\nx = "a"');
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "p_",
+        importedBindings: ["Parser", "literal", "untagCapture"],
+      }),
+    ).toThrow(
+      /external parser "p_x".*collides with the declaration.*local rule "x"/,
+    );
+  });
+
+  it("accepts an external parser reference that only PREFIX-MATCHES a local rule name without being the full emitted name", () => {
+    // `p_x` with `namePrefix: "x_"` emits nothing named `p_x` (rule `x`
+    // emits `x_x`), so the external reference stays genuinely external.
+    const grammar = grammarFromSource('start = p_x\nx = "a"');
+    expect(() =>
+      validateGeneratedIdentifiers(grammar, {
+        namePrefix: "x_",
+        importedBindings: [],
+      }),
+    ).not.toThrow();
+  });
+
+  it("end-to-end: both generators reject an external reference colliding with a prefixed local-rule declaration", () => {
+    const grammar = grammarFromSource('start = p_x\nx = "a"');
+    expect(() =>
+      generateTypeScriptParser(grammar, {
+        namePrefix: "p_",
+        includeImports: true,
+        includeTypes: true,
+      }),
+    ).toThrow(/collides with the declaration/);
+    expect(() =>
+      generateOptimizedTypeScriptParser(grammar, {
+        namePrefix: "p_",
+        language: "typescript",
+        includeImports: true,
+        includeTypes: true,
+        optimize: true,
+      }),
+    ).toThrow(/collides with the declaration/);
+  });
+
   it("end-to-end: both generators reject an external reference colliding with an emitted import", () => {
     const grammar = grammarFromSource('start = "x" literal');
     expect(() =>

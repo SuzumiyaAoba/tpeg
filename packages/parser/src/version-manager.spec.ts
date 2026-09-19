@@ -613,6 +613,149 @@ describe("VersionManager", () => {
       ).toBe(false);
     });
 
+    it("should widen a partial exact constraint to its npm X-range", () => {
+      // Regression test: npm semver treats `=1`/`=1.2` (and a bare
+      // `1`/`1.2`, which defaults to `=`) as the X-ranges `1.x`/`1.2.x` --
+      // `=1` is `>=1.0.0 <2.0.0`, `=1.2` is `>=1.2.0 <1.3.0`. Zero-filling
+      // the omitted components and comparing exactly instead accepted
+      // ONLY `1.0.0`/`1.2.0` -- a version like `1.5.0`, which npm accepts
+      // for `=1`, failed the constraint.
+      const majorOnly = manager.parseVersionConstraint("=1");
+      expect(
+        manager.satisfiesConstraint(
+          { major: 1, minor: 0, patch: 0 },
+          majorOnly,
+        ),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 1, minor: 5, patch: 9 },
+          majorOnly,
+        ),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 2, minor: 0, patch: 0 },
+          majorOnly,
+        ),
+      ).toBe(false);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 0, minor: 9, patch: 9 },
+          majorOnly,
+        ),
+      ).toBe(false);
+
+      const minorOnly = manager.parseVersionConstraint("=1.2");
+      expect(
+        manager.satisfiesConstraint(
+          { major: 1, minor: 2, patch: 7 },
+          minorOnly,
+        ),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 1, minor: 3, patch: 0 },
+          minorOnly,
+        ),
+      ).toBe(false);
+
+      // A bare partial version defaults to `=` and widens identically.
+      expect(
+        manager.satisfiesConstraint(
+          { major: 1, minor: 2, patch: 9 },
+          manager.parseVersionConstraint("1.2"),
+        ),
+      ).toBe(true);
+
+      // A fully-specified `=1.2.3` stays an exact match.
+      const fullyPinned = manager.parseVersionConstraint("=1.2.3");
+      expect(
+        manager.satisfiesConstraint(
+          { major: 1, minor: 2, patch: 3 },
+          fullyPinned,
+        ),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 1, minor: 2, patch: 4 },
+          fullyPinned,
+        ),
+      ).toBe(false);
+    });
+
+    it("should widen a partial `>`/`<=` lower/upper bound the npm way", () => {
+      // Regression test: npm gives a partial `>`/`<=` a range too --
+      // `>1` is `>=2.0.0`, `>1.2` is `>=1.3.0`, `<=1` is `<2.0.0`,
+      // `<=1.2` is `<1.3.0`. Zero-filling instead made `>1` accept every
+      // `1.x` above `1.0.0` and made `<=1` reject everything above
+      // `1.0.0` -- both wrong in opposite directions.
+      const gtMajor = manager.parseVersionConstraint(">1");
+      expect(
+        manager.satisfiesConstraint({ major: 1, minor: 5, patch: 0 }, gtMajor),
+      ).toBe(false);
+      expect(
+        manager.satisfiesConstraint({ major: 2, minor: 0, patch: 0 }, gtMajor),
+      ).toBe(true);
+
+      const gtMinor = manager.parseVersionConstraint(">1.2");
+      expect(
+        manager.satisfiesConstraint({ major: 1, minor: 2, patch: 9 }, gtMinor),
+      ).toBe(false);
+      expect(
+        manager.satisfiesConstraint({ major: 1, minor: 3, patch: 0 }, gtMinor),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint({ major: 2, minor: 0, patch: 0 }, gtMinor),
+      ).toBe(true);
+
+      const lteMajor = manager.parseVersionConstraint("<=1");
+      expect(
+        manager.satisfiesConstraint({ major: 1, minor: 9, patch: 9 }, lteMajor),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint({ major: 2, minor: 0, patch: 0 }, lteMajor),
+      ).toBe(false);
+
+      const lteMinor = manager.parseVersionConstraint("<=1.2");
+      expect(
+        manager.satisfiesConstraint({ major: 1, minor: 2, patch: 9 }, lteMinor),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint({ major: 1, minor: 3, patch: 0 }, lteMinor),
+      ).toBe(false);
+      expect(
+        manager.satisfiesConstraint({ major: 0, minor: 9, patch: 9 }, lteMinor),
+      ).toBe(true);
+
+      // `>=`/`<` need no widening: zero-filling already matches npm
+      // (`>=1` is `>=1.0.0`, `<1` is `<1.0.0`).
+      expect(
+        manager.satisfiesConstraint(
+          { major: 1, minor: 0, patch: 0 },
+          manager.parseVersionConstraint(">=1"),
+        ),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 0, minor: 9, patch: 9 },
+          manager.parseVersionConstraint(">=1"),
+        ),
+      ).toBe(false);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 0, minor: 9, patch: 9 },
+          manager.parseVersionConstraint("<1"),
+        ),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(
+          { major: 1, minor: 0, patch: 0 },
+          manager.parseVersionConstraint("<1"),
+        ),
+      ).toBe(false);
+    });
+
     it("should handle range constraints", () => {
       const constraints = [
         { operator: ">=", version } as VersionConstraint,

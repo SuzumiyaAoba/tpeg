@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 import {
+  DuplicateImportAliasError,
   ExportResolutionError,
   NamespaceConflictError,
   NamespaceManager,
@@ -295,6 +296,76 @@ describe("NamespaceManager", () => {
       ]);
       expect(() => manager.registerModule(good)).not.toThrow();
       expect(manager.getScope("utils")?.exports.has("real")).toBe(true);
+    });
+
+    it("throws instead of silently dropping an import when two imports share one alias", () => {
+      // Regression test: `scope.imports` is keyed by alias, so two
+      // imports resolving to the same alias used to collapse into one --
+      // the second `set` silently overwrote the first, making the earlier
+      // module unresolvable through the alias (and silently discarding
+      // its selective list, if any). Same silent-overwrite failure mode
+      // `ModuleNameCollisionError` was added for.
+      const moduleFile = createModuleFile(
+        "/proj/main.tpeg",
+        [createGrammar("Main", [])],
+        [
+          { type: "ImportStatement", modulePath: "./a.tpeg", alias: "x" },
+          { type: "ImportStatement", modulePath: "./b.tpeg", alias: "x" },
+        ],
+      );
+
+      expect(() => manager.registerModule(moduleFile)).toThrow(
+        DuplicateImportAliasError,
+      );
+      expect(() => manager.registerModule(moduleFile)).toThrow(
+        /alias 'x' is declared twice.*'\.\/a\.tpeg'.*'\.\/b\.tpeg'/,
+      );
+    });
+
+    it("throws on a duplicate alias even when it comes from the basename-derived default", () => {
+      // `import "a/utils.tpeg"` and `import "b/utils.tpeg"` with no `as`
+      // clause both default to the alias "utils" -- the same collision
+      // an explicit duplicate `as` produces.
+      const moduleFile = createModuleFile(
+        "/proj/main.tpeg",
+        [createGrammar("Main", [])],
+        [
+          { type: "ImportStatement", modulePath: "a/utils.tpeg" },
+          { type: "ImportStatement", modulePath: "b/utils.tpeg" },
+        ],
+      );
+
+      expect(() => manager.registerModule(moduleFile)).toThrow(
+        DuplicateImportAliasError,
+      );
+    });
+
+    it("throws on a duplicate alias even when both imports name the SAME module with different selective lists", () => {
+      // `import "u.tpeg" as x { a }` followed by `import "u.tpeg" as x
+      // { b }` used to keep only the SECOND list: `a` silently became
+      // unimportable while `x.b` still resolved.
+      const moduleFile = createModuleFile(
+        "/proj/main.tpeg",
+        [createGrammar("Main", [])],
+        [
+          {
+            type: "ImportStatement",
+            modulePath: "./u.tpeg",
+            alias: "x",
+            selective: ["a"],
+          },
+          {
+            type: "ImportStatement",
+            modulePath: "./u.tpeg",
+            alias: "x",
+            selective: ["b"],
+          },
+        ],
+      );
+
+      expect(() => manager.registerModule(moduleFile)).toThrow(
+        DuplicateImportAliasError,
+      );
     });
 
     it("a FAILED re-registration of the SAME filePath does not corrupt the live module's selective imports", () => {

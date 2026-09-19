@@ -138,4 +138,37 @@ describe("Grammar", () => {
       next: pos(5),
     });
   });
+
+  // Regression: the Factor->Expr parenthesized-expression recursion used
+  // to be a bare `(input, pos) => Expr(input, pos)` lambda, which bypassed
+  // `guardedParserCall` (`PARSER_LIMITS.MAX_RECURSION_DEPTH`) entirely --
+  // an input nesting deeper than the JS stack threw an uncaught
+  // `RangeError` out of the parser instead of returning a ParseResult
+  // failure (the fix class of #114, applied to generated parsers but
+  // missed here).
+  it("should fail cleanly rather than overflow the stack on pathological nesting", () => {
+    const depth = 2000; // > PARSER_LIMITS.MAX_RECURSION_DEPTH (1000)
+    const input = `${"(".repeat(depth)}1${")".repeat(depth)}`;
+
+    let result: ReturnType<typeof Grammar> | undefined;
+    expect(() => {
+      result = Grammar(input, START);
+    }).not.toThrow();
+
+    expect(result?.success).toBe(false);
+    if (result && !result.success) {
+      expect(result.error.abort).toBe(true);
+      expect(result.error.message).toContain("Recursion depth limit");
+    }
+  });
+
+  it("should still parse nesting within the recursion limit", () => {
+    const depth = 50;
+    const input = `${"(".repeat(depth)}1${")".repeat(depth)}`;
+    const result = Grammar(input, START);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe(1);
+    }
+  });
 });

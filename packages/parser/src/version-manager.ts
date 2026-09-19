@@ -360,14 +360,62 @@ export class VersionManager {
 
     switch (constraint.operator) {
       case "=":
+        // npm semver treats a partial `=N`/`=N.M` as the X-range `N.x`/
+        // `N.M.x` (`=1` is `>=1.0.0 <2.0.0`, `=1.2` is `>=1.2.0 <1.3.0`),
+        // not an exact match against the zero-padded `1.0.0`/`1.2.0` --
+        // the same partial-version widening `~`/`^` below rely on
+        // `precision` for, since `parseVersion` zero-fills the omitted
+        // components. Only a fully-specified `=1.2.3` (or a hand-built
+        // constraint with no `precision`) is an exact match.
+        if (constraint.precision === "major") {
+          return version.major === constraint.version.major;
+        }
+        if (constraint.precision === "minor") {
+          return (
+            version.major === constraint.version.major &&
+            version.minor === constraint.version.minor
+          );
+        }
         return comparison === 0;
       case ">":
+        // npm: `>1` is `>=2.0.0` and `>1.2` is `>=1.3.0` -- a partial
+        // lower bound excludes EVERYTHING up to the next component
+        // boundary, not just the zero-padded `1.0.0`/`1.2.0`. Zero-filling
+        // only happens to work for `>=` and `<` (see below); `>` needs the
+        // same `precision` widening `=` does.
+        if (constraint.precision === "major") {
+          return version.major > constraint.version.major;
+        }
+        if (constraint.precision === "minor") {
+          return (
+            version.major > constraint.version.major ||
+            (version.major === constraint.version.major &&
+              version.minor > constraint.version.minor)
+          );
+        }
         return comparison > 0;
       case ">=":
+        // `>=1`/`>=1.2` zero-fill to `>=1.0.0`/`>=1.2.0` in npm too -- no
+        // `precision` widening needed for an inclusive lower bound.
         return comparison >= 0;
       case "<":
+        // `<1`/`<1.2` zero-fill to `<1.0.0`/`<1.2.0` in npm too -- no
+        // `precision` widening needed for an exclusive upper bound.
         return comparison < 0;
       case "<=":
+        // npm: `<=1` is `<2.0.0` and `<=1.2` is `<1.3.0` -- the mirror of
+        // `>` above. Zero-filling `<=1` to `<=1.0.0` wrongly rejected
+        // `1.9.9`, which npm accepts.
+        if (constraint.precision === "major") {
+          return version.major <= constraint.version.major;
+        }
+        if (constraint.precision === "minor") {
+          return (
+            version.major < constraint.version.major ||
+            (version.major === constraint.version.major &&
+              version.minor <= constraint.version.minor)
+          );
+        }
         return comparison <= 0;
       case "^": {
         if (comparison < 0 || version.major !== constraint.version.major) {

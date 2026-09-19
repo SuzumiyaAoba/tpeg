@@ -174,7 +174,14 @@ export const createJsExprTracker = () => {
       prevWordIsProp = prevTok === "punct" && prevPunct === ".";
       prevTok = "word";
       prevPunct = null;
-      exprExpected = REGEX_PREFIX_KEYWORDS.has(w);
+      // A keyword in property position (`x.in`, `x.return`, `x.case`)
+      // ends an operand like any other member expression -- the member
+      // access itself is the value, so a `/` after it is division, not
+      // a regex opener. `prevWordIsProp` was already computed for
+      // `openParen`'s statement-keyword check; the same exclusion must
+      // apply here, or `x.in /re/` mis-scans `re` as regex contents
+      // (and `codeContainsIdentifier` misses it entirely).
+      exprExpected = !prevWordIsProp && REGEX_PREFIX_KEYWORDS.has(w);
     },
     /** Record a token that ends an operand: number, string, regex, `]`, `++`/`--`. */
     operand(): void {

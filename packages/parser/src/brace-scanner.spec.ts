@@ -53,6 +53,27 @@ describe("codeContainsIdentifier: `$$` detection across the regex/division bound
     expect(codeContainsIdentifier("return /$$/;", "$$")).toBe(false);
   });
 
+  test("finds identifiers used in division after a keyword used as a property name", () => {
+    // `x.in` / `x.return` / `x.case` are legal member expressions whose
+    // property name happens to be a regex-prefix keyword. The `/` after
+    // them is DIVISION (the member expression is an operand end), so the
+    // operand between the slashes is real code -- previously the
+    // keyword check ignored property position and scanned `/re/` as a
+    // regex literal, hiding `re`/`$$` from detection.
+    expect(codeContainsIdentifier("x.in / re / y", "re")).toBe(true);
+    expect(codeContainsIdentifier("x.in / $$ / y", "$$")).toBe(true);
+    expect(codeContainsIdentifier("x.return / $$ / y", "$$")).toBe(true);
+    expect(codeContainsIdentifier("x.case / $$ / y", "$$")).toBe(true);
+    expect(codeContainsIdentifier("obj.instanceof / $$ / 2", "$$")).toBe(true);
+  });
+
+  test("still scans a regex correctly after a keyword in statement position", () => {
+    // Control: a keyword NOT in property position still opens regex
+    // position, so `$$` inside is pattern text.
+    expect(codeContainsIdentifier("x instanceof /$$/", "$$")).toBe(false);
+    expect(codeContainsIdentifier("throw /$$/;", "$$")).toBe(false);
+  });
+
   test("does NOT report `$$` inside a string literal", () => {
     expect(codeContainsIdentifier('return "$$";', "$$")).toBe(false);
   });

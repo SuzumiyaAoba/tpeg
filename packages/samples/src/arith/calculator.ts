@@ -3,6 +3,7 @@ import {
   any,
   charClass,
   choice,
+  lazy,
   lit,
   map,
   not,
@@ -291,9 +292,20 @@ export const NumberLiteral = map(seq(_, NumberParser, _), ([, value]) =>
  * It matches either a number literal or a parenthesized expression.
  */
 export const Factor: Parser<ExpressionNode> = choice(
-  // Parenthesized expression
+  // Parenthesized expression. The `lazy` hop is load-bearing twice over:
+  // `Expression` is declared below (TDZ), and each recursion level must
+  // pass through `guardedParserCall` so deeply nested input fails with a
+  // clean abort instead of a thrown `RangeError` (#114's fix class).
   map(
-    seq(_, lit("("), _, (input, pos) => Expression(input, pos), _, lit(")"), _),
+    seq(
+      _,
+      lit("("),
+      _,
+      lazy(() => Expression),
+      _,
+      lit(")"),
+      _,
+    ),
     ([, , , expr]) => createGroup(expr),
   ),
   // Signed number
@@ -364,7 +376,11 @@ export const DirectFactor: Parser<number> = choice(
       _,
       lit("("),
       _,
-      (input, pos) => DirectExpression(input, pos),
+      // Same `lazy` delegation as `Factor` above: TDZ-safe reference to
+      // the `DirectExpression` declared below, and the depth guard that
+      // turns pathological nesting into an abort failure rather than a
+      // stack overflow.
+      lazy(() => DirectExpression),
       _,
       lit(")"),
       _,

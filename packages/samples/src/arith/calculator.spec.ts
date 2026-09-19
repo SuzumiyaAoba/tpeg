@@ -213,6 +213,32 @@ describe("Calculator", () => {
       expect(() => calculate("1 / 0")).toThrow("Division by zero");
       expect(() => calculate("1 % 0")).toThrow("Modulo by zero");
     });
+
+    // Regression: the Factor->Expression and DirectFactor->DirectExpression
+    // parenthesized-expression recursions used to be bare `(input, pos) =>
+    // Expression(input, pos)` lambdas, bypassing `guardedParserCall`
+    // (`PARSER_LIMITS.MAX_RECURSION_DEPTH`) -- input nesting deeper than the
+    // JS stack threw an uncaught `RangeError` out of `parse()` instead of
+    // surfacing as an ordinary parse failure (the fix class of #114,
+    // applied to generated parsers but missed here).
+    it("should report a parse error -- not crash -- on pathological nesting", () => {
+      const depth = 2000; // > PARSER_LIMITS.MAX_RECURSION_DEPTH (1000)
+      const input = `${"(".repeat(depth)}1${")".repeat(depth)}`;
+
+      for (const parseFn of [parseToAST, calculateDirect]) {
+        let thrown: unknown;
+        try {
+          parseFn(input);
+        } catch (e) {
+          thrown = e;
+        }
+        expect(thrown).toBeInstanceOf(Error);
+        expect((thrown as Error).message).not.toContain(
+          "Maximum call stack size",
+        );
+        expect((thrown as Error).message).toContain("Recursion depth limit");
+      }
+    });
   });
 
   describe("Map Function Demonstration", () => {

@@ -1393,6 +1393,25 @@ export const validateGeneratedIdentifiers = (
           `Rule "${rule.name}" references external parser "${name}", which collides with a runtime import this grammar's generated code also needs -- the emitted reference would resolve to that imported combinator (a function returning a Parser, not a Parser), silently mis-binding instead of calling the intended parser. Reference the external parser under a different name (e.g. wrap it in a differently-named rule or alias it at the call site).`,
         );
       }
+      // Emitted UNPREFIXED (see `generateIdentifierCode`), so it can
+      // also collide with a LOCAL rule's own emitted name when a
+      // `namePrefix` is in effect: `x = "a"` under `namePrefix: "p_"`
+      // declares `const p_x`, and an external reference spelled `p_x`
+      // binds to that declaration instead of the caller's binding --
+      // the same silent mis-binding as the import collision above.
+      // (`name` equal to an UNPREFIXED local name is impossible: such
+      // an `Identifier` resolves as a local reference, not external.)
+      if (
+        localRuleNames.has(
+          name.startsWith(options.namePrefix)
+            ? name.slice(options.namePrefix.length)
+            : "\0",
+        )
+      ) {
+        throw new Error(
+          `Rule "${rule.name}" references external parser "${name}", which collides with the declaration this grammar emits for local rule "${name.slice(options.namePrefix.length)}" (\`export const ${name}\` under the \`${options.namePrefix}\` name prefix) -- the emitted reference would resolve to that generated rule instead of the caller's binding, and a caller-supplied \`${name}\` would be shadowed by it. Reference the external parser under a different name.`,
+        );
+      }
     });
   }
 

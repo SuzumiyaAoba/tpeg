@@ -44,6 +44,32 @@ export class NamespaceConflictError extends Error {
 }
 
 /**
+ * Duplicate import alias error: two `import` statements in the same
+ * module resolved to the same alias (an explicit `as` name, or the same
+ * basename-derived default when no `as` is given -- `import
+ * "a/utils.tpeg"` and `import "b/utils.tpeg"` both default to `utils`).
+ * The alias is the only key `scope.imports` and the selective-import
+ * tables have, so a second registration silently overwrote the first:
+ * the earlier import became unresolvable through the alias and, for a
+ * selective import, its listed rules vanished -- the same silent-drop
+ * failure mode `ModuleNameCollisionError` was added to prevent for
+ * module names.
+ */
+export class DuplicateImportAliasError extends Error {
+  constructor(
+    public readonly alias: string,
+    public readonly existingModulePath: string,
+    public readonly newModulePath: string,
+    public readonly currentModule: string,
+  ) {
+    super(
+      `Import alias '${alias}' is declared twice in module '${currentModule}': for '${existingModulePath}' and '${newModulePath}' -- an alias can only name one imported module, so the second import silently replaces the first. Rename one of them with an explicit "as" clause.`,
+    );
+    this.name = "DuplicateImportAliasError";
+  }
+}
+
+/**
  * `@export` resolution error: an `@export: [...]` declaration listed a
  * rule name that no grammar in the module actually declares. Without this
  * check the phantom name lands in `scope.exports` like a real export --
@@ -173,6 +199,20 @@ export class NamespaceManager {
     for (const importStmt of moduleFile.imports) {
       const alias =
         importStmt.alias || this.extractModuleName(importStmt.modulePath);
+      // A duplicate alias (explicit or basename-derived) silently drops
+      // the earlier import -- see DuplicateImportAliasError's doc
+      // comment. Rejected during the compute phase like every other
+      // registration validation, so a thrown registration leaves no
+      // shared-state residue.
+      const existingModulePath = scope.imports.get(alias);
+      if (existingModulePath !== undefined) {
+        throw new DuplicateImportAliasError(
+          alias,
+          existingModulePath,
+          importStmt.modulePath,
+          moduleName,
+        );
+      }
       scope.imports.set(alias, importStmt.modulePath);
       if (importStmt.selective) {
         scopeSelectiveImports.set(alias, new Set(importStmt.selective));
