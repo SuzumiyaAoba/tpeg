@@ -13,13 +13,14 @@ import { literal, map, seq } from "@suzumiyaaoba/tpeg-core";
 import { identifier } from "./identifier";
 import type { Expression, LabeledExpression } from "./types";
 import { createLabeledExpression } from "./types";
+import { optionalWhitespaceOrComment } from "./whitespace-utils";
 
 /**
  * Parses a labeled expression: name:expr
  *
  * A labeled expression consists of:
  * - An identifier (the label)
- * - A colon ":"
+ * - A colon ":" (whitespace and comments are allowed on both sides)
  * - An expression to be labeled
  *
  * @param expressionParser - Parser for the expression part
@@ -36,8 +37,15 @@ export const labeledExpression = (
   expressionParser: () => Parser<Expression>,
 ): Parser<LabeledExpression> => {
   return map(
-    seq(identifier, literal(":"), expressionParser()),
-    ([label, _, expression]) => createLabeledExpression(label.name, expression),
+    seq(
+      identifier,
+      optionalWhitespaceOrComment,
+      literal(":"),
+      optionalWhitespaceOrComment,
+      expressionParser(),
+    ),
+    ([label, _ws1, _, _ws2, expression]) =>
+      createLabeledExpression(label.name, expression),
   );
 };
 
@@ -68,14 +76,42 @@ export const withOptionalLabel = <T extends Expression>(
     const labelResult = identifier(input, pos);
 
     if (labelResult.success) {
+      // Whitespace and comments may sit between the label and its colon
+      // (`name : expr`) -- optionalWhitespaceOrComment always succeeds on
+      // a valid offset, and `labelResult.next` is one.
+      const beforeColon = optionalWhitespaceOrComment(input, labelResult.next);
+      const colonPos = beforeColon.success
+        ? beforeColon.next
+        : labelResult.next;
+
       // Check if there's a colon after the label
-      const colonResult = literal(":")(input, labelResult.next);
+      const colonResult = literal(":")(input, colonPos);
 
       if (colonResult.success) {
+        // Whitespace and comments are allowed after the colon too.
+        const afterColon = optionalWhitespaceOrComment(input, colonResult.next);
+        const exprPos = afterColon.success ? afterColon.next : colonResult.next;
+
         // If we have label:, parse the following expression
-        const expressionResult = expressionParser(input, colonResult.next);
+        const expressionResult = expressionParser(input, exprPos);
         if (!expressionResult.success) {
-          return expressionResult;
+          // A fatal failure inside the labeled expression (an
+          // out-of-range quantifier bound, a reversed character class,
+          // a resource limit) must propagate: it rejects the input
+          // outright, the same way a thrown check in the self-hosted
+          // grammar escapes the `labeled` alternative entirely.
+          if (expressionResult.error.fatal) {
+            return expressionResult;
+          }
+          // Otherwise the label attempt failed as a WHOLE: `name:expr`
+          // is only a label when the entire `ident ":" expr` matches, so
+          // a bad expression after the colon falls back to the unlabeled
+          // parse -- mirroring the self-hosted grammar's
+          // `labeled = label:identifierName ws ":" ws expr:prefix / prefix`.
+          // `x:!` then parses as a bare `x` followed by a stray `:` --
+          // `x : !` takes the same path now that whitespace around the
+          // colon is skipped before the check.
+          return expressionParser(input, pos);
         }
 
         // Create labeled expression

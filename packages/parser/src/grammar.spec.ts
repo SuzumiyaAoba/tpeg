@@ -298,6 +298,152 @@ describe("Grammar Definition Block Tests", () => {
     });
   });
 
+  describe("@noskip rule annotation", () => {
+    test("attaches a bare `@noskip` flag to the following rule", () => {
+      const input = `grammar X {
+        @noskip
+        ws = [ \\t\\n\\r]*
+      }`;
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.annotations).toHaveLength(0);
+        expect(result.val.rules).toHaveLength(1);
+        expect(result.val.rules[0]?.annotations).toEqual([
+          { type: "GrammarAnnotation", key: "noskip", value: "" },
+        ]);
+      }
+    });
+
+    test("mixes freely with @memoize on the same rule", () => {
+      const input = `grammar X {
+        @memoize: 4
+        @noskip
+        expr = [0-9]+
+      }`;
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.rules[0]?.annotations).toEqual([
+          { type: "GrammarAnnotation", key: "memoize", value: "4" },
+          { type: "GrammarAnnotation", key: "noskip", value: "" },
+        ]);
+      }
+    });
+
+    test("a bare `@noskip` with no rule after it is a parse error, not an inert standalone annotation", () => {
+      // `noskip` is a DEDICATED_ANNOTATION_KEYS member: the generic
+      // annotation alternatives refuse it, so it can only ever attach to
+      // a rule -- exactly like a bare `@memoize`.
+      const input = `grammar X {
+        @noskip
+        expr = [0-9]+
+        @noskip
+      }`;
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(false);
+    });
+
+    test("`@noskip: value` is a parse error -- the annotation takes no value", () => {
+      const input = `grammar X {
+        @noskip: yes
+        expr = [0-9]+
+      }`;
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(false);
+    });
+
+    test("does not consume `@skip` immediately preceding a rule -- it stays a block-level annotation", () => {
+      const input = `grammar X {
+        @skip: ws
+        expr = [0-9]+
+      }`;
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.annotations).toEqual([
+          { type: "GrammarAnnotation", key: "skip", value: "ws" },
+        ]);
+        expect(result.val.rules[0]?.annotations).toBeUndefined();
+      }
+    });
+  });
+
+  describe("unimplemented annotations", () => {
+    test.each([
+      "private",
+      "protected",
+      "public",
+      "internal",
+      "override",
+      "namespace",
+      "if",
+      "else",
+      "elif",
+      "endif",
+      "ifdef",
+      "ifndef",
+    ])("`@%s` is a parse error, not an inert annotation", (key) => {
+      const input = `grammar X {
+        @${key}
+        expr = [0-9]+
+      }`;
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toContain(`@${key}`);
+        expect(result.error.message).toContain("not implemented");
+      }
+    });
+
+    test.each(["private", "namespace", "override"])(
+      "`@%s: value` is a parse error too (the value shape does not rescue it)",
+      (key) => {
+        const input = `grammar X {
+          @${key}: "foo"
+          expr = [0-9]+
+        }`;
+        const result = testParse(grammarDefinition, input);
+        expect(result.success).toBe(false);
+      },
+    );
+
+    test('`@private: ["a"]` cannot slip through the module-info list annotation', () => {
+      const input = `grammar X {
+        @private: ["a"]
+        expr = [0-9]+
+      }`;
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(false);
+    });
+
+    test("`@privateFoo` is a different key and still parses as a generic flag annotation", () => {
+      const input = `grammar X {
+        @privateFoo
+        expr = [0-9]+
+      }`;
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.val.annotations).toEqual([
+          { type: "GrammarAnnotation", key: "privateFoo", value: "" },
+        ]);
+      }
+    });
+
+    test("a rule annotated with an unimplemented annotation fails, not attaches", () => {
+      // `@private` directly above a rule used to silently parse as a
+      // block-level flag annotation (it never attached to the rule -- the
+      // docs' own example was wrong). Now it is a fatal parse error.
+      const input = `grammar X {
+        @private
+        helper = [a-z]+
+      }`;
+      const result = testParse(grammarDefinition, input);
+      expect(result.success).toBe(false);
+    });
+  });
+
   describe("grammarDefinition", () => {
     test("should parse grammar with annotations and single rule", () => {
       const input = `grammar SimpleCalc {
@@ -336,7 +482,7 @@ describe("Grammar Definition Block Tests", () => {
         @version: "1.0"
         @start: expression
         @skip: whitespace
-        @private
+        @draft
 
         expression = [0-9]+
       }`;
@@ -348,7 +494,7 @@ describe("Grammar Definition Block Tests", () => {
           { type: "GrammarAnnotation", key: "version", value: "1.0" },
           { type: "GrammarAnnotation", key: "start", value: "expression" },
           { type: "GrammarAnnotation", key: "skip", value: "whitespace" },
-          { type: "GrammarAnnotation", key: "private", value: "" },
+          { type: "GrammarAnnotation", key: "draft", value: "" },
         ]);
         expect(result.val.rules).toHaveLength(1);
       }

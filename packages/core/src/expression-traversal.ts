@@ -4,7 +4,7 @@ import type { Expression, LabeledExpression } from "./grammar-types";
  * Returns the direct child expressions of `expr`: `elements` for a
  * `Sequence`, `alternatives` for a `Choice`, the single wrapped
  * `expression` for every unary node (`Group`, `Star`, `Plus`, `Optional`,
- * `Quantified`, `PositiveLookahead`, `NegativeLookahead`,
+ * `Quantified`, `PositiveLookahead`, `NegativeLookahead`, `Skip`,
  * `LabeledExpression`, `ActionExpression`), and nothing for leaf nodes.
  *
  * This is the ONE place in the codebase that enumerates an expression
@@ -36,6 +36,8 @@ export const childExpressions = (expr: Expression): readonly Expression[] => {
     case "Quantified":
     case "PositiveLookahead":
     case "NegativeLookahead":
+    case "Skip":
+    case "Span":
     case "LabeledExpression":
     case "ActionExpression":
       return [expr.expression];
@@ -45,6 +47,7 @@ export const childExpressions = (expr: Expression): readonly Expression[] => {
     case "QualifiedIdentifier":
     case "AnyChar":
     case "Cut":
+    case "WordBoundary":
       return [];
     default: {
       const exhaustiveCheck: never = expr;
@@ -109,15 +112,33 @@ export const mapChildExpressions = (
     case "Quantified":
     case "PositiveLookahead":
     case "NegativeLookahead":
+    case "Span":
     case "LabeledExpression":
     case "ActionExpression":
       return { ...expr, expression: fn(expr.expression) };
+    case "Skip": {
+      // `expression` is typed `Identifier` (a resolved rule reference),
+      // narrower than the `Expression` `fn` returns -- so the generic
+      // `{ ...expr, expression: fn(...) }` arm can't cover it. Apply
+      // `fn` like every other unary node, but verify the rewrite kept
+      // the reference an `Identifier`: a pass that rewrote it to
+      // anything else would build a `Skip` node violating its own
+      // invariant, which is a bug to surface rather than store.
+      const mapped = fn(expr.expression);
+      if (mapped.type !== "Identifier") {
+        throw new Error(
+          `mapChildExpressions: a rewrite turned a Skip's Identifier child into ${mapped.type} -- a Skip must keep referencing a rule by name`,
+        );
+      }
+      return { ...expr, expression: mapped };
+    }
     case "StringLiteral":
     case "CharacterClass":
     case "Identifier":
     case "QualifiedIdentifier":
     case "AnyChar":
     case "Cut":
+    case "WordBoundary":
       return expr;
     default: {
       const exhaustiveCheck: never = expr;

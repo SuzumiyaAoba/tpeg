@@ -324,6 +324,102 @@ export interface Cut {
 }
 
 /**
+ * Skip node in TPEG grammar AST.
+ * Desugar-internal node: never produced by the grammar parser itself --
+ * inserted by `applySkipDesugar` (`packages/parser/src/skip-desugar.ts`)
+ * at sequence boundaries (start / between elements / end) for every
+ * rule not exempted by `@noskip` or by the `@skip` rule's own
+ * transitive reference closure, when the grammar block carries a
+ * `@skip: <ruleName>` annotation.
+ *
+ * `expression` is the resolved reference to the grammar's skip rule.
+ * Semantically the node is `optional(<rule>)` whose value is then
+ * discarded: it always succeeds (consuming whatever the skip rule
+ * matches, or nothing), and it contributes NOTHING to the enclosing
+ * sequence's value -- codegen emits `ignore(optional(<ref>))`, whose
+ * `IGNORED` sentinel `sequence`/`captureSequence` filter out before
+ * building the result tuple or merged label object. A rule's own
+ * value shape is therefore identical with and without `@skip`.
+ *
+ * @example
+ * ```typescript
+ * const skip: Skip = {
+ *   type: "Skip",
+ *   expression: { type: "Identifier", name: "whitespace" }
+ * };
+ * ```
+ */
+export interface Skip {
+  /** The node type identifier */
+  type: "Skip";
+  /** Reference to the grammar's `@skip`-named skip rule */
+  expression: Identifier;
+}
+
+/**
+ * Span (source-text extraction) node in TPEG grammar AST.
+ * Represents the `@expr` prefix operator: it evaluates `expression`
+ * exactly as written, but replaces the match's value with the raw
+ * source text the expression consumed (`input.slice(start, end)`),
+ * whatever shape the expression's own value had. Consumption and
+ * failure behavior are identical to the wrapped expression -- only the
+ * produced value changes.
+ *
+ * `@` binds like the other prefix operators (`&`/`!`): it applies to a
+ * whole postfix expression, so `@"a"+` extracts the text of the entire
+ * repetition, not just one iteration. Write `@(e1 e2)` to extract a
+ * sequence's full matched text including any `@skip`-inserted interior
+ * whitespace.
+ *
+ * `@` collides with annotation syntax (`@key: value`, `@noskip`) only
+ * where a grammarItem boundary is possible: a bare `@identifier` in
+ * sequence-continuation position followed by another rule's header is
+ * read as an annotation, not a span -- write `@(identifier)` to force
+ * the span reading in that position. `@` followed by anything other
+ * than an identifier start (`@"lit"`, `@[a-z]`, `@(...)`) is always
+ * a span.
+ *
+ * @example
+ * ```typescript
+ * const span: Span = {
+ *   type: "Span",
+ *   expression: { type: "Identifier", name: "number" }
+ * };
+ * ```
+ */
+export interface Span {
+  /** The node type identifier */
+  type: "Span";
+  /** The expression whose consumed source text becomes the value */
+  expression: Expression;
+}
+
+/**
+ * Word-boundary assertion node in TPEG grammar AST.
+ * Represents `\b` (word boundary) / `\B` (non-word-boundary) at
+ * expression level: a zero-width assertion that succeeds exactly when
+ * the character immediately before the current position and the
+ * character immediately after it differ in word-ness -- where a "word
+ * character" is the ASCII regex set `[A-Za-z0-9_]`, matching JavaScript
+ * `\b`/`\B` semantics (start and end of input count as non-word).
+ *
+ * Like the lookahead operators it consumes no input and contributes
+ * `undefined` to an enclosing sequence's tuple (see the Capture
+ * Structure Reference Table in docs/peg-grammar.md).
+ *
+ * @example
+ * ```typescript
+ * const boundary: WordBoundary = { type: "WordBoundary", negated: false };
+ * ```
+ */
+export interface WordBoundary {
+  /** The node type identifier */
+  type: "WordBoundary";
+  /** `true` for `\B` (assert NO boundary), `false` for `\b` */
+  negated: boolean;
+}
+
+/**
  * Labeled expression node in TPEG grammar AST.
  * Represents a labeled expression for capturing results (label:expr).
  *
@@ -393,6 +489,9 @@ export type Expression =
   | PositiveLookahead
   | NegativeLookahead
   | Cut
+  | Skip
+  | Span
+  | WordBoundary
   | LabeledExpression
   | ActionExpression;
 
@@ -443,10 +542,11 @@ export interface RuleDefinition {
   documentation?: string[];
   /**
    * Optional rule-scoped annotations, e.g. `@memoize` / `@memoize: 256`
-   * written directly before this rule's definition -- distinct from
-   * `GrammarDefinition.annotations`, which are block-scoped (`@start`,
-   * `@skip`, etc.). See `packages/parser/src/grammar.ts`'s
-   * `memoizeAnnotation` for the only rule-level annotation currently
+   * or `@noskip`, written directly before this rule's definition --
+   * distinct from `GrammarDefinition.annotations`, which are
+   * block-scoped (`@start`, `@skip`, etc.). See
+   * `packages/parser/src/grammar.ts`'s `memoizeAnnotation` /
+   * `noskipAnnotation` for the rule-level annotations currently
    * recognized by the parser.
    */
   annotations?: GrammarAnnotation[];
@@ -990,6 +1090,62 @@ export const createNegativeLookahead = (
  */
 export const createCut = (): Cut => ({
   type: "Cut",
+});
+
+/**
+ * Create a Skip AST node -- the desugar-internal marker
+ * `applySkipDesugar` inserts at sequence boundaries for grammars
+ * carrying `@skip: <ruleName>`. Never emitted by the grammar parser.
+ *
+ * @param expression - Reference to the grammar's skip rule
+ * @returns A new Skip AST node
+ *
+ * @example
+ * ```typescript
+ * const skip = createSkip(createIdentifier("whitespace"));
+ * // Returns: { type: "Skip", expression: { type: "Identifier", name: "whitespace" } }
+ * ```
+ */
+export const createSkip = (expression: Identifier): Skip => ({
+  type: "Skip",
+  expression,
+});
+
+/**
+ * Create a Span AST node -- the `@expr` source-text extraction
+ * operator: the wrapped expression matches exactly as written, but the
+ * produced value is the consumed source text.
+ *
+ * @param expression - The expression whose consumed source text becomes the value
+ * @returns A new Span AST node
+ *
+ * @example
+ * ```typescript
+ * const span = createSpan(createIdentifier("number"));
+ * // Returns: { type: "Span", expression: { type: "Identifier", name: "number" } }
+ * ```
+ */
+export const createSpan = (expression: Expression): Span => ({
+  type: "Span",
+  expression,
+});
+
+/**
+ * Create a WordBoundary AST node -- the `\b`/`\B` zero-width
+ * word-boundary assertion.
+ *
+ * @param negated - `true` for `\B` (assert no boundary), `false` for `\b`
+ * @returns A new WordBoundary AST node
+ *
+ * @example
+ * ```typescript
+ * const boundary = createWordBoundary();
+ * // Returns: { type: "WordBoundary", negated: false }
+ * ```
+ */
+export const createWordBoundary = (negated = false): WordBoundary => ({
+  type: "WordBoundary",
+  negated,
 });
 
 /**

@@ -19,6 +19,7 @@ import {
   createFailure,
   createModularGrammarDefinition,
   createModuleInfo,
+  fail,
   isValidOffset,
   literal,
   map,
@@ -41,6 +42,7 @@ import { GRAMMAR_KEYWORDS, GRAMMAR_SYMBOLS } from "./constants";
 import { identifier } from "./identifier";
 import {
   DEDICATED_ANNOTATION_KEYS,
+  UNIMPLEMENTED_ANNOTATION_KEYS,
   annotationKeyExcluding,
   exportDeclaration,
   importStatement,
@@ -136,11 +138,13 @@ const skipCharClassContent = (input: string, pos: number): number => {
 };
 
 /**
- * Decides whether `checkPos` -- the offset of the first non-whitespace
- * character following a whitespace run inside a rule body -- starts a
- * rule boundary. Only meaningful at `activeBraceDepth === 0` (the caller
- * checks); inside an action/transform body the same characters are
- * ordinary JavaScript. The boundary shapes:
+ * Decides whether the character at `checkPos` inside a rule body starts
+ * a rule boundary. Called at any scan position of interest -- the
+ * position after a whitespace run, and directly at any identifier-start
+ * position in continuation context (see `canBeRuleBoundary` in
+ * `grammarRuleExpression`). Only meaningful at `activeBraceDepth === 0`
+ * (the caller checks); inside an action/transform body the same
+ * characters are ordinary JavaScript. The boundary shapes:
  *
  * - `}`: can ONLY be the enclosing grammar block's own closing brace --
  *   a "}" inside a string literal or character class is never visible at
@@ -165,10 +169,7 @@ const skipCharClassContent = (input: string, pos: number): number => {
  *   multi-line sequence starting with a rule reference followed by a
  *   group.
  */
-const isRuleBoundaryAfterWhitespace = (
-  input: string,
-  checkPos: number,
-): boolean => {
+const isRuleBoundaryAt = (input: string, checkPos: number): boolean => {
   const boundaryChar = input[checkPos];
   if (boundaryChar === "}") {
     return true;
@@ -220,6 +221,82 @@ const isRuleBoundaryAfterWhitespace = (
 };
 
 /**
+ * Skips whitespace and comments (the same set `isRuleBoundaryAt`'s own
+ * inner loop skips) starting at `pos`, returning the first non-trivia
+ * offset. Used by {@link isAnnotationStartAt} to look past the trivia an
+ * annotation may contain (e.g. a comment between `@key` and its `:`) or
+ * that separates a flag annotation from the rule it precedes
+ * (`@noskip` then a newline then `rule = ...`).
+ */
+const skipTrivia = (input: string, pos: number): number => {
+  let i = pos;
+  while (i < input.length) {
+    if (isLineBreakOrSpaceOrTab(input[i])) {
+      i++;
+      continue;
+    }
+    if (input[i] === "/" && input[i + 1] === "/") {
+      i = skipLineComment(input, i);
+      continue;
+    }
+    if (input[i] === "/" && input[i + 1] === "*") {
+      i = skipBlockComment(input, i);
+      continue;
+    }
+    break;
+  }
+  return i;
+};
+
+/**
+ * Decides whether the `@` at `pos` starts a grammarItem-level ANNOTATION
+ * rather than the `@expr` span (source-text extraction) operator
+ * (`Span`, docs/peg-grammar.md). Both are `@`-prefixed, so the rule-body
+ * scanner can't treat every depth-0 `@` as a boundary anymore -- but
+ * `@identifier` is genuinely ambiguous between "span of a rule
+ * reference" and the flag-annotation / `@key: value` shapes. Resolved
+ * by what FOLLOWS the `@identifier` token (whitespace and comments
+ * skipped, matching the trivia both annotation forms and rule headers
+ * allow):
+ *
+ * - `:` -- the `@key: value` annotation shape (`@start: expr`,
+ *   `@skip: ws`, `@version: "1.0"`, `@memoize: 256`).
+ * - `@` -- another annotation: stacked rule annotations
+ *   (`@memoize\n@noskip\nrule = ...`) mean this `@` begins one too.
+ * - `identifier <ws/comments> =` or `transforms` -- a flag annotation
+ *   (`@noskip`, `@memoize`) sitting directly before the grammarItem it
+ *   annotates, via `isRuleBoundaryAt`.
+ *
+ * Anything else is a span operand position: `@` followed by a
+ * non-identifier character (`@"lit"`, `@[a-z]`, `@(e)`, `@\b`) can
+ * never be an annotation in the first place, and a bare `@identifier`
+ * followed by anything but a `:`/`@`/rule-header is a span of that rule
+ * reference (`@x "a"`, `@x` at the body's end). The one case this
+ * still resolves to "annotation" is `@identifier` immediately before a
+ * rule header -- the flag-annotation reading wins there; a span of a
+ * rule reference in exactly that position needs `@(identifier)`.
+ */
+const isAnnotationStartAt = (input: string, pos: number): boolean => {
+  const keyStart = pos + 1;
+  const keyFirst = input[keyStart];
+  if (keyFirst === undefined || !IDENTIFIER_START_CHAR.test(keyFirst)) {
+    return false;
+  }
+
+  let i = keyStart + 1;
+  while (i < input.length && IDENTIFIER_CONT_CHAR.test(input[i] ?? "")) {
+    i++;
+  }
+  i = skipTrivia(input, i);
+
+  const next = input[i];
+  if (next === ":" || next === "@") {
+    return true;
+  }
+  return isRuleBoundaryAt(input, i);
+};
+
+/**
  * Bounded expression parser for grammar rules.
  *
  * This parser stops at the next rule definition or the enclosing grammar
@@ -260,6 +337,22 @@ const grammarRuleExpression: Parser<Expression> = (
   let endPos = pos;
   let foundEnd = false;
   let activeBraceDepth = 0;
+  // Whether an identifier-starting token at the current scan position
+  // (at depth 0) may be the NEXT rule's header -- `ident <ws/comments>
+  // =` or a whole-word `transforms`, per `isRuleBoundaryAt`.
+  // `false` at the body's own start and right after a token that opens a
+  // fresh element position (`/`, `(`, `&`, `!`): the first element of
+  // each alternative, the first element inside a group, and a
+  // lookahead's operand are exactly the positions the self-hosted
+  // grammar's `notNextRuleStart` does not guard either, so an
+  // identifier there is a genuine element (`("a" / transforms x)` and
+  // `(transforms y)` both parse `transforms` as a rule reference).
+  // Everywhere else the identifier IS checked -- `=` can never continue
+  // an expression, so `ident <ws> =` is unambiguously a rule boundary
+  // even with NO whitespace before it; requiring whitespace first (the
+  // old check only ran inside the whitespace branch) let `r = "a"x="b"`
+  // absorb `x` into this rule's body and then fail on the stranded `=`.
+  let canBeRuleBoundary = false;
   // Inside an action/transform body (activeBraceDepth > 0) the scanned
   // text is JavaScript, so a `/` can open a regex literal -- recognized
   // via the same regex-vs-division heuristic `scanBalancedBraces` uses
@@ -286,6 +379,9 @@ const grammarRuleExpression: Parser<Expression> = (
       // often the parse of the rest of the file.
       endPos = skipStringLiteral(input, endPos, char);
       tracker.operand();
+      // A completed element: an identifier after it is in continuation
+      // position, where the rule-boundary check applies.
+      if (activeBraceDepth === 0) canBeRuleBoundary = true;
       continue;
     }
 
@@ -300,6 +396,7 @@ const grammarRuleExpression: Parser<Expression> = (
     if (char === "[" && activeBraceDepth === 0) {
       endPos = skipCharClassContent(input, endPos);
       tracker.operand();
+      canBeRuleBoundary = true;
       continue;
     }
 
@@ -346,39 +443,79 @@ const grammarRuleExpression: Parser<Expression> = (
       }
       activeBraceDepth--;
       endPos = advanceJsToken(input, endPos, tracker);
+      if (activeBraceDepth === 0) canBeRuleBoundary = true;
       continue;
     }
 
-    // Likewise, "@" can never appear inside an expression at depth 0 -- it
-    // only ever starts a grammarItem-level annotation -- so it is a
-    // boundary regardless of whether whitespace precedes it (e.g.
-    // `start = "a"@skip: ws`). The same check inside the whitespace branch
-    // below previously missed the no-whitespace form.
-    if (char === GRAMMAR_SYMBOLS.ANNOTATION_PREFIX && activeBraceDepth === 0) {
+    // "@" at depth 0 is a boundary when it starts an ANNOTATION
+    // (`@key: value`, `@noskip`, `@memoize` -- see `isAnnotationStartAt`
+    // for the shape test and the span-operator disambiguation). Any
+    // other depth-0 "@" is the `@expr` span operator's own syntax
+    // (`@"lit"`, `@[a-z]`, `@(e)`, `@x "a"`), part of THIS rule's body.
+    // Checking unconditionally (the pre-span behavior) truncated bodies
+    // like `r = "a" @"b"` at the `@`, which then surfaced as a bogus
+    // "unsupported annotation" or stranded-input parse error.
+    if (
+      char === GRAMMAR_SYMBOLS.ANNOTATION_PREFIX &&
+      activeBraceDepth === 0 &&
+      isAnnotationStartAt(input, endPos)
+    ) {
       foundEnd = true;
       break;
     }
 
-    if (isLineBreakOrSpaceOrTab(char)) {
-      // Look ahead past this whitespace run (without committing to
-      // consuming it) to see whether the current rule ends here: either the
-      // next rule definition ("identifier whitespace* =") or the grammar
-      // block's closing brace.
-      let checkPos = endPos;
-      while (
-        checkPos < input.length &&
-        isLineBreakOrSpaceOrTab(input[checkPos])
-      ) {
-        checkPos++;
+    if (activeBraceDepth === 0) {
+      // Whitespace is trivia: it doesn't change which element position
+      // the next significant token sits in, so `canBeRuleBoundary`
+      // survives across it unchanged. (The rule-boundary check used to
+      // run here, at the position after a whitespace run -- which meant
+      // `x` in `"a"x="b"` was never checked at all, and `transforms` in
+      // `"a" / transforms x` was checked where it shouldn't be. Both are
+      // now handled by the identifier-start check below.)
+      if (isLineBreakOrSpaceOrTab(char)) {
+        endPos = advanceJsToken(input, endPos, tracker);
+        continue;
       }
 
-      if (
-        activeBraceDepth === 0 &&
-        isRuleBoundaryAfterWhitespace(input, checkPos)
-      ) {
-        foundEnd = true;
-        break;
+      if (char !== undefined && IDENTIFIER_START_CHAR.test(char)) {
+        // An identifier in CONTINUATION position may be the next rule's
+        // header -- check before absorbing it as a sequence element. An
+        // identifier in exempt position (the body's first element, or
+        // after `/`, `(`, `&`, `!`) is consumed as an element either
+        // way: even `foo=` there can't be a new rule (a bare `foo=`
+        // body's own first element would leave the rule bodyless).
+        if (canBeRuleBoundary && isRuleBoundaryAt(input, endPos)) {
+          foundEnd = true;
+          break;
+        }
+        canBeRuleBoundary = true;
+        endPos = advanceJsToken(input, endPos, tracker);
+        continue;
       }
+
+      // `/`, `(`, `&`, `!`, `@`, `:` open a fresh element position -- an
+      // identifier directly after one is an alternative's first
+      // element, a group's first element, a lookahead's/span's operand,
+      // or a label's expression (`name:expr`'s `expr` is a
+      // `prefix`-level element, just like `&`'s operand) -- not a
+      // continuation element the rule-boundary check applies to.
+      // `name:transforms` labels a rule reference named `transforms`;
+      // treating `:` as continuation context made that valid label look
+      // like a transforms-block boundary. `@` is here because this point
+      // is only reached when `isAnnotationStartAt` already ruled out the
+      // annotation reading, so the `@` is a span operator and the
+      // identifier is its operand (`@x` in `r = "a" @x="b"` must slice
+      // the body at the `=`, not at `x` -- same outcome as `&x`'s
+      // operand). (A stray `:` that ISN'T a label colon is harmless
+      // either way: `expression()` can't consume it, so the
+      // full-consumption check below rejects the rule regardless.)
+      canBeRuleBoundary =
+        char !== "/" &&
+        char !== "(" &&
+        char !== "&" &&
+        char !== "!" &&
+        char !== "@" &&
+        char !== ":";
     }
 
     // Track whether a `/` encountered inside an action body could open a
@@ -691,7 +828,7 @@ const memoizeAnnotation: Parser<GrammarAnnotation> = map(
     ),
   ),
   (results) => {
-    const valueClause = results[3][0];
+    const valueClause = results[3];
     return createGrammarAnnotation(
       "memoize",
       valueClause ? valueClause[3] : "",
@@ -700,16 +837,49 @@ const memoizeAnnotation: Parser<GrammarAnnotation> = map(
 );
 
 /**
- * Parse a rule definition preceded by one or more `@memoize` annotations,
- * attaching them to the resulting `RuleDefinition.annotations`. Tried as
- * its own `grammarItem` alternative *before* the generic `grammarAnnotation`
- * (see `grammarItem` below) so `@memoize` immediately preceding a rule is
- * captured together with it instead of being parsed as a standalone
- * block-level annotation first.
+ * Parse the `@noskip` rule-level annotation: `@noskip` (flag only - no
+ * value clause; `@noskip: x` fails to parse, same failure mode as a bare
+ * `@noskip` with no rule after it, since `noskip` is a
+ * `DEDICATED_ANNOTATION_KEYS` member no generic alternative accepts).
+ * Marks the following rule exempt from `@skip`'s automatic whitespace
+ * insertion -- see `applySkipDesugar` (`./skip-desugar.ts`). Its own
+ * dedicated parser rather than the generic `grammarAnnotation` for the
+ * same reason `memoizeAnnotation` is (see that parser's doc comment):
+ * attaching it to the rule keeps a block-level `@skip: ws` written right
+ * above a rule from being misread as rule-scoped.
+ */
+const noskipAnnotation: Parser<GrammarAnnotation> = map(
+  sequence(
+    optionalWhitespace,
+    literal(GRAMMAR_SYMBOLS.ANNOTATION_PREFIX),
+    literal("noskip"),
+  ),
+  () => createGrammarAnnotation("noskip", ""),
+);
+
+/**
+ * Any annotation that attaches to the following rule rather than the
+ * grammar block: `@memoize`/`@memoize: N` or `@noskip`. Shared by
+ * `annotatedRuleDefinition` so the two can mix freely
+ * (`@memoize: 4 @noskip rule = ...` attaches both).
+ */
+const ruleLevelAnnotation: Parser<GrammarAnnotation> = choice(
+  memoizeAnnotation,
+  noskipAnnotation,
+);
+
+/**
+ * Parse a rule definition preceded by one or more rule-level annotations
+ * (`@memoize`, `@noskip` -- see `ruleLevelAnnotation`), attaching them to
+ * the resulting `RuleDefinition.annotations`. Tried as its own
+ * `grammarItem` alternative *before* the generic `grammarAnnotation`
+ * (see `grammarItem` below) so `@memoize`/`@noskip` immediately preceding
+ * a rule is captured together with it instead of being parsed as a
+ * standalone block-level annotation first.
  */
 const annotatedRuleDefinition: Parser<RuleDefinition> = map(
   sequence(
-    oneOrMore(memoizeAnnotation),
+    oneOrMore(ruleLevelAnnotation),
     // Comment-tolerant: a comment between the last `@memoize` annotation
     // and the rule it attaches to (e.g. `@memoize: 4\n  /* c */\n  a =
     // "x"`) is a legitimate position for one, same as everywhere else in
@@ -787,6 +957,70 @@ const malformedExportAnnotation: Parser<never> = (input, pos) => {
 };
 
 /**
+ * Reject an annotation whose key this implementation RECOGNIZES but does
+ * not support (`@private`, `@namespace`, `@if`, ... -- see
+ * `UNIMPLEMENTED_ANNOTATION_KEYS` in `./module.ts` for the full set and
+ * the rationale). Every one of those keys parses fine as a generic
+ * annotation yet nothing downstream ever reads it, so accepting it
+ * silently tells the grammar author a lie: the annotation looks like it
+ * does something it never will. Failing FATALLY here (tried before every
+ * generic annotation alternative in `grammarItem`, so a `@private: [x]`
+ * can't slip through `moduleInfoListAnnotation` first) names the actual
+ * problem instead of producing an inert `GrammarAnnotation` node.
+ */
+const unsupportedAnnotation: Parser<never> = (input, pos) => {
+  let i = pos;
+  while (isLineBreakOrSpaceOrTab(input[i])) i++;
+  if (input[i] !== GRAMMAR_SYMBOLS.ANNOTATION_PREFIX) {
+    return createFailure('Expected "@"', pos, {
+      parserName: "unsupportedAnnotation",
+    });
+  }
+  // Read the key by regex rather than via the `identifier` parser: that
+  // parser's own `[a-zA-Z0-9_]*` continuation probe records a
+  // farthest-failure watermark entry PAST the annotation's position
+  // (the `\n` after `@private`), which would mask this detector's error
+  // in `parse()`'s farthest-failure report. `malformedExportAnnotation`
+  // avoids sub-parsers for the same reason (see its doc comment above).
+  const keyMatch = /^[a-zA-Z_][a-zA-Z0-9_]*/.exec(input.slice(i + 1));
+  const key = keyMatch?.[0];
+  if (key === undefined || !UNIMPLEMENTED_ANNOTATION_KEYS.has(key)) {
+    return createFailure('Expected "@"', pos, {
+      parserName: "unsupportedAnnotation",
+    });
+  }
+  // Record this rejection into the shared farthest-failure watermark at
+  // the position just past the annotation key: `parse()` reports the
+  // WATERMARK's materialized error for the `FAIL` singleton that
+  // ultimately reaches the top (the grammar block's `}` literal failing
+  // at the annotation's position), not this concrete result -- and
+  // `exportDeclaration`'s `literal("@export")` probe already reaches one
+  // character into the key (`@e` vs `@p`), so an entry at `i` would lose
+  // to it. Everything else tried before this alternative fails shallower
+  // than the key's end, and everything after it never runs (the fatal
+  // flag on the returned failure stops the enclosing choice), so this
+  // entry is always the reported one. The returned concrete failure still
+  // carries the full message for callers that invoke the parser directly
+  // rather than through `parse()`.
+  const keyEnd = i + 1 + key.length;
+  fail(input, keyEnd, {
+    label: `a supported annotation ("@${key}" is recognized but not implemented)`,
+    parserName: "unsupportedAnnotation",
+  });
+  return {
+    success: false,
+    error: {
+      message: `Annotation "@${key}" is not implemented -- it is recognized by the grammar syntax but has no effect, so it is rejected rather than silently ignored`,
+      pos: keyEnd,
+      expected: ["a supported annotation"],
+      found: `@${key}`,
+      parserName: "unsupportedAnnotation",
+      fatal: true,
+    },
+  };
+};
+
+/**
  * Parse grammar item (export declaration, annotation, rule, transform, or comment)
  * Returns a tagged union for easier processing in the main grammar parser.
  *
@@ -816,6 +1050,11 @@ const grammarItem: Parser<GrammarItemType> = choice(
   // (failed `exportDeclaration` above) is a fatal parse error here, not a
   // generic annotation -- see `malformedExportAnnotation`'s doc comment.
   malformedExportAnnotation,
+  // Same precedence reasoning for recognized-but-unimplemented keys
+  // (`@private`, `@if`, ...): a fatal error here beats re-parsing one as
+  // an inert generic annotation (or, worse, a module-info list/record it
+  // syntactically resembles) -- see `unsupportedAnnotation`'s doc comment.
+  unsupportedAnnotation,
   map(moduleInfoListAnnotation, (decl): GrammarItemType => ({
     type: "moduleInfoList",
     key: decl.key,
@@ -1097,13 +1336,13 @@ const grammarBlock: Parser<{
     literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_CLOSE),
   ),
   (results) => {
-    const extendsName = results[5]?.[0];
-    const includesNames = results[7]?.[0];
+    const extendsName = results[5];
+    const includesNames = results[7];
     return {
       name: results[3],
       items: results[10],
-      ...(extendsName !== undefined ? { extends: extendsName } : {}),
-      ...(includesNames !== undefined ? { includes: includesNames } : {}),
+      ...(extendsName !== null ? { extends: extendsName } : {}),
+      ...(includesNames !== null ? { includes: includesNames } : {}),
     };
   },
 );

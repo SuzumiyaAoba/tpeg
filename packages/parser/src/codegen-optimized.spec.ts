@@ -1232,7 +1232,7 @@ describe("generateOptimizedTypeScriptParser: import precision (regression)", () 
       { min: 0, max: undefined, expected: "zeroOrMore" },
       { min: 3, max: 3, expected: "quantified" },
       { min: 2, max: 5, expected: "quantified" },
-      { min: 0, max: 1, expected: "optional" },
+      { min: 0, max: 1, expected: "quantified" },
     ];
     const others = [
       "quantified",

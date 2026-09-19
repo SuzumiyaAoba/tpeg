@@ -63,11 +63,14 @@
  * `ReferenceInterpreterLimitError`.
  */
 
+import { isWordChar } from "@suzumiyaaoba/tpeg-core";
 import type {
   Expression,
   GrammarDefinition,
   RuleDefinition,
 } from "@suzumiyaaoba/tpeg-core";
+
+import { applySkipDesugar } from "./skip-desugar";
 
 /** Thrown (not returned) ONLY for unbounded recursion (most likely left
  * recursion, which neither this interpreter nor the real runtime
@@ -129,8 +132,13 @@ export const makeReferenceInterpreter = (
   grammar: GrammarDefinition,
   maxDepth: number = DEFAULT_MAX_DEPTH,
 ): ((input: string) => Result) => {
+  // Apply the same `@skip` desugar the code generators run, so this
+  // oracle observes the same grammar the generated parsers do --
+  // otherwise every `@skip` grammar would diff as "oracle accepts,
+  // codegen rejects" on inputs with boundary whitespace.
+  const desugared = applySkipDesugar(grammar);
   const rules = new Map<string, RuleDefinition>();
-  for (const rule of grammar.rules) rules.set(rule.name, rule);
+  for (const rule of desugared.rules) rules.set(rule.name, rule);
   const start = rules.get("start");
   if (!start) {
     throw new Error("makeReferenceInterpreter: grammar has no 'start' rule");
@@ -208,9 +216,23 @@ export const makeReferenceInterpreter = (
         case "Group":
         case "LabeledExpression":
         case "ActionExpression":
+        case "Span":
           // Transparent for recognition purposes -- see module doc
-          // comment.
+          // comment. `Span` only swaps the produced VALUE for the
+          // consumed source text; this interpreter tracks consumption
+          // only, so the swap is a no-op here.
           return evalExpr(expr.expression, input, pos);
+
+        case "WordBoundary": {
+          // `\b` / `\B` -- zero-width assertion, same ASCII `[A-Za-z0-9_]`
+          // word definition as `packages/core/src/boundary.ts` (kept in
+          // sync via that module's own spec + the differential harness).
+          const beforeIsWord = pos > 0 && isWordChar(input.charCodeAt(pos - 1));
+          const afterIsWord =
+            pos < input.length && isWordChar(input.charCodeAt(pos));
+          const atBoundary = beforeIsWord !== afterIsWord;
+          return atBoundary !== expr.negated ? OK(pos) : NG(false);
+        }
 
         case "Cut":
           // A bare Cut, reached directly (not as a Sequence element --
@@ -292,6 +314,16 @@ export const makeReferenceInterpreter = (
         }
 
         case "Optional": {
+          const r = evalExpr(expr.expression, input, pos);
+          if (r.ok) return r;
+          if (r.fatal) return r;
+          return OK(pos);
+        }
+
+        case "Skip": {
+          // `ignore(optional(<rule>))` -- this interpreter tracks
+          // consumption only, so `ignore`'s value-masking is a no-op
+          // here and the node reduces to `Optional` semantics.
           const r = evalExpr(expr.expression, input, pos);
           if (r.ok) return r;
           if (r.fatal) return r;

@@ -290,6 +290,7 @@ const walk = (expr: Expression, ctx: WalkContext): InvocationResult => {
     case "AnyChar":
     case "QualifiedIdentifier":
     case "Cut":
+    case "WordBoundary":
       return EMPTY_RESULT;
     case "Identifier": {
       // A name absent from the map isn't a rule of this grammar (an
@@ -318,6 +319,11 @@ const walk = (expr: Expression, ctx: WalkContext): InvocationResult => {
     case "ActionExpression":
     case "PositiveLookahead":
     case "NegativeLookahead":
+    case "Skip":
+    case "Span":
+      // `ignore(optional(<rule>))` invokes the skip rule at the current
+      // position exactly like `Optional` does -- transparent for the
+      // zero-offset-invocation graph this analysis builds.
       return walk(expr.expression, ctx);
     default:
       return EMPTY_RESULT;

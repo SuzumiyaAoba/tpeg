@@ -21,16 +21,20 @@ hand-written parser remains the one actually used by `tpeg-parser`/`tpeg-cli`.
   2. `02-action.tpeg` - the semantic action block (`{ ... }`) itself, matched
      via **PEG recursion** instead of a manual brace-depth counter.
   3. `03-composition.tpeg` - everything in `01`+`02`, plus groups, lookahead
-     (`&`/`!`), repetition (`*`/`+`/`?`/`{n,m}`), labels, and sequence/choice.
+     (`&`/`!`), the `@expr` source-span operator, `\b`/`\B` word-boundary
+     assertions, repetition (`*`/`+`/`?`/`{n,m}`), labels, and
+     sequence/choice.
   4. `04-grammar.tpeg` - everything in `03`, plus rule definitions and plain
      `grammar Name { ... }` blocks with `@key: value`/`@flag` annotations,
-     `//`/`/* */` comments, `///` documentation comments, `@memoize`
+     `//`/`/* */` comments, `///` documentation comments, `@memoize`/`@noskip`
      rule-level annotations, `extends`/`includes` header clauses, and
      `transforms Name@language { ... }` definitions (a plain
      `GrammarDefinition` keeps those in its `transforms` field). The module
      system's value-bearing annotations (`@export`, `@dependencies`/
      `@conflicts`, `@requires`) are parsed-then-discarded exactly like the
-     hand-written `grammarDefinition` does.
+     hand-written `grammarDefinition` does. The `@`-annotation vs `@expr`-span
+     ambiguity is resolved by `annotationStart`, mirroring `grammar.ts`'s
+     `isAnnotationStartAt` (see below).
   5. `05-full.tpeg` - everything in `04`, plus the module system surface
      (`import` statements, `@export`, `extends`/`includes`, `@dependencies`/
      `@conflicts`/`@requires` as `ModuleInfo`) - see "Module system and
@@ -139,15 +143,15 @@ span multiple lines). It does this with a manual, string-level pre-scan that
 tracks brace depth and skips over string/character-class contents by hand.
 
 This PoC's `04-grammar.tpeg` needs none of that. `sequenceContinuation`
-(in `03-composition.tpeg`) gates each additional sequence element on a single
+(in `03-composition.tpeg`) gates each additional sequence element on a
 negative lookahead:
 
 ```tpeg
-notNextRuleStart = !(identifierName wsAndComments "=")
-sequenceContinuation = wsAndComments notNextRuleStart labeled
+notNextRuleStart = !(identifierName wsAndComments "=") !("transforms" !identContChar) !annotationStart
+sequenceContinuation = wsAndComments notNextRuleStart sequenceElementNode
 ```
 
-`"identifier <same-line-whitespace> ="` is never valid inside a TPEG
+`"identifier <whitespace/comments> ="` is never valid inside a TPEG
 expression (only in a rule definition), so this lookahead rejects exactly the
 one case that would otherwise let a sequence eat into the next rule - without
 touching anything that's actually part of a legitimate expression. This was
@@ -156,6 +160,21 @@ verified independently against the hand-written parser (temporarily patching
 ran all 497 tests in `packages/parser` unchanged - the patch was reverted,
 since replacing the production pre-scan is a separate, deliberate change, not
 a side effect of this PoC).
+
+The `transforms` clause is the whole-word boundary described above, and
+`annotationStart` is the grammar-layer piece of the `@expr` span operator:
+`grammar.ts`'s `isAnnotationStartAt` decides a depth-0 `@` begins an
+ANNOTATION (ending the enclosing rule's body) rather than a span, by what
+follows the `@identifier` - `:`/`@`/a rule boundary means annotation,
+anything else means span. The `.tpeg` layers mirror that with the same
+lookahead in two places: `notNextRuleStart` (continuation boundaries, the
+same place `identifier =` lives) and `spanOp` itself
+(`!annotationStart "@" expr:postfix`), because the hand-written scanner
+applies the test to EVERY depth-0 `@` positionally - label operands
+(`w:@x`), post-`/` first elements, and group interiors get truncated the
+same way (it counts BRACE depth, not parens). `03-composition.tpeg` has no
+`annotationStart` at all - it mirrors `composition.ts`'s `expression()`,
+which knows nothing about annotations and treats every `@` as a span.
 
 `grammar.compare.spec.ts` specifically covers the cases the pre-scan exists
 for: adjacent rules with no blank line between them, a multi-line action with

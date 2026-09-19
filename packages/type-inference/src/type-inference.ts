@@ -82,10 +82,24 @@ export interface InferredType {
    * inferred type in order -- lets a type guard check length AND each
    * position's shape. */
   tupleMembers?: InferredType[];
-  /** For an isArray union-of-tuples type (e.g. `[T] | []` from
-   * `optional(...)`): each variant's member list, in order. */
+  /** For an isArray union-of-tuples type (e.g. `[T] | []` -- previously
+   * produced by `optional(...)`, retained for hand-built types): each
+   * variant's member list, in order. */
   tupleVariants?: InferredType[][];
 }
+
+/**
+ * The inferred type of `null` -- the no-match half of `optional()`'s
+ * `T | null` result, used as the second union member of
+ * `inferOptionalType`'s return.
+ */
+const NULL_INFERRED_TYPE: InferredType = {
+  typeString: "null",
+  nullable: true,
+  isArray: false,
+  baseType: "null",
+  imports: [],
+};
 
 /**
  * Context for type inference operation
@@ -581,6 +595,50 @@ export class TypeInferenceEngine {
             ? "Cut/commit marker - no result"
             : undefined,
         };
+      case "Skip":
+        // `applySkipDesugar`-inserted boundary skip: consumes input but
+        // its `IGNORED`-sentinel value is filtered out of the enclosing
+        // sequence's result -- like `Cut`, it contributes nothing to
+        // the result type.
+        return {
+          typeString: "void",
+          nullable: false,
+          isArray: false,
+          baseType: "void",
+          imports: [],
+          documentation: this.options.generateDocumentation
+            ? "@skip boundary skip - no result"
+            : undefined,
+        };
+      case "Span":
+        // `@expr` source-text extraction: whatever the wrapped
+        // expression's value was, `span(...)` replaces it with the raw
+        // consumed input text -- the result is always a plain `string`.
+        return {
+          typeString: "string",
+          nullable: false,
+          isArray: false,
+          baseType: "string",
+          imports: [],
+          documentation: this.options.generateDocumentation
+            ? "Source text extraction (@expr) - matched text"
+            : undefined,
+        };
+      case "WordBoundary":
+        // `\b` / `\B` -- a zero-width assertion like a lookahead: the
+        // emitted `wordBoundary`/`nonWordBoundary` parser succeeds with
+        // `undefined`, so it occupies a `void` slot in a sequence tuple
+        // but is never itself the produced value.
+        return {
+          typeString: "void",
+          nullable: false,
+          isArray: false,
+          baseType: "void",
+          imports: [],
+          documentation: this.options.generateDocumentation
+            ? `Word boundary assertion (\\${expression.negated ? "B" : "b"}) - no result`
+            : undefined,
+        };
       case "LabeledExpression":
         return this.inferLabeledExpressionType(expression);
       case "ActionExpression":
@@ -822,8 +880,13 @@ export class TypeInferenceEngine {
       };
     }
 
+    // `Skip` elements are excluded for the same reason `Cut`s are:
+    // their `ignore(optional(...))` emission consumes input but the
+    // `IGNORED` sentinel is filtered out of the runtime tuple -- the
+    // inferred tuple must not carry a slot for them either.
     const nonCutElements = expression.elements.filter(
-      (element: Expression) => element.type !== "Cut",
+      (element: Expression) =>
+        element.type !== "Cut" && element.type !== "Skip",
     );
     const labeledElements = nonCutElements
       .map((element: Expression) => unwrapToLabeledExpression(element))
@@ -1068,16 +1131,11 @@ export class TypeInferenceEngine {
   /**
    * Infer type for optional expressions
    *
-   * `optional()` (packages/core/src/repetition.ts:41-70) has signature
-   * `Parser<[T] | []>` and its implementation matches: a one-element
-   * array on a match, an empty array on failure -- NEVER a bare `T` or
-   * `undefined`. This mirrors that runtime shape exactly rather than the
-   * more conventional-looking `T | undefined` docs/peg-grammar.md's
-   * Capture Structure Reference Table used to describe for `pattern?`
-   * (that table has been corrected to match). Changing `optional()`
-   * itself to return `T | undefined` instead would be a breaking change
-   * across core/combinator/codegen/every generated parser, so runtime is
-   * treated as the source of truth here, not the other way around.
+   * `optional()` (packages/core/src/repetition.ts) has signature
+   * `Parser<T | null>` and its implementation matches: the parsed value
+   * on a match, `null` on failure. This mirrors that runtime shape
+   * exactly: `pattern?` infers `T | null` and a labeled `v:pattern?`
+   * infers `{ v: T | null }`.
    *
    * @param expression - Optional expression
    * @returns Inferred type for optional expression
@@ -1086,15 +1144,15 @@ export class TypeInferenceEngine {
     const innerType = this.inferExpressionType(expression.expression);
 
     return {
-      typeString: `[${innerType.typeString}] | []`,
-      nullable: false,
-      isArray: true,
-      baseType: "tuple",
+      typeString: `${innerType.typeString} | null`,
+      nullable: true,
+      isArray: false,
+      baseType: "union",
       imports: innerType.imports,
       documentation: this.options.generateDocumentation
         ? "Optional expression"
         : undefined,
-      tupleVariants: [[innerType], []],
+      unionMembers: [innerType, NULL_INFERRED_TYPE],
     };
   }
 

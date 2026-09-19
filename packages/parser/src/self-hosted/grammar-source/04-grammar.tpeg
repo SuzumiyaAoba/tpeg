@@ -1,13 +1,40 @@
 grammar SelfHostGrammar {
   // ---- Leaf constructs ----
 
-  escapeChar = "\\" [nrt\\"']
+  // Mirrors escape-sequence.ts's namedEscapeSequence -- the same named
+  // set in every context (previously strings only had n/r/t).
+  namedEscape = "\\" c:[nrtbfv0] {
+    if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t";
+    if (c === "b") return "\b"; if (c === "f") return "\f"; if (c === "v") return "\v";
+    return "\0";
+  }
 
-  doubleStringChar = escapeChar { const c = $$[1]; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t"; return c; }
-                    / [^"\\]
+  // Mirrors numericEscapeSequence. unicodeBracedEscape's throw plays the
+  // same role as the hand parser's fatal+abort rejection -- callers
+  // treat a thrown action like a fatal failure (charRangePair below
+  // already relies on this).
+  unicodeBracedEscape = "\\u{" digits:[0-9a-fA-F]{1,6} "}" {
+    const cp = parseInt(digits.join(""), 16);
+    if (cp > 0x10ffff) throw new Error("Invalid Unicode code point: \\u{" + digits.join("") + "} is above U+10FFFF");
+    return String.fromCodePoint(cp);
+  }
 
-  singleStringChar = escapeChar { const c = $$[1]; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t"; return c; }
-                    / [^'\\]
+  unicodeEscape4 = "\\u" digits:[0-9a-fA-F]{4} { return String.fromCodePoint(parseInt(digits.join(""), 16)); }
+
+  hexEscape = "\\x" digits:[0-9a-fA-F]{2} { return String.fromCodePoint(parseInt(digits.join(""), 16)); }
+
+  numericEscape = unicodeBracedEscape / unicodeEscape4 / hexEscape
+
+  // Literal escapes differ per context (a `"` inside a string, a `]` or
+  // `-` inside a class) -- same split as literalEscapeSequence.
+  stringLiteralEscape = "\\" c:["'\\] { return c; }
+  classLiteralEscape = "\\" c:[\]\\\^\-"'] { return c; }
+
+  escapeChar = namedEscape / numericEscape / stringLiteralEscape
+
+  doubleStringChar = escapeChar / [^"\\]
+
+  singleStringChar = escapeChar / [^'\\]
 
   doubleQuotedString = "\"" chars:doubleStringChar* "\"" { return { type: "StringLiteral", value: chars.join(""), quote: '"' }; }
 
@@ -15,11 +42,9 @@ grammar SelfHostGrammar {
 
   stringLiteralNode = doubleQuotedString / singleQuotedString
 
-  classEscapeStd = "\\" [tnrbfv0] { const c = $$[1]; if (c === "t") return "\t"; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "b") return "\b"; if (c === "f") return "\f"; if (c === "v") return "\v"; return "\0"; }
+  classEscape = namedEscape / numericEscape / classLiteralEscape
 
-  classEscapeSpecial = "\\" [\]\\\^\-"'] { return $$[1]; }
-
-  classChar = classEscapeStd / classEscapeSpecial / [^\]\\\^\-]
+  classChar = classEscape / [^\]\\\^\-]
 
   // Mirrors character-class.ts's charRange check: a backwards range like
   // [z-a] is rejected (there is no backtracking-out for a return-based
@@ -37,7 +62,7 @@ grammar SelfHostGrammar {
 
   charRange = charRangePair / charRangeSingle
 
-  characterClassBrackets = "[" negation:"^"? ranges:charRange+ "]" { return { type: "CharacterClass", ranges, negated: negation.length > 0 }; }
+  characterClassBrackets = "[" negation:"^"? ranges:charRange+ "]" { return { type: "CharacterClass", ranges, negated: negation !== null }; }
 
   anyCharDot = "." { return { type: "AnyChar" }; }
 
@@ -52,7 +77,14 @@ grammar SelfHostGrammar {
 
   qualifiedIdentifierNode = module:identifierName "." name:identifierName ~ !("." identStart) { return { type: "QualifiedIdentifier", module, name }; }
 
-  basicSyntax = stringLiteralNode / characterClassNode / qualifiedIdentifierNode / identifierNode
+  // Word-boundary assertions -- mirrors word-boundary.ts's
+  // wordBoundaryMarker leaf: a bare `\b`/`\B` at expression level is a
+  // zero-width assertion. An escaped `\b` INSIDE a string or character
+  // class stays the backspace escape (handled by namedEscape above), so
+  // this alternative only ever sees the assertion syntax.
+  wordBoundaryNode = "\\" c:[bB] { return { type: "WordBoundary", negated: c === "B" }; }
+
+  basicSyntax = stringLiteralNode / characterClassNode / qualifiedIdentifierNode / identifierNode / wordBoundaryNode
 
   // ---- Semantic action blocks (recursive, replaces brace-scanner.ts) ----
 
@@ -71,7 +103,7 @@ grammar SelfHostGrammar {
   // char alternative below, which templateInterp's ordered choice shadows
   // only when "${" is literally present).
   templateInterp = "${" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionContent* "}" {
-    return "${" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + "}";
+    return "${" + (first ? first.w.join("") + first.re : "") + parts.join("") + "}";
   }
 
   // A plain template-text char -- needs its own rule (not an inline
@@ -142,7 +174,7 @@ grammar SelfHostGrammar {
   actionParenItem = nestedActionBlock / actionStringLiteral / actionLineComment / actionBlockComment / actionPostfix / actionKwRegex / actionOpRegex / actionStmtParenRegex / actionParenGroup / actionIdentifier / actionParenPlainChar
 
   actionParenGroup = "(" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionParenItem* ")" {
-    return "(" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + ")";
+    return "(" + (first ? first.w.join("") + first.re : "") + parts.join("") + ")";
   }
 
   // Statement keywords whose parenthesized header restores "value
@@ -160,7 +192,7 @@ grammar SelfHostGrammar {
   // A nested `{ ... }` block ends a statement, so it may be followed by a
   // regex literal (matching the hand-written scanner's `}` -> value
   // expected rule).
-  nestedActionBlock = inner:actionBlock tail:(w:wsAndComments re:actionRegexLiteral)? { return "{" + inner + "}" + (tail.length ? tail[0].w.join("") + tail[0].re : ""); }
+  nestedActionBlock = inner:actionBlock tail:(w:wsAndComments re:actionRegexLiteral)? { return "{" + inner + "}" + (tail ? tail.w.join("") + tail.re : ""); }
 
   // Whole identifiers are consumed atomically so a keyword can't match
   // mid-word (e.g. the "return" inside "xreturn").
@@ -172,7 +204,7 @@ grammar SelfHostGrammar {
 
   // At the start of a block a value is expected, so a leading regex is
   // allowed (`{ /re/.test(x) }`).
-  actionBlock = "{" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionContent* "}" { return (first.length ? first[0].w.join("") + first[0].re : "") + parts.join(""); }
+  actionBlock = "{" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionContent* "}" { return (first ? first.w.join("") + first.re : "") + parts.join(""); }
 
   // ---- Composition operators ----
 
@@ -286,16 +318,53 @@ grammar SelfHostGrammar {
 
   negativeLookahead = "!" expr:postfix { return { type: "NegativeLookahead", expression: expr }; }
 
-  prefix = positiveLookahead / negativeLookahead / postfix
+  // `@expr` -- the source-span/text operator, a third prefix operator
+  // alongside `&`/`!` (lookahead.ts's lookaheadOperator). Same
+  // `postfix`-level operand as the lookaheads, and like them it can't
+  // stack: `prefix` is a single ordered choice, so `@&x`/`!@x` don't
+  // parse.
+  //
+  // The `!annotationStart` guard mirrors grammar.ts's
+  // isAnnotationStartAt: a depth-0 `@` that begins an ANNOTATION ends
+  // the enclosing rule's body there, so the span operator must refuse
+  // exactly those `@`s. It lives inside spanOp -- not only in
+  // `notNextRuleStart` -- because the hand-written scanner applies the
+  // test to EVERY depth-0 `@` positionally: label operands (`w:@x`),
+  // an alternative's first element after `/`, and group interiors all
+  // get truncated the same way (the scanner counts BRACE depth, not
+  // parens). `annotationStart` is defined below with notNextRuleStart.
+  spanOp = !annotationStart "@" expr:postfix { return { type: "Span", expression: expr }; }
 
-  labeled = label:identifierName ":" expr:prefix { return { type: "LabeledExpression", label, expression: expr }; }
+  prefix = positiveLookahead / negativeLookahead / spanOp / postfix
+
+  labeled = label:identifierName wsAndComments ":" wsAndComments expr:prefix { return { type: "LabeledExpression", label, expression: expr }; }
           / prefix
 
   // A whole-word "transforms" is also a rule boundary (it starts a
   // transform-definition grammarItem, never a sequence continuation) --
   // the !identContChar keeps the check whole-word so a rule legitimately
   // named e.g. "transformsFoo" is unaffected.
-  notNextRuleStart = !(identifierName wsAndComments "=") !("transforms" !identContChar)
+  //
+  // `!annotationStart` mirrors grammar.ts's isAnnotationStartAt: a `@`
+  // that begins an ANNOTATION (`@key:`, `@key` before a rule header or
+  // another annotation) ends the enclosing rule's body, while any other
+  // `@` is the `@expr` span operator continuing the sequence. Only
+  // `@` + identifier can be annotation-shaped at all (`@"`, `@[`, `@(`
+  // are always spans); what settles it is the token AFTER that
+  // identifier (trivia skipped): `:` or `@` can only follow an
+  // annotation, and a rule boundary there (the next rule's `name =`, a
+  // `transforms` block, or the grammar block's `}`) means the `@ident`
+  // was a flag annotation preceding the next item -- e.g. `@noskip` in
+  // `r = "a" @noskip\nx = "b"` ends `r`'s body. Any other continuation
+  // (`@x "lit"`, `@x+`, end of input) is a span. Groups share
+  // `sequenceContinuation`, and the hand-written scanner applies the
+  // same test inside parens -- it counts BRACE depth (action/transform
+  // bodies), not parens -- so guarding the shared continuation is
+  // correct there too.
+  annotationStart = "@" identifierName wsAndComments
+                    (":" / "@" / identifierName wsAndComments "=" / "transforms" !identContChar / "}")
+
+  notNextRuleStart = !(identifierName wsAndComments "=") !("transforms" !identContChar) !annotationStart
 
   // The `~` cut/commit marker is a sequence element of its own, mirroring
   // composition.ts's sequenceElement = choice(cutMarker, labeled) -- it is
@@ -325,8 +394,8 @@ grammar SelfHostGrammar {
   // no `return`, so it would evaluate to `undefined` -- rejected (thrown,
   // like charRangePair) rather than silently accepted as an action.
   alternative = base:sequenceBase act:(wsAndComments code:actionBlock)? {
-    if (act.length === 0) return base;
-    const code = act[0].code;
+    if (act === null) return base;
+    const code = act.code;
     if (/^\d+(,\d*)?$/.test(code.trim())) {
       throw new Error("Ambiguous \"{" + code + "}\" after an expression: this is a quantifier only when written with no space before \"{\"");
     }
@@ -349,7 +418,13 @@ grammar SelfHostGrammar {
   // (its `transforms` field), so this layer models them in full (same
   // rules as 05-full.tpeg).
 
-  ruleDefinitionNode = interWs name:identifierName wsAndComments "=" wsAndComments pattern:choiceExpr {
+  // `!annotationStart` mirrors the hand-written scanner treating an
+  // annotation-shaped `@` as a boundary even at a body's very first
+  // position: `r = @noskip\nx = "b"` truncates `r`'s body to nothing
+  // there (a parse error), never a `Span(noskip)` body. A `@` that's
+  // NOT annotation-shaped (`@"lit"`, `@(e)`, `@x "a"`) passes the guard
+  // and parses as the span operator it is.
+  ruleDefinitionNode = interWs name:identifierName wsAndComments "=" wsAndComments !annotationStart pattern:choiceExpr {
     return { type: "RuleDefinition", name, pattern };
   }
 
@@ -365,7 +440,7 @@ grammar SelfHostGrammar {
   // annotation (or a bare "@memoize" with no rule after it) surfaces as a
   // parse error instead of being silently swallowed as a generic
   // annotation nothing downstream reads.
-  dedicatedAnnotationKey = ("export" / "dependencies" / "conflicts" / "requires" / "memoize") !identContChar
+  dedicatedAnnotationKey = ("export" / "dependencies" / "conflicts" / "requires" / "memoize" / "noskip") !identContChar
 
   keyValueAnnotation = interWs "@" !dedicatedAnnotationKey key:identifierName wsAndComments ":" wsAndComments value:annotationValue {
     return { type: "GrammarAnnotation", key, value };
@@ -387,10 +462,20 @@ grammar SelfHostGrammar {
   // hand-written `literal("memoize")` -- "@memoizeFoo = \"x\"" parses as
   // a rule `Foo` carrying a memoize annotation there too.
   memoizeAnnotationNode = interWs "@" "memoize" v:(wsAndComments ":" wsAndComments digits:[0-9]+)? {
-    return { type: "GrammarAnnotation", key: "memoize", value: v.length ? v[0].digits.join("") : "" };
+    return { type: "GrammarAnnotation", key: "memoize", value: v ? v.digits.join("") : "" };
   }
 
-  annotatedRuleNode = anns:memoizeAnnotationNode+ wsAndComments r:ruleDefinitionNode {
+  // `@noskip` -- flag only, mirrors grammar.ts's noskipAnnotation (a
+  // `DEDICATED_ANNOTATION_KEYS` member, so the generic alternatives above
+  // refuse it and `@noskip` with no rule after it surfaces as a parse
+  // error rather than an inert standalone annotation).
+  noskipAnnotationNode = interWs "@" "noskip" {
+    return { type: "GrammarAnnotation", key: "noskip", value: "" };
+  }
+
+  ruleLevelAnnotationNode = memoizeAnnotationNode / noskipAnnotationNode
+
+  annotatedRuleNode = anns:ruleLevelAnnotationNode+ wsAndComments r:ruleDefinitionNode {
     return { ...r, annotations: anns };
   }
 
@@ -400,7 +485,7 @@ grammar SelfHostGrammar {
   // grammar.ts's exportDeclaration: once "@export" is seen, a malformed
   // rest is a fatal error, not a generic annotation.
   exportRuleList = "[" wsAndComments items:identifierCommaList? wsAndComments "]" {
-    return items.length === 0 ? [] : items[0];
+    return items ?? [];
   }
 
   identifierCommaList = first:identifierName rest:(wsAndComments "," wsAndComments identifierName)* {
@@ -417,24 +502,24 @@ grammar SelfHostGrammar {
   // module.ts's annotationKeyExcluding (every dedicated key OTHER than
   // this form's own is refused).
   quotedStringList = "[" wsAndComments items:(stringLiteralNode (wsAndComments "," wsAndComments stringLiteralNode)*)? wsAndComments "]" {
-    if (items.length === 0) return [];
-    const [first, rest] = items[0];
+    if (items === null) return [];
+    const [first, rest] = items;
     return [first.value, ...rest.map((r: any) => r[3].value)];
   }
 
-  moduleInfoListAnnotationNode = interWs "@" !(("export" / "requires" / "memoize") !identContChar) key:identifierName wsAndComments ":" wsAndComments values:quotedStringList {
+  moduleInfoListAnnotationNode = interWs "@" !(("export" / "requires" / "memoize" / "noskip") !identContChar) key:identifierName wsAndComments ":" wsAndComments values:quotedStringList {
     return { type: "ModuleInfoListAnnotation", key, values };
   }
 
   quotedStringRecordEntry = key:stringLiteralNode wsAndComments ":" wsAndComments value:stringLiteralNode { return [key.value, value.value]; }
 
   quotedStringRecord = "{" wsAndComments items:(quotedStringRecordEntry (wsAndComments "," wsAndComments quotedStringRecordEntry)*)? wsAndComments "}" {
-    if (items.length === 0) return {};
-    const [first, rest] = items[0];
+    if (items === null) return {};
+    const [first, rest] = items;
     return Object.fromEntries([first, ...rest.map((r: any) => r[3])]);
   }
 
-  moduleInfoRecordAnnotationNode = interWs "@" !(("export" / "dependencies" / "conflicts" / "memoize") !identContChar) key:identifierName wsAndComments ":" wsAndComments values:quotedStringRecord {
+  moduleInfoRecordAnnotationNode = interWs "@" !(("export" / "dependencies" / "conflicts" / "memoize" / "noskip") !identContChar) key:identifierName wsAndComments ":" wsAndComments values:quotedStringRecord {
     return { type: "ModuleInfoRecordAnnotation", key, values };
   }
 
@@ -507,8 +592,8 @@ grammar SelfHostGrammar {
   // whitespace pieces needed to rebuild the raw `generic` text (unlabeled
   // elements don't survive captureSequence's label merge).
   typeNamed = n:identifierName g:(w1:typeWs "<" ~ w2:typeWs a1:typeUnion arest:(c1:typeWs "," c2:typeWs a:typeUnion)* w3:typeWs ">")? {
-    if (g.length === 0) return { text: n, head: { name: n } };
-    const p = g[0];
+    if (g === null) return { text: n, head: { name: n } };
+    const p = g;
     let inner = p.w2 + p.a1.text;
     for (const r of p.arest) inner += r.c1 + "," + r.c2 + r.a.text;
     inner += p.w3;
@@ -537,8 +622,8 @@ grammar SelfHostGrammar {
   }
 
   parameterList = "(" wsAndComments items:(parameterType (wsAndComments "," wsAndComments parameterType)*)? wsAndComments ")" {
-    if (items.length === 0) return [];
-    const [first, rest] = items[0];
+    if (items === null) return [];
+    const [first, rest] = items;
     return [first, ...rest.map((r: any) => r[3])];
   }
 
@@ -581,13 +666,35 @@ grammar SelfHostGrammar {
   }
 
 
+  // Recognized-but-unimplemented annotation keys (grammar.ts's
+  // unsupportedAnnotation / module.ts's UNIMPLEMENTED_ANNOTATION_KEYS):
+  // rejected outright rather than parsed into an inert generic
+  // annotation nothing reads. A semantic action has no backtrackable
+  // failure channel, so the rejection is a thrown Error -- the same
+  // "reject by throwing" technique the quantifier/range validation
+  // actions use; compare specs normalize a throw to `success: false`,
+  // matching the hand-written parser's fatal failure.
+  // `!identContChar` keeps `@privateFoo` parsing as the generic flag
+  // annotation it legitimately is.
+  // Returns a sentinel item rather than throwing directly: an
+  // unconditionally-throwing action would leave the generated wrapper's
+  // trailing `return` unreachable (TS7027), so the grammarBlockNode item
+  // loop below does the throwing once the whole block has parsed.
+  unsupportedAnnotationNode = interWs "@" key:("private" / "protected" / "public" / "internal" / "override" / "namespace" / "ifdef" / "ifndef" / "endif" / "elif" / "if" / "else") !identContChar {
+    return { kind: "unsupportedAnnotation", key };
+  }
+
   // Order mirrors grammar.ts's grammarItem: the dedicated "@export"/
   // "@key: [...]"/"@key: {...}" forms (any reserved key excluded from the
   // generic annotation alternatives) before "@memoize"-annotated rules,
   // before the generic "@key: value"/"@key" annotation, before plain
   // rules, then comments -- `///` before `//` since `///` starts with
-  // `//`.
+  // `//`. unsupportedAnnotationNode sits right after exportDeclarationNode
+  // (mirroring grammar.ts's malformedExportAnnotation -> unsupportedAnnotation
+  // pair) so an unimplemented key can never slip into a module-info
+  // list/record or generic annotation it syntactically resembles.
   grammarItemNode = e:exportDeclarationNode { return { kind: "export", value: e }; }
+                  / unsupportedAnnotationNode
                   / l:moduleInfoListAnnotationNode { return { kind: "moduleInfoList", value: l }; }
                   / r:moduleInfoRecordAnnotationNode { return { kind: "moduleInfoRecord", value: r }; }
                   / ar:annotatedRuleNode { return { kind: "rule", value: ar }; }
@@ -624,7 +731,10 @@ grammar SelfHostGrammar {
     // mirrors grammar.ts's separateGrammarItems.
     let pendingDocs: string[] = [];
     for (const i of items) {
-      if (i.kind === "annotation") { annotations.push(i.value); pendingDocs = []; }
+      if (i.kind === "unsupportedAnnotation") {
+        throw new Error(`Annotation "@${i.key}" is not implemented -- it is recognized by the grammar syntax but has no effect, so it is rejected rather than silently ignored`);
+      }
+      else if (i.kind === "annotation") { annotations.push(i.value); pendingDocs = []; }
       else if (i.kind === "rule") {
         rules.push(pendingDocs.length > 0 ? { ...i.value, documentation: pendingDocs } : i.value);
         pendingDocs = [];

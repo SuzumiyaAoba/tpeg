@@ -226,9 +226,7 @@ describe("combinator laws: sepBy / sepBy1", () => {
       const value2 = genParser(rngB, 2);
       const sep2 = genParser(rngB, 1);
       const a = sepBy(value1, sep1);
-      const reference = map(optional(sepBy1(value2, sep2)), (xs) =>
-        xs.length > 0 ? xs[0] : [],
-      );
+      const reference = map(optional(sepBy1(value2, sep2)), (xs) => xs ?? []);
       for (const input of INPUTS) {
         expect(key(a, input)).toBe(key(reference, input));
       }

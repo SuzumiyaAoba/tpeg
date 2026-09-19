@@ -7,6 +7,7 @@
  */
 
 import { tryOrderedCandidates } from "./combinators";
+import { IGNORED } from "./ignored";
 import type { Parser } from "./types";
 import { createFailure, isFailure, isValidOffset } from "./utils";
 
@@ -204,7 +205,12 @@ export const captureSequence = <P extends Parser<unknown>[]>(
         return result;
       }
 
-      results.push(result.val);
+      // `ignore(...)` results consume input but contribute no value
+      // (see `IGNORED`'s doc comment); skipping the push also keeps them
+      // out of the `hasCaptures` check and the merge below.
+      if (result.val !== IGNORED) {
+        results.push(result.val);
+      }
       currentPos = result.next;
 
       // Only a `capture(...)`-tagged result makes this a genuine capture

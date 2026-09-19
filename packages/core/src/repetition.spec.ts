@@ -40,18 +40,18 @@ describe("opt", () => {
     const result = opt(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.val).toEqual(["a"]);
+      expect(result.val).toEqual("a");
       expect(result.next).toBe(1);
     }
   });
 
-  it("should return empty array and not consume input if parser fails", () => {
+  it("should return null and not consume input if parser fails", () => {
     const input = "b";
     const pos = 0;
     const result = opt(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.val).toEqual([]);
+      expect(result.val).toEqual(null);
       expect(result.next).toEqual(pos);
     }
   });
@@ -108,7 +108,7 @@ describe("optional", () => {
     const result = optional(lit("a"))(input, pos);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.val).toEqual(["a"]);
+      expect(result.val).toEqual("a");
       expect(result.next).toBe(1);
     }
   });
@@ -265,11 +265,11 @@ describe("repetition edge cases", () => {
     const input = "";
     const pos = 0;
 
-    // optional should return empty array
+    // optional should return null
     const optResult = opt(lit("a"))(input, pos);
     expect(optResult.success).toBe(true);
     if (optResult.success) {
-      expect(optResult.val).toEqual([]);
+      expect(optResult.val).toEqual(null);
       expect(optResult.next).toEqual(pos);
     }
 
@@ -330,8 +330,8 @@ describe("repetition edge cases", () => {
     expect(isSuccess(result)).toBe(true);
     if (isSuccess(result)) {
       expect(result.val).toEqual([
-        [["a", "a", "a"], ["b"]],
-        [["a", "a", "a"], ["b"]],
+        [["a", "a", "a"], "b"],
+        [["a", "a", "a"], "b"],
       ]);
     }
   });
@@ -409,14 +409,14 @@ describe("repetition edge cases", () => {
     const result1 = parser("()", 0);
     expect(isSuccess(result1)).toBe(true);
     if (isSuccess(result1)) {
-      expect(result1.val).toEqual([["(", ")"]]);
+      expect(result1.val).toEqual(["(", ")"]);
     }
 
     // Non-matching case
     const result2 = parser("x", 0);
     expect(isSuccess(result2)).toBe(true);
     if (isSuccess(result2)) {
-      expect(result2.val).toEqual([]);
+      expect(result2.val).toEqual(null);
     }
   });
 
@@ -458,7 +458,7 @@ describe("repetition edge cases", () => {
     expect(isSuccess(resultOpt1)).toBe(true);
     expect(isSuccess(resultZeroOrMore1)).toBe(true);
     if (isSuccess(resultOpt1) && isSuccess(resultZeroOrMore1)) {
-      expect(resultOpt1.val).toEqual(["a"]);
+      expect(resultOpt1.val).toEqual("a");
       expect(resultZeroOrMore1.val).toEqual(["a"]);
     }
 
@@ -470,7 +470,7 @@ describe("repetition edge cases", () => {
     expect(isSuccess(resultZeroOrMore2)).toBe(true);
     if (isSuccess(resultOpt2) && isSuccess(resultZeroOrMore2)) {
       // optional matches at most once
-      expect(resultOpt2.val).toEqual(["a"]);
+      expect(resultOpt2.val).toEqual("a");
       expect(resultOpt2.next).toBe(1);
 
       // zeroOrMore matches as much as possible
@@ -590,9 +590,9 @@ describe("quantified", () => {
       const result = parser("bbb", 0);
       expect(isSuccess(result)).toBe(true);
       if (isSuccess(result)) {
-        // `optional(...)` returns `[]` (not `undefined`) on a no-match --
-        // see its own doc comment in `./repetition.ts`.
-        expect(result.val).toEqual([[], []]);
+        // `optional(...)` returns `null` on a no-match -- see its own
+        // doc comment in `./repetition.ts`.
+        expect(result.val).toEqual([null, null]);
         expect(result.next).toBe(0);
       }
     });
@@ -772,7 +772,9 @@ describe("quantified", () => {
       expect(result3.next).toBe(result4.next);
     }
 
-    // {0,1} should be equivalent to optional
+    // {0,1} matches like optional -- but NOT in capture shape:
+    // `quantified` produces `T[]` ("a" matched -> ["a"], no match -> []),
+    // while `optional` produces `T | null` ("a" -> "a", no match -> null).
     const quantifiedParser3 = quantified(lit("a"), 0, 1);
     const optionalParser = optional(lit("a"));
 
@@ -782,7 +784,8 @@ describe("quantified", () => {
     expect(isSuccess(result5)).toBe(true);
     expect(isSuccess(result6)).toBe(true);
     if (isSuccess(result5) && isSuccess(result6)) {
-      expect(result5.val).toEqual(result6.val);
+      expect(result5.val).toEqual(["a"]);
+      expect(result6.val).toEqual("a");
       expect(result5.next).toBe(result6.next);
     }
   });
@@ -845,7 +848,7 @@ describe("unbounded repetition over a nullable body (undefined PEG semantics -- 
     const result = quantified(optional(lit("a")), 2, 2)("bbb", 0);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.val).toEqual([[], []]);
+      expect(result.val).toEqual([null, null]);
       expect(result.next).toBe(0);
     }
   });

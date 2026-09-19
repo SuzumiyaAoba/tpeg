@@ -160,16 +160,82 @@ Operator](#cutcommit-operator) below) is scoped to `expr`'s own attempt and
 is absorbed at the lookahead's own boundary - it cannot commit whatever
 choice the `&`/`!` itself happens to sit inside.
 
+## Source-Span Operator
+
+```tpeg
+@expr          // Source-span / raw-text extraction
+```
+
+`@expr` parses `expr` normally - it consumes exactly what `expr` consumes
+and fails exactly where `expr` fails - but replaces the matched value with
+the **raw source text** the match covered (`input.slice(start, end)`). It
+is the third prefix operator, alongside `&`/`!`, and takes the same
+postfix-level operand: `@a*` is `@(a*)`, not `(@a)*`, and at most one
+prefix operator applies (`@&x`, `!@x` don't parse).
+
+```tpeg
+word = w:@[a-zA-Z_][a-zA-Z0-9_]*   // w is the matched text, e.g. "hello"
+num  = n:@([0-9]+ ("." [0-9]+)?)  // n is "3.14", not a structured value
+```
+
+Because `@` also introduces [annotations](#grammar-block) (`@start: expr`,
+`@noskip`, `@memoize`), a bare `@identifier` at rule-body level is
+ambiguous. The rule-body scanner resolves it by what **follows** the
+identifier (whitespace and comments skipped):
+
+- `:` - the `@key: value` annotation shape (`@start: expr`, `@version: "1.0"`)
+- `@` - another annotation follows, so this `@ident` is one too
+- `identifier <ws/comments> =`, `transforms`, or the block's closing `}` -
+  a flag annotation (`@noskip`, `@memoize`) sitting directly before the
+  grammar item it annotates
+
+Anything else is a span: `@"lit"`, `@[a-z]`, `@(expr)`, `@\b` can never be
+annotations in the first place (no identifier follows the `@`), and
+`@identifier` before any non-boundary token is a span of that rule
+reference (`@x "a"`, `@x` at the body's end). The one position where the
+annotation reading still wins is `@identifier` **directly before a rule
+header** - write `@(identifier)` to force the span reading there:
+
+```tpeg
+first  = "a" @x       // ERROR: `@x` is read as a flag annotation for `second`
+second = "b"
+
+first  = "a" @(x)     // OK: `x` captured as source text via the span
+second = "b"
+```
+
+## Boundary Assertions
+
+```tpeg
+\b             // Word boundary (zero-width)
+\B             // Non-word-boundary (zero-width)
+```
+
+`\b` succeeds where exactly one side of the current position is a word
+character; `\B` succeeds where both sides agree. Word characters are ASCII
+`[A-Za-z0-9_]` (the same set JavaScript's `\w`/`\b` uses), and both the
+start and end of the input count as non-word positions. Assertions consume
+no input and contribute no value to the enclosing capture.
+
+```tpeg
+word = \b w:@[a-zA-Z_][a-zA-Z0-9_]* \b   // "hello" in "say hello!" but not "hello_world"
+```
+
+An **escaped** `\b` inside a string literal or character class stays the
+backspace escape (`"\b"`, `[\b]`) - the assertion syntax only exists at
+bare expression level, where `\b`/`\B` can't be confused with an escape
+sequence.
+
 ## Operator Precedence
 
 From highest to lowest precedence, TPEG's own syntax operators bind as
 follows:
 
-1. **Primary** - a literal, character class, identifier, or a parenthesized
-   `(expr)` group (highest precedence)
+1. **Primary** - a literal, character class, identifier, boundary
+   assertion, or a parenthesized `(expr)` group (highest precedence)
 2. **Repetition** (postfix) - `expr*`, `expr+`, `expr?`, `expr{n}`,
    `expr{n,m}`, `expr{n,}`
-3. **Lookahead** (prefix) - `&expr`, `!expr`
+3. **Lookahead / span** (prefix) - `&expr`, `!expr`, `@expr`
 4. **Label** - `name:expr`
 5. **Sequence** - `expr1 expr2 expr3` (juxtaposition)
 6. **Choice** - `expr1 / expr2 / expr3` (lowest precedence)
@@ -263,7 +329,7 @@ Types are automatically inferred from grammar patterns:
 // Type inference examples:
 number = digits:[0-9]+              // → captures: { digits: string[] }
 expression = left:term right:term   // → captures: { left: T, right: T }
-optional = value:pattern?           // → captures: { value: [T] | [] }
+optional = value:pattern?           // → captures: { value: T | null }
 repeated = items:pattern*           // → captures: { items: T[] }
 choice = a:first / b:second         // → captures: { a?: T1, b?: T2 }
 group = sign:("+" / "-")           // → captures: { sign: string }
@@ -327,12 +393,15 @@ export const greeting = captureSequence(
 | `pattern*`                            | `T[]`                     | Unlabeled repetition captures array of matches                                                                                                                                           |
 | `items:pattern*`                      | `{ items: T[] }`          | Labeled repetition captures named array                                                                                                                                                  |
 | `pattern+`                            | `T[]`                     | One-or-more captures non-empty array                                                                                                                                                     |
-| `pattern?`                            | `[T] \| []`               | Unlabeled optional captures a one-element array on a match, an empty array otherwise - `optional()` (`packages/core/src/repetition.ts`) never returns a bare `T` or `undefined`          |
-| `value:pattern?`                      | `{ value: [T] \| [] }`    | Labeled optional creates a field holding that same `[T] \| []` array, not an optional field                                                                                              |
+| `pattern?`                            | `T \| null`               | Unlabeled optional captures the matched value, or `null` on a miss - `optional()` (`packages/core/src/repetition.ts`) never returns a bare `undefined`                                   |
+| `value:pattern?`                      | `{ value: T \| null }`    | Labeled optional creates a field holding that same `T \| null`, not an optional field                                                                                                    |
 | `(pattern1 / pattern2)`               | `T1 \| T2`                | Unlabeled group captures same type as contents                                                                                                                                           |
 | `group:(pattern1 / pattern2)`         | `{ group: T1 \| T2 }`     | Labeled group creates named capture                                                                                                                                                      |
 | `&pattern`                            | `undefined`               | Positive lookahead doesn't capture                                                                                                                                                       |
 | `!pattern`                            | `undefined`               | Negative lookahead doesn't capture                                                                                                                                                       |
+| `@pattern`                            | `string`                  | Span replaces the captured value with the raw matched text (`input.slice`)                                                                                                               |
+| `label:@pattern`                      | `{ label: string }`       | Labeled span captures the matched text under the label                                                                                                                                   |
+| `\b` / `\B`                           | `undefined`               | Boundary assertions don't capture                                                                                                                                                        |
 | `a ~ b`                               | `[T_a, T_b]`              | `~` itself contributes nothing and no tuple slot - the sequence's element count (and captures, if labeled) is exactly as if `~` weren't there                                            |
 | `a ~`                                 | `T_a`                     | Same rule taken to its single-element conclusion: with `~` gone, only `a` is left - a bare pattern, not a sequence - so it captures as `a`'s own (unlabeled) type, not a 1-tuple `[T_a]` |
 
@@ -523,6 +592,47 @@ grammar ArithmeticCalculator {
 }
 ```
 
+#### `@start`: naming the entry rule
+
+`@start: ruleName` selects which rule the generated module is entered
+through. Without it the entry point is the _first_ rule declared in the
+grammar; with it, the named rule is the entry point regardless of
+declaration order. The generated code additionally exports the resolved
+rule under the stable alias `start` (`export { <name> as start };`), so a
+consumer can reach the entry point without knowing which rule it is or
+what `namePrefix` was applied.
+
+It is an error for `@start` to name a rule the grammar does not declare,
+to appear more than once, or to appear as a bare `@start` flag with no
+rule name -- all are rejected at generation time rather than silently
+falling back to the first rule.
+
+#### `@skip`: automatic whitespace between sequence elements
+
+`@skip: ruleName` names a rule invoked optionally at every sequence
+boundary -- the grammar's whitespace/comment rule. At code-generation
+time the grammar is desugared: a boundary skip is inserted before a
+sequence's first element, between adjacent elements, and after its last
+one, and a rule whose whole pattern is a single non-`Sequence`
+expression is treated as a one-element sequence (so every covered rule
+also skips at its own boundaries, including at the start and end of the
+input). The skip always succeeds -- it consumes whatever the skip rule
+matches, or nothing -- and contributes NOTHING to the rule's own value:
+a `x:a y:b` sequence still yields `{x, y}`, a single-value sequence
+still yields that value bare rather than wrapped in a one-element tuple.
+
+Two kinds of rules are exempt:
+
+- a rule annotated `@noskip` (placed directly above it, like `@memoize`)
+  skips nothing inside its own pattern -- the "this rule is lexical"
+  escape hatch;
+- the skip rule itself and every rule transitively referenced from it,
+  because inserting skips there would recurse `ws -> ... -> ws` forever.
+
+It is an error for `@skip` to name a rule the grammar does not declare,
+to appear more than once, or to appear as a bare `@skip` flag with no
+rule name.
+
 ## Type Inference System
 
 TPEG automatically infers types from grammar structure and transform signatures:
@@ -570,7 +680,7 @@ Capture structures are automatically inferred from grammar patterns:
 // Grammar inference examples:
 number = digits:[0-9]+              // → captures: { digits: string[] }
 expression = left:term right:term   // → captures: { left: T, right: T }
-optional = value:pattern?           // → captures: { value: [T] | [] }
+optional = value:pattern?           // → captures: { value: T | null }
 repeated = items:pattern*           // → captures: { items: T[] }
 choice = a:first / b:second         // → captures: { a?: T1, b?: T2 }
 group = sign:("+" / "-")           // → captures: { sign: string }
@@ -864,20 +974,20 @@ grammar ArithmeticCalculator {
 transforms ArithmeticEvaluator@typescript {
   // Type signature defines the complete type system for this rule.
   // `e*` captures an ARRAY of each iteration's value and `e?` captures
-  // `[] | [T]`, so `digits:[0-9]+` is string[] (join it before parsing),
-  // `sign:("+" / "-")?` is `[] | [string]`, and `fraction:("." [0-9]+)?`
-  // is `[] | [[string, string[]]]` (the optional wraps the sequence).
+  // `T | null`, so `digits:[0-9]+` is string[] (join it before parsing),
+  // `sign:("+" / "-")?` is `string | null`, and `fraction:("." [0-9]+)?`
+  // is `[string, string[]] | null` (the optional wraps the sequence).
   number(captures: {
-    sign: string[],
+    sign: string | null,
     digits: string[],
-    fraction: [] | [[string, string[]]]
+    fraction: [string, string[]] | null
   }) -> Result<number> { // Explicit return type drives the type system
     let value = parseInt(captures.digits.join(""), 10);
-    if (captures.fraction.length > 0) {
-      const [, fracDigits] = captures.fraction[0];
+    if (captures.fraction !== null) {
+      const [, fracDigits] = captures.fraction;
       value += parseFloat(`0.${fracDigits.join("")}`);
     }
-    if (captures.sign[0] === "-") {
+    if (captures.sign === "-") {
       value = -value;
     }
     return { success: true, value };
@@ -950,8 +1060,7 @@ grammar Base {
   // String literal pattern
   string_literal = "\"" (!["] .)* "\""
 
-  // Private rule (not exported)
-  @private
+  // Internal helper rule
   internal_helper = [a-z]+
 }
 
@@ -969,8 +1078,7 @@ grammar Arithmetic extends base.Base {
   term = factor (ops.mul_op factor)*
   factor = base.number / "(" expression ")"
 
-  // Override inherited rules if needed
-  @override
+  // Redefine an inherited rule if needed
   number = sign:("+" / "-")? base.number
 }
 
@@ -990,8 +1098,6 @@ grammar Operators {
 ```tpeg
 // File: math/core.tpeg
 grammar Math.Core {
-  @namespace: "Math.Core"
-
   expression = term (add_op term)*
   term = factor (mul_op factor)*
   factor = number / "(" expression ")"
@@ -1002,10 +1108,7 @@ import "math/core.tpeg" as core
 import "math/functions.tpeg" as func
 
 grammar Math.Advanced extends core.Math.Core {
-  @namespace: "Math.Advanced"
-
   // Extended expression with function calls
-  @override
   factor = func.function_call / core.factor
 }
 
@@ -1065,6 +1168,8 @@ grammar MyGrammar extends base.Base {
 }
 
 // Conditional compilation based on module versions
+// (proposed syntax -- @if/@else are not implemented and are rejected
+// as parse errors today; see Known Limitations)
 grammar ConditionalGrammar {
   @if: base.version >= "1.5"
   enhanced_feature = complex_pattern+
@@ -1101,7 +1206,12 @@ grammar B {
 
 #### Export Control and Access Modifiers
 
-```tpeg
+**Proposed syntax — not implemented.** The `@public`/`@protected`/
+`@private`/`@internal` annotations below are recognized by the grammar
+syntax but have no implementation, so writing them is a parse error today
+(see Known Limitations). The `@export: [...]` form IS implemented.
+
+```text
 grammar DataTypes {
   // Public exports (default)
   @export: [string_type, number_type, boolean_type]
@@ -1263,22 +1373,10 @@ primary = identifier / literal / "(" assignment ")"
 
 These are gaps between this specification and the current `packages/parser`/`packages/cli` implementation, found by an execution-based audit. None of them are silent correctness bugs -- each either fails loudly at parse/generation time or is simply inert -- but a grammar author relying on the specification alone could be surprised by any of them.
 
-### Escape sequences differ between string literals and character classes
-
-String literals (`"..."`, `'...'`) support only `\n \r \t \\ \" \'`. Character classes (`[...]`) support a larger set: `\t \n \r \b \f \v \0`, plus `\] \\ \^ \- \" \'` for characters that are otherwise syntactically special inside a class. Neither supports a `\uXXXX`/`\u{...}` numeric escape.
-
-Concretely, `[\b]` (a character class matching a backspace) parses, but `"\b"` (a string literal containing a backspace) does not -- it is a hard parse error, not a silent misinterpretation. This is not a dead end for grammar authors: a _raw_, unescaped control character embedded directly in the source text is accepted by both string literals and character classes alike (both parsers accept "any character except the closing quote/`\`" for the non-escape case), so `"\x08"` written as a literal byte in the file still works. Only the backslash-escape spelling is asymmetric.
-
 ### `-` inside a character class must be escaped
 
 `-` is the range operator inside `[...]`, so a bare `-` where a class member is expected (`[-]`, `[a-]`) is a parse error, exactly as in most other character-class syntaxes. Write `\-` to mean a literal hyphen (`[\-]`, `[a\-z]`) instead.
 
-### Five annotations parse but have no effect on generated code
+### Recognized-but-unimplemented annotations are parse errors
 
-`@start`, `@skip`, `@namespace`, `@private`, and `@override` are all accepted by the grammar-block parser (any `@key: value` or `@key` is syntactically valid there), but none of them currently change what `tpeg-cli`/`tpeg-parser`'s code generator produces:
-
-- **`@start: ruleName`** does not change which rule becomes the generated module's entry point -- that is always the _first_ rule declared in the grammar, regardless of this annotation.
-- **`@skip: ruleName`** does not insert any implicit whitespace/comment skipping between sequence elements -- every rule must consume whitespace explicitly, exactly as if `@skip` were absent.
-- **`@namespace`**, **`@private`**, and **`@override`** are parsed but have no effect on the generated module's exports or naming.
-
-Only `@memoize` on an individual rule is actually consulted by codegen. Writing any of the five annotations above is harmless (it does not change behavior from omitting them) but does not do what the name suggests either.
+Annotations the specification reserves but this implementation does not support are rejected outright rather than parsed-then-ignored: `@private`, `@protected`, `@public`, `@internal`, `@override`, `@namespace`, and the conditional-compilation family (`@if`, `@else`, `@elif`, `@endif`, `@ifdef`, `@ifndef`). Any of them -- flag, `@key: value`, or `@key: [...]` form -- is a hard parse error naming the annotation, on the principle that an annotation which looks meaningful but does nothing is worse than one that fails loudly.

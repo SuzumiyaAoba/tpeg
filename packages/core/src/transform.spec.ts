@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { lit } from "./basic";
 import { choice, seq } from "./combinators";
 import { optional } from "./repetition";
-import { filter, map, mapError, mapResult, tap } from "./transform";
+import { filter, map, mapError, mapResult, span, tap } from "./transform";
 import type { ParseSuccess } from "./types";
 import { parse } from "./utils";
 
@@ -231,5 +231,66 @@ describe("tap", () => {
     })(input, pos);
 
     expect(tappedResult).toEqual(originalResult);
+  });
+});
+
+describe("span", () => {
+  it("replaces the match value with the consumed source text", () => {
+    const input = "abc123";
+    const p = seq(lit("abc"), lit("123"));
+    const result = span(p)(input, 0);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // The child's tuple ["abc", "123"] is discarded wholesale.
+      expect(result.val).toBe("abc123");
+      expect(result.current).toBe(0);
+      expect(result.next).toBe(6);
+    }
+  });
+
+  it("slices from current to next at a nonzero position", () => {
+    const result = span(lit("bc"))("xabcy", 2);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("bc");
+      expect(result.current).toBe(2);
+      expect(result.next).toBe(4);
+    }
+  });
+
+  it("yields the empty string for a zero-width child match", () => {
+    const result = span(optional(lit("x")))("ab", 0);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("");
+      expect(result.next).toBe(0);
+    }
+  });
+
+  it("propagates the child's failure unchanged", () => {
+    const result = span(lit("abc"))("def", 0);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.parserName).toBe("literal");
+    }
+  });
+
+  it("preserves multiline and non-ASCII text exactly", () => {
+    const result = span(lit("a\nb日本語"))("a\nb日本語z", 0);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("a\nb日本語");
+      expect(result.next).toBe(6);
+    }
+  });
+
+  it("nested spans return the same text as the inner one", () => {
+    const inner = span(seq(lit("ab"), lit("c")));
+    const outer = span(inner);
+    const result = outer("abc", 0);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("abc");
+    }
   });
 });

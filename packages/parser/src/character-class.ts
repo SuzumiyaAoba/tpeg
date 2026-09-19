@@ -16,6 +16,7 @@ import {
   optional,
   seq,
 } from "@suzumiyaaoba/tpeg-core";
+import { unifiedEscapeSequence } from "./escape-sequence";
 import type { AnyChar, CharRange, CharacterClass } from "./types";
 import { createAnyChar, createCharacterClass } from "./types";
 
@@ -24,52 +25,10 @@ import { createAnyChar, createCharacterClass } from "./types";
  * Handles escape sequences for special characters and standard escape sequences.
  */
 const charClassChar: Parser<string> = choice(
-  // Standard escape sequences
-  map(
-    seq(literal("\\"), charClass("t", "n", "r", "b", "f", "v", "0")),
-    ([_, char]) => {
-      switch (char) {
-        case "t":
-          return "\t";
-        case "n":
-          return "\n";
-        case "r":
-          return "\r";
-        case "b":
-          return "\b";
-        case "f":
-          return "\f";
-        case "v":
-          return "\v";
-        case "0":
-          return "\0";
-        default:
-          return char;
-      }
-    },
-  ),
-  // Escape sequences for special characters in character classes
-  map(
-    seq(literal("\\"), charClass("]", "\\", "^", "-", '"', "'")),
-    ([_, char]) => {
-      switch (char) {
-        case "]":
-          return "]";
-        case "\\":
-          return "\\";
-        case "^":
-          return "^";
-        case "-":
-          return "-";
-        case '"':
-          return '"';
-        case "'":
-          return "'";
-        default:
-          return char;
-      }
-    },
-  ),
+  // The unified escape set (`./escape-sequence.ts`): named escapes
+  // `\n \r \t \b \f \v \0`, numeric escapes `\xNN` `\uXXXX` `\u{...}`,
+  // and the class-specific literal escapes `\] \\ \^ \- \" \'`.
+  unifiedEscapeSequence(["]", "\\", "^", "-", '"', "'"]),
   // Regular characters (excluding special characters). Only "-" (the
   // range operator, 0x2D) needs to be excluded from this run -- the
   // boundary hops over it by stopping at "," (0x2C) and picking back up
@@ -114,21 +73,23 @@ const charRange: Parser<CharRange> = choice(
     if (!result.success) return result;
     const [start, , end] = result.val;
     if ((start.codePointAt(0) ?? 0) > (end.codePointAt(0) ?? 0)) {
-      // `fatal: true`, not an ordinary failure: syntactically, this
-      // clearly WAS an attempted range (`charClassChar "-" charClassChar`
-      // matched in full) -- letting `choice` below fall back to the
-      // "single character" alternative would silently reparse "z-a" as
-      // three unrelated single-character ranges (`z`, `-`, `a`) instead of
-      // rejecting the backwards range outright. The `fatal` flag is
-      // absorbed at `characterClass`'s own enclosing `choice` boundary
-      // (see `commit`'s doc comment, `@suzumiyaaoba/tpeg-core`), so this
-      // doesn't leak past this one character class into unrelated
-      // grammar constructs -- it just prevents the local, wrong
-      // reinterpretation.
+      // `abort: true` (implies `fatal` propagation), not an ordinary or
+      // merely-`fatal` failure: syntactically, this clearly WAS an
+      // attempted range (`charClassChar "-" charClassChar` matched in
+      // full) -- letting `choice` below fall back to the "single
+      // character" alternative would silently reparse "z-a" as three
+      // unrelated single-character ranges (`z`, `-`, `a`) instead of
+      // rejecting the backwards range outright. `abort` is needed rather
+      // than `fatal` because the self-hosted grammar rejects the same
+      // input with a `throw` that escapes EVERY enclosing boundary:
+      // `fatal` alone is absorbed right here at this `choice` and then
+      // again at `basicSyntax`'s `characterClass | ...` choice upstream,
+      // turning `"x" [z-a]` into a partial `"x"`-only success where the
+      // generated parser rejects the whole input.
       return createFailure(
         `Invalid character range: "${start}-${end}" (start must not be greater than end)`,
         pos,
-        { parserName: "charRange", fatal: true },
+        { parserName: "charRange", fatal: true, abort: true },
       );
     }
     return {
@@ -153,7 +114,7 @@ const charClassContent: Parser<CharRange[]> = oneOrMore(charRange);
 const characterClassBrackets: Parser<CharacterClass> = map(
   seq(literal("["), optional(literal("^")), charClassContent, literal("]")),
   ([_, negation, ranges, __]) =>
-    createCharacterClass(ranges, negation.length > 0),
+    createCharacterClass(ranges, negation !== null),
 );
 
 /**

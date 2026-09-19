@@ -162,10 +162,17 @@ const collectIdentifierSites = (
     case "Group":
     case "LabeledExpression":
     case "ActionExpression":
+    case "Span":
+      // `span` invokes its child at the current position exactly like a
+      // `Group` does -- transparent to the cut-site walk.
       collectIdentifierSites(expr.expression, ctx, identifiers);
       return;
     case "Optional":
     case "Star":
+    case "Skip":
+      // `ignore(optional(<rule>))` can match zero-width, exactly like
+      // `Optional`/`Star` -- the skip rule it invokes is just as
+      // "under a zeroable repetition" for the cut-safety argument.
       collectIdentifierSites(
         expr.expression,
         { ...ctx, underZeroableRepetition: true },
@@ -409,6 +416,7 @@ const promoteCutsInExpression = (
       case "Group":
       case "LabeledExpression":
       case "ActionExpression":
+      case "Span":
         return { ...e, expression: visit(e.expression, ctx) };
       case "Optional":
       case "Star":
@@ -419,6 +427,26 @@ const promoteCutsInExpression = (
             underZeroableRepetition: true,
           }),
         };
+      case "Skip": {
+        // Same zeroable treatment as `Optional`/`Star`
+        // (`ignore(optional(<rule>))` matches empty), but `e.expression`
+        // is typed `Identifier` -- the resolved skip-rule reference --
+        // so the generic `{ ...e, expression: visit(...) }` arm can't
+        // cover it. `visit` only ever returns the `Identifier` itself
+        // here (a leaf falls through to the `default: return e` arm);
+        // the check keeps that a runtime fact instead of an unchecked
+        // cast.
+        const visited = visit(e.expression, {
+          ...ctx,
+          underZeroableRepetition: true,
+        });
+        if (visited.type !== "Identifier") {
+          throw new Error(
+            `promoteGlobalCuts: rewriting a Skip's rule reference produced ${visited.type} -- a Skip must keep referencing a rule by name`,
+          );
+        }
+        return { ...e, expression: visited };
+      }
       case "Plus":
         return { ...e, expression: visit(e.expression, ctx) };
       case "Quantified":

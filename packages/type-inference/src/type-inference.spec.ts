@@ -245,14 +245,14 @@ describe("TypeInferenceEngine", () => {
       expect(result.baseType).toBe("string");
     });
 
-    it("should infer optional types as [T] | [] -- matching optional()'s actual runtime signature (packages/core/src/repetition.ts), never a bare T | undefined", () => {
+    it("should infer optional types as T | null -- matching optional()'s actual runtime signature (packages/core/src/repetition.ts)", () => {
       const optional = createOptional(createStringLiteral("maybe", '"'));
       const result = engine.inferExpressionType(optional);
 
-      expect(result.typeString).toBe('["maybe"] | []');
-      expect(result.nullable).toBe(false);
-      expect(result.isArray).toBe(true);
-      expect(result.baseType).toBe("tuple");
+      expect(result.typeString).toBe('"maybe" | null');
+      expect(result.nullable).toBe(true);
+      expect(result.isArray).toBe(false);
+      expect(result.baseType).toBe("union");
     });
   });
 
@@ -464,9 +464,9 @@ describe("TypeInferenceEngine", () => {
       );
       const result = engine.inferExpressionType(nested);
 
-      expect(result.typeString).toBe('[("a" | "b")[]] | []');
-      expect(result.nullable).toBe(false);
-      expect(result.isArray).toBe(true); // optional() itself returns [T] | [] -- an array either way
+      expect(result.typeString).toBe('("a" | "b")[] | null');
+      expect(result.nullable).toBe(true);
+      expect(result.isArray).toBe(false); // optional() returns T | null -- a scalar union, not an array
     });
 
     it("should generate proper documentation", () => {
@@ -574,7 +574,7 @@ describe("TypeInferenceEngine", () => {
     it("should handle quantified expressions with min === 0 as a plain array, never undefined", () => {
       // quantified(x, 0, 1) always returns T[] -- an empty array when
       // nothing matches -- never undefined. Optional (`?`) doesn't
-      // produce undefined either (it returns [T] | [] -- see
+      // produce undefined either (it returns T | null -- see
       // inferOptionalType's own doc comment); no PEG repetition/optional
       // operator in this grammar produces a bare undefined result.
       const engine = new TypeInferenceEngine();

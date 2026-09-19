@@ -74,14 +74,19 @@ export const quantifiedOperator: Parser<{ min: number; max?: number }> =
       const digits = result.val.join("");
       const count = Number.parseInt(digits, 10);
       if (!Number.isSafeInteger(count)) {
-        // Fatal: `{<digits>` immediately after an expression is
-        // unambiguously an attempted quantifier (see `withRepetition`'s
-        // adjacency reasoning) -- don't let `choice`/`optional` degrade
-        // this to a misleading "expected digit" watermark.
+        // `abort` (implies `fatal` propagation): `{<digits>` immediately
+        // after an expression is unambiguously an attempted quantifier
+        // (see `withRepetition`'s adjacency reasoning), and the
+        // self-hosted grammar rejects the same input with a `throw` that
+        // escapes every enclosing boundary. `fatal` alone would be
+        // absorbed at the innermost enclosing `choice` (e.g. `primary`'s
+        // `group | basicSyntax`), letting `"x" ("a"{99999999999})?`
+        // partially succeed where the generated parser rejects the whole
+        // input.
         return createFailure(
           `Invalid quantifier bound: {${digits}} is not a safe integer`,
           pos,
-          { parserName: "quantifiedOperator", fatal: true },
+          { parserName: "quantifiedOperator", fatal: true, abort: true },
         );
       }
       return {
@@ -126,10 +131,16 @@ export const quantifiedOperator: Parser<{ min: number; max?: number }> =
       if (!result.success) return result;
       const [, min, , max] = result.val;
       if (min > max) {
+        // `abort` (implies `fatal` propagation), like the unsafe-integer
+        // check in `positiveInt` above: `{n,m}` with `n > m` immediately
+        // after an expression is unambiguously an attempted quantifier,
+        // and the self-hosted grammar rejects the same input with a
+        // `throw` that escapes every enclosing boundary -- `choice`,
+        // groups, `optional`/`zeroOrMore`, and `!`/`&` lookaheads.
         return createFailure(
           `Invalid quantifier range: {${min},${max}} (minimum must not be greater than maximum)`,
           pos,
-          { parserName: "quantifiedOperator" },
+          { parserName: "quantifiedOperator", fatal: true, abort: true },
         );
       }
       return {
@@ -211,7 +222,7 @@ export const withRepetition = <T extends Expression>(
     if (!opResult.success) {
       return opResult;
     }
-    const [repetitionOp] = opResult.val;
+    const repetitionOp = opResult.val;
 
     // Probe for a second operator: only `.success` is inspected, so its
     // internal sub-failures (the `*`/`+`/`?` alternatives that each failed
@@ -224,7 +235,7 @@ export const withRepetition = <T extends Expression>(
     // expression, same as `optionalRepetitionOperator`'s own records.
     const secondOpSnapshot = snapshotFailureWatermark();
     if (
-      repetitionOp !== undefined &&
+      repetitionOp !== null &&
       repetitionOperator(input, opResult.next).success
     ) {
       restoreFailureWatermark(secondOpSnapshot);
@@ -287,7 +298,7 @@ export const withRepetition = <T extends Expression>(
     return {
       success: true,
       val:
-        repetitionOp !== undefined
+        repetitionOp !== null
           ? applyRepetition(baseResult.val, repetitionOp)
           : baseResult.val,
       current: baseResult.current,

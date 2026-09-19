@@ -4,6 +4,7 @@ import {
   type CharSet,
   EMPTY_SET,
   MAX_CODE_POINT,
+  charRangesToSet,
   complement,
   contains,
   difference,
@@ -157,4 +158,37 @@ describe("char-set algebra", () => {
       { start: "6", end: "9" },
     ]);
   });
+});
+
+describe("charRangesToSet: CharRange[] -> CharSet with bound validation", () => {
+  const range = (
+    start: string,
+    end?: string,
+  ): { type: "CharRange"; start: string; end?: string } =>
+    end === undefined
+      ? { type: "CharRange", start }
+      : { type: "CharRange", start, end };
+
+  it("converts valid ranges, including single-char and astral bounds", () => {
+    expect(charRangesToSet([range("a", "z")])).toEqual(lower);
+    expect(charRangesToSet([range("x")])).toEqual(fromChar("x"));
+    expect(charRangesToSet([range("\u{1F600}", "\u{1F64F}")])).toEqual(astral);
+    assertNormalized(charRangesToSet([range("0", "9"), range("a", "z")]));
+  });
+
+  it.each([
+    ["a multi-code-point start", [range("ab", "z")]],
+    ["a multi-code-point end", [range("a", "yz")]],
+    ["a multi-code-point single bound", [range("abc")]],
+    ["a reversed range", [range("z", "a")]],
+    ["a reversed range after a valid one", [range("0", "9"), range("z", "a")]],
+    ["an empty-string bound", [range("", "z")]],
+  ] as const)(
+    "throws on %s -- a hand-built AST can carry bounds `.tpeg` source could never produce, and silently truncating (first code point) or emptying (reversed) them would feed an unsound set into FIRST-set analysis / lookahead degeneration",
+    (_label, ranges) => {
+      expect(() => charRangesToSet(ranges)).toThrow(
+        /Invalid character class range/,
+      );
+    },
+  );
 });

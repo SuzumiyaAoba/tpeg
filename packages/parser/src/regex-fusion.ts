@@ -115,8 +115,8 @@
  *   (exactly one will, given condition 2's disjointness) and yields its
  *   value.
  * - `Optional` gets a marker group around its wrapped expression;
- *   reconstruction yields `[value]` or `[]` (matches `optional()`'s
- *   `[T] | []` shape, NOT `T | null`).
+ *   reconstruction yields `value` or `null` (matches `optional()`'s
+ *   `T | null` shape).
  * - `Star`/`Plus`/`Quantified` capture their *entire* run in one group
  *   and reconstruct via `Array.from(capturedRun)` -- splitting the run
  *   back into one array entry per code point. This is exactly correct
@@ -162,6 +162,21 @@ const STRUCTURALLY_DISQUALIFYING = new Set<Expression["type"]>([
   "PositiveLookahead",
   "NegativeLookahead",
   "Cut",
+  // `Skip` wraps an `Identifier` (which already disqualifies on its own)
+  // -- listed anyway so the barrier is explicit, not incidental: a
+  // boundary skip consumes input conditionally at runtime and no regex
+  // alternation can express "match ws, then decide" here.
+  "Skip",
+  // `Span` discards its child's value for the raw source text -- a
+  // regex fuse would make the wrapper see a different value shape than
+  // the unfused child produced (the fused regex's own matched text IS
+  // the same span, but the fusability check must stay conservative for
+  // spans wrapping compound expressions whose internal structure the
+  // fused regex flattens).
+  "Span",
+  // A word boundary is a position assertion no character-consuming
+  // regex alternation can express -- fusion barrier.
+  "WordBoundary",
 ]);
 
 /** A leaf that `Star`/`Plus`/`Quantified` may wrap and still be fusable
@@ -192,6 +207,29 @@ const isStructurallyFusable = (expr: Expression): boolean =>
       node.type === "Plus" ||
       node.type === "Quantified"
     ) {
+      // A `Quantified` with bounds outside `quantified`'s own contract
+      // (`packages/core/src/repetition.ts` -- non-negative safe-integer
+      // `min`; `max` undefined, Infinity, or a safe integer >= `min`) can
+      // only come from a hand-built AST, since `.tpeg` source rejects
+      // them at parse time. Emitting them as a regex quantifier is worse
+      // than the unfused path either way: `{5,2}` is a SyntaxError at
+      // generated-module load, while `{-1,}`/`{2.5,}` aren't valid
+      // quantifier syntax at all and silently match LITERAL text under
+      // Annex B. Refuse to fuse instead, so the generated code falls
+      // back to `quantified(...)` and surfaces the same descriptive
+      // construction-time error the base generator produces.
+      if (
+        node.type === "Quantified" &&
+        !(
+          Number.isSafeInteger(node.min) &&
+          node.min >= 0 &&
+          (node.max === undefined ||
+            node.max === Number.POSITIVE_INFINITY ||
+            (Number.isSafeInteger(node.max) && node.max >= node.min))
+        )
+      ) {
+        return true;
+      }
       return !isSimpleRepeatable(node.expression);
     }
     return false;
@@ -560,8 +598,13 @@ export const planFusion = (
       case "Quantified":
       case "PositiveLookahead":
       case "NegativeLookahead":
+      case "Span":
       case "LabeledExpression":
       case "ActionExpression":
+        // A `Span` can't itself be a fusion root (it's disqualifying --
+        // STRUCTURALLY_DISQUALIFYING), but fusing INSIDE one is safe:
+        // `span(regexFused(...))` still consumes -- and re-slices --
+        // exactly the same text the unfused child would have.
         visit(expr.expression);
         return;
       default:
@@ -765,7 +808,7 @@ const emit = (expr: Expression, counter: GroupCounter): Emitted => {
       const inner = emit(expr.expression, counter);
       return {
         pattern: `(?:(${inner.pattern}))?`,
-        valueExpr: `${groupRef(markerIndex)} !== undefined ? [${inner.valueExpr}] : []`,
+        valueExpr: `${groupRef(markerIndex)} !== undefined ? ${inner.valueExpr} : null`,
       };
     }
     case "Star":
@@ -773,6 +816,28 @@ const emit = (expr: Expression, counter: GroupCounter): Emitted => {
     case "Quantified": {
       const groupIndex = counter.next++;
       const leafSource = simpleLeafSource(expr.expression);
+      if (expr.type === "Quantified") {
+        // Same contract `quantified` (`packages/core/src/repetition.ts`)
+        // validates at construction -- mirrored here, not just enforced
+        // via `isStructurallyFusable`, because `emitFusedExpression` is
+        // itself an exported entry point a caller can feed a hand-built
+        // (never parser-validated) AST. Verbatim emission is never safe:
+        // `{5,2}` is a `SyntaxError` at RegExp construction, while
+        // `{-1,}`/`{2.5,}` aren't quantifier syntax at all and would
+        // silently match LITERAL text under Annex B.
+        const { min, max } = expr;
+        if (
+          !Number.isSafeInteger(min) ||
+          min < 0 ||
+          (max !== undefined &&
+            (max < min ||
+              (max !== Number.POSITIVE_INFINITY && !Number.isSafeInteger(max))))
+        ) {
+          throw new Error(
+            `Invalid quantified range: minimum (${min}) must be a non-negative safe integer and maximum (${max}) must be a safe integer not less than minimum, or Infinity`,
+          );
+        }
+      }
       const quantifier =
         expr.type === "Star"
           ? "*"

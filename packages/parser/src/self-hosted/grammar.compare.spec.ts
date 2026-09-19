@@ -216,6 +216,121 @@ grammar G {
     f() -> int { return 0; }
   }
 }`,
+
+  // a rule boundary needs NO whitespace before the next rule's name --
+  // `=` can never continue an expression, so `x=` (adjacent or spaced)
+  // ends `r` on both sides. The hand-written boundary scan used to only
+  // check the position after a whitespace run, absorbing `x` into `r`'s
+  // body and then failing on the stranded `=`.
+  `grammar G { r = "a"x="b" }`,
+  `grammar G { r = "a"x = "b" }`,
+  `grammar G { r = "a" x="b" }`,
+  `grammar G { r = "a"transforms = "b" }`,
+
+  // `transforms` as an expression identifier: exempt from the
+  // rule-boundary check as a sequence's/alternative's/group's FIRST
+  // element and as a lookahead's operand on both sides (the self-hosted
+  // grammar's notNextRuleStart guards continuations only)
+  `grammar G { r = "a" / transforms x }`,
+  `grammar G { r = (transforms x) }`,
+  `grammar G { r = &transforms x }`,
+  `grammar G { r = !transforms x }`,
+  `grammar G { r = transforms x }`,
+  // ...but NOT exempt in continuation position: `transforms` there starts
+  // a transforms block (or fails one), on both sides
+  `grammar G { r = "a" transforms x }`,
+  `grammar G { r = "a" ~ transforms x }`,
+  `grammar G { r = "a" transforms T@typescript {
+    f() -> void { return; }
+  } }`,
+
+  // a label's `name:expr` expression is ANOTHER fresh element position
+  // (`expr` is prefix-level, like `&`'s operand): `name:transforms`
+  // labels a rule reference named `transforms`, not a transforms-block
+  // boundary -- a `:` directly before the identifier must exempt it from
+  // the continuation-boundary check exactly like `/`, `(`, `&`, `!` do
+  `grammar G { r = name:transforms }`,
+  `grammar G { r = l:transforms }`,
+  `grammar G { r = "a" name:transforms x }`,
+  `grammar G { r = name:transforms x }`,
+  // ...while a label on a COMPLETE expression leaves `transforms` in
+  // continuation position, where it's still a boundary on both sides
+  `grammar G { r = n:"a" transforms }`,
+  `grammar G { r = n : transforms }`,
+
+  // ---- `@expr` span operator vs `@annotation` (grammar.ts's
+  // isAnnotationStartAt / the grammar layer's `annotationStart`): an
+  // `@` NOT followed by an identifier is always a span; `@identifier`
+  // is a span too, unless a `:`, another `@`, or a rule boundary
+  // (`name =`, `transforms`, `}`) follows it -- where the annotation
+  // reading wins on both sides.
+  `grammar G {
+  r = @"a"
+}`,
+  `grammar G {
+  r = @[a-z]+
+}`,
+  `grammar G {
+  r = @("a" / "b")
+}`,
+  `grammar G {
+  r = @x "a"
+  x = "b"
+}`,
+  // `@x` directly before the next rule's header is a flag annotation,
+  // not a span -- the body ends there on both sides (`@(x)` is the
+  // explicit way to force the span reading)
+  `grammar G {
+  r = "a" @x
+  x = "b"
+}`,
+  `grammar G {
+  r = "a" @(x)
+  x = "b"
+}`,
+  `grammar G {
+  r = "a" w:@(x)
+  x = "b"
+}`,
+  `grammar G {
+  r = "a" @noskip
+  x = "b"
+}`,
+  // an annotation-shaped `@` truncates the body EVERYWHERE the scanner
+  // can see it -- inside label operands, post-`/` first elements, and
+  // group interiors alike (the hand-written scanner counts BRACE
+  // depth, not parens) -- leaving a body the expression grammar can't
+  // finish, on both sides
+  `grammar G {
+  r = "a" w:@x
+  x = "b"
+}`,
+  `grammar G {
+  r = "a" / @x
+  x = "b"
+}`,
+  `grammar G {
+  r = (@x
+  x = "b")
+}`,
+  `grammar G {
+  r = @x
+  x = "b"
+}`,
+  // ...but a span operand position before a NON-boundary token is a
+  // span even where it visually resembles an annotation
+  `grammar G {
+  r = "a" @x "b"
+  x = "c"
+}`,
+
+  // `\b`/`\B` word-boundary assertions as expression leaves
+  `grammar G {
+  r = \\b w:[a-z]+ \\b
+}`,
+  `grammar G {
+  r = "a" \\B "b"
+}`,
 ];
 
 describe("self-hosted grammar-block layer vs grammar.ts's grammarDefinition", () => {

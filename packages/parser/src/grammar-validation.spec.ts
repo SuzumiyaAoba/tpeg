@@ -546,6 +546,55 @@ describe("validateGrammar: cut-only patterns", () => {
   });
 });
 
+describe("validateGrammar: @start annotations", () => {
+  it("accepts `@start: <name>` naming a declared rule", () => {
+    const grammar = grammarFromSource('@start: main\nmain = "m"\nhelper = "h"');
+    expect(() => validateGrammar(grammar)).not.toThrow();
+  });
+
+  it("rejects `@start` naming a rule the grammar does not declare", () => {
+    const grammar = grammarFromSource('@start: missing\nmain = "m"');
+    expect(() => validateGrammar(grammar)).toThrow(/@start.*missing/);
+  });
+
+  it("rejects a bare `@start` flag with no rule name", () => {
+    const grammar = grammarFromSource('@start\nmain = "m"');
+    expect(() => validateGrammar(grammar)).toThrow(
+      /@start requires a rule name/,
+    );
+  });
+
+  it("rejects duplicate `@start` annotations", () => {
+    const grammar = grammarFromSource(
+      '@start: main\n@start: helper\nmain = "m"\nhelper = "h"',
+    );
+    expect(() => validateGrammar(grammar)).toThrow(/duplicate @start/i);
+  });
+
+  it("accepts `@start` naming the first rule too (not just a later one)", () => {
+    const grammar = grammarFromSource('@start: main\nmain = "m"\nhelper = "h"');
+    expect(() => validateGrammar(grammar)).not.toThrow();
+  });
+
+  it("end-to-end: both generators reject a `@start` naming a missing rule", () => {
+    const grammar = grammarFromSource('@start: missing\nmain = "m"');
+    expect(() =>
+      generateTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+      }),
+    ).toThrow(/@start.*missing/);
+    expect(() =>
+      generateOptimizedTypeScriptParser(grammar, {
+        language: "typescript",
+        includeImports: false,
+        includeTypes: false,
+        optimize: true,
+      }),
+    ).toThrow(/@start.*missing/);
+  });
+});
+
 /**
  * `validateGeneratedIdentifiers` rejects a rule name, capture label, or
  * transform-parameter name that would generate to a JS reserved word, an

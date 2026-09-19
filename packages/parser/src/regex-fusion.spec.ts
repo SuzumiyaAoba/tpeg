@@ -295,7 +295,7 @@ describe("isRuleFusable: structural + determinism gates", () => {
     }
   });
 
-  it('rejects Optional when its wrapped expression is itself nullable, even at the trailing edge of the fused region (regression: `("-"?)?` on "" reconstructed `[]` instead of `[[]]` -- ECMA-262\'s RepeatMatcher rejects a zero-width match of a `?`\'s own body, so the emitted `(?:(X))?` marker group comes back `undefined` even though X legitimately matched with zero width)', () => {
+  it('rejects Optional when its wrapped expression is itself nullable, even at the trailing edge of the fused region (regression: `("-"?)?` on "" used to reconstruct `[]` instead of `[[]]` -- ECMA-262\'s RepeatMatcher rejects a zero-width match of a `?`\'s own body, so the emitted `(?:(X))?` marker group comes back `undefined` even though X legitimately matched with zero width. With `T | null` semantics the two cases now agree on `null`, but the conservative rejection stays)', () => {
     for (const src of [
       `grammar G { r = ("-"?)? }`,
       "grammar G { r = ([a-z]*)? }",
@@ -693,7 +693,7 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
     }
   });
 
-  it("reconstructs an Optional's [T] | [] shape exactly (not T | null)", async () => {
+  it("reconstructs an Optional's T | null shape exactly", async () => {
     const grammar = createGrammarDefinition(
       "G",
       [],
@@ -717,11 +717,12 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
     const r = await compileRuleFor(grammar, "r");
     const withSign = r("-42", ORIGIN);
     expect(withSign.success).toBe(true);
-    if (withSign.success) expect(withSign.val).toEqual([["-"], ["4", "2"]]);
+    if (withSign.success) expect(withSign.val).toEqual(["-", ["4", "2"]]);
 
     const withoutSign = r("42", ORIGIN);
     expect(withoutSign.success).toBe(true);
-    if (withoutSign.success) expect(withoutSign.val).toEqual([[], ["4", "2"]]);
+    if (withoutSign.success)
+      expect(withoutSign.val).toEqual([null, ["4", "2"]]);
   });
 
   it("reconstructs a Choice's value as whichever alternative matched, using AnyChar and multi-alternative markers", async () => {
@@ -1289,6 +1290,84 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
     const r = await compileRuleFor(grammar, "r");
     expect(r("aaabbb", ORIGIN).success).toBe(true);
     expect(r("a", ORIGIN).success).toBe(false);
+  });
+
+  it.each([
+    ["max < min", 5, 2],
+    ["negative min", -1, undefined],
+    ["non-integer min", 2.5, undefined],
+    ["negative max", 0, -1],
+    ["non-safe-integer max", 0, Number.MAX_SAFE_INTEGER + 1],
+  ] as const)(
+    "refuses to fuse a hand-built Quantified with %s -- emitting its bounds verbatim is a RegExp SyntaxError at best and a silent literal-text match (Annex B) at worst; falling back to `quantified(...)` surfaces that combinator's own descriptive construction-time error instead",
+    async (_label, min, max) => {
+      const expr = createQuantified(
+        createCharacterClass([createCharRange("a", "z")], false),
+        min,
+        max,
+      );
+      const grammar = createGrammarDefinition(
+        "G",
+        [],
+        [createRuleDefinition("r", expr)],
+      );
+      const rule = grammar.rules[0];
+      if (!rule) throw new Error("expected rule");
+      const analysis = analyzeFirstSets(grammar);
+      expect(isRuleFusable(rule, analysis)).toBe(false);
+
+      // `emitFusedExpression` itself defends against a caller that skips
+      // the fusability gates entirely.
+      expect(() => emitFusedExpression(expr)).toThrow(
+        /Invalid quantified range/,
+      );
+
+      // The unfused path emits `quantified(...)`, whose constructor
+      // validation throws a descriptive error when the generated module
+      // is built -- the same failure the base generator produces, rather
+      // than a cryptic regex `SyntaxError` (or worse, `{2.5,}`-style
+      // Annex-B literal matching, which fails NOISILY nowhere).
+      const generated = generateOptimizedTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+        optimize: true,
+        enableRegexFusion: true,
+      });
+      expect(generated.code).not.toContain("regexFused");
+      expect(generated.code).toContain("quantified");
+      await expect(compileRuleFor(grammar, "r")).rejects.toThrow(
+        /Invalid quantified range/,
+      );
+    },
+  );
+
+  it("still fuses a hand-built Quantified whose bounds are all valid (min === max included, a legitimately bounded repetition)", async () => {
+    const expr = createQuantified(
+      createCharacterClass([createCharRange("a", "z")], false),
+      3,
+      3,
+    );
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [createRuleDefinition("r", expr)],
+    );
+    const rule = grammar.rules[0];
+    if (!rule) throw new Error("expected rule");
+    const analysis = analyzeFirstSets(grammar);
+    expect(isRuleFusable(rule, analysis)).toBe(true);
+    expect(emitFusedExpression(expr).source).toBe(
+      "((?:[\\u{61}-\\u{7a}]){3,3})",
+    );
+
+    const r = await compileRuleFor(grammar, "r");
+    expect(r("aaa", ORIGIN).success).toBe(true);
+    expect(r("aa", ORIGIN).success).toBe(false);
+    // Parsers match prefixes, not whole inputs: "aaaa" matches exactly
+    // three and stops at offset 3.
+    const four = r("aaaa", ORIGIN);
+    expect(four.success).toBe(true);
+    if (four.success) expect(four.next).toBe(3);
   });
 });
 

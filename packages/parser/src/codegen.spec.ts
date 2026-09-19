@@ -11,6 +11,7 @@ import {
   createCharacterClass,
   createChoice,
   createCut,
+  createGrammarAnnotation,
   createGrammarDefinition,
   createGroup,
   createIdentifier,
@@ -70,6 +71,105 @@ describe("TPEG Code Generation", () => {
       // only `g_hello` exists in the emitted code (eta-generator has
       // always pushed the prefixed name).
       expect(result.exports).toEqual(["g_hello"]);
+    });
+
+    test("@start emits `export { <rule> as start }` and lists `start` in exports", () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [createGrammarAnnotation("start", "main")],
+        [
+          createRuleDefinition("helper", createStringLiteral("h")),
+          createRuleDefinition("main", createStringLiteral("m")),
+        ],
+        [],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      const result = generator.generateGrammar(grammar);
+
+      expect(result.code).toContain("export { main as start };");
+      expect(result.exports).toEqual(["helper", "main", "start"]);
+    });
+
+    test("@start alias stays `start` even under a namePrefix", () => {
+      // The whole point of the alias: a consumer reaches the entry rule
+      // under one stable name no matter what `namePrefix` was applied to
+      // the rules themselves.
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [createGrammarAnnotation("start", "main")],
+        [
+          createRuleDefinition("helper", createStringLiteral("h")),
+          createRuleDefinition("main", createStringLiteral("m")),
+        ],
+        [],
+      );
+
+      const generator = new TPEGCodeGenerator({
+        language: "typescript",
+        namePrefix: "g_",
+      });
+      const result = generator.generateGrammar(grammar);
+
+      expect(result.code).toContain("export { g_main as start };");
+      expect(result.exports).toEqual(["g_helper", "g_main", "start"]);
+    });
+
+    test("@start naming a rule already emitted as `start` emits no redundant alias", () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [createGrammarAnnotation("start", "start")],
+        [
+          createRuleDefinition("start", createStringLiteral("s")),
+          createRuleDefinition("helper", createStringLiteral("h")),
+        ],
+        [],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      const result = generator.generateGrammar(grammar);
+
+      expect(result.code).not.toContain("as start");
+      expect(result.exports).toEqual(["start", "helper"]);
+    });
+
+    test("@start colliding with a DIFFERENT rule already named `start` is a hard error", () => {
+      // `export const start` (the rule) and `export { main as start }`
+      // would both export the name `start` -- rather than silently
+      // dropping the alias (which would hand the caller the wrong rule
+      // under the entry-point name), this is rejected.
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [createGrammarAnnotation("start", "main")],
+        [
+          createRuleDefinition("start", createStringLiteral("s")),
+          createRuleDefinition("main", createStringLiteral("m")),
+        ],
+        [],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      expect(() => generator.generateGrammar(grammar)).toThrow(
+        /collides with the `start` export alias/,
+      );
+    });
+
+    test("no @start annotation means no `start` alias (default output unchanged)", () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition("helper", createStringLiteral("h")),
+          createRuleDefinition("main", createStringLiteral("m")),
+        ],
+        [],
+      );
+
+      const generator = new TPEGCodeGenerator();
+      const result = generator.generateGrammar(grammar);
+
+      expect(result.code).not.toContain("as start");
+      expect(result.exports).toEqual(["helper", "main"]);
     });
 
     test("should generate character class parser", () => {

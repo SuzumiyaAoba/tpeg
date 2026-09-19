@@ -9,7 +9,6 @@
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   anyChar,
-  charClass,
   choice,
   literal,
   map,
@@ -17,34 +16,19 @@ import {
   seq,
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
+import { unifiedEscapeSequence } from "./escape-sequence";
 import type { StringLiteral } from "./types";
 import { createStringLiteral } from "./types";
 
 /**
  * Parses escape sequences within string literals.
- * Supports: \n, \r, \t, \\, \", \'
+ * Supports the full unified set (`./escape-sequence.ts`): the named
+ * escapes `\n \r \t \b \f \v \0`, the numeric escapes `\xNN` `\uXXXX`
+ * `\u{...}`, and the literal escapes `\"` `\'` `\\`. `\b` is BACKSPACE
+ * inside a string (JS's own semantics) -- the word-boundary assertion
+ * `\b` is a pattern-level construct, not an escape.
  */
-const escapeSequence: Parser<string> = map(
-  seq(literal("\\"), charClass("n", "r", "t", "\\", '"', "'")),
-  ([_, char]) => {
-    switch (char) {
-      case "n":
-        return "\n";
-      case "r":
-        return "\r";
-      case "t":
-        return "\t";
-      case "\\":
-        return "\\";
-      case '"':
-        return '"';
-      case "'":
-        return "'";
-      default:
-        return char;
-    }
-  },
-);
+const escapeSequence: Parser<string> = unifiedEscapeSequence(['"', "'", "\\"]);
 
 /**
  * Parses a character within a double-quoted string.

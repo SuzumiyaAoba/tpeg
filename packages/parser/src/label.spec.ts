@@ -126,12 +126,32 @@ describe("labeledExpression", () => {
     const result1 = parser('name:"hello"', createPosition());
     expect(result1.success).toBe(true);
 
-    // Spaces around colon should fail (strict parsing)
+    // Whitespace on both sides of the colon is allowed
     const result2 = parser('name : "hello"', createPosition());
-    expect(result2.success).toBe(false);
+    expect(result2.success).toBe(true);
+    if (result2.success) {
+      expect(result2.val.label).toBe("name");
+      expect(result2.next).toBe(14); // 'name : "hello"' length
+    }
 
     const result3 = parser('name: "hello"', createPosition());
-    expect(result3.success).toBe(false);
+    expect(result3.success).toBe(true);
+
+    const result4 = parser('name :"hello"', createPosition());
+    expect(result4.success).toBe(true);
+  });
+
+  test("handles comments around colon", () => {
+    const parser = labeledExpression(() => stringLiteral);
+
+    const result1 = parser('name /* label */ : "hello"', createPosition());
+    expect(result1.success).toBe(true);
+    if (result1.success) {
+      expect(result1.val.label).toBe("name");
+    }
+
+    const result2 = parser('name: // trailing\n "hello"', createPosition());
+    expect(result2.success).toBe(true);
   });
 
   test("fails when label is invalid", () => {
@@ -180,6 +200,41 @@ describe("withOptionalLabel", () => {
         value: "hello",
         quote: '"',
       });
+    }
+  });
+
+  test("parses labeled expression with whitespace around colon", () => {
+    const parser = withOptionalLabel(stringLiteral);
+
+    const result1 = parser('name : "hello"', createPosition());
+    expect(result1.success).toBe(true);
+    if (result1.success) {
+      expect(result1.val.type).toBe("LabeledExpression");
+      const labeled = result1.val as LabeledExpression;
+      expect(labeled.label).toBe("name");
+      expect(result1.next).toBe(14);
+    }
+
+    const result2 = parser('name /* c */ :"hello"', createPosition());
+    expect(result2.success).toBe(true);
+    if (result2.success) {
+      expect(result2.val.type).toBe("LabeledExpression");
+    }
+  });
+
+  test("does not treat a following colon-free identifier as a label", () => {
+    // `name "hello"` -- `name` has no colon after its whitespace, so it
+    // must parse as the unlabeled expression itself (a bare identifier
+    // is not a stringLiteral here, so this input fails at the literal;
+    // use an identifier-accepting parser instead).
+    const parser = withOptionalLabel(identifier);
+    const result = parser("name  other", createPosition());
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // `name` parses as a bare identifier; the sequence level owns the
+      // trailing `  other`.
+      expect(result.val).toEqual({ type: "Identifier", name: "name" });
+      expect(result.next).toBe(4);
     }
   });
 

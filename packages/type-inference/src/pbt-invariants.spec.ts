@@ -138,17 +138,17 @@ describe("TypeInferenceEngine invariants (fast-check), generalized from type-inf
     );
   });
 
-  it("Optional always infers as `[<inner>] | []` (never a bare T or `T | undefined`), matching optional()'s runtime [T] | [] shape", () => {
+  it("Optional always infers as `<inner> | null`, matching optional()'s runtime T | null shape", () => {
     fc.assert(
       fc.property(tree, (inner) => {
         const engine = new TypeInferenceEngine();
         const innerType = engine.inferExpressionType(inner);
         const result = engine.inferExpressionType(createOptional(inner));
 
-        expect(result.typeString).toBe(`[${innerType.typeString}] | []`);
-        expect(result.isArray).toBe(true);
-        expect(result.baseType).toBe("tuple");
-        expect(result.nullable).toBe(false);
+        expect(result.typeString).toBe(`${innerType.typeString} | null`);
+        expect(result.isArray).toBe(false);
+        expect(result.baseType).toBe("union");
+        expect(result.nullable).toBe(true);
       }),
       FC_PARAMS,
     );

@@ -120,7 +120,7 @@ const selectiveImportList: Parser<string[]> = map(
     optionalWhitespaceOrComment,
     literal(GRAMMAR_SYMBOLS.GRAMMAR_BLOCK_CLOSE),
   ),
-  ([, , rules, ,]) => rules?.[0] ?? [],
+  ([, , rules, ,]) => rules ?? [],
 );
 
 /**
@@ -150,7 +150,7 @@ const simpleImport: Parser<ImportStatement> = map(
       ),
     ),
   ),
-  ([, , path, alias]) => createImportStatement(path, alias?.[0]),
+  ([, , path, alias]) => createImportStatement(path, alias ?? undefined),
 );
 
 /**
@@ -193,7 +193,7 @@ const versionedImport: Parser<ImportStatement> = map(
     ),
   ),
   ([, , path, , , , version, alias]) =>
-    createImportStatement(path, alias?.[0], undefined, version),
+    createImportStatement(path, alias ?? undefined, undefined, version),
 );
 
 /**
@@ -238,7 +238,7 @@ const exportRuleList: Parser<string[]> = map(
     optionalWhitespaceOrComment,
     literal("]"),
   ),
-  ([, , rules, ,]) => rules?.[0] ?? [],
+  ([, , rules, ,]) => rules ?? [],
 );
 
 /**
@@ -278,6 +278,42 @@ export const DEDICATED_ANNOTATION_KEYS: ReadonlySet<string> = new Set([
   "conflicts",
   "requires",
   "memoize",
+  "noskip",
+]);
+
+/**
+ * Annotation keys the grammar syntax RECOGNIZES but this implementation
+ * does not support -- documented in docs/peg-grammar.md (or obviously part
+ * of a documented feature family, like `elif`/`endif` for `@if`) yet
+ * inert: they parse, then nothing downstream ever reads them. Accepting
+ * them silently is the worst of both worlds -- the grammar author
+ * believes `@private`/`@namespace`/`@if` does something it never will --
+ * so `grammar.ts`'s `unsupportedAnnotation` detector turns each into a
+ * fatal parse error naming the annotation, exactly like
+ * `malformedExportAnnotation` does for a malformed `@export`.
+ *
+ * Deliberately NOT in `DEDICATED_ANNOTATION_KEYS`: those keys have a
+ * working dedicated parser these don't -- and a key listed here must NOT
+ * also appear there (the unsupported detector runs before every generic
+ * annotation alternative, so membership here alone is enough to make the
+ * key unparseable anywhere an annotation can appear).
+ *
+ * `@start`/`@skip`/`@noskip`/`@memoize` are ABSENT on purpose: they are
+ * implemented now, not inert.
+ */
+export const UNIMPLEMENTED_ANNOTATION_KEYS: ReadonlySet<string> = new Set([
+  "private",
+  "protected",
+  "public",
+  "internal",
+  "override",
+  "namespace",
+  "if",
+  "else",
+  "elif",
+  "endif",
+  "ifdef",
+  "ifndef",
 ]);
 
 /**
@@ -319,6 +355,7 @@ const NON_LIST_ANNOTATION_KEYS: ReadonlySet<string> = new Set([
   "export",
   "requires",
   "memoize",
+  "noskip",
 ]);
 
 /** Keys the quoted-string-RECORD annotation parser must refuse -- every
@@ -328,6 +365,7 @@ const NON_RECORD_ANNOTATION_KEYS: ReadonlySet<string> = new Set([
   "dependencies",
   "conflicts",
   "memoize",
+  "noskip",
 ]);
 
 /**
@@ -373,7 +411,7 @@ const quotedStringList: Parser<string[]> = map(
     optionalWhitespaceOrComment,
     literal("]"),
   ),
-  ([, , values, ,]) => values?.[0] ?? [],
+  ([, , values, ,]) => values ?? [],
 );
 
 /**
@@ -454,7 +492,7 @@ const quotedStringRecord: Parser<Record<string, string>> = map(
     optionalWhitespaceOrComment,
     literal("}"),
   ),
-  ([, , entries]) => Object.fromEntries(entries?.[0] ?? []),
+  ([, , entries]) => Object.fromEntries(entries ?? []),
 );
 
 /**

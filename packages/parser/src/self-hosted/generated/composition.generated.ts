@@ -1,15 +1,18 @@
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
-import { anyChar, capture, captureSequence, charClass, charClassRun, choice, commit, lazy, literal, negatedCharClass, notPredicate, oneOrMore, optional, sequence, untagCapture, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
+import { anyChar, capture, captureSequence, charClass, charClassRun, choice, commit, lazy, literal, negatedCharClass, notPredicate, oneOrMore, optional, quantified, sequence, untagCapture, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
 
-export const escapeChar: Parser<any> = untagCapture(sequence(literal("\\"), charClass("n", "r", "t", "\\", "\"", "'")));
-
-export const doubleStringChar: Parser<any> = untagCapture(choice((input, pos) => {
-  const __base = (escapeChar);
+export const namedEscape: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("\\"), capture("c", charClass("n", "r", "t", "b", "f", "v", "0"))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
- const c = $$[1]; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t"; return c; 
+    const { c } = ($$ ?? {});
+
+    if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t";
+    if (c === "b") return "\b"; if (c === "f") return "\f"; if (c === "v") return "\v";
+    return "\0";
+  
   })();
   return {
     success: true,
@@ -17,15 +20,20 @@ export const doubleStringChar: Parser<any> = untagCapture(choice((input, pos) =>
     current: __result.current,
     next: __result.next,
   };
-}, negatedCharClass("\"", "\\")));
+});
 
-export const singleStringChar: Parser<any> = untagCapture(choice((input, pos) => {
-  const __base = (escapeChar);
+export const unicodeBracedEscape: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("\\u{"), capture("digits", quantified(charClass(["0", "9"], ["a", "f"], ["A", "F"]), 1, 6)), literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
- const c = $$[1]; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t"; return c; 
+    const { digits } = ($$ ?? {});
+
+    const cp = parseInt(digits.join(""), 16);
+    if (cp > 0x10ffff) throw new Error("Invalid Unicode code point: \\u{" + digits.join("") + "} is above U+10FFFF");
+    return String.fromCodePoint(cp);
+  
   })();
   return {
     success: true,
@@ -33,7 +41,83 @@ export const singleStringChar: Parser<any> = untagCapture(choice((input, pos) =>
     current: __result.current,
     next: __result.next,
   };
-}, negatedCharClass("'", "\\")));
+});
+
+export const unicodeEscape4: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("\\u"), capture("digits", quantified(charClass(["0", "9"], ["a", "f"], ["A", "F"]), 4, 4))));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { digits } = ($$ ?? {});
+ return String.fromCodePoint(parseInt(digits.join(""), 16)); 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const hexEscape: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("\\x"), capture("digits", quantified(charClass(["0", "9"], ["a", "f"], ["A", "F"]), 2, 2))));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { digits } = ($$ ?? {});
+ return String.fromCodePoint(parseInt(digits.join(""), 16)); 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const numericEscape: Parser<any> = untagCapture(choice(unicodeBracedEscape, unicodeEscape4, hexEscape));
+
+export const stringLiteralEscape: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("\\"), capture("c", charClass("\"", "'", "\\"))));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { c } = ($$ ?? {});
+ return c; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const classLiteralEscape: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("\\"), capture("c", charClass("]", "\\", "^", "-", "\"", "'"))));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { c } = ($$ ?? {});
+ return c; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const escapeChar: Parser<any> = untagCapture(choice(namedEscape, numericEscape, stringLiteralEscape));
+
+export const doubleStringChar: Parser<any> = untagCapture(choice(escapeChar, negatedCharClass("\"", "\\")));
+
+export const singleStringChar: Parser<any> = untagCapture(choice(escapeChar, negatedCharClass("'", "\\")));
 
 export const doubleQuotedString: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("\""), capture("chars", zeroOrMore(doubleStringChar)), literal("\"")));
@@ -71,39 +155,9 @@ export const singleQuotedString: Parser<any> = untagCapture((input, pos) => {
 
 export const stringLiteralNode: Parser<any> = untagCapture(choice(doubleQuotedString, singleQuotedString));
 
-export const classEscapeStd: Parser<any> = untagCapture((input, pos) => {
-  const __base = (sequence(literal("\\"), charClass("t", "n", "r", "b", "f", "v", "0")));
-  const __result = __base(input, pos);
-  if (!__result.success) return __result;
-  const __val = (() => {
-    const $$: any = __result.val;
- const c = $$[1]; if (c === "t") return "\t"; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "b") return "\b"; if (c === "f") return "\f"; if (c === "v") return "\v"; return "\0"; 
-  })();
-  return {
-    success: true,
-    val: __val,
-    current: __result.current,
-    next: __result.next,
-  };
-});
+export const classEscape: Parser<any> = untagCapture(choice(namedEscape, numericEscape, classLiteralEscape));
 
-export const classEscapeSpecial: Parser<any> = untagCapture((input, pos) => {
-  const __base = (sequence(literal("\\"), charClass("]", "\\", "^", "-", "\"", "'")));
-  const __result = __base(input, pos);
-  if (!__result.success) return __result;
-  const __val = (() => {
-    const $$: any = __result.val;
- return $$[1]; 
-  })();
-  return {
-    success: true,
-    val: __val,
-    current: __result.current,
-    next: __result.next,
-  };
-});
-
-export const classChar: Parser<any> = untagCapture(choice(classEscapeStd, classEscapeSpecial, negatedCharClass("]", "\\", "^", "-")));
+export const classChar: Parser<any> = untagCapture(choice(classEscape, negatedCharClass("]", "\\", "^", "-")));
 
 export const charRangePair: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("start", classChar), literal("-"), capture("end", classChar)));
@@ -153,7 +207,7 @@ export const characterClassBrackets: Parser<any> = untagCapture((input, pos) => 
   const __val = (() => {
     const $$: any = __result.val;
     const { negation, ranges } = ($$ ?? {});
- return { type: "CharacterClass", ranges, negated: negation.length > 0 }; 
+ return { type: "CharacterClass", ranges, negated: negation !== null }; 
   })();
   return {
     success: true,
@@ -235,7 +289,24 @@ export const qualifiedIdentifierNode: Parser<any> = untagCapture((input, pos) =>
   };
 });
 
-export const basicSyntax: Parser<any> = untagCapture(choice(stringLiteralNode, characterClassNode, qualifiedIdentifierNode, identifierNode));
+export const wordBoundaryNode: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("\\"), capture("c", charClass("b", "B"))));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { c } = ($$ ?? {});
+ return { type: "WordBoundary", negated: c === "B" }; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const basicSyntax: Parser<any> = untagCapture(choice(stringLiteralNode, characterClassNode, qualifiedIdentifierNode, identifierNode, wordBoundaryNode));
 
 export const escapedActionChar: Parser<any> = untagCapture((input, pos) => {
   const __base = (sequence(literal("\\"), anyChar()));
@@ -295,7 +366,7 @@ export const templateInterp: Parser<any> = untagCapture((input, pos) => {
     const $$: any = __result.val;
     const { first, parts } = ($$ ?? {});
 
-    return "${" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + "}";
+    return "${" + (first ? first.w.join("") + first.re : "") + parts.join("") + "}";
   
   })();
   return {
@@ -576,7 +647,7 @@ export const actionParenGroup: Parser<any> = untagCapture((input, pos) => {
     const $$: any = __result.val;
     const { first, parts } = ($$ ?? {});
 
-    return "(" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + ")";
+    return "(" + (first ? first.w.join("") + first.re : "") + parts.join("") + ")";
   
   })();
   return {
@@ -615,7 +686,7 @@ export const nestedActionBlock: Parser<any> = untagCapture((input, pos) => {
   const __val = (() => {
     const $$: any = __result.val;
     const { inner, tail } = ($$ ?? {});
- return "{" + inner + "}" + (tail.length ? tail[0].w.join("") + tail[0].re : ""); 
+ return "{" + inner + "}" + (tail ? tail.w.join("") + tail.re : ""); 
   })();
   return {
     success: true,
@@ -668,7 +739,7 @@ export const actionBlock: Parser<any> = untagCapture((input, pos) => {
   const __val = (() => {
     const $$: any = __result.val;
     const { first, parts } = ($$ ?? {});
- return (first.length ? first[0].w.join("") + first[0].re : "") + parts.join(""); 
+ return (first ? first.w.join("") + first.re : "") + parts.join(""); 
   })();
   return {
     success: true,
@@ -908,10 +979,27 @@ export const negativeLookahead: Parser<any> = untagCapture((input, pos) => {
   };
 });
 
-export const prefix: Parser<any> = untagCapture(choice(positiveLookahead, negativeLookahead, postfix));
+export const spanOp: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("@"), capture("expr", postfix)));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { expr } = ($$ ?? {});
+ return { type: "Span", expression: expr }; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const prefix: Parser<any> = untagCapture(choice(positiveLookahead, negativeLookahead, spanOp, postfix));
 
 export const labeled: Parser<any> = untagCapture(choice((input, pos) => {
-  const __base = (captureSequence(capture("label", identifierName), literal(":"), capture("expr", prefix)));
+  const __base = (captureSequence(capture("label", identifierName), wsAndComments, literal(":"), wsAndComments, capture("expr", prefix)));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
@@ -977,8 +1065,8 @@ export const alternative: Parser<any> = untagCapture((input, pos) => {
     const $$: any = __result.val;
     const { base, act } = ($$ ?? {});
 
-    if (act.length === 0) return base;
-    const code = act[0].code;
+    if (act === null) return base;
+    const code = act.code;
     if (/^\d+(,\d*)?$/.test(code.trim())) {
       throw new Error("Ambiguous \"{" + code + "}\" after an expression: this is a quantifier only when written with no space before \"{\"");
     }

@@ -92,21 +92,20 @@ export const number: Parser<number> = (() => {
   );
   const integer = map(
     seq(optional(literal("-")), digits),
-    ([sign, num]) => (sign.length > 0 ? "-" : "") + num,
+    ([sign, num]) => (sign !== null ? "-" : "") + num,
   );
 
   const fraction = map(seq(literal("."), digits), ([_, frac]) => `.${frac}`);
 
   const exponent = map(
     seq(charClass("e", "E"), optional(charClass("+", "-")), digits),
-    ([e, sign, exp]) => e + (sign.length > 0 ? sign[0] : "") + exp,
+    ([e, sign, exp]) => e + (sign ?? "") + exp,
   );
 
   return map(
     seq(integer, optional(fraction), optional(exponent)),
     ([int, frac, exp]) => {
-      const numStr =
-        int + (frac.length > 0 ? frac[0] : "") + (exp.length > 0 ? exp[0] : "");
+      const numStr = int + (frac ?? "") + (exp ?? "");
 
       const parsed = Number(numStr);
 
@@ -127,7 +126,7 @@ export const number: Parser<number> = (() => {
 export const int: Parser<number> = map(
   seq(optional(literal("-")), oneOrMore(charClass(["0", "9"]))),
   ([sign, digits]) => {
-    const numStr = (sign.length > 0 ? "-" : "") + digits.join("");
+    const numStr = (sign !== null ? "-" : "") + digits.join("");
     const parsed = Number.parseInt(numStr, 10);
 
     if (Number.isNaN(parsed)) {

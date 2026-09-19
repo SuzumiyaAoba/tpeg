@@ -164,18 +164,18 @@ exports[`EtaTPEGCodeGenerator > Snapshot Tests > should generate consistent code
 
 exports[`EtaTPEGCodeGenerator > Snapshot Tests > should generate consistent code with quantified expressions 1`] = `
 "import type { Parser } from "@suzumiyaaoba/tpeg-core";
-import { literal, optional, quantified, untagCapture } from "@suzumiyaaoba/tpeg-core";
+import { literal, quantified, untagCapture } from "@suzumiyaaoba/tpeg-core";
 export const quant_exactly3: Parser<any> = untagCapture(quantified(literal("a"), 3, 3));
 export const quant_range2to5: Parser<any> = untagCapture(quantified(literal("b"), 2, 5));
 export const quant_minimum3: Parser<any> = untagCapture(quantified(literal("c"), 3));
-export const quant_optional: Parser<any> = untagCapture(optional(literal("d")));
+export const quant_optional: Parser<any> = untagCapture(quantified(literal("d"), 0, 1));
 "
 `;
 
 exports[`EtaTPEGCodeGenerator > Snapshot Tests > should generate consistent code with quantified expressions 2`] = `
 [
   "import type { Parser } from "@suzumiyaaoba/tpeg-core";",
-  "import { literal, optional, quantified, untagCapture } from "@suzumiyaaoba/tpeg-core";",
+  "import { literal, quantified, untagCapture } from "@suzumiyaaoba/tpeg-core";",
 ]
 `;
 

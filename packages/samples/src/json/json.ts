@@ -146,14 +146,12 @@ const jsonNumber = map(
     optional(
       map(
         seq(charClass("e", "E"), optional(charClass("+", "-")), jsonDigits),
-        ([e, sign, exp]) => `${e}${sign.length > 0 ? sign[0] : ""}${exp}`,
+        ([e, sign, exp]) => `${e}${sign ?? ""}${exp}`,
       ),
     ),
   ),
   ([sign, int, frac, exp]) =>
-    Number(
-      `${sign.length > 0 ? "-" : ""}${int}${frac.length > 0 ? frac[0] : ""}${exp.length > 0 ? exp[0] : ""}`,
-    ),
+    Number(`${sign !== null ? "-" : ""}${int}${frac ?? ""}${exp ?? ""}`),
 );
 
 // Handle empty arrays specifically

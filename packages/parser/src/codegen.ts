@@ -15,9 +15,11 @@ import { codeContainsIdentifier } from "./brace-scanner";
 import { analyzeFirstSets, assertNoNullableRepetition } from "./first-sets";
 import {
   findQualifiedIdentifierReferences,
+  resolveStartRule,
   validateGeneratedIdentifiers,
   validateGrammar,
 } from "./grammar-validation";
+import { applySkipDesugar } from "./skip-desugar";
 import type {
   ActionExpression,
   AnyChar,
@@ -301,10 +303,19 @@ export const sequenceCombinatorFor = (
   expr: Sequence,
 ): "sequence" | "captureSequence" | null => {
   const hasLabel = collectTopLevelLabels(expr).length > 0;
-  const nonCutElementCount = expr.elements.filter(
-    (el) => el.type !== "Cut",
+  const nonCutElements = expr.elements.filter((el) => el.type !== "Cut");
+  const valueElementCount = nonCutElements.filter(
+    (el) => el.type !== "Skip",
   ).length;
-  if (nonCutElementCount === 1 && !hasLabel) return null;
+  // Bare emission only when the single surviving element IS a
+  // value-contributing one -- a lone value element plus `Skip` siblings
+  // still goes through `sequence(...)` (under a `map` unwrap, see
+  // `generateSequence`), and a lone `Skip` goes through it too, since a
+  // bare `ignore(optional(...))` would leak the `IGNORED` sentinel as
+  // the sequence's own value.
+  if (nonCutElements.length === 1 && valueElementCount === 1 && !hasLabel) {
+    return null;
+  }
   return hasLabel ? "captureSequence" : "sequence";
 };
 
@@ -348,12 +359,7 @@ export const quantifiedCombinatorFor = (
   expr: Quantified,
   enableCharClassRun: boolean,
 ): {
-  combinator:
-    | "charClassRun"
-    | "quantified"
-    | "zeroOrMore"
-    | "oneOrMore"
-    | "optional";
+  combinator: "charClassRun" | "quantified" | "zeroOrMore" | "oneOrMore";
   recurse: boolean;
 } => {
   if (expr.max === undefined) {
@@ -371,9 +377,9 @@ export const quantifiedCombinatorFor = (
     }
     return { combinator: "quantified", recurse: true };
   }
-  if (expr.min !== expr.max && expr.min === 0 && expr.max === 1) {
-    return { combinator: "optional", recurse: true };
-  }
+  // Every bounded range -- including {0,1}, which used to lower to
+  // `optional` -- is emitted as `quantified(...)` by
+  // `generateQuantifiedCode` (uniform `T[]` shape across `{n,m}`).
   return { combinator: "quantified", recurse: true };
 };
 
@@ -475,6 +481,22 @@ export const collectUsedCombinators = (
       if (sequenceCombinator !== null) {
         combinators.add(sequenceCombinator);
       }
+      // Mirrors `generateSequence`/`generateOptimizedSequence`'s
+      // single-value-element unwrap: exactly one value-contributing
+      // element plus `Skip` siblings emits
+      // `map(sequence(...), ([v]) => v)`, so `map` must be imported
+      // (multi-element and labeled sequences never reach that shape).
+      const nonCutElements = expr.elements.filter((el) => el.type !== "Cut");
+      const valueElementCount = nonCutElements.filter(
+        (el) => el.type !== "Skip",
+      ).length;
+      if (
+        valueElementCount === 1 &&
+        nonCutElements.length > 1 &&
+        collectTopLevelLabels(expr).length === 0
+      ) {
+        combinators.add("map");
+      }
       const needsCommit = ctx.commitAfterAnyCut
         ? sequenceHasCutFollowedByElement(expr.elements)
         : sequenceNeedsOrdinaryCommit(expr, isStartRuleTopLevel);
@@ -531,6 +553,25 @@ export const collectUsedCombinators = (
     case "NegativeLookahead":
       combinators.add("notPredicate");
       recurse(expr.expression);
+      break;
+    case "Skip":
+      // Emitted as `ignore(optional(<skipRuleRef>))` by every
+      // generator's `Skip` case -- both wrappers must be imported, and
+      // the reference itself recursed into for `lazy`-forward-ref
+      // detection.
+      combinators.add("ignore");
+      combinators.add("optional");
+      recurse(expr.expression);
+      break;
+    case "Span":
+      // Emitted as `span(<child>)` by every generator's `Span` case.
+      combinators.add("span");
+      recurse(expr.expression);
+      break;
+    case "WordBoundary":
+      // Emitted as the bare `wordBoundary`/`nonWordBoundary` parser
+      // constant -- the right one must be imported.
+      combinators.add(expr.negated ? "nonWordBoundary" : "wordBoundary");
       break;
     case "Group":
       recurse(expr.expression);
@@ -796,7 +837,12 @@ export const generateStringLiteralCode = (
 const characterClassRangesCode = (expr: CharacterClass): string =>
   expr.ranges
     .map((range) =>
-      range.end
+      // `!== undefined`, not a truthy check: a hand-built `CharRange` can
+      // carry `end: ""` (`.tpeg` source never produces one), and treating
+      // that as "no end" would silently emit a single-char spec instead
+      // of the two-bound range `charClass`'s own construction-time
+      // validation should (and does) reject.
+      range.end !== undefined
         ? `["${escapeStringLiteral(range.start)}", "${escapeStringLiteral(range.end)}"]`
         : `"${escapeStringLiteral(range.start)}"`,
     )
@@ -978,10 +1024,10 @@ export const generateQuantifiedCode = (
     return `quantified(${inner}, ${expr.min}, ${expr.max})`;
   }
 
-  // {n,m} - between n and m
-  if (expr.min === 0 && expr.max === 1) {
-    return `optional(${inner})`;
-  }
+  // {n,m} - between n and m. Even {0,1} goes through `quantified(...)`:
+  // emitting `optional(...)` would return `T | null` where every other
+  // `{n,m}` range produces `T[]` -- a silent shape change for consumers
+  // of `.val` (the same reason {1} is not the bare inner parser above).
   return `quantified(${inner}, ${expr.min}, ${expr.max})`;
 };
 
@@ -1116,13 +1162,21 @@ export class TPEGCodeGenerator {
     // can make that fixpoint oscillate forever instead of converging).
     validateGrammar(grammar);
 
+    // `@skip`-desugar BEFORE first-set analysis and every downstream
+    // walk: the grammar the emitted code implements is the desugared
+    // one, so nullable-repetition checks, reference scanning, and the
+    // combinator-import collection must all see the `Skip`-inserted
+    // shape too. Rule names, order, annotations, and transforms are
+    // unchanged by the rewrite -- see `skip-desugar.ts`.
+    const desugared = applySkipDesugar(grammar);
+
     // Reject an unbounded repetition over a nullable body outright,
     // before generating any code -- see `assertNoNullableRepetition`'s
     // doc comment (`first-sets.ts`) for why this has no well-defined PEG
     // semantics and would otherwise generate code whose behavior depends
     // on incidental wrapping (e.g. whether the repetition happens to sit
     // inside an `optional`).
-    assertNoNullableRepetition(grammar, analyzeFirstSets(grammar));
+    assertNoNullableRepetition(desugared, analyzeFirstSets(desugared));
 
     const imports: string[] = [];
     const exports: string[] = [];
@@ -1132,35 +1186,43 @@ export class TPEGCodeGenerator {
     const usedCombinators = new Set<string>();
 
     // `commitAtTopLevel` for a Cut in the start rule's own top-level
-    // Sequence is only sound when `rules[0]` is EXCLUSIVELY the grammar's
-    // external entry point -- see `isRuleReferencedAnywhere`'s doc comment
-    // for the concrete counterexample (a `Choice` alternative elsewhere in
-    // the grammar referencing `rules[0]` by name) this guards against.
-    const startRuleName = grammar.rules[0]?.name;
+    // Sequence is only sound when the start rule is EXCLUSIVELY the
+    // grammar's external entry point -- see `isRuleReferencedAnywhere`'s
+    // doc comment for the concrete counterexample (a `Choice`
+    // alternative elsewhere in the grammar referencing the start rule
+    // by name) this guards against. Which rule IS the start rule comes
+    // from `resolveStartRule` (`grammar-validation.ts`): the rule named
+    // by `@start` when the annotation is present, `rules[0]` otherwise
+    // -- `index === startRuleIndex` below replaces the historical
+    // `index === 0` so the resolved rule, not just the first-declared
+    // one, gets the top-level treatment.
+    const startRule = resolveStartRule(desugared);
+    const startRuleIndex = startRule?.index ?? -1;
+    const startRuleName = startRule?.rule.name;
     const startRuleIsSafeForCommitAtTopLevel =
       startRuleName !== undefined &&
-      !isRuleReferencedAnywhere(grammar, startRuleName);
+      !isRuleReferencedAnywhere(desugared, startRuleName);
 
     // Collect all rule names and their declaration order first, since a
     // reference to a rule needs to know both (whether it's a rule at all,
     // and whether generating it as a plain identifier would read a `const`
     // that hasn't been initialized yet - see generateIdentifier).
-    grammar.rules.forEach((rule, index) => {
+    desugared.rules.forEach((rule, index) => {
       this.ruleNames.add(rule.name);
       this.ruleIndex.set(rule.name, index);
     });
-    grammar.rules.forEach((rule, index) => {
+    desugared.rules.forEach((rule, index) => {
       this.collectUsedCombinators(
         rule.pattern,
         usedCombinators,
         index,
-        index === 0 && startRuleIsSafeForCommitAtTopLevel,
+        index === startRuleIndex && startRuleIsSafeForCommitAtTopLevel,
       );
     });
     // Every rule's emitted parser is wrapped in `untagCapture(...)` (see
     // `generateRule`) regardless of its pattern, so the import is needed
     // unconditionally whenever the grammar declares any rule at all.
-    if (grammar.rules.length > 0) {
+    if (desugared.rules.length > 0) {
       usedCombinators.add("untagCapture");
     }
 
@@ -1171,25 +1233,25 @@ export class TPEGCodeGenerator {
     // bindings -- see `validateGeneratedIdentifiers`'s doc comment
     // (`grammar-validation.ts`) for the concrete failure modes.
     const { lines: importLines, importedBindings } = this.buildImports(
-      grammar,
+      desugared,
       usedCombinators,
       startRuleIsSafeForCommitAtTopLevel,
     );
     imports.push(...importLines);
-    validateGeneratedIdentifiers(grammar, {
+    validateGeneratedIdentifiers(desugared, {
       namePrefix: this.options.namePrefix,
       importedBindings,
     });
 
     // Generate parser for each rule, applying a matching TypeScript
     // transform function (if the grammar declares one) to the rule's result
-    const transformsByRuleName = collectTransformFunctions(grammar);
-    grammar.rules.forEach((rule, index) => {
+    const transformsByRuleName = collectTransformFunctions(desugared);
+    desugared.rules.forEach((rule, index) => {
       this.currentRuleIndex = index;
       const ruleCode = this.generateRule(
         rule,
         transformsByRuleName.get(rule.name),
-        index === 0 && startRuleIsSafeForCommitAtTopLevel,
+        index === startRuleIndex && startRuleIsSafeForCommitAtTopLevel,
       );
       parts.push(ruleCode);
       // The emitted declaration is `export const <namePrefix><rule.name>`,
@@ -1198,6 +1260,31 @@ export class TPEGCodeGenerator {
       // has always pushed the prefixed name).
       exports.push(this.options.namePrefix + rule.name);
     });
+
+    // An explicit `@start: <name>` also emits `export { <name> as start }`
+    // so a consumer can reach the grammar's entry point under one stable
+    // name regardless of which rule it is or what `namePrefix` was used.
+    // Skipped when the resolved rule's own emitted name is already
+    // `start` (the alias would be a duplicate export) -- and when a
+    // DIFFERENT rule emits `start` this throws instead: the two exports
+    // would collide, and silently dropping the alias would hand the
+    // caller the wrong rule under the entry-point name.
+    if (startRule?.explicit) {
+      const startEmittedName = this.options.namePrefix + startRule.rule.name;
+      if (startEmittedName !== "start") {
+        if (
+          desugared.rules.some(
+            (rule) => `${this.options.namePrefix}${rule.name}` === "start",
+          )
+        ) {
+          throw new Error(
+            `Rule name "start" collides with the \`start\` export alias @start emits for entry rule "${startRule.rule.name}" -- rename the rule, or set a namePrefix so the rule no longer emits that name.`,
+          );
+        }
+        parts.push(`export { ${startEmittedName} as start };`);
+        exports.push("start");
+      }
+    }
 
     // Combine all parts
     let code = "";
@@ -1212,7 +1299,7 @@ export class TPEGCodeGenerator {
       code,
       imports,
       exports,
-      warnings: buildQualifiedIdentifierWarnings(grammar),
+      warnings: buildQualifiedIdentifierWarnings(desugared),
     };
   }
 
@@ -1259,7 +1346,9 @@ export class TPEGCodeGenerator {
     if (grammar.rules.some((rule) => findMemoizeAnnotation(rule))) {
       combinatorPackageImports.push("memoize");
     }
-    const startRule = grammar.rules[0];
+    // The `@start`-resolved entry rule, not blindly `rules[0]` -- see
+    // `resolveStartRule` (`grammar-validation.ts`).
+    const startRule = resolveStartRule(grammar)?.rule;
     if (
       (startRuleIsSafeForCommitAtTopLevel &&
         startRule?.pattern.type === "Sequence" &&
@@ -1350,6 +1439,23 @@ export class TPEGCodeGenerator {
         return this.generatePositiveLookahead(expr);
       case "NegativeLookahead":
         return this.generateNegativeLookahead(expr);
+      case "Skip":
+        // `applySkipDesugar`-inserted boundary skip: invoke the `@skip`
+        // rule optionally and discard whatever it returns -- `ignore`
+        // maps the success value to the `IGNORED` sentinel, which
+        // `sequence`/`captureSequence` then exclude from the result
+        // tuple / label merge, so a rule's own value shape is identical
+        // with and without `@skip`.
+        return `ignore(optional(${this.generateExpression(expr.expression)}))`;
+      case "Span":
+        // `@expr` source-text extraction: the child matches exactly as
+        // written; `span` replaces the produced value with the consumed
+        // source text (`packages/core/src/transform.ts`).
+        return `span(${this.generateExpression(expr.expression)})`;
+      case "WordBoundary":
+        // `\b` / `\B` word-boundary assertion -- a bare parser constant
+        // (`packages/core/src/boundary.ts`), no call.
+        return expr.negated ? "nonWordBoundary" : "wordBoundary";
       case "LabeledExpression":
         return this.generateLabeledExpression(expr);
       case "ActionExpression":
@@ -1431,6 +1537,13 @@ export class TPEGCodeGenerator {
     // through `captureSequence` below, or its still-CAPTURE_TAG-tagged
     // value would leak out bare instead of merged.
     const hasLabel = collectTopLevelLabels(expr).length > 0;
+    // Elements that contribute a VALUE to this sequence's result:
+    // everything but `~` cuts and `applySkipDesugar`-inserted `Skip`
+    // markers (whose `ignore(optional(...))` emission the
+    // `IGNORED`-sentinel filter drops before the tuple is built).
+    const valueElementCount = expr.elements.filter(
+      (el) => el.type !== "Cut" && el.type !== "Skip",
+    ).length;
     const parts: string[] = [];
     forEachSequenceElement(expr.elements, (el, committed, cutIsGlobal) => {
       const code = this.generateExpression(el);
@@ -1445,9 +1558,19 @@ export class TPEGCodeGenerator {
     if (parts.length === 0) {
       return "sequence()";
     }
-    if (parts.length === 1 && !hasLabel) {
-      const [only] = parts;
-      if (only) return only;
+    if (valueElementCount === 1 && !hasLabel) {
+      // Exactly one value-contributing element: this sequence's own
+      // value must be that element's value, not a 1-tuple. With no
+      // `Skip` siblings that's the bare emission (the `parts.length`
+      // fast path); WITH them, the surrounding `sequence(...)` must
+      // still run -- its `ignore(optional(...))` boundary skips consume
+      // input -- but the `IGNORED` filter leaves a 1-tuple behind, so
+      // `map` unwraps it back to the element's own value.
+      if (parts.length === 1) {
+        const [only] = parts;
+        if (only) return only;
+      }
+      return `map(sequence(${parts.join(", ")}), ([v]) => v)`;
     }
     const elements = parts.join(", ");
     // A sequence with labeled elements needs its per-element captured

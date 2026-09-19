@@ -3,6 +3,7 @@ export * from "./grammar-types";
 
 // Re-export public surface from other modules (avoid exporting internals like benchmarkParser)
 export { any, anyChar, lit, literal } from "./basic";
+export * from "./boundary";
 export * from "./capture";
 export * from "./char-class";
 export * from "./combinators";
@@ -10,6 +11,7 @@ export * from "./error";
 export * from "./escape";
 export * from "./expression-traversal";
 export * from "./failure";
+export * from "./ignored";
 export * from "./limits";
 export * from "./lookahead";
 export * from "./reference-eval";

@@ -1,18 +1,29 @@
 /**
- * TPEG Lookahead Operators Parser
+ * TPEG Prefix Operators Parser
  *
- * Implements parsing of lookahead operators: &expr, !expr
+ * Implements parsing of the prefix operators: &expr, !expr, @expr
  * Based on docs/peg-grammar.md specification.
  *
- * Lookahead operators are prefix operators that do not consume input:
+ * The lookahead operators are prefix operators that do not consume input:
  * - &expr (positive lookahead) - succeeds if expr matches
  * - !expr (negative lookahead) - succeeds if expr does not match
+ *
+ * `@expr` (span / source-text extraction) shares the same prefix slot --
+ * it DOES consume input exactly like its operand, but replaces the
+ * match's value with the raw source text consumed. Only ONE prefix
+ * operator is allowed per expression (`&!e` and `&@e` are both parse
+ * errors), matching the single-`(&|!)?` slot standard PEG gives the
+ * prefix position.
  */
 
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { choice, literal } from "@suzumiyaaoba/tpeg-core";
 import type { Expression, NegativeLookahead, PositiveLookahead } from "./types";
-import { createNegativeLookahead, createPositiveLookahead } from "./types";
+import {
+  createNegativeLookahead,
+  createPositiveLookahead,
+  createSpan,
+} from "./types";
 
 /**
  * Parses a positive lookahead operator: &
@@ -27,16 +38,23 @@ export const positiveLookaheadOperator: Parser<string> = literal("&");
 export const negativeLookaheadOperator: Parser<string> = literal("!");
 
 /**
- * Parses any lookahead operator.
+ * Parses a span (source-text extraction) operator: @
+ * Used in expressions like @expr
+ */
+export const spanOperator: Parser<string> = literal("@");
+
+/**
+ * Parses any prefix operator (`&`, `!`, or `@`).
  * Returns the operator string for later application.
  */
 export const lookaheadOperator: Parser<string> = choice(
   positiveLookaheadOperator,
   negativeLookaheadOperator,
+  spanOperator,
 );
 
 /**
- * Applies a lookahead operator to a base expression.
+ * Applies a prefix operator to a base expression.
  * Creates the appropriate AST node based on the operator type.
  */
 export const applyLookahead = (
@@ -48,6 +66,8 @@ export const applyLookahead = (
       return createPositiveLookahead(expression);
     case "!":
       return createNegativeLookahead(expression);
+    case "@":
+      return createSpan(expression);
     default:
       // If no lookahead operator, return the expression as-is
       return expression;

@@ -54,6 +54,20 @@ const cases = [
   'name:"hello"',
   "value:[0-9]+",
   'sign:("+" / "-")',
+  // a label only exists if the WHOLE `name:expr` matches -- on failure
+  // the parse falls back to the unlabeled `prefix` alternative, matching
+  // the self-hosted `labeled = label:identifierName ":" expr:prefix /
+  // prefix` (whitespace between name and ":" is not allowed on either
+  // side, so all of these fall back to a bare `name`/`x`/`a` prefix)
+  "x:!",
+  "x:(",
+  "x:*",
+  "name:",
+  'name: "a"',
+  'name :"a"',
+  'x: &"a"',
+  'x: !"a"',
+  'a: "x" b:"y"',
 
   // sequences (with and without whitespace, single vs multi-line)
   '"a" "b" "c"',
@@ -111,6 +125,58 @@ const cases = [
   // a spaced "{...}" whose content isn't quantifier-shaped is a real action
   '"a" {x}',
   '"a" {,3}', // ",3" isn't quantifier-shaped (no leading digit) -> action
+  // the same rejections inside a group/label/lookahead must abort the
+  // WHOLE parse, not degrade to a partial success: the generated parser
+  // signals them with a `throw` that escapes every enclosing boundary,
+  // so the hand-written parser marks them `abort` (not merely `fatal`,
+  // which `choice`/`optional`/lookahead boundaries would absorb)
+  '("b" {2})',
+  '"a" ("b" {2})?',
+  'x:("b" {2})',
+  '!("a" {2})',
+  '"x" ("a"{5,2})?',
+  '"a" [z-a]',
+  '"x" [z-a]',
+
+  // `notNextRuleStart`: `identifier <ws/comments> =` can't continue a
+  // sequence (`=` never starts an element) -- it's the next rule's
+  // header, so the continuation stops BEFORE the identifier rather than
+  // consuming it and stranding the `=`. Applies to continuations only:
+  // a sequence's/alternative's first element is unguarded on both sides.
+  '"a"name="b"',
+  "'b'x=\"",
+  '"a" name = "b"',
+  '"a" name="b"',
+  '"a" / x="b"', // `x` after `/` is an alternative's first element: unguarded
+  "name x=", // `name` continues the sequence; `x=` is the boundary
+
+  // `@expr` -- the source-span operator, a third prefix operator
+  // alongside `&`/`!` (same postfix-level operand, can't stack). At the
+  // bare-expression level EVERY `@` is this operator: the annotation
+  // disambiguation lives in the grammar-block scanner
+  // (isAnnotationStartAt / the grammar layer's `annotationStart`), which
+  // `expression()` never sees -- so `@x:`/`@x` before a rule header
+  // still parse as spans here, with `:`/`x =` left stranded.
+  '@"a"',
+  "@x",
+  '@(x / "a")',
+  "@x+",
+  'x:@y "b"',
+  '"a" @x',
+  '"a" @x\nx = "b"', // span of `x`, then `x =` is the notNextRuleStart boundary
+  '"a" @x:', // span of `x`; the `:` is stranded on both sides
+  '@x="b"', // first element unguarded: span of `x`, `=` stranded
+  "@noskip", // bare `@identifier` -- a span here, an annotation only at grammar-item level
+
+  // `\b`/`\B` -- word-boundary assertions (word-boundary.ts's
+  // wordBoundaryMarker leaf). An escaped `\b` inside a string or
+  // character class stays the backspace escape (namedEscape), so the
+  // assertion syntax only ever appears bare.
+  "\\b",
+  "\\B",
+  "\\b w:[a-z]+ \\b",
+  '"a" \\B "b"',
+  "@\\b", // span of a zero-width assertion: `@`'s operand is postfix-level
 
   // failure cases
   "",

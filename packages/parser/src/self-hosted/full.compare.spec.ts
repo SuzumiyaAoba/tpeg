@@ -24,7 +24,18 @@ const compareCases = (
   for (const input of cases) {
     test(input.slice(0, 60).replace(/\n/g, "\\n"), () => {
       const a = hand(input, pos);
-      const b = gen(input, pos);
+      // A generated semantic action has no backtrackable failure channel,
+      // so rejections it encodes (unimplemented annotation keys, bad
+      // quantifier bounds, ...) arrive as thrown Errors where the
+      // hand-written parser returns a failure -- normalize a throw to
+      // `success: false` so the comparison covers that. Same trick as
+      // grammar.compare.spec.ts's callGen.
+      let b: ReturnType<Parser<unknown>> | { success: false };
+      try {
+        b = gen(input, pos);
+      } catch {
+        b = { success: false as const };
+      }
       expect(a.success).toBe(b.success);
       if (a.success && b.success) {
         expect(b.val).toEqual(a.val);
@@ -253,6 +264,22 @@ grammar G {
   other = "a"
            transformsFoo
 }`,
+
+      // `@expr` span operator / `\b` boundary assertions in rule bodies,
+      // and the `@identifier`-before-rule-header annotation resolution
+      // (isAnnotationStartAt / `annotationStart`) -- same coverage as
+      // grammar.compare.spec, exercised through the modular entry point
+      `grammar G {
+  r = @"a" w:@(x)
+  x = "b"
+}`,
+      `grammar G {
+  r = "a" @x
+  x = "b"
+}`,
+      `grammar G {
+  r = \\b w:[a-z]+ \\b
+}`,
     ],
     modularGrammarDefinition,
     genModularGrammarBlock,
@@ -326,6 +353,38 @@ grammar G {
       // no imports at all - a bare modular grammar block is still a valid file
       `grammar G {
   r = "x"
+}`,
+
+      // trailing `transforms` blocks AFTER the grammar block's closing
+      // brace - tpegModuleFile/tpegFile accept them file-level and merge
+      // them into the grammar's `transforms` array (after the block's own
+      // embedded ones); tpegFileNode does the same
+      `grammar G {
+  r = "x"
+}
+transforms T@typescript {
+  f() -> void { return; }
+}`,
+      `grammar G {
+  r = "x"
+  transforms A@typescript {
+    a() -> void { return; }
+  }
+}
+transforms B@typescript {
+  b() -> void { return; }
+}
+transforms C@typescript {
+  c() -> void { return; }
+}`,
+      `import "a.tpeg" as a
+grammar G {
+  r = "x"
+}
+
+// a comment between grammar and transforms
+transforms T@typescript {
+  f() -> void { return; }
 }`,
     ],
     tpegModuleFile,

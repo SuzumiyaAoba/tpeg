@@ -152,14 +152,14 @@ describe("@SuzumiyaAoba/combinator", () => {
         const successResult1 = parse(parser)("hello");
         expect(successResult1.success).toBe(true);
         if (successResult1.success) {
-          expect(successResult1.val).toEqual(["hello"]);
+          expect(successResult1.val).toEqual("hello");
           expect(successResult1.next).toBe(5);
         }
 
         const successResult2 = parse(parser)("world");
         expect(successResult2.success).toBe(true);
         if (successResult2.success) {
-          expect(successResult2.val).toEqual([]);
+          expect(successResult2.val).toEqual(null);
           expect(successResult2.next).toBe(0);
         }
       });

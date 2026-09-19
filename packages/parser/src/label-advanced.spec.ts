@@ -108,7 +108,7 @@ describe("Label Advanced Tests", () => {
   });
 
   describe("label whitespace handling", () => {
-    test("strict whitespace rules around labels", () => {
+    test("whitespace and comments are allowed around the colon", () => {
       const parser = expression();
 
       // No space before colon (should work)
@@ -119,20 +119,26 @@ describe("Label Advanced Tests", () => {
       const result2 = parser('name:"value"', createPosition());
       expect(result2.success).toBe(true);
 
-      // Space before colon (should not parse as labeled expression)
+      // Space before colon parses as a labeled expression
       const result3 = parser('name :"value"', createPosition());
       expect(result3.success).toBe(true);
       if (result3.success) {
-        expect(result3.val.type).not.toBe("LabeledExpression");
+        expect(result3.val.type).toBe("LabeledExpression");
+        expect((result3.val as LabeledExpression).label).toBe("name");
       }
 
-      // Space after colon (should fail or not parse as labeled expression)
+      // Space after colon parses as a labeled expression
       const result4 = parser('name: "value"', createPosition());
+      expect(result4.success).toBe(true);
       if (result4.success) {
-        expect(result4.val.type).not.toBe("LabeledExpression");
-      } else {
-        // It's also acceptable for this to fail completely
-        expect(result4.success).toBe(false);
+        expect(result4.val.type).toBe("LabeledExpression");
+      }
+
+      // Comments around the colon parse as a labeled expression
+      const result5 = parser('name /* c */ : "value"', createPosition());
+      expect(result5.success).toBe(true);
+      if (result5.success) {
+        expect(result5.val.type).toBe("LabeledExpression");
       }
     });
 

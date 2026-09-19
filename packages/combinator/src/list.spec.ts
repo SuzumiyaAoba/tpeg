@@ -55,8 +55,8 @@ describe("list combinators", () => {
     });
 
     it("propagates zeroOrMore's own infinite-loop guard instead of silently discarding already-matched elements when both value and separator are nullable (regression: the old `optional(sepByOne)` implementation swallowed that guard's ordinary, non-fatal failure as \"no match\", returning `[]` at zero consumption even though two elements had already matched)", () => {
-      const nullableValue = map(optional(literal("a")), (xs) => xs[0] ?? "");
-      const nullableSep = map(optional(literal(",")), (xs) => xs[0] ?? "");
+      const nullableValue = map(optional(literal("a")), (xs) => xs ?? "");
+      const nullableSep = map(optional(literal(",")), (xs) => xs ?? "");
       const parser = sepBy(nullableValue, nullableSep);
       const result = parse(parser)("a,a,zzz");
       // Before the fix, this silently succeeded with `val: []` and

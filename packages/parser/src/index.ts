@@ -12,6 +12,7 @@ export * from "./types";
 export { stringLiteral } from "./string-literal";
 export { characterClass } from "./character-class";
 export { identifier } from "./identifier";
+export { wordBoundaryMarker } from "./word-boundary";
 
 // Export composition operators
 export {
@@ -123,11 +124,18 @@ export {
   validateGeneratedIdentifiers,
   assertValidTransformFunctionNames,
   findQualifiedIdentifierReferences,
+  resolveStartRule,
 } from "./grammar-validation";
 export type {
   GeneratedIdentifierCheckOptions,
   QualifiedIdentifierReference,
 } from "./grammar-validation";
+
+// Export the `@skip` desugar pass -- applied internally by every code
+// generator and by `makeReferenceInterpreter`, but also useful
+// standalone for a caller that wants to inspect or further rewrite the
+// skip-inserted AST (see `skip-desugar.ts`'s module doc comment).
+export { applySkipDesugar, resolveSkipRuleName } from "./skip-desugar";
 
 // Export the reference PEG interpreter -- a differential-testing oracle,
 // independent of codegen, used by `codegen-differential.spec.ts`. See

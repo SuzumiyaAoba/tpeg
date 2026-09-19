@@ -1467,3 +1467,297 @@ describe("EtaTPEGCodeGenerator: @memoize annotation (regression)", () => {
     expect(start("b", 0).success).toBe(false);
   });
 });
+
+describe("EtaTPEGCodeGenerator: @skip automatic whitespace", () => {
+  // The `@skip: <name>` block annotation desugars sequence boundaries
+  // into `ignore(optional(<skipRule>))` (see
+  // `packages/parser/src/skip-desugar.ts`) -- the same shape both
+  // parser-package generators emit. `ws` is declared AFTER the rules
+  // that skip it so the generated `lazy(() => ws)` forward reference
+  // is exercised too.
+  const skipGrammar = () =>
+    createGrammarDefinition(
+      "TestGrammar",
+      [{ type: "GrammarAnnotation", key: "skip", value: "ws" }],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([createStringLiteral("a"), createStringLiteral("b")]),
+        ),
+        {
+          ...createRuleDefinition(
+            "lexeme",
+            createSequence([
+              createStringLiteral("a"),
+              createStringLiteral("b"),
+            ]),
+          ),
+          annotations: [
+            { type: "GrammarAnnotation", key: "noskip", value: "" },
+          ],
+        },
+        createRuleDefinition(
+          "ws",
+          createStar(
+            createCharacterClass(
+              [createCharRange(" ", " "), createCharRange("\t", "\t")],
+              false,
+            ),
+          ),
+        ),
+      ],
+    );
+
+  // Returns a `Record` keyed by the literal `ruleNames` (a generic
+  // mapped type, so `mod.start` is a concrete `Parser`, not
+  // `Parser | undefined` the way a `Record<string, _>` index lookup is
+  // under `noUncheckedIndexedAccess`) -- verifying each name produced a
+  // function along the way.
+  const evalGenerated = async <N extends string>(
+    code: string,
+    ruleNames: readonly N[],
+  ): Promise<Record<N, import("@suzumiyaaoba/tpeg-core").Parser<unknown>>> => {
+    const core = await import("@suzumiyaaoba/tpeg-core");
+    const combinator = await import("@suzumiyaaoba/tpeg-combinator");
+    const scope = { ...combinator, ...core };
+    const body = code
+      .replace(/^import[^\n]*\n?/gm, "")
+      .replace(/^export const (\w+)(: Parser<[^>]*>)?/gm, "const $1");
+    const moduleFactory = new Function(
+      ...Object.keys(scope),
+      `${body}\nreturn { ${ruleNames.join(", ")} };`,
+    );
+    const mod = moduleFactory(...Object.values(scope)) as Record<
+      string,
+      unknown
+    >;
+    const out = {} as Record<
+      N,
+      import("@suzumiyaaoba/tpeg-core").Parser<unknown>
+    >;
+    for (const name of ruleNames) {
+      const parser = mod[name];
+      if (typeof parser !== "function") {
+        throw new Error(`generated module did not produce rule "${name}"`);
+      }
+      out[name] = parser as import("@suzumiyaaoba/tpeg-core").Parser<unknown>;
+    }
+    return out;
+  };
+
+  for (const optimize of [false, true]) {
+    it(`emits ignore(optional(...)) boundary skips and imports them (optimize: ${optimize})`, async () => {
+      const result = await generateEtaTypeScriptParser(skipGrammar(), {
+        includeImports: true,
+        optimize,
+      });
+      expect(result.code).toContain("ignore(optional(");
+      expect(result.imports.join(" ")).toMatch(/\bignore\b/);
+      expect(result.imports.join(" ")).toMatch(/\boptional\b/);
+    });
+
+    it(`generated parser skips whitespace at sequence boundaries, unchanged value shape (optimize: ${optimize})`, async () => {
+      const result = await generateEtaTypeScriptParser(skipGrammar(), {
+        includeImports: true,
+        includeTypes: false,
+        optimize,
+      });
+      const { start, lexeme } = await evalGenerated(result.code, [
+        "start",
+        "lexeme",
+      ]);
+      for (const input of ["ab", " ab", "a b", "ab ", "  a   b  ", "a\tb"]) {
+        const parsed = start(input, 0);
+        expect(parsed.success).toBe(true);
+        if (parsed.success) {
+          // Boundary skips contribute no slots to the result tuple.
+          expect(parsed.val).toEqual(["a", "b"]);
+          expect(parsed.next).toBe(input.length);
+        }
+      }
+      expect(start("a  x", 0).success).toBe(false);
+      // The @noskip rule skips nothing inside its own pattern.
+      expect(lexeme("ab", 0).success).toBe(true);
+      expect(lexeme("a b", 0).success).toBe(false);
+    });
+  }
+
+  it("a single-element sequence keeps its bare value via map(...) unwrap", async () => {
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [{ type: "GrammarAnnotation", key: "skip", value: "ws" }],
+      [
+        createRuleDefinition("start", createStringLiteral("x")),
+        createRuleDefinition("ws", createStar(createStringLiteral(" "))),
+      ],
+    );
+    const result = await generateEtaTypeScriptParser(grammar, {
+      includeImports: true,
+      includeTypes: false,
+      optimize: false,
+    });
+    expect(result.code).toContain("map(sequence(");
+    expect(result.imports.join(" ")).toMatch(/\bmap\b/);
+    const { start } = await evalGenerated(result.code, ["start"]);
+    const parsed = start("  x  ", 0);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.val).toBe("x");
+      expect(parsed.next).toBe(5);
+    }
+  });
+
+  it("a labeled sequence keeps its merged-capture object shape", async () => {
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [{ type: "GrammarAnnotation", key: "skip", value: "ws" }],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([
+            createLabeledExpression("x", createStringLiteral("a")),
+            createLabeledExpression("y", createStringLiteral("b")),
+          ]),
+        ),
+        createRuleDefinition("ws", createStar(createStringLiteral(" "))),
+      ],
+    );
+    const result = await generateEtaTypeScriptParser(grammar, {
+      includeImports: true,
+      includeTypes: false,
+      optimize: false,
+    });
+    const { start } = await evalGenerated(result.code, ["start"]);
+    const parsed = start(" a  b ", 0);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.val).toEqual({ x: "a", y: "b" });
+    }
+  });
+});
+
+describe("EtaTPEGCodeGenerator: @expr span and \\b boundary", () => {
+  // `Span` (`@expr`, source-text extraction) and `WordBoundary`
+  // (`\b`/`\B`, zero-width assertion) -- the Eta generator emits the
+  // same `span(child)` / bare `wordBoundary`/`nonWordBoundary` shapes
+  // as `codegen.ts`'s `Span`/`WordBoundary` cases (see
+  // `packages/parser/src/span-boundary.spec.ts` for the parse-side
+  // coverage and the base/optimized generator parity checks).
+  const evalGenerated = async <N extends string>(
+    code: string,
+    ruleNames: readonly N[],
+  ): Promise<Record<N, import("@suzumiyaaoba/tpeg-core").Parser<unknown>>> => {
+    const core = await import("@suzumiyaaoba/tpeg-core");
+    const combinator = await import("@suzumiyaaoba/tpeg-combinator");
+    const scope = { ...combinator, ...core };
+    const body = code
+      .replace(/^import[^\n]*\n?/gm, "")
+      .replace(/^export const (\w+)(: Parser<[^>]*>)?/gm, "const $1");
+    const moduleFactory = new Function(
+      ...Object.keys(scope),
+      `${body}\nreturn { ${ruleNames.join(", ")} };`,
+    );
+    const mod = moduleFactory(...Object.values(scope)) as Record<
+      string,
+      unknown
+    >;
+    const out = {} as Record<
+      N,
+      import("@suzumiyaaoba/tpeg-core").Parser<unknown>
+    >;
+    for (const name of ruleNames) {
+      const parser = mod[name];
+      if (typeof parser !== "function") {
+        throw new Error(`generated module did not produce rule "${name}"`);
+      }
+      out[name] = parser as import("@suzumiyaaoba/tpeg-core").Parser<unknown>;
+    }
+    return out;
+  };
+
+  const wordGrammar = () =>
+    createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        createRuleDefinition("start", {
+          type: "Sequence",
+          elements: [
+            { type: "WordBoundary", negated: false },
+            {
+              type: "LabeledExpression",
+              label: "w",
+              expression: {
+                type: "Span",
+                expression: {
+                  type: "Plus",
+                  expression: createCharacterClass(
+                    [createCharRange("a", "z")],
+                    false,
+                  ),
+                },
+              },
+            },
+            { type: "WordBoundary", negated: false },
+          ],
+        }),
+      ],
+    );
+
+  for (const optimize of [false, true]) {
+    it(`emits span()/wordBoundary and imports them (optimize: ${optimize})`, async () => {
+      const result = await generateEtaTypeScriptParser(wordGrammar(), {
+        includeImports: true,
+        includeTypes: false,
+        optimize,
+      });
+      expect(result.code).toContain("span(");
+      expect(result.code).toContain("wordBoundary");
+      expect(result.imports.join(" ")).toMatch(/\bspan\b/);
+      expect(result.imports.join(" ")).toMatch(/\bwordBoundary\b/);
+    });
+
+    it(`generated parser extracts text and asserts boundaries (optimize: ${optimize})`, async () => {
+      const result = await generateEtaTypeScriptParser(wordGrammar(), {
+        includeImports: true,
+        includeTypes: false,
+        optimize,
+      });
+      const { start } = await evalGenerated(result.code, ["start"]);
+      const ok = start("hello", 0);
+      expect(ok.success).toBe(true);
+      if (ok.success) {
+        expect(ok.val).toEqual({ w: "hello" });
+        expect(ok.next).toBe(5);
+      }
+      expect(start("hello_world", 0).success).toBe(false);
+      const bang = start("hello!", 0);
+      expect(bang.success).toBe(true);
+      if (bang.success) expect(bang.next).toBe(5);
+    });
+  }
+
+  it("emits nonWordBoundary for \\B", async () => {
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        createRuleDefinition("start", {
+          type: "Sequence",
+          elements: [
+            createStringLiteral("a"),
+            { type: "WordBoundary", negated: true },
+            createStringLiteral("b"),
+          ],
+        }),
+      ],
+    );
+    const result = await generateEtaTypeScriptParser(grammar, {
+      includeImports: true,
+      includeTypes: false,
+      optimize: false,
+    });
+    expect(result.code).toContain("nonWordBoundary");
+    expect(result.imports.join(" ")).toMatch(/\bnonWordBoundary\b/);
+  });
+});

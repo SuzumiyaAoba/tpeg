@@ -45,13 +45,26 @@ describe("self-hosted leaf grammar vs hand-written parser", () => {
       '"back\\\\slash"',
       '"unicode: éè"',
       "'mixed \"quotes\" inside single'",
+      // unified escape set (escape-sequence.ts): full named set,
+      // \xNN, \uXXXX, \u{...} including astral code points
+      '"\\b\\f\\v\\0"',
+      '"\\x41\\x5a"',
+      '"\\u0041\\u3042"',
+      '"\\u{1F600}"',
+      '"\\u{10FFFF}"',
+      // malformed numeric escapes are rejected on both sides
+      '"\\x4"',
+      '"\\u041"',
+      '"\\u{}"',
+      '"\\u{110000}"',
+      '"\\q"',
       '"unterminated',
       "123",
     ];
     for (const input of cases) {
       test(JSON.stringify(input), () => {
         const a = handStringLiteral(input, pos);
-        const b = genStringLiteral(input, pos);
+        const b = callGen(genStringLiteral, input);
         expect(a.success).toBe(b.success);
         if (a.success && b.success) {
           expect(b.val).toEqual(a.val);
@@ -76,6 +89,16 @@ describe("self-hosted leaf grammar vs hand-written parser", () => {
       "[\\^]",
       '["]',
       "[']",
+      // unified escape set (escape-sequence.ts): numeric escapes and
+      // the full named set work inside classes too
+      "[\\x41-\\x5a]",
+      "[\\u0041\\u3042]",
+      "[\\u{1F600}-\\u{1F64F}]",
+      "[\\b\\f\\v\\0]",
+      // malformed numeric escapes are rejected on both sides
+      "[\\x4]",
+      "[\\u{110000}]",
+      "[\\x5a-\\x41]",
       "[",
       "not-a-class",
       // a backwards range is rejected on both sides (the hand-written

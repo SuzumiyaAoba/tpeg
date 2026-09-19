@@ -39,7 +39,7 @@ export const whitespace: Parser<string> = map(
  */
 export const optionalWhitespace: Parser<string> = map(
   optional(whitespace),
-  (ws) => ws[0] ?? "",
+  (ws) => ws ?? "",
 );
 
 /**

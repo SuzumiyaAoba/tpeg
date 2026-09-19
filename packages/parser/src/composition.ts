@@ -27,6 +27,7 @@ import {
   isValidOffset,
   literal,
   map,
+  notPredicate,
   seq,
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
@@ -42,6 +43,7 @@ import { withLookahead } from "./lookahead";
 import { qualifiedIdentifier } from "./module";
 import { withRepetition } from "./repetition";
 import { stringLiteral } from "./string-literal";
+import { wordBoundaryMarker } from "./word-boundary";
 import {
   createActionExpression,
   createChoice,
@@ -115,8 +117,8 @@ const whitespace: Parser<void> = (input, pos) => {
 
 /**
  * Parses any basic syntax element (string literal, character class,
- * qualified identifier, identifier, any char). This is a local version to
- * avoid circular imports.
+ * qualified identifier, identifier, any char, word-boundary marker).
+ * This is a local version to avoid circular imports.
  *
  * qualifiedIdentifier is tried before identifier: `identifier` alone would
  * otherwise greedily match just the module alias in `module.rule` (e.g.
@@ -129,6 +131,7 @@ const basicSyntax: Parser<BasicSyntaxNode> = choice(
   characterClass,
   qualifiedIdentifier,
   identifier,
+  wordBoundaryMarker,
 );
 
 // Create recursive parser for expressions using the recursive combinator
@@ -261,10 +264,20 @@ const withOptionalAction = (parser: Parser<Expression>): Parser<Expression> => {
 
     const [, code] = actionResult.val;
     if (QUANTIFIER_SHAPED_ACTION_BODY.test(code.trim())) {
+      // `abort: true` (which implies cut/`fatal` propagation), not an
+      // ordinary or merely-`fatal` failure: a quantifier-shaped `{...}`
+      // after an expression is unambiguously a typo'd quantifier, and the
+      // self-hosted grammar rejects the same input with a `throw` that
+      // escapes EVERY enclosing boundary -- `choice` alternatives,
+      // groups, `optional`/`zeroOrMore`, and `!`/`&` lookaheads alike.
+      // `fatal` alone would be absorbed at the innermost enclosing
+      // `choice` (e.g. `primary`'s `group | basicSyntax`), letting
+      // `"a" ("b" {2})?` partially succeed where the generated parser
+      // rejects the whole input.
       return createFailure(
         `Ambiguous "{${code}}" after an expression: this is a quantifier only when written with no space before "{" (e.g. "expr{${code}}"). Remove the space, or write an explicit semantic action body (e.g. "{ return ${code}; }") if a semantic action was intended.`,
         exprResult.next,
-        { parserName: "withOptionalAction" },
+        { parserName: "withOptionalAction", fatal: true, abort: true },
       );
     }
 
@@ -299,6 +312,28 @@ const cutMarker: Parser<Expression> = map(literal("~"), (): Expression =>
 const sequenceElement = (): Parser<Expression> => choice(cutMarker, labeled());
 
 /**
+ * Negative lookahead blocking a sequence CONTINUATION that would begin
+ * with the next rule's header: `identifier <ws/comments> =`. `=` can
+ * never start an expression element, so an identifier directly followed
+ * by `=` (modulo whitespace/comments) can't continue THIS sequence --
+ * it's the start of a new rule definition (`grammar.ts`'s rule-boundary
+ * scan makes the same cut when slicing a rule body, but this guard is
+ * what keeps a standalone `expression()` parse -- and the self-hosted
+ * grammar's `sequenceContinuation = wsAndComments notNextRuleStart
+ * sequenceElementNode`, which this mirrors -- from consuming `"a"`'s
+ * trailing `name` in `"a"name="b"` and leaving a stranded `=`).
+ *
+ * Applied to continuation elements only: a sequence's FIRST element
+ * stays unguarded (a rule body's own first element can't be "the next
+ * rule"), and the first element of each later alternative is likewise
+ * unguarded -- matching the self-hosted grammar, where `notNextRuleStart`
+ * appears in `sequenceContinuation` but not at `sequenceBase`'s head.
+ */
+const notNextRuleStart: Parser<undefined> = notPredicate(
+  seq(identifier, whitespace, literal("=")),
+);
+
+/**
  * Parses a sequence of labeled expressions (or `~` cut markers), optionally
  * separated by whitespace. Whitespace between elements is optional (not
  * required): PEG juxtaposition doesn't require a separator, so
@@ -315,12 +350,15 @@ const sequenceElement = (): Parser<Expression> => choice(cutMarker, labeled());
 const sequenceExpression = (): Parser<Expression> => {
   return withOptionalAction(
     map(
-      seq(sequenceElement(), zeroOrMore(seq(whitespace, sequenceElement()))),
+      seq(
+        sequenceElement(),
+        zeroOrMore(seq(whitespace, notNextRuleStart, sequenceElement())),
+      ),
       ([first, rest]) => {
         if (rest.length === 0) {
           return first;
         }
-        const elements = [first, ...rest.map(([_, expr]) => expr)];
+        const elements = [first, ...rest.map(([_, __, expr]) => expr)];
         return createSequence(elements);
       },
     ),

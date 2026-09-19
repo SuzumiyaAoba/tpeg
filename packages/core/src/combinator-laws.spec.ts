@@ -298,16 +298,14 @@ describe("combinator laws: memoize-free core parsers vs. their reference shape",
     }
   });
 
-  it("withDefault(e, d) === map(optional(e), ([v]) => v ?? d) (recognition + value)", () => {
+  it("withDefault(e, d) === map(optional(e), (v) => v ?? d) (recognition + value)", () => {
     for (let seed = 1; seed <= SEEDS; seed++) {
       const rngA = makeRng(seed);
       const rngB = makeRng(seed);
       const e1 = genParser(rngA, 2);
       const e2 = genParser(rngB, 2);
       const wd = withDefault<unknown>(e1, null);
-      const reference = map(optional(e2), (xs) =>
-        xs.length > 0 ? xs[0] : null,
-      );
+      const reference = map(optional(e2), (v) => v ?? null);
       for (const input of INPUTS) {
         expect(key(wd, input)).toBe(key(reference, input));
       }

@@ -14,7 +14,7 @@ grammar SelfHostAction {
   // char alternative below, which templateInterp's ordered choice shadows
   // only when "${" is literally present).
   templateInterp = "${" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionContent* "}" {
-    return "${" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + "}";
+    return "${" + (first ? first.w.join("") + first.re : "") + parts.join("") + "}";
   }
 
   // A plain template-text char -- needs its own rule (not an inline
@@ -87,7 +87,7 @@ grammar SelfHostAction {
   actionParenItem = nestedActionBlock / actionString / actionLineComment / actionBlockComment / actionPostfix / actionKwRegex / actionOpRegex / actionStmtParenRegex / actionParenGroup / actionIdentifier / actionParenPlainChar
 
   actionParenGroup = "(" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionParenItem* ")" {
-    return "(" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + ")";
+    return "(" + (first ? first.w.join("") + first.re : "") + parts.join("") + ")";
   }
 
   // Statement keywords whose parenthesized header restores "value
@@ -105,7 +105,7 @@ grammar SelfHostAction {
   // A nested `{ ... }` block ends a statement, so it may be followed by a
   // regex literal (matching the hand-written scanner's `}` -> value
   // expected rule).
-  nestedActionBlock = inner:actionBlock tail:(w:wsAndComments re:actionRegexLiteral)? { return "{" + inner + "}" + (tail.length ? tail[0].w.join("") + tail[0].re : ""); }
+  nestedActionBlock = inner:actionBlock tail:(w:wsAndComments re:actionRegexLiteral)? { return "{" + inner + "}" + (tail ? tail.w.join("") + tail.re : ""); }
 
   // Whole identifiers are consumed atomically so a keyword can't match
   // mid-word (e.g. the "return" inside "xreturn").
@@ -117,5 +117,5 @@ grammar SelfHostAction {
 
   // At the start of a block a value is expected, so a leading regex is
   // allowed (`{ /re/.test(x) }`).
-  actionBlock = "{" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionContent* "}" { return (first.length ? first[0].w.join("") + first[0].re : "") + parts.join(""); }
+  actionBlock = "{" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionContent* "}" { return (first ? first.w.join("") + first.re : "") + parts.join(""); }
 }

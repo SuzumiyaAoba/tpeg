@@ -53,7 +53,7 @@ import { forEachExpression } from "@suzumiyaaoba/tpeg-core";
 import { ERROR_MESSAGES } from "./constants";
 import { collectZeroOffsetRuleRefs, computeNullableRules } from "./first-sets";
 import { findRecursiveRuleNames } from "./performance-utils";
-import type { Expression, GrammarDefinition } from "./types";
+import type { Expression, GrammarDefinition, RuleDefinition } from "./types";
 
 /** Whole-string JavaScript identifier shape -- what every emitted
  * `const`/`function` name (and so every `namePrefix`) must satisfy. */
@@ -480,6 +480,83 @@ export const findQualifiedIdentifierReferences = (
 };
 
 /**
+ * Shared validation for the block annotations that take `key: ruleName`
+ * -- `@start` (the entry rule) and `@skip` (the automatic-whitespace
+ * rule `applySkipDesugar` inserts at sequence boundaries). Both are
+ * validated like the rule reference they are: at most one annotation,
+ * a non-empty rule name, and a name this grammar actually declares.
+ * Without this, a typo (`@start: expresion`, `@skip: whitesapce`) would
+ * silently fall back to the annotation-free behavior -- the exact
+ * "looks meaningful, does nothing" failure mode these annotations exist
+ * to remove.
+ */
+const assertSingleNamedRuleAnnotation = (
+  grammar: GrammarDefinition,
+  key: "start" | "skip",
+  duplicateReason: string,
+  unknownFix: string,
+): void => {
+  // `annotations` is declared required but hand-built grammar literals
+  // omit it in practice -- `?? []` keeps this check (and
+  // `resolveStartRule` below) total over those fixtures too.
+  const annotations = (grammar.annotations ?? []).filter((a) => a.key === key);
+  if (annotations.length > 1) {
+    throw new Error(`Duplicate @${key} annotation -- ${duplicateReason}.`);
+  }
+  const annotation = annotations[0];
+  if (annotation === undefined) {
+    return;
+  }
+  if (annotation.value === "") {
+    throw new Error(
+      `@${key} requires a rule name (write "@${key}: <ruleName>") -- a bare "@${key}" flag names nothing.`,
+    );
+  }
+  if (!grammar.rules.some((rule) => rule.name === annotation.value)) {
+    throw new Error(
+      `@${key} names rule "${annotation.value}", which this grammar does not declare -- ${unknownFix}`,
+    );
+  }
+};
+
+/**
+ * The rule `grammar` is entered through: the one named by its `@start`
+ * annotation (`@start: ruleName`, docs/peg-grammar.md), or `rules[0]`
+ * when no `@start` is present -- the historical default.
+ *
+ * `index` is the rule's position in `grammar.rules`, so index-keyed
+ * bookkeeping (`collectUsedCombinators`'s `isStartRuleTopLevel`
+ * argument, codegen's declaration-order table) can key off the
+ * RESOLVED rule rather than blindly assuming position 0. `explicit`
+ * records whether the resolution came from a `@start` annotation at
+ * all -- codegen only emits the `export { X as start }` alias for an
+ * explicitly-named entry, leaving output for annotation-free grammars
+ * byte-for-byte unchanged.
+ *
+ * Returns `null` for a grammar with no rules, and for a `@start`
+ * naming a rule that doesn't exist -- `validateGrammar` is the layer
+ * that turns that authoring mistake into a hard error, and every
+ * caller here runs it first; the `null` keeps a direct call total
+ * instead of throwing a differently-worded error for the same
+ * mistake.
+ */
+export const resolveStartRule = (
+  grammar: GrammarDefinition,
+): { rule: RuleDefinition; index: number; explicit: boolean } | null => {
+  const startAnnotation = (grammar.annotations ?? []).find(
+    (a) => a.key === "start",
+  );
+  const index =
+    startAnnotation === undefined
+      ? 0
+      : grammar.rules.findIndex((rule) => rule.name === startAnnotation.value);
+  const rule = grammar.rules[index];
+  return rule === undefined
+    ? null
+    : { rule, index, explicit: startAnnotation !== undefined };
+};
+
+/**
  * Validates `grammar` for structural problems that have no well-defined
  * PEG semantics at all, throwing on the first category found. Must run
  * before `analyzeFirstSets`/`assertNoNullableRepetition` -- see this
@@ -550,6 +627,28 @@ export const validateGrammar = (grammar: GrammarDefinition): void => {
       `${ERROR_MESSAGES.CUT_ONLY_PATTERN} (rule(s): ${cutOnly.join(", ")}) -- \`~\` only has meaning as one of several elements of a sequence (e.g. "a" ~ "b"); a rule, group, choice alternative, or repetition/lookahead body made up of nothing but \`~\` doesn't match anything.`,
     );
   }
+
+  // `@start` names the grammar's entry rule (see `resolveStartRule`) --
+  // without this, a typo (`@start: expresion`) would silently keep the
+  // historical rules[0] entry -- the exact "looks meaningful, does
+  // nothing" failure mode the annotation exists to remove.
+  assertSingleNamedRuleAnnotation(
+    grammar,
+    "start",
+    "a grammar's entry rule can only be named once",
+    "fix the name, or remove the annotation to keep the default entry point (the first rule).",
+  );
+
+  // `@skip` names the grammar's automatic-whitespace rule (see
+  // `skip-desugar.ts`'s `applySkipDesugar`) -- the same rule-reference
+  // validation `@start` gets: a typo'd name would otherwise degrade
+  // silently to "no skipping at all".
+  assertSingleNamedRuleAnnotation(
+    grammar,
+    "skip",
+    "a grammar can only name one skip rule",
+    "fix the name, or remove the annotation to disable automatic whitespace skipping.",
+  );
 
   // Transform-function checks run last: they don't interact with any of
   // the rule-level analyses above (a transform binds to a rule by name --

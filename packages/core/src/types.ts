@@ -188,11 +188,16 @@ export interface ParseError {
    * Set together with `fatal` for failures that must abort the ENTIRE
    * parse rather than only the enclosing `choice` -- resource-limit hits
    * (`./limits.ts`'s `guardedParserCall`, e.g. the recursion-depth
-   * limit). `tryOrderedCandidates` and the lookahead predicates
-   * otherwise absorb `fatal` at their own boundary (cut semantics),
-   * which would turn a limit hit into silent backtracking or even a
-   * successful `!e`; they check `abort` first and re-raise the failure
-   * unchanged instead.
+   * limit), and unambiguous-rejection checks that must not degrade to a
+   * partial success (e.g. `tpeg-parser`'s reversed character ranges,
+   * reversed/overflowing quantifier bounds, and quantifier-shaped
+   * action blocks -- inputs its self-hosted grammar rejects with a
+   * thrown Error, which likewise escapes every enclosing boundary).
+   * `tryOrderedCandidates` and the lookahead predicates otherwise
+   * absorb `fatal` at their own boundary (cut semantics), which would
+   * turn such a rejection into silent backtracking or even a successful
+   * `!e`; they check `abort` first and re-raise the failure unchanged
+   * instead.
    */
   abort?: boolean;
 }

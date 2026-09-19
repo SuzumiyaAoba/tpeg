@@ -198,5 +198,60 @@ describe("characterClass", () => {
         expect(parser("[z-a]", pos).success).toBe(false);
       });
     });
+
+    describe("unified escape sequences (escape-sequence.ts)", () => {
+      it("decodes \\xNN escapes", () => {
+        const result = parser("[\\x41-\\x5a]", pos);
+        expect(result.success).toBe(true);
+        if (result.success && result.val.type === "CharacterClass") {
+          expect(result.val.ranges).toEqual([{ start: "A", end: "Z" }]);
+        }
+      });
+
+      it("decodes \\uXXXX escapes", () => {
+        const result = parser("[\\u0041\\u3042]", pos);
+        expect(result.success).toBe(true);
+        if (result.success && result.val.type === "CharacterClass") {
+          expect(result.val.ranges).toEqual([{ start: "A" }, { start: "あ" }]);
+        }
+      });
+
+      it("decodes \\u{...} escapes including astral code points", () => {
+        const result = parser("[\\u{1F600}-\\u{1F64F}]", pos);
+        expect(result.success).toBe(true);
+        if (result.success && result.val.type === "CharacterClass") {
+          expect(result.val.ranges).toEqual([
+            { start: "\u{1F600}", end: "\u{1F64F}" },
+          ]);
+        }
+      });
+
+      it("decodes named escapes that strings previously lacked", () => {
+        // `"\b"` is a syntax error inside a string in many PEG dialects'
+        // ad-hoc escape sets; TPEG's unified set decodes it as BACKSPACE
+        // in both contexts.
+        const result = parser("[\\b\\f\\v\\0]", pos);
+        expect(result.success).toBe(true);
+        if (result.success && result.val.type === "CharacterClass") {
+          expect(result.val.ranges).toEqual([
+            { start: "\b" },
+            { start: "\f" },
+            { start: "\v" },
+            { start: "\0" },
+          ]);
+        }
+      });
+
+      it("rejects malformed numeric escapes", () => {
+        expect(parser("[\\x4]", pos).success).toBe(false);
+        expect(parser("[\\u041]", pos).success).toBe(false);
+        expect(parser("[\\u{}]", pos).success).toBe(false);
+        expect(parser("[\\u{110000}]", pos).success).toBe(false);
+      });
+
+      it("rejects a reversed range written with numeric escapes", () => {
+        expect(parser("[\\x5a-\\x41]", pos).success).toBe(false);
+      });
+    });
   });
 });

@@ -413,6 +413,13 @@ export class TypeIntegrationEngine {
       // OR'd into an enclosing union guard accepts every defined value.
       return "false";
     }
+    if (inferredType.baseType === "null") {
+      // The `null` half of `optional()`'s `T | null` (NULL_INFERRED_TYPE
+      // in type-inference.ts). The generic fallback `!== undefined`
+      // would accept null -- and every other defined value -- so this
+      // needs its own exact check.
+      return `${valueExpr} === null`;
+    }
     return `${valueExpr} !== undefined`;
   }
 

@@ -27,8 +27,11 @@ import type {
   Quantified,
   RuleDefinition,
   Sequence,
+  Skip,
+  Span,
   Star,
   StringLiteral,
+  WordBoundary,
 } from "@suzumiyaaoba/tpeg-core";
 
 export type {
@@ -48,6 +51,9 @@ export type {
   PositiveLookahead,
   NegativeLookahead,
   Cut,
+  Skip,
+  Span,
+  WordBoundary,
   LabeledExpression,
   ActionExpression,
   Expression,
@@ -113,11 +119,12 @@ export type BasicSyntaxNode =
   | CharacterClass
   | QualifiedIdentifier
   | Identifier
-  | AnyChar;
+  | AnyChar
+  | WordBoundary;
 
 export type CompositionNode = Sequence | Choice | Group;
 export type RepetitionNode = Star | Plus | Optional | Quantified;
-export type LookaheadNode = PositiveLookahead | NegativeLookahead;
+export type LookaheadNode = PositiveLookahead | NegativeLookahead | Span;
 
 export type GrammarNode =
   | GrammarDefinition
@@ -359,6 +366,26 @@ export const createNegativeLookahead = (
  */
 export const createCut = (): Cut => ({
   type: "Cut",
+});
+
+/**
+ * Create a Span AST node (the `@expr` source-text extraction operator)
+ * @param expression The expression whose consumed source text becomes the value
+ * @returns Span node
+ */
+export const createSpan = (expression: Expression): Span => ({
+  type: "Span",
+  expression,
+});
+
+/**
+ * Create a WordBoundary AST node (the `\b` / `\B` zero-width assertion)
+ * @param negated `true` for `\B` (assert no boundary), `false` for `\b`
+ * @returns WordBoundary node
+ */
+export const createWordBoundary = (negated = false): WordBoundary => ({
+  type: "WordBoundary",
+  negated,
 });
 
 /**

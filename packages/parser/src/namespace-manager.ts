@@ -151,7 +151,14 @@ export class NamespaceManager {
         moduleFile.filePath,
       );
     }
-    this.moduleFilePaths.set(moduleName, moduleFile.filePath);
+    // NOTE: no shared state (`moduleFilePaths`, `selectiveImports`,
+    // `scopes`, `moduleRules`) is written until the export validation
+    // below has passed -- a registration that fails with
+    // `ExportResolutionError` must leave no residue behind, or a later
+    // registration of a DIFFERENT file under this module name would hit
+    // a phantom `ModuleNameCollisionError` from the failed attempt's
+    // filePath, and a stale `selectiveImports` entry could outlive the
+    // module it belonged to. Compute first, commit at the end.
 
     const scope: NamespaceScope = {
       currentModule: moduleName,
@@ -170,11 +177,6 @@ export class NamespaceManager {
       if (importStmt.selective) {
         scopeSelectiveImports.set(alias, new Set(importStmt.selective));
       }
-    }
-    if (scopeSelectiveImports.size > 0) {
-      this.selectiveImports.set(moduleName, scopeSelectiveImports);
-    } else {
-      this.selectiveImports.delete(moduleName);
     }
 
     // Collect rules and exports from every grammar. Rule collection runs
@@ -223,6 +225,13 @@ export class NamespaceManager {
       scope.exports.add(ruleName);
     }
 
+    // Commit phase -- nothing below this point can throw.
+    this.moduleFilePaths.set(moduleName, moduleFile.filePath);
+    if (scopeSelectiveImports.size > 0) {
+      this.selectiveImports.set(moduleName, scopeSelectiveImports);
+    } else {
+      this.selectiveImports.delete(moduleName);
+    }
     this.scopes.set(moduleName, scope);
     this.moduleRules.set(moduleName, rules);
   }

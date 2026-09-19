@@ -89,10 +89,10 @@ import {
   type CharSet,
   EMPTY_SET,
   isDisjoint as charSetsDisjoint,
+  charRangesToSet,
   complement,
   difference,
   fromChar,
-  fromCodePointRange,
   union,
 } from "./char-set";
 import type {
@@ -194,15 +194,7 @@ const differenceFirstSet = (first: FirstSet, subtrahend: CharSet): FirstSet => {
 };
 
 const charClassFirstSet = (expr: CharacterClass): FirstSet => {
-  let raw: CharSet = EMPTY_SET;
-  for (const r of expr.ranges) {
-    raw = union(
-      raw,
-      r.end === undefined
-        ? fromChar(r.start)
-        : fromCodePointRange(r.start, r.end),
-    );
-  }
+  const raw = charRangesToSet(expr.ranges);
   return { set: expr.negated ? complement(raw) : raw, unknown: false };
 };
 
@@ -293,6 +285,7 @@ const isNullableUncached = (
       );
     case "PositiveLookahead":
     case "NegativeLookahead":
+    case "WordBoundary":
       // Zero-width assertions: never consume input themselves.
       return true;
     case "Cut":
@@ -305,6 +298,12 @@ const isNullableUncached = (
       // "did this element consume a character" question the nullable-
       // prefix walk is asking.
       return true;
+    case "Skip":
+      // Emitted as `ignore(optional(<rule>))` -- an optional wrapper
+      // always succeeds (possibly empty), so a `Skip` is always
+      // nullable no matter what the skip rule's own body is.
+      return true;
+    case "Span":
     case "LabeledExpression":
     case "ActionExpression":
       return isNullableUncached(expr.expression, nullableRules);
@@ -416,12 +415,19 @@ export const collectZeroOffsetRuleRefs = (
     case "Quantified":
     case "PositiveLookahead":
     case "NegativeLookahead":
+    case "Skip":
+    case "Span":
+      // Every unary node's child is invoked at the current position
+      // (zero offset) -- including `Skip`'s `optional(<ref>)` semantics:
+      // the skip rule IS invoked even though its match is optional, so
+      // a self-referential skip rule would still loop.
       collectZeroOffsetRuleRefs(expr.expression, nullableRules, into);
       return;
     case "StringLiteral":
     case "CharacterClass":
     case "AnyChar":
     case "Cut":
+    case "WordBoundary":
     case "QualifiedIdentifier":
       // Leaves: no rule references to collect.
       return;
@@ -560,6 +566,8 @@ export const firstSetOfExpression = (
     case "Optional":
     case "Plus":
     case "Quantified":
+    case "Skip":
+    case "Span":
       // FIRST doesn't depend on repetition bounds: whether this node
       // matches zero times is a *nullability* question (see `isNullable`,
       // consulted separately by `sequenceFirstSet` and by codegen before
@@ -573,7 +581,9 @@ export const firstSetOfExpression = (
       // `unknown` even though `sequenceFirstSet` already handles "this
       // element might match zero chars" by also unioning in the next
       // element -- the precise chars this element *could* start with
-      // remain exactly as informative either way.
+      // remain exactly as informative either way. A `Skip` is the same
+      // shape: `ignore(optional(<rule>))` can start with exactly the
+      // skip rule's own FIRST set (and is separately always nullable).
       return firstSetOfExpression(
         expr.expression,
         ruleFirstSets,
@@ -581,6 +591,7 @@ export const firstSetOfExpression = (
       );
     case "PositiveLookahead":
     case "NegativeLookahead":
+    case "WordBoundary":
       // Zero-width: never consumes, so it never "starts with" a
       // character of its own -- but as a standalone alternative it's
       // nullable, which callers gating on nullability already route to
@@ -991,16 +1002,28 @@ export const canCommitWithoutConsuming = (
       case "Group":
       case "LabeledExpression":
       case "ActionExpression":
+      case "Span":
+        // `span` relays the child's result unchanged except for the
+        // value on success (`transform.ts`) -- a `fatal` failure
+        // escapes through it exactly like through a `Group`.
         return visit(node.expression);
       case "Optional":
       case "Star":
       case "Plus":
       case "Quantified":
+      case "Skip":
+        // `optional` re-raises a `fatal` child failure rather than
+        // absorbing it (`repetition.ts`) -- `ignore(optional(<rule>))`
+        // is therefore as transparent to a cut's escape as the plain
+        // repetition wrappers are.
         return visit(node.expression);
       case "PositiveLookahead":
       case "NegativeLookahead":
         // Both `andPredicate` and `notPredicate` absorb a `fatal` child
         // failure at their own boundary -- see `lookahead.ts`.
+        return false;
+      case "WordBoundary":
+        // A leaf: no child exists that could carry a cut.
         return false;
       case "Identifier": {
         if (onPath.has(node.name)) return true;
@@ -1088,6 +1111,7 @@ const isProvablyNullable = (
         isProvablyNullable(alt, nullableRules),
       );
     case "Group":
+    case "Span":
       return isProvablyNullable(expr.expression, nullableRules);
     case "Star":
     case "Optional":
@@ -1101,7 +1125,12 @@ const isProvablyNullable = (
     case "PositiveLookahead":
     case "NegativeLookahead":
     case "Cut":
+    case "WordBoundary":
       // Zero-width constructs: provably never consume input.
+      return true;
+    case "Skip":
+      // `ignore(optional(<rule>))` always succeeds even when the skip
+      // rule matches nothing -- provably nullable.
       return true;
     case "LabeledExpression":
     case "ActionExpression":
@@ -1151,6 +1180,8 @@ const collectNullableRepetitions = (
     case "Optional":
     case "PositiveLookahead":
     case "NegativeLookahead":
+    case "Skip":
+    case "Span":
     case "LabeledExpression":
     case "ActionExpression":
       collectNullableRepetitions(expr.expression, ruleName, analysis, issues);

@@ -14,7 +14,7 @@
  * `[a-z]+` claiming a bare `string` (self-contradicting the table's own
  * `pattern+ -> T[]` row), `pattern?`/`value:pattern?` claiming
  * `T?`/`{ value?: T }` when `optional()` (packages/core/src/
- * repetition.ts) actually returns `[T] | []`, and `&pattern`/`!pattern`
+ * repetition.ts) actually returns `T | null`, and `&pattern`/`!pattern`
  * claiming `null` when a lookahead's tuple/object slot is actually
  * `undefined` -- all four were caught this way and corrected in the doc
  * alongside this file being added. Compiling and running each row (not
@@ -130,21 +130,21 @@ const ROWS: readonly TableRow[] = [
     check: (v) => expect(v).toEqual(["x", "x"]),
   },
   {
-    // Unlabeled optional -- match case: [T].
+    // Unlabeled optional -- match case: T.
     pattern: '"x"?',
     input: "x",
-    check: (v) => expect(v).toEqual(["x"]),
+    check: (v) => expect(v).toBe("x"),
   },
   {
-    // Unlabeled optional -- no-match case: [].
+    // Unlabeled optional -- no-match case: null.
     pattern: '"x"?',
     input: "",
-    check: (v) => expect(v).toEqual([]),
+    check: (v) => expect(v).toBe(null),
   },
   {
     pattern: 'value:"x"?',
     input: "",
-    check: (v) => expect(v).toEqual({ value: [] }),
+    check: (v) => expect(v).toEqual({ value: null }),
   },
   {
     pattern: '("x" / "y")',
@@ -166,6 +166,30 @@ const ROWS: readonly TableRow[] = [
     pattern: '!"y" "x"',
     input: "x",
     check: (v) => expect(v).toEqual([undefined, "x"]),
+  },
+  {
+    // `@pattern` -- the child's own value (here, `["a","b","c"]` from
+    // `[a-z]+`) is REPLACED by the raw matched slice.
+    pattern: "@[a-z]+",
+    input: "abc",
+    check: (v) => expect(v).toBe("abc"),
+  },
+  {
+    pattern: 'label:@"x" "y"',
+    input: "xy",
+    check: (v) => expect(v).toEqual({ label: "x" }),
+  },
+  {
+    // `\b`'s own slot is `undefined`, exactly like `&`/`!`.
+    pattern: '\\b "x"',
+    input: "x",
+    check: (v) => expect(v).toEqual([undefined, "x"]),
+  },
+  {
+    // `\B` between two word characters.
+    pattern: '"a" \\B "b"',
+    input: "ab",
+    check: (v) => expect(v).toEqual(["a", undefined, "b"]),
   },
   {
     pattern: '"a" ~ "b"',

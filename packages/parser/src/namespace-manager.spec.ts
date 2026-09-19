@@ -268,6 +268,98 @@ describe("NamespaceManager", () => {
       // reach conflict checking at all.
       expect(manager.getScope("a")?.exports.has("shared")).toBeFalsy();
     });
+
+    it("a FAILED registration leaves no residue that blocks a later different-file registration under the same name", () => {
+      // registerModule used to write moduleFilePaths/selectiveImports
+      // before the @export validation that can throw -- a rejected
+      // module's filePath then collided with the next, legitimate,
+      // registration of a different file deriving the same name.
+      const broken = createModuleFile("broken/utils.tpeg", [
+        createModularGrammar("G", [createRule("real")], {
+          type: "ExportDeclaration",
+          rules: ["real", "ghost"],
+        }),
+      ]);
+      expect(() => manager.registerModule(broken)).toThrow(
+        ExportResolutionError,
+      );
+      expect(manager.getRegisteredModules()).not.toContain("utils");
+
+      // A different file deriving the same module name registers cleanly
+      // -- the failed attempt must not count as "already registered".
+      const good = createModuleFile("fixed/utils.tpeg", [
+        createModularGrammar("G", [createRule("real")], {
+          type: "ExportDeclaration",
+          rules: ["real"],
+        }),
+      ]);
+      expect(() => manager.registerModule(good)).not.toThrow();
+      expect(manager.getScope("utils")?.exports.has("real")).toBe(true);
+    });
+
+    it("a FAILED re-registration of the SAME filePath does not corrupt the live module's selective imports", () => {
+      // Same filePath, so the collision guard doesn't fire -- but the
+      // second registration's broken @export throws AFTER its
+      // selectiveImports write in the old ordering, narrowing the still-
+      // live first registration's resolutions behind its back.
+      manager.registerModule(
+        createModuleFile("base.tpeg", [
+          createModularGrammar("B", [createRule("baseRule")]),
+        ]),
+      );
+      manager.registerModule(
+        createModuleFile(
+          "utils.tpeg",
+          [createModularGrammar("G", [createRule("real")])],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "base.tpeg",
+              alias: "base",
+            },
+          ],
+        ),
+      );
+      expect(
+        manager.resolveQualifiedName(
+          createQualifiedId("base", "baseRule"),
+          "utils",
+        ).rule.name,
+      ).toBe("baseRule");
+
+      // Re-register the SAME filePath with a broken @export plus a
+      // selective list that would exclude baseRule.
+      expect(() =>
+        manager.registerModule(
+          createModuleFile(
+            "utils.tpeg",
+            [
+              createModularGrammar("G", [createRule("real")], {
+                type: "ExportDeclaration",
+                rules: ["ghost"],
+              }),
+            ],
+            [
+              {
+                type: "ImportStatement",
+                modulePath: "base.tpeg",
+                alias: "base",
+                selective: ["somethingElse"],
+              },
+            ],
+          ),
+        ),
+      ).toThrow(ExportResolutionError);
+
+      // The live (first) registration must be untouched: the failed
+      // attempt's selective list must not leak into its scope.
+      expect(
+        manager.resolveQualifiedName(
+          createQualifiedId("base", "baseRule"),
+          "utils",
+        ).rule.name,
+      ).toBe("baseRule");
+    });
   });
 
   describe("resolveQualifiedName", () => {

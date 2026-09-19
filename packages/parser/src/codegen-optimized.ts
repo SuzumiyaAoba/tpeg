@@ -59,9 +59,11 @@ import {
   predictiveFilterForExpression,
 } from "./first-sets";
 import {
+  resolveStartRule,
   validateGeneratedIdentifiers,
   validateGrammar,
 } from "./grammar-validation";
+import { applySkipDesugar } from "./skip-desugar";
 import {
   analyzeGrammarPerformance,
   globalPerformanceMonitor,
@@ -362,6 +364,12 @@ export class OptimizedTPEGCodeGenerator {
    * condition this codebase's codegen relies on unsound. `true` before
    * the first `generateGrammar` call only as an unused default. */
   private startRuleIsSafeForCommitAtTopLevel = true;
+  /** Declaration index of the grammar's entry rule -- `rules[0]` when no
+   * `@start` annotation is present, the `@start`-named rule's index
+   * otherwise (see `resolveStartRule`, `grammar-validation.ts`). `-1`
+   * before the first `generateGrammar` call and for an empty grammar, so
+   * `index === this.startRuleIndex` is then simply never true. */
+  private startRuleIndex = -1;
 
   constructor(options: OptimizedCodeGenOptions = { language: "typescript" }) {
     // `optimize` is the master switch for this generator's optional
@@ -408,6 +416,14 @@ export class OptimizedTPEGCodeGenerator {
     // converging).
     validateGrammar(grammar);
 
+    // `@skip`-desugar BEFORE first-set analysis and every downstream
+    // walk (reentrancy, fusion planning, performance analysis, the
+    // rules loops): the grammar the emitted code implements is the
+    // desugared one, so every analysis must see the `Skip`-inserted
+    // shape too. Rule names, order, annotations, and transforms are
+    // unchanged by the rewrite -- see `skip-desugar.ts`.
+    const desugared = applySkipDesugar(grammar);
+
     // Reset per-instance state so a reused generator doesn't leak rule
     // names or cached expression templates from a previous grammar.
     this.ruleNames.clear();
@@ -421,25 +437,33 @@ export class OptimizedTPEGCodeGenerator {
     // enabled -- an unbounded repetition over a nullable body has no
     // well-defined PEG semantics whether or not this grammar happens to
     // also want predictive dispatch or regex fusion.
-    this.firstSetAnalysis = analyzeFirstSets(grammar);
-    assertNoNullableRepetition(grammar, this.firstSetAnalysis);
+    this.firstSetAnalysis = analyzeFirstSets(desugared);
+    assertNoNullableRepetition(desugared, this.firstSetAnalysis);
     // See this field's own doc comment for why the narrow
-    // `isStartRuleTopLevel` shape needs this extra check.
-    const startRuleName = grammar.rules[0]?.name;
+    // `isStartRuleTopLevel` shape needs this extra check. Which rule IS
+    // the start rule comes from `resolveStartRule`
+    // (`grammar-validation.ts`): the rule named by `@start` when the
+    // annotation is present, `rules[0]` otherwise -- `index ===
+    // startRuleIndex` below replaces the historical `index === 0` so
+    // the resolved rule, not just the first-declared one, gets the
+    // top-level treatment.
+    const startRule = resolveStartRule(desugared);
+    this.startRuleIndex = startRule?.index ?? -1;
+    const startRuleName = startRule?.rule.name;
     this.startRuleIsSafeForCommitAtTopLevel =
       startRuleName !== undefined &&
-      !isRuleReferencedAnywhere(grammar, startRuleName);
+      !isRuleReferencedAnywhere(desugared, startRuleName);
     this.reentrancyAnalysis = this.options.enableMemoization
-      ? analyzeReentrancy(grammar)
+      ? analyzeReentrancy(desugared)
       : null;
     if (this.options.enableRegexFusion && this.firstSetAnalysis) {
-      this.fusionRoots = planFusion(grammar, this.firstSetAnalysis, {
+      this.fusionRoots = planFusion(desugared, this.firstSetAnalysis, {
         scope: this.options.regexFusionScope,
         minWeight: this.options.regexFusionMinWeight,
       }).roots;
     }
 
-    const performanceAnalysis = analyzeGrammarPerformance(grammar);
+    const performanceAnalysis = analyzeGrammarPerformance(desugared);
     const imports: string[] = [];
     const exports: string[] = [];
     const parts: string[] = [];
@@ -448,7 +472,7 @@ export class OptimizedTPEGCodeGenerator {
     // reference resolution (see generateIdentifier) - generateOptimizedImports
     // below needs ruleIndex populated to know whether a "lazy" import is
     // required.
-    grammar.rules.forEach((rule, index) => {
+    desugared.rules.forEach((rule, index) => {
       this.ruleNames.add(stringInterner.intern(rule.name));
       this.ruleIndex.set(rule.name, index);
     });
@@ -471,24 +495,25 @@ export class OptimizedTPEGCodeGenerator {
     // `validateGeneratedIdentifiers`'s doc comment
     // (`grammar-validation.ts`) for the concrete failure modes.
     const { lines, bindings } = this.options.includeImports
-      ? this.generateOptimizedImports(grammar)
+      ? this.generateOptimizedImports(desugared)
       : { lines: [], bindings: [] };
     imports.push(...lines);
-    validateGeneratedIdentifiers(grammar, {
+    validateGeneratedIdentifiers(desugared, {
       namePrefix: this.options.namePrefix,
       importedBindings: [...bindings, ...monitoringBindings],
     });
 
     // Generate parser for each rule with optimization, applying a matching
     // TypeScript transform function (if the grammar declares one)
-    const transformsByRuleName = collectTransformFunctions(grammar);
-    grammar.rules.forEach((rule, index) => {
+    const transformsByRuleName = collectTransformFunctions(desugared);
+    desugared.rules.forEach((rule, index) => {
       this.currentRuleIndex = index;
       this.currentRuleName = rule.name;
       const ruleCode = this.generateOptimizedRule(
         rule,
         transformsByRuleName.get(rule.name),
-        index === 0 && this.startRuleIsSafeForCommitAtTopLevel,
+        index === this.startRuleIndex &&
+          this.startRuleIsSafeForCommitAtTopLevel,
       );
       parts.push(ruleCode);
       // Same as codegen.ts's generateGrammar: record the PREFIXED name
@@ -496,6 +521,30 @@ export class OptimizedTPEGCodeGenerator {
       // emitted), matching eta-generator.ts.
       exports.push(stringInterner.intern(this.options.namePrefix + rule.name));
     });
+
+    // Same `@start` alias as codegen.ts's generateGrammar: an explicit
+    // `@start: <name>` emits `export { <name> as start }` so the entry
+    // point is reachable under one stable name. Skipped when the
+    // resolved rule's own emitted name is already `start`; a DIFFERENT
+    // rule emitting `start` throws rather than silently dropping the
+    // alias (which would hand the caller the wrong rule under the
+    // entry-point name).
+    if (startRule?.explicit) {
+      const startEmittedName = this.options.namePrefix + startRule.rule.name;
+      if (startEmittedName !== "start") {
+        if (
+          desugared.rules.some(
+            (rule) => `${this.options.namePrefix}${rule.name}` === "start",
+          )
+        ) {
+          throw new Error(
+            `Rule name "start" collides with the \`start\` export alias @start emits for entry rule "${startRule.rule.name}" -- rename the rule, or set a namePrefix so the rule no longer emits that name.`,
+          );
+        }
+        parts.push(`export { ${startEmittedName} as start };`);
+        exports.push("start");
+      }
+    }
 
     // Add performance monitoring if enabled
     if (this.options.includeMonitoring) {
@@ -559,7 +608,8 @@ export class OptimizedTPEGCodeGenerator {
         rule.pattern,
         usedCombinators,
         index,
-        index === 0 && this.startRuleIsSafeForCommitAtTopLevel,
+        index === this.startRuleIndex &&
+          this.startRuleIsSafeForCommitAtTopLevel,
       );
     });
     // Every rule's emitted parser is wrapped in `untagCapture(...)` (see
@@ -602,7 +652,9 @@ export class OptimizedTPEGCodeGenerator {
     // name -- see `startRuleIsSafeForCommitAtTopLevel`'s own doc comment,
     // and `packages/combinator/src/logic.ts`'s `commitAtTopLevel` doc
     // comment for why the narrower shape is the one that's actually safe.
-    const startRule = grammar.rules[0];
+    // The `@start`-resolved entry rule, not blindly `rules[0]` -- see
+    // `resolveStartRule` (`grammar-validation.ts`).
+    const startRule = resolveStartRule(grammar)?.rule;
     if (
       (this.startRuleIsSafeForCommitAtTopLevel &&
         startRule?.pattern.type === "Sequence" &&
@@ -874,6 +926,21 @@ export class OptimizedTPEGCodeGenerator {
           return `andPredicate(${this.generateOptimizedExpression(expr.expression)})`;
         case "NegativeLookahead":
           return `notPredicate(${this.generateOptimizedExpression(expr.expression)})`;
+        case "Skip":
+          // `applySkipDesugar`-inserted boundary skip -- same emission
+          // as `codegen.ts`'s `Skip` case: `ignore` maps the success
+          // value to the `IGNORED` sentinel `sequence`/`captureSequence`
+          // filter out, so the rule's own value shape is unchanged.
+          return `ignore(optional(${this.generateOptimizedExpression(expr.expression)}))`;
+        case "Span":
+          // `@expr` source-text extraction -- same emission as
+          // `codegen.ts`'s `Span` case: `span` replaces the produced
+          // value with the consumed source text.
+          return `span(${this.generateOptimizedExpression(expr.expression)})`;
+        case "WordBoundary":
+          // `\b` / `\B` word-boundary assertion -- a bare parser
+          // constant (`packages/core/src/boundary.ts`), no call.
+          return expr.negated ? "nonWordBoundary" : "wordBoundary";
         case "LabeledExpression":
           return this.generateLabeledExpression(expr);
         case "ActionExpression":
@@ -933,13 +1000,24 @@ export class OptimizedTPEGCodeGenerator {
     // exactly the condition under which skipping the wrap here would
     // diverge from it.
     const hasLabel = collectTopLevelLabels(expr).length > 0;
+    // Elements that contribute a VALUE to this sequence's result:
+    // everything but `~` cuts and `applySkipDesugar`-inserted `Skip`
+    // markers (mirrors `codegen.ts`'s `generateSequence` -- the
+    // `ignore(optional(...))` a `Skip` emits is filtered out of the
+    // result tuple by the `IGNORED` sentinel, so it must not count
+    // toward the bare-single-element shortcuts below either: a lone
+    // `Skip` emitted bare would leak the sentinel itself as the
+    // sequence's own value).
+    const valueElementCount = expr.elements.filter(
+      (el) => el.type !== "Cut" && el.type !== "Skip",
+    ).length;
 
     if (!hasCut) {
       if (expr.elements.length === 0) {
         return "sequence()";
       }
 
-      if (expr.elements.length === 1 && !hasLabel) {
+      if (expr.elements.length === 1 && valueElementCount === 1 && !hasLabel) {
         const element = expr.elements[0];
         if (element) {
           return this.generateOptimizedExpression(element);
@@ -973,9 +1051,19 @@ export class OptimizedTPEGCodeGenerator {
     if (parts.length === 0) {
       return "sequence()";
     }
-    if (parts.length === 1 && !hasLabel) {
-      const [only] = parts;
-      if (only) return only;
+    if (valueElementCount === 1 && !hasLabel) {
+      // Exactly one value-contributing element: this sequence's own
+      // value must be that element's value, not a 1-tuple. With no
+      // `Skip` siblings that's the bare emission (the `parts.length`
+      // fast path); WITH them, the surrounding `sequence(...)` must
+      // still run -- its `ignore(optional(...))` boundary skips consume
+      // input -- but the `IGNORED` filter leaves a 1-tuple behind, so
+      // `map` unwraps it back to the element's own value.
+      if (parts.length === 1) {
+        const [only] = parts;
+        if (only) return only;
+      }
+      return `map(sequence(${parts.join(", ")}), ([v]) => v)`;
     }
 
     // A sequence with labeled elements needs its per-element captured

@@ -283,11 +283,11 @@ describe("position contract: combinators reject out-of-contract pos", () => {
     }
   }
 
-  it("optional still returns [] on a legitimate non-match at pos === input.length", () => {
+  it("optional still returns null on a legitimate non-match at pos === input.length", () => {
     const result = optional(literal("a"))(input, input.length);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.val).toEqual([]);
+      expect(result.val).toEqual(null);
       expect(result.next).toBe(input.length);
     }
   });

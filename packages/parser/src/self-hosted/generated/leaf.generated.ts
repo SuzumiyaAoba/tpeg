@@ -1,15 +1,18 @@
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
-import { capture, captureSequence, charClass, charClassRun, choice, commit, literal, negatedCharClass, notPredicate, oneOrMore, optional, sequence, untagCapture, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
+import { capture, captureSequence, charClass, charClassRun, choice, commit, literal, negatedCharClass, notPredicate, oneOrMore, optional, quantified, sequence, untagCapture, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
 
-export const escapeChar: Parser<any> = untagCapture(sequence(literal("\\"), charClass("n", "r", "t", "\\", "\"", "'")));
-
-export const doubleStringChar: Parser<any> = untagCapture(choice((input, pos) => {
-  const __base = (escapeChar);
+export const namedEscape: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("\\"), capture("c", charClass("n", "r", "t", "b", "f", "v", "0"))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
- const c = $$[1]; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t"; return c; 
+    const { c } = ($$ ?? {});
+
+    if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t";
+    if (c === "b") return "\b"; if (c === "f") return "\f"; if (c === "v") return "\v";
+    return "\0";
+  
   })();
   return {
     success: true,
@@ -17,15 +20,20 @@ export const doubleStringChar: Parser<any> = untagCapture(choice((input, pos) =>
     current: __result.current,
     next: __result.next,
   };
-}, negatedCharClass("\"", "\\")));
+});
 
-export const singleStringChar: Parser<any> = untagCapture(choice((input, pos) => {
-  const __base = (escapeChar);
+export const unicodeBracedEscape: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("\\u{"), capture("digits", quantified(charClass(["0", "9"], ["a", "f"], ["A", "F"]), 1, 6)), literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
- const c = $$[1]; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t"; return c; 
+    const { digits } = ($$ ?? {});
+
+    const cp = parseInt(digits.join(""), 16);
+    if (cp > 0x10ffff) throw new Error("Invalid Unicode code point: \\u{" + digits.join("") + "} is above U+10FFFF");
+    return String.fromCodePoint(cp);
+  
   })();
   return {
     success: true,
@@ -33,7 +41,83 @@ export const singleStringChar: Parser<any> = untagCapture(choice((input, pos) =>
     current: __result.current,
     next: __result.next,
   };
-}, negatedCharClass("'", "\\")));
+});
+
+export const unicodeEscape4: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("\\u"), capture("digits", quantified(charClass(["0", "9"], ["a", "f"], ["A", "F"]), 4, 4))));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { digits } = ($$ ?? {});
+ return String.fromCodePoint(parseInt(digits.join(""), 16)); 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const hexEscape: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("\\x"), capture("digits", quantified(charClass(["0", "9"], ["a", "f"], ["A", "F"]), 2, 2))));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { digits } = ($$ ?? {});
+ return String.fromCodePoint(parseInt(digits.join(""), 16)); 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const numericEscape: Parser<any> = untagCapture(choice(unicodeBracedEscape, unicodeEscape4, hexEscape));
+
+export const stringLiteralEscape: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("\\"), capture("c", charClass("\"", "'", "\\"))));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { c } = ($$ ?? {});
+ return c; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const classLiteralEscape: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(literal("\\"), capture("c", charClass("]", "\\", "^", "-", "\"", "'"))));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { c } = ($$ ?? {});
+ return c; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const escapeChar: Parser<any> = untagCapture(choice(namedEscape, numericEscape, stringLiteralEscape));
+
+export const doubleStringChar: Parser<any> = untagCapture(choice(escapeChar, negatedCharClass("\"", "\\")));
+
+export const singleStringChar: Parser<any> = untagCapture(choice(escapeChar, negatedCharClass("'", "\\")));
 
 export const doubleQuotedString: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(literal("\""), capture("chars", zeroOrMore(doubleStringChar)), literal("\"")));
@@ -71,39 +155,9 @@ export const singleQuotedString: Parser<any> = untagCapture((input, pos) => {
 
 export const stringLiteral: Parser<any> = untagCapture(choice(doubleQuotedString, singleQuotedString));
 
-export const classEscapeStd: Parser<any> = untagCapture((input, pos) => {
-  const __base = (sequence(literal("\\"), charClass("t", "n", "r", "b", "f", "v", "0")));
-  const __result = __base(input, pos);
-  if (!__result.success) return __result;
-  const __val = (() => {
-    const $$: any = __result.val;
- const c = $$[1]; if (c === "t") return "\t"; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "b") return "\b"; if (c === "f") return "\f"; if (c === "v") return "\v"; return "\0"; 
-  })();
-  return {
-    success: true,
-    val: __val,
-    current: __result.current,
-    next: __result.next,
-  };
-});
+export const classEscape: Parser<any> = untagCapture(choice(namedEscape, numericEscape, classLiteralEscape));
 
-export const classEscapeSpecial: Parser<any> = untagCapture((input, pos) => {
-  const __base = (sequence(literal("\\"), charClass("]", "\\", "^", "-", "\"", "'")));
-  const __result = __base(input, pos);
-  if (!__result.success) return __result;
-  const __val = (() => {
-    const $$: any = __result.val;
- return $$[1]; 
-  })();
-  return {
-    success: true,
-    val: __val,
-    current: __result.current,
-    next: __result.next,
-  };
-});
-
-export const classChar: Parser<any> = untagCapture(choice(classEscapeStd, classEscapeSpecial, negatedCharClass("]", "\\", "^", "-")));
+export const classChar: Parser<any> = untagCapture(choice(classEscape, negatedCharClass("]", "\\", "^", "-")));
 
 export const charRangePair: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("start", classChar), literal("-"), capture("end", classChar)));
@@ -153,7 +207,7 @@ export const characterClassBrackets: Parser<any> = untagCapture((input, pos) => 
   const __val = (() => {
     const $$: any = __result.val;
     const { negation, ranges } = ($$ ?? {});
- return { type: "CharacterClass", ranges, negated: negation.length > 0 }; 
+ return { type: "CharacterClass", ranges, negated: negation !== null }; 
   })();
   return {
     success: true,

@@ -1,13 +1,40 @@
 grammar SelfHostComposition {
   // ---- Leaf constructs ----
 
-  escapeChar = "\\" [nrt\\"']
+  // Mirrors escape-sequence.ts's namedEscapeSequence -- the same named
+  // set in every context (previously strings only had n/r/t).
+  namedEscape = "\\" c:[nrtbfv0] {
+    if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t";
+    if (c === "b") return "\b"; if (c === "f") return "\f"; if (c === "v") return "\v";
+    return "\0";
+  }
 
-  doubleStringChar = escapeChar { const c = $$[1]; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t"; return c; }
-                    / [^"\\]
+  // Mirrors numericEscapeSequence. unicodeBracedEscape's throw plays the
+  // same role as the hand parser's fatal+abort rejection -- callers
+  // treat a thrown action like a fatal failure (charRangePair below
+  // already relies on this).
+  unicodeBracedEscape = "\\u{" digits:[0-9a-fA-F]{1,6} "}" {
+    const cp = parseInt(digits.join(""), 16);
+    if (cp > 0x10ffff) throw new Error("Invalid Unicode code point: \\u{" + digits.join("") + "} is above U+10FFFF");
+    return String.fromCodePoint(cp);
+  }
 
-  singleStringChar = escapeChar { const c = $$[1]; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t"; return c; }
-                    / [^'\\]
+  unicodeEscape4 = "\\u" digits:[0-9a-fA-F]{4} { return String.fromCodePoint(parseInt(digits.join(""), 16)); }
+
+  hexEscape = "\\x" digits:[0-9a-fA-F]{2} { return String.fromCodePoint(parseInt(digits.join(""), 16)); }
+
+  numericEscape = unicodeBracedEscape / unicodeEscape4 / hexEscape
+
+  // Literal escapes differ per context (a `"` inside a string, a `]` or
+  // `-` inside a class) -- same split as literalEscapeSequence.
+  stringLiteralEscape = "\\" c:["'\\] { return c; }
+  classLiteralEscape = "\\" c:[\]\\\^\-"'] { return c; }
+
+  escapeChar = namedEscape / numericEscape / stringLiteralEscape
+
+  doubleStringChar = escapeChar / [^"\\]
+
+  singleStringChar = escapeChar / [^'\\]
 
   doubleQuotedString = "\"" chars:doubleStringChar* "\"" { return { type: "StringLiteral", value: chars.join(""), quote: '"' }; }
 
@@ -15,11 +42,9 @@ grammar SelfHostComposition {
 
   stringLiteralNode = doubleQuotedString / singleQuotedString
 
-  classEscapeStd = "\\" [tnrbfv0] { const c = $$[1]; if (c === "t") return "\t"; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "b") return "\b"; if (c === "f") return "\f"; if (c === "v") return "\v"; return "\0"; }
+  classEscape = namedEscape / numericEscape / classLiteralEscape
 
-  classEscapeSpecial = "\\" [\]\\\^\-"'] { return $$[1]; }
-
-  classChar = classEscapeStd / classEscapeSpecial / [^\]\\\^\-]
+  classChar = classEscape / [^\]\\\^\-]
 
   // Mirrors character-class.ts's charRange check: a backwards range like
   // [z-a] is rejected (there is no backtracking-out for a return-based
@@ -37,7 +62,7 @@ grammar SelfHostComposition {
 
   charRange = charRangePair / charRangeSingle
 
-  characterClassBrackets = "[" negation:"^"? ranges:charRange+ "]" { return { type: "CharacterClass", ranges, negated: negation.length > 0 }; }
+  characterClassBrackets = "[" negation:"^"? ranges:charRange+ "]" { return { type: "CharacterClass", ranges, negated: negation !== null }; }
 
   anyCharDot = "." { return { type: "AnyChar" }; }
 
@@ -52,7 +77,14 @@ grammar SelfHostComposition {
 
   qualifiedIdentifierNode = module:identifierName "." name:identifierName ~ !("." identStart) { return { type: "QualifiedIdentifier", module, name }; }
 
-  basicSyntax = stringLiteralNode / characterClassNode / qualifiedIdentifierNode / identifierNode
+  // Word-boundary assertions -- mirrors word-boundary.ts's
+  // wordBoundaryMarker leaf: a bare `\b`/`\B` at expression level is a
+  // zero-width assertion. An escaped `\b` INSIDE a string or character
+  // class stays the backspace escape (handled by namedEscape above), so
+  // this alternative only ever sees the assertion syntax.
+  wordBoundaryNode = "\\" c:[bB] { return { type: "WordBoundary", negated: c === "B" }; }
+
+  basicSyntax = stringLiteralNode / characterClassNode / qualifiedIdentifierNode / identifierNode / wordBoundaryNode
 
   // ---- Semantic action blocks (recursive, replaces brace-scanner.ts) ----
 
@@ -71,7 +103,7 @@ grammar SelfHostComposition {
   // char alternative below, which templateInterp's ordered choice shadows
   // only when "${" is literally present).
   templateInterp = "${" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionContent* "}" {
-    return "${" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + "}";
+    return "${" + (first ? first.w.join("") + first.re : "") + parts.join("") + "}";
   }
 
   // A plain template-text char -- needs its own rule (not an inline
@@ -142,7 +174,7 @@ grammar SelfHostComposition {
   actionParenItem = nestedActionBlock / actionStringLiteral / actionLineComment / actionBlockComment / actionPostfix / actionKwRegex / actionOpRegex / actionStmtParenRegex / actionParenGroup / actionIdentifier / actionParenPlainChar
 
   actionParenGroup = "(" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionParenItem* ")" {
-    return "(" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + ")";
+    return "(" + (first ? first.w.join("") + first.re : "") + parts.join("") + ")";
   }
 
   // Statement keywords whose parenthesized header restores "value
@@ -160,7 +192,7 @@ grammar SelfHostComposition {
   // A nested `{ ... }` block ends a statement, so it may be followed by a
   // regex literal (matching the hand-written scanner's `}` -> value
   // expected rule).
-  nestedActionBlock = inner:actionBlock tail:(w:wsAndComments re:actionRegexLiteral)? { return "{" + inner + "}" + (tail.length ? tail[0].w.join("") + tail[0].re : ""); }
+  nestedActionBlock = inner:actionBlock tail:(w:wsAndComments re:actionRegexLiteral)? { return "{" + inner + "}" + (tail ? tail.w.join("") + tail.re : ""); }
 
   // Whole identifiers are consumed atomically so a keyword can't match
   // mid-word (e.g. the "return" inside "xreturn").
@@ -172,7 +204,7 @@ grammar SelfHostComposition {
 
   // At the start of a block a value is expected, so a leading regex is
   // allowed (`{ /re/.test(x) }`).
-  actionBlock = "{" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionContent* "}" { return (first.length ? first[0].w.join("") + first[0].re : "") + parts.join(""); }
+  actionBlock = "{" first:(w:wsAndComments re:actionRegexLiteral)? parts:actionContent* "}" { return (first ? first.w.join("") + first.re : "") + parts.join(""); }
 
   // ---- Composition operators ----
 
@@ -268,9 +300,18 @@ grammar SelfHostComposition {
 
   negativeLookahead = "!" expr:postfix { return { type: "NegativeLookahead", expression: expr }; }
 
-  prefix = positiveLookahead / negativeLookahead / postfix
+  // `@expr` -- the source-span/text operator, a third prefix operator
+  // alongside `&`/`!` (lookahead.ts's lookaheadOperator). Same
+  // `postfix`-level operand as the lookaheads, and like them it can't
+  // stack: `prefix` is a single ordered choice, so `@&x`/`!@x` don't
+  // parse. (An `@` at RULE-BODY level is ambiguous with annotation
+  // syntax -- that resolution happens at the grammar-block layer, not
+  // here; `expression()` itself treats every `@` as this operator.)
+  spanOp = "@" expr:postfix { return { type: "Span", expression: expr }; }
 
-  labeled = label:identifierName ":" expr:prefix { return { type: "LabeledExpression", label, expression: expr }; }
+  prefix = positiveLookahead / negativeLookahead / spanOp / postfix
+
+  labeled = label:identifierName wsAndComments ":" wsAndComments expr:prefix { return { type: "LabeledExpression", label, expression: expr }; }
           / prefix
 
   notNextRuleStart = !(identifierName wsAndComments "=")
@@ -303,8 +344,8 @@ grammar SelfHostComposition {
   // no `return`, so it would evaluate to `undefined` -- rejected (thrown,
   // like charRangePair) rather than silently accepted as an action.
   alternative = base:sequenceBase act:(wsAndComments code:actionBlock)? {
-    if (act.length === 0) return base;
-    const code = act[0].code;
+    if (act === null) return base;
+    const code = act.code;
     if (/^\d+(,\d*)?$/.test(code.trim())) {
       throw new Error("Ambiguous \"{" + code + "}\" after an expression: this is a quantifier only when written with no space before \"{\"");
     }

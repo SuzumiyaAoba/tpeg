@@ -6,6 +6,7 @@ import {
   walkDispatchTrie,
 } from "./dispatch-trie";
 import type { Expectation } from "./failure";
+import { IGNORED } from "./ignored";
 import { guardedParserCall } from "./limits";
 import {
   FAIL,
@@ -195,7 +196,12 @@ export const sequence = <P extends Parser<unknown>[]>(
         return parserResult;
       }
 
-      result.push(parserResult.val);
+      // `ignore(...)` results consume input but contribute no value --
+      // the `IGNORED` sentinel (`./ignored.ts`) is filtered here so an
+      // ignored element takes no slot in the result tuple.
+      if (parserResult.val !== IGNORED) {
+        result.push(parserResult.val);
+      }
       currentPos = parserResult.next;
     }
 
@@ -778,7 +784,8 @@ export const withDefault =
 
 /**
  * Parser that makes a parser optional, returning the value or null.
- * Different from repetition.ts optional which returns [T] | [].
+ * Equivalent to repetition.ts `optional`, which has the same
+ * `T | null` contract (this variant is built on `withDefault`).
  *
  * @template T Type of the parser result
  * @param parser The parser to make optional

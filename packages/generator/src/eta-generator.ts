@@ -23,6 +23,8 @@ import {
   generateQuantifiedCode,
   generateStringLiteralCode,
   findMemoizeAnnotation,
+  applySkipDesugar,
+  resolveStartRule,
   sequenceCombinatorFor,
   validateGeneratedIdentifiers,
   wrapWithAction,
@@ -136,22 +138,33 @@ export class EtaTPEGCodeGenerator {
     // module doc comment for why this delegates rather than duplicating).
     validateGrammarForEtaGenerator(grammar);
 
+    // `@skip`-desugar BEFORE every downstream walk -- the same point
+    // `tpeg-parser`'s own generators apply it (`codegen.ts`/
+    // `codegen-optimized.ts`): the grammar the emitted code implements
+    // is the desugared one, so import collection, performance analysis,
+    // and the rules loop must all see the `Skip`-inserted shape. (The
+    // nullable-repetition check inside `validateGrammarForEtaGenerator`
+    // is deliberately still on the ORIGINAL grammar: `Skip` nodes are
+    // always nullable and only ever inserted at sequence boundaries, so
+    // the verdict is provably identical either way.)
+    const desugared = applySkipDesugar(grammar);
+
     globalPerformanceMonitor.start("eta-grammar-generation");
 
-    const performanceAnalysis = analyzeGrammarPerformance(grammar);
+    const performanceAnalysis = analyzeGrammarPerformance(desugared);
 
     // Reset per-instance state so a reused generator doesn't leak rule
     // names/order from a previous grammar into this one's identifier
     // resolution.
     this.ruleNames.clear();
     this.ruleIndex.clear();
-    grammar.rules.forEach((rule, index) => {
+    desugared.rules.forEach((rule, index) => {
       this.ruleNames.add(rule.name);
       this.ruleIndex.set(rule.name, index);
     });
 
     const { lines: imports, bindings: importedBindings } = this.generateImports(
-      grammar,
+      desugared,
       performanceAnalysis,
     );
     // `generatePerformanceImports()` (below) contributes its own binding,
@@ -182,7 +195,7 @@ export class EtaTPEGCodeGenerator {
     // `collectTopLevelLabels`/`wrapWithAction`/etc. above), like
     // `validateGrammarForEtaGenerator` now does for the rest of the
     // structural checks.
-    validateGeneratedIdentifiers(grammar, {
+    validateGeneratedIdentifiers(desugared, {
       namePrefix: this.options.namePrefix,
       importedBindings: importedBindingsWithPerformance,
     });
@@ -191,8 +204,8 @@ export class EtaTPEGCodeGenerator {
 
     // Generate template data for each rule, applying a matching TypeScript
     // transform function (if the grammar declares one) to the rule's result
-    const transformsByRuleName = collectTransformFunctions(grammar);
-    grammar.rules.forEach((rule, index) => {
+    const transformsByRuleName = collectTransformFunctions(desugared);
+    desugared.rules.forEach((rule, index) => {
       this.currentRuleIndex = index;
       const complexity = performanceAnalysis.ruleComplexity.get(rule.name);
       const transformFn = transformsByRuleName.get(rule.name);
@@ -270,9 +283,34 @@ export class EtaTPEGCodeGenerator {
     templateData.performanceImports = this.generatePerformanceImports();
     templateData.footer = this.generateFooter();
 
+    // Same `@start` alias as `codegen.ts`'s generateGrammar: an explicit
+    // `@start: <name>` emits `export { <name> as start }` (appended to
+    // the footer, which both templates render verbatim at end-of-file)
+    // so the entry point is reachable under one stable name. Skipped
+    // when the resolved rule's own emitted name is already `start`; a
+    // DIFFERENT rule emitting `start` throws rather than silently
+    // dropping the alias.
+    const startRule = resolveStartRule(desugared);
+    if (startRule?.explicit) {
+      const startEmittedName = this.options.namePrefix + startRule.rule.name;
+      if (startEmittedName !== "start") {
+        if (
+          desugared.rules.some(
+            (rule) => `${this.options.namePrefix}${rule.name}` === "start",
+          )
+        ) {
+          throw new Error(
+            `Rule name "start" collides with the \`start\` export alias @start emits for entry rule "${startRule.rule.name}" -- rename the rule, or set a namePrefix so the rule no longer emits that name.`,
+          );
+        }
+        templateData.footer = `${templateData.footer}\nexport { ${startEmittedName} as start };`;
+        exports.push("start");
+      }
+    }
+
     // Add the generated-file header for the optimized template
     if (this.options.optimize) {
-      templateData.header = this.generateHeader(grammar);
+      templateData.header = this.generateHeader(desugared);
     }
 
     // Generate code using appropriate template
@@ -289,7 +327,7 @@ export class EtaTPEGCodeGenerator {
       code,
       imports,
       exports,
-      warnings: buildQualifiedIdentifierWarnings(grammar),
+      warnings: buildQualifiedIdentifierWarnings(desugared),
       performance: {
         estimatedComplexity: performanceAnalysis.estimatedParseComplexity,
         optimizationSuggestions: performanceAnalysis.optimizationSuggestions,
@@ -478,6 +516,21 @@ export class EtaTPEGCodeGenerator {
         return `andPredicate(${this.generateExpressionCode(expr.expression)})`;
       case "NegativeLookahead":
         return `notPredicate(${this.generateExpressionCode(expr.expression)})`;
+      case "Skip":
+        // `applySkipDesugar`-inserted boundary skip -- same emission as
+        // `codegen.ts`'s `Skip` case: `ignore` maps the success value to
+        // the `IGNORED` sentinel `sequence`/`captureSequence` filter
+        // out, so the rule's own value shape is unchanged.
+        return `ignore(optional(${this.generateExpressionCode(expr.expression)}))`;
+      case "Span":
+        // `@expr` source-text extraction -- same emission as
+        // `codegen.ts`'s `Span` case: `span` replaces the produced
+        // value with the consumed source text.
+        return `span(${this.generateExpressionCode(expr.expression)})`;
+      case "WordBoundary":
+        // `\b` / `\B` word-boundary assertion -- a bare parser
+        // constant (`packages/core/src/boundary.ts`), no call.
+        return expr.negated ? "nonWordBoundary" : "wordBoundary";
       case "LabeledExpression":
         return this.generateLabeledExpression(expr);
       case "ActionExpression":
@@ -569,6 +622,18 @@ export class EtaTPEGCodeGenerator {
     if (combinator === null && parts.length === 1) {
       const [only] = parts;
       if (only) return only;
+    }
+    // Exactly one value-contributing element plus `Skip` siblings:
+    // `sequence(...)` must still run -- its `ignore(optional(...))`
+    // boundary skips consume input -- but the `IGNORED` filter leaves a
+    // 1-tuple behind, so `map` unwraps it back to the element's own
+    // value (mirrors `codegen.ts`/`codegen-optimized.ts`'s identical
+    // shape; a multi-element or labeled sequence never reaches this).
+    const valueElementCount = expr.elements.filter(
+      (el) => el.type !== "Cut" && el.type !== "Skip",
+    ).length;
+    if (valueElementCount === 1 && combinator === "sequence") {
+      return `map(sequence(${parts.join(", ")}), ([v]) => v)`;
     }
     // A sequence with labeled elements needs its per-element captured
     // objects merged into one named-field object -- plain `sequence()`

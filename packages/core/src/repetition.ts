@@ -14,8 +14,8 @@ import { createFailure, isValidOffset, offsetToPos } from "./utils";
  * whatever happens to enclose it. Before this was fatal, the very same
  * `zeroOrMore(optional(e))` diverged three ways depending purely on context:
  * a bare call surfaced the failure, wrapping it in `optional(...)` silently
- * swallowed it back down to a quiet `[]` success (`optional`'s "no match ->
- * empty" branch, just below), and putting it as a `choice` alternative let
+ * swallowed it back down to a quiet `null` success (`optional`'s "no match ->
+ * null" branch, just below), and putting it as a `choice` alternative let
  * backtracking silently fall through to try the next alternative instead.
  * Marking it fatal closes all three: `optional`/`zeroOrMore`/`oneOrMore`/
  * `quantified`/`withDefault` re-raise a fatal failure rather than treating
@@ -67,10 +67,10 @@ const createInfiniteLoopError = (
  *
  * @template T Type of the parse result value
  * @param parser Target parser
- * @returns Parser<[T] | []> A parser that returns a singleton array if the parser succeeds, or an empty array if it fails.
+ * @returns Parser<T | null> A parser that returns the parsed value on a match, or `null` on failure.
  */
 export const optional =
-  <T>(parser: Parser<T>): Parser<[T] | []> =>
+  <T>(parser: Parser<T>): Parser<T | null> =>
   (input: string, pos) => {
     // Same out-of-contract-`pos` guard every leaf parser already applies
     // (`isValidOffset`, `./utils.ts`): an invalid offset must fail here
@@ -88,7 +88,7 @@ export const optional =
     if (result.success) {
       return {
         success: true,
-        val: [result.val],
+        val: result.val,
         current: pos,
         next: result.next,
       };
@@ -96,16 +96,16 @@ export const optional =
 
     // A cut/commit (see `commit` in combinators.ts) inside `parser` marks
     // its failure `fatal`, meaning "do not treat this as backtrackable" --
-    // re-raise it instead of the usual "swallow and report zero matches",
+    // re-raise it instead of the usual "swallow and report no match",
     // otherwise `("if" ~ cond)?` would silently discard the cut's intent.
     if (isFatalFailure(result)) {
       return result;
     }
 
-    // Return empty array on failure (not an error)
+    // Return null on failure (not an error)
     return {
       success: true,
-      val: [],
+      val: null,
       current: pos,
       next: pos,
     };
@@ -117,7 +117,7 @@ export const optional =
  * @template T Type of the parse result value
  * @param parser Target parser
  * @param parserName Optional name for error reporting and debugging
- * @returns Parser<[T] | []> A parser that returns a singleton array if the parser succeeds, or an empty array if it fails.
+ * @returns Parser<T | null> A parser that returns the parsed value on a match, or `null` on failure.
  * @see optional
  */
 export const opt = optional;

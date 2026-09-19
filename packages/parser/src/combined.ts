@@ -26,6 +26,7 @@ import { stringLiteral } from "./string-literal";
 import { transformDefinition } from "./transforms";
 import type { BasicSyntaxNode, GrammarDefinition } from "./types";
 import { optionalWhitespaceOrComment } from "./whitespace-utils";
+import { wordBoundaryMarker } from "./word-boundary";
 
 /**
  * Combined parser for all basic TPEG syntax elements.
@@ -54,6 +55,9 @@ export const basicSyntax: Parser<BasicSyntaxNode> = coreChoice(
   characterClass,
   qualifiedIdentifier,
   identifier,
+  // `\b` / `\B` word-boundary assertions -- tried last since no other
+  // basic syntax begins with a backslash.
+  wordBoundaryMarker,
 );
 
 /**

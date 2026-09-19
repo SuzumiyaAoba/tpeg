@@ -116,7 +116,7 @@ export const genExpr = (
   const atom = () => pick(rng, allowRuleRef ? [...LEAVES, ...refs] : LEAVES);
   if (depth <= 0) return atom();
   const next = () => genExpr(rng, depth - 1, allowRuleRef, refs);
-  switch (Math.floor(rng() * 35)) {
+  switch (Math.floor(rng() * 38)) {
     case 0:
       return atom();
     case 1:
@@ -321,6 +321,25 @@ export const genExpr = (
       const shared = atom();
       return `(${shared} ${next()} / ${shared} ${next()} / ${shared})`;
     }
+    case 34:
+      // `@expr` source-text extraction over a group (see `Span` in
+      // grammar-types.ts / `span` in `packages/core/src/transform.ts`).
+      // Always grouped: `@` followed by a non-identifier char can never
+      // collide with grammar-annotation syntax, while a bare `@ident`
+      // at the end of a rule body is read as a flag annotation for the
+      // FOLLOWING rule (see `isAnnotationStartAt` in grammar.ts) --
+      // that draw would only land in `skippedCount` as a parse error.
+      return `(@(${next()}))`;
+    case 35:
+      // `\b` word-boundary assertion inside a sequence (see
+      // `WordBoundary` / `packages/core/src/boundary.ts`). Explicitly
+      // sequenced between consuming elements rather than added to
+      // LEAVES: a bare `\b*`/`(\b)*` draw would be a nullable
+      // repetition and only exercise the construction-time rejection.
+      return `\\b ${atom()} ${next()}`;
+    case 36:
+      // Same, but `\B` (non-word-boundary) in a trailing position.
+      return `(${next()} \\B)`;
     default:
       return `(${next()} ~ ${next()})`;
   }

@@ -255,14 +255,12 @@ describe("commitAtTopLevel is narrowed to grammars where the start rule is never
     }
   });
 
-  test("@start naming a referenced rule no longer lets that rule's cut wrongly reach commitAtTopLevel", () => {
-    // `@start` is parsed but not otherwise consulted by codegen (the
-    // entry rule is always `rules[0]`) -- this pins that regardless of
-    // which rule `@start` names, a rule actually referenced elsewhere
-    // (here, `real`, declaration-order rules[1]) never gets
-    // commitAtTopLevel for a cut that isn't in rules[0]'s own top-level
-    // sequence, and rules[0] (`helper`, unreferenced) still gets it for
-    // its own cut.
+  test("@start moves the top-level-cut optimization to the resolved entry rule, not rules[0]", () => {
+    // `@start` is now consulted by codegen: the rule it names (`real`,
+    // declaration-order rules[1]) is the entry point, so `helper`
+    // (rules[0]) is NOT the rule whose top-level sequence a cut is
+    // provably top-level in -- its cut gets the ordinary `commit`, and
+    // `real` gets the `export { real as start }` alias.
     const source = `grammar G {
       @start: real
       helper = "h" ~ "e"
@@ -277,8 +275,69 @@ describe("commitAtTopLevel is narrowed to grammars where the start rule is never
       includeTypes: false,
     });
     expect(result.code).toContain(
-      'export const helper = untagCapture(sequence(literal("h"), commitAtTopLevel(literal("e"))));',
+      'export const helper = untagCapture(sequence(literal("h"), commit(literal("e"))));',
     );
+    expect(result.code).toContain("export { real as start };");
+  });
+
+  test("@start naming a rule that IS referenced elsewhere keeps that rule on plain commit", () => {
+    // The resolved entry rule being referenced by name from another rule
+    // is exactly the live-backtrack-point shape
+    // `isRuleReferencedAnywhere` guards against: `entry`'s own cut must
+    // fall back to the ordinary `commit` even though `@start` makes it
+    // the entry rule.
+    const source = `grammar G {
+      @start: entry
+      entry = "e" ~ "x"
+      other = entry / "o"
+    }`;
+    const parsed = testParse(grammarDefinition, source);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const result = generateTypeScriptParser(parsed.val, {
+      includeImports: false,
+      includeTypes: false,
+    });
+    expect(result.code).toContain(
+      'export const entry = untagCapture(sequence(literal("e"), commit(literal("x"))));',
+    );
+  });
+
+  test("@start naming an unreferenced rule gives THAT rule commitAtTopLevel", () => {
+    // The mirror of the case above: the `@start`-resolved entry rule is
+    // unreferenced, so its own top-level cut still earns
+    // `commitAtTopLevel` -- and rules[0] (`helper`) does NOT, since it
+    // is no longer the entry.
+    const source = `grammar G {
+      @start: real
+      helper = "h" ~ "e"
+      real = "r" ~ "x"
+    }`;
+    const parsed = testParse(grammarDefinition, source);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    for (const result of [
+      generateTypeScriptParser(parsed.val, {
+        includeImports: false,
+        includeTypes: false,
+      }),
+      generateOptimizedTypeScriptParser(parsed.val, {
+        language: "typescript",
+        includeImports: false,
+        includeTypes: false,
+        optimize: true,
+      }),
+    ]) {
+      expect(result.code).toContain(
+        'export const real = untagCapture(sequence(literal("r"), commitAtTopLevel(literal("x"))));',
+      );
+      expect(result.code).toContain(
+        'export const helper = untagCapture(sequence(literal("h"), commit(literal("e"))));',
+      );
+      expect(result.code).toContain("export { real as start };");
+    }
   });
 });
 

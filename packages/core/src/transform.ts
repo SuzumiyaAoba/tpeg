@@ -99,6 +99,43 @@ export const mapError =
   };
 
 /**
+ * Parser that replaces a successful match's value with the raw source
+ * text the match consumed: `input.slice(result.current, result.next)`.
+ * Consumption and failure behavior are exactly the wrapped parser's --
+ * a failure (ordinary, `fatal`, or `abort`) passes through untouched;
+ * only a success's `val` changes, whatever its original shape (tuple,
+ * merged label object, capture tag, or leaf string) -- the span text
+ * replaces it wholesale. This is the runtime behind the `@expr`
+ * source-text extraction operator (`Span` in `grammar-types.ts`).
+ *
+ * @template T Type of the wrapped parser's (discarded) value
+ * @param parser Target parser
+ * @returns Parser<string> A parser returning the consumed source text on success.
+ * @example
+ *   const token = span(
+ *     sequence(charClass(["a", "z"]), zeroOrMore(charClass(["a", "z"], ["0", "9"])))
+ *   );
+ *   // Parses the same input as the wrapped sequence, but yields the
+ *   // matched text "abc123" instead of the element tuple.
+ */
+export const span =
+  <T>(parser: Parser<T>): Parser<string> =>
+  (input: string, pos) => {
+    const result = parser(input, pos);
+
+    if (result.success) {
+      return {
+        success: true,
+        val: input.slice(result.current, result.next),
+        current: result.current,
+        next: result.next,
+      };
+    }
+
+    return result as ParseFailure;
+  };
+
+/**
  * Parser that applies a predicate to filter parse results.
  *
  * @template T Type of the parse result value

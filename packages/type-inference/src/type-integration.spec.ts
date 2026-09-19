@@ -78,7 +78,7 @@ describe("TypeIntegrationEngine", () => {
         'export type LiteralResult = "test";',
       );
       expect(typedGrammar.typeDefinitions).toContain(
-        'export type OptionalResult = ["maybe"] | [];',
+        'export type OptionalResult = "maybe" | null;',
       );
       expect(typedGrammar.typeDefinitions).toContain(
         "export type ParserResult = LiteralResult | OptionalResult;",
@@ -446,7 +446,7 @@ describe("TypeIntegrationEngine", () => {
       );
     });
 
-    it("generates a union-of-tuples guard for an Optional result (`[T] | []`)", () => {
+    it("generates a member-or-null guard for an Optional result (`T | null`)", () => {
       const options: Partial<TypeIntegrationOptions> = {
         generateTypeGuards: true,
       };
@@ -465,10 +465,10 @@ describe("TypeIntegrationEngine", () => {
 
       const typedGrammar = engine.createTypedGrammar(grammar);
 
-      // `[T] | []` accepts the empty tuple OR a one-element tuple whose
-      // member matches -- `[1,2,3]` and `["y","z"]` must both fail.
+      // `T | null` accepts the member value OR `null` -- `["x"]` and
+      // `undefined` must both fail.
       expect(typedGrammar.typeDefinitions).toContain(
-        'return Array.isArray(value) && (value.length === 1 && (typeof value[0] === "string" && value[0] === "x") || value.length === 0);',
+        'return (typeof value === "string" && value === "x") || (value === null);',
       );
     });
 
@@ -693,7 +693,7 @@ describe("TypeIntegrationEngine", () => {
 
       expect(elementType?.typeString).toBe('"a" | "b"');
       expect(listType?.typeString).toBe('("a" | "b")[]');
-      expect(optionalListType?.typeString).toBe('[("a" | "b")[]] | []');
+      expect(optionalListType?.typeString).toBe('("a" | "b")[] | null');
     });
 
     it("should convert rule names to PascalCase for types", () => {

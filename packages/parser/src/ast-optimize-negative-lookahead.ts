@@ -100,13 +100,12 @@ import { isShapeSensitiveRule } from "./ast-optimize-shared";
 import {
   ALL_CHARS,
   type CharSet,
+  charRangesToSet,
   complement,
   difference,
   fromChar,
-  fromCodePointRange,
   isEmpty,
   toCharRanges,
-  union,
 } from "./char-set";
 import {
   type GrammarFirstSetAnalysis,
@@ -135,15 +134,7 @@ import { createCharacterClass, createChoice, createSequence } from "./types";
 const charSetView = (expr: Expression): CharSet | null => {
   if (expr.type === "AnyChar") return ALL_CHARS;
   if (expr.type === "CharacterClass") {
-    let raw: CharSet = [];
-    for (const r of expr.ranges) {
-      raw = union(
-        raw,
-        r.end === undefined
-          ? fromChar(r.start)
-          : fromCodePointRange(r.start, r.end),
-      );
-    }
+    const raw = charRangesToSet(expr.ranges);
     return expr.negated ? complement(raw) : raw;
   }
   if (expr.type === "StringLiteral" && [...expr.value].length === 1) {

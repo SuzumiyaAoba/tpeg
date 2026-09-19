@@ -1,11 +1,38 @@
 grammar SelfHostLeaf {
-  escapeChar = "\\" [nrt\\"']
+  // Mirrors escape-sequence.ts's namedEscapeSequence -- the same named
+  // set in every context (previously strings only had n/r/t).
+  namedEscape = "\\" c:[nrtbfv0] {
+    if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t";
+    if (c === "b") return "\b"; if (c === "f") return "\f"; if (c === "v") return "\v";
+    return "\0";
+  }
 
-  doubleStringChar = escapeChar { const c = $$[1]; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t"; return c; }
-                    / [^"\\]
+  // Mirrors numericEscapeSequence. unicodeBracedEscape's throw plays the
+  // same role as the hand parser's fatal+abort rejection -- callers
+  // treat a thrown action like a fatal failure (charRangePair below
+  // already relies on this).
+  unicodeBracedEscape = "\\u{" digits:[0-9a-fA-F]{1,6} "}" {
+    const cp = parseInt(digits.join(""), 16);
+    if (cp > 0x10ffff) throw new Error("Invalid Unicode code point: \\u{" + digits.join("") + "} is above U+10FFFF");
+    return String.fromCodePoint(cp);
+  }
 
-  singleStringChar = escapeChar { const c = $$[1]; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "t") return "\t"; return c; }
-                    / [^'\\]
+  unicodeEscape4 = "\\u" digits:[0-9a-fA-F]{4} { return String.fromCodePoint(parseInt(digits.join(""), 16)); }
+
+  hexEscape = "\\x" digits:[0-9a-fA-F]{2} { return String.fromCodePoint(parseInt(digits.join(""), 16)); }
+
+  numericEscape = unicodeBracedEscape / unicodeEscape4 / hexEscape
+
+  // Literal escapes differ per context (a `"` inside a string, a `]` or
+  // `-` inside a class) -- same split as literalEscapeSequence.
+  stringLiteralEscape = "\\" c:["'\\] { return c; }
+  classLiteralEscape = "\\" c:[\]\\\^\-"'] { return c; }
+
+  escapeChar = namedEscape / numericEscape / stringLiteralEscape
+
+  doubleStringChar = escapeChar / [^"\\]
+
+  singleStringChar = escapeChar / [^'\\]
 
   doubleQuotedString = "\"" chars:doubleStringChar* "\"" { return { type: "StringLiteral", value: chars.join(""), quote: '"' }; }
 
@@ -13,11 +40,9 @@ grammar SelfHostLeaf {
 
   stringLiteral = doubleQuotedString / singleQuotedString
 
-  classEscapeStd = "\\" [tnrbfv0] { const c = $$[1]; if (c === "t") return "\t"; if (c === "n") return "\n"; if (c === "r") return "\r"; if (c === "b") return "\b"; if (c === "f") return "\f"; if (c === "v") return "\v"; return "\0"; }
+  classEscape = namedEscape / numericEscape / classLiteralEscape
 
-  classEscapeSpecial = "\\" [\]\\\^\-"'] { return $$[1]; }
-
-  classChar = classEscapeStd / classEscapeSpecial / [^\]\\\^\-]
+  classChar = classEscape / [^\]\\\^\-]
 
   // Mirrors character-class.ts's charRange check: a backwards range like
   // [z-a] is rejected (there is no backtracking-out for a return-based
@@ -35,7 +60,7 @@ grammar SelfHostLeaf {
 
   charRange = charRangePair / charRangeSingle
 
-  characterClassBrackets = "[" negation:"^"? ranges:charRange+ "]" { return { type: "CharacterClass", ranges, negated: negation.length > 0 }; }
+  characterClassBrackets = "[" negation:"^"? ranges:charRange+ "]" { return { type: "CharacterClass", ranges, negated: negation !== null }; }
 
   anyCharDot = "." { return { type: "AnyChar" }; }
 

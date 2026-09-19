@@ -91,6 +91,54 @@ export const fromCodePointRange = (start: string, end: string): CharSet => {
   return [{ lo, hi }];
 };
 
+/** A `CharSet` for a `CharacterClass`'s whole `ranges` list, validating
+ * each bound exactly like `compileSpecs`
+ * (`packages/core/src/char-class.ts`) and `charClassBracketExpr`
+ * (`./regex-fusion.ts`) do: every bound must be exactly one code point,
+ * and a range's start must not exceed its end.
+ *
+ * `.tpeg` source can never produce an invalid range -- the grammar parser
+ * rejects `[z-a]` outright -- so this can only fire on a hand-built AST.
+ * Using bare `fromChar`/`fromCodePointRange` on such bounds instead would
+ * silently truncate to the first code point (`"ab"` -> `'a'`) or to the
+ * empty set (`"z"-"a"`), misreporting a FIRST set / character set for a
+ * grammar whose generated code throws at construction anyway. Throwing
+ * here surfaces the same error earlier, at analysis time, instead of
+ * letting an unsound set flow into an optimization decision.
+ *
+ * @throws {Error} describing the offending bound. */
+export const charRangesToSet = (ranges: readonly CharRange[]): CharSet => {
+  let raw: CharSet = EMPTY_SET;
+  for (const r of ranges) {
+    const lo = codePointOfSingleCharBound(r.start);
+    if (r.end === undefined) {
+      raw = union(raw, [{ lo, hi: lo }]);
+      continue;
+    }
+    const hi = codePointOfSingleCharBound(r.end);
+    if (lo > hi) {
+      throw new Error(
+        `Invalid character class range: ["${r.start}", "${r.end}"] -- start (U+${lo.toString(16).toUpperCase()}) is greater than end (U+${hi.toString(16).toUpperCase()})`,
+      );
+    }
+    raw = union(raw, [{ lo, hi }]);
+  }
+  return raw;
+};
+
+/** Code point of a bound that must hold exactly one character; throws
+ * otherwise. An astral character is one code point across two UTF-16 code
+ * units, so length is compared against the code point's own unit width. */
+const codePointOfSingleCharBound = (bound: string): number => {
+  const cp = bound.codePointAt(0);
+  if (cp === undefined || bound.length !== (cp > 0xffff ? 2 : 1)) {
+    throw new Error(
+      `Invalid character class range bound: "${bound}" is not exactly one character`,
+    );
+  }
+  return cp;
+};
+
 /** `true` iff the set matches no code point. */
 export const isEmpty = (a: CharSet): boolean => a.length === 0;
 

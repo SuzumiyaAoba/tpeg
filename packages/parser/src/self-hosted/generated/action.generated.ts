@@ -59,7 +59,7 @@ export const templateInterp: Parser<any> = untagCapture((input, pos) => {
     const $$: any = __result.val;
     const { first, parts } = ($$ ?? {});
 
-    return "${" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + "}";
+    return "${" + (first ? first.w.join("") + first.re : "") + parts.join("") + "}";
   
   })();
   return {
@@ -342,7 +342,7 @@ export const actionParenGroup: Parser<any> = untagCapture((input, pos) => {
     const $$: any = __result.val;
     const { first, parts } = ($$ ?? {});
 
-    return "(" + (first.length ? first[0].w.join("") + first[0].re : "") + parts.join("") + ")";
+    return "(" + (first ? first.w.join("") + first.re : "") + parts.join("") + ")";
   
   })();
   return {
@@ -381,7 +381,7 @@ export const nestedActionBlock: Parser<any> = untagCapture((input, pos) => {
   const __val = (() => {
     const $$: any = __result.val;
     const { inner, tail } = ($$ ?? {});
- return "{" + inner + "}" + (tail.length ? tail[0].w.join("") + tail[0].re : ""); 
+ return "{" + inner + "}" + (tail ? tail.w.join("") + tail.re : ""); 
   })();
   return {
     success: true,
@@ -434,7 +434,7 @@ export const actionBlock: Parser<any> = untagCapture((input, pos) => {
   const __val = (() => {
     const $$: any = __result.val;
     const { first, parts } = ($$ ?? {});
- return (first.length ? first[0].w.join("") + first[0].re : "") + parts.join(""); 
+ return (first ? first.w.join("") + first.re : "") + parts.join(""); 
   })();
   return {
     success: true,

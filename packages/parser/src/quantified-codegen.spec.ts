@@ -90,7 +90,7 @@ describe("quantified expression code generation", () => {
       expect(result.code).toContain('quantified(literal("a"), 2, 5)');
     });
 
-    it("should optimize {0,1} to optional", () => {
+    it("should keep {0,1} on quantified (uniform T[] shape across {n,m})", () => {
       const grammar = createGrammarDefinition(
         "Test",
         [],
@@ -103,7 +103,11 @@ describe("quantified expression code generation", () => {
       );
 
       const result = generator.generateGrammar(grammar);
-      expect(result.code).toContain('optional(literal("a"))');
+      // {0,1} used to lower to `optional(...)`, but `optional` now
+      // returns `T | null` where every other `{n,m}` range produces
+      // `T[]` -- emitting `quantified(...)` here keeps the capture
+      // shape uniform across all range quantifiers.
+      expect(result.code).toContain('quantified(literal("a"), 0, 1)');
     });
   });
 
@@ -182,11 +186,11 @@ describe("quantified expression code generation", () => {
         [],
         [
           createRuleDefinition(
-            // Not named "optional": this rule's `{0,1}` quantifier
-            // generates to an `optional(...)` call, so "optional" as the
-            // rule name would collide with that import (rejected by
+            // Not named "quantified": this rule's `{0,1}` quantifier
+            // generates to a `quantified(...)` call, so "quantified" as
+            // the rule name would collide with that import (rejected by
             // `validateGeneratedIdentifiers`, `grammar-validation.ts`).
-            "optionalRule",
+            "quantifiedRule",
             createQuantified(createStringLiteral("a", '"'), 0, 1),
           ),
           createRuleDefinition(
@@ -202,7 +206,7 @@ describe("quantified expression code generation", () => {
 
       const result = generator.generateGrammar(grammar);
       expect(result.imports).toContain(
-        'import { literal, oneOrMore, optional, untagCapture, zeroOrMore } from "@suzumiyaaoba/tpeg-core";',
+        'import { literal, oneOrMore, quantified, untagCapture, zeroOrMore } from "@suzumiyaaoba/tpeg-core";',
       );
     });
   });
@@ -246,27 +250,27 @@ describe("quantified expression code generation", () => {
       const { rule } = moduleFactory(...Object.values(core));
 
       // Nothing to match, but the repetition is greedy: it still runs all
-      // the way to `max` = 3 (each iteration's zero-width `[]` is a
+      // the way to `max` = 3 (each iteration's zero-width `null` is a
       // genuine success, not a stopping condition) -- it just consumes no
       // input while doing so.
       const noLeadingA = rule("bbb", 0);
       expect(noLeadingA.success).toBe(true);
       if (noLeadingA.success) {
-        expect(noLeadingA.val).toEqual([[], [], []]);
+        expect(noLeadingA.val).toEqual([null, null, null]);
         expect(noLeadingA.next).toBe(0);
       }
 
       const oneLeadingA = rule("a", 0);
       expect(oneLeadingA.success).toBe(true);
       if (oneLeadingA.success) {
-        expect(oneLeadingA.val).toEqual([["a"], [], []]);
+        expect(oneLeadingA.val).toEqual(["a", null, null]);
         expect(oneLeadingA.next).toBe(1);
       }
 
       const threeLeadingAs = rule("aaaa", 0);
       expect(threeLeadingAs.success).toBe(true);
       if (threeLeadingAs.success) {
-        expect(threeLeadingAs.val).toEqual([["a"], ["a"], ["a"]]);
+        expect(threeLeadingAs.val).toEqual(["a", "a", "a"]);
         expect(threeLeadingAs.next).toBe(3); // Stops at max = 3
       }
     });

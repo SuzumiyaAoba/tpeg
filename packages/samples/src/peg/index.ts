@@ -388,7 +388,7 @@ export function Primary(input: string, pos: number): ParseResult<Expr> {
 export const Suffix = mapResult(
   seq(Primary, opt(choice(QUESTION, STAR, PLUS))),
   ($) => {
-    const quantifier = $.val[1]?.[0];
+    const quantifier = $.val[1];
     if (!quantifier) {
       return $.val[0];
     }
@@ -418,7 +418,7 @@ export const Suffix = mapResult(
  * ```
  */
 export const Prefix = mapResult(seq(opt(choice(AND, NOT)), Suffix), ($) => {
-  const predicate = $.val[0]?.[0];
+  const predicate = $.val[0];
   if (!predicate) {
     return $.val[1];
   }
