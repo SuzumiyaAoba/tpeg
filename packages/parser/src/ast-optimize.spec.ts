@@ -32,6 +32,7 @@ import {
   createCharacterClass,
   createChoice,
   createCut,
+  createGrammarAnnotation,
   createGrammarDefinition,
   createGroup,
   createIdentifier,
@@ -3319,5 +3320,97 @@ describe("promoteGlobalCuts", () => {
     );
     const { promotedCount } = promote(grammar);
     expect(promotedCount).toBe(0);
+  });
+
+  it("roots the safe-reference chain at the @start-resolved entry rule, not blindly at rules[0]", () => {
+    // @start names `entry` (rules[1]); `decoy` (rules[0]) is an ordinary
+    // rule invoked mid-parse INSIDE entry's own Choice, where its later
+    // sibling `"a"` overlaps decoy's FIRST set ({a,z}). Seeding the safe
+    // chain at rules[0] (decoy) would mark `helper` safe outright -- but
+    // helper's cut can then fire with entry's live `Choice` still above
+    // it, so a `commitAtTopLevel` watermark advance would prune memoize
+    // entries a real backtrack point (entry's second alternative) still
+    // reaches. The chain must ground out at the rule parses actually
+    // enter through -- `resolveStartRule`'s @start-resolved rule.
+    const grammar = createGrammarDefinition(
+      "StartAnnotated",
+      [createGrammarAnnotation("start", "entry")],
+      [
+        createRuleDefinition(
+          "decoy",
+          createChoice([
+            createSequence([
+              createIdentifier("helper"),
+              createStringLiteral("p", '"'),
+            ]),
+            createStringLiteral("z", '"'),
+          ]),
+        ),
+        createRuleDefinition(
+          "entry",
+          createChoice([
+            createSequence([
+              createIdentifier("decoy"),
+              createStringLiteral("x", '"'),
+            ]),
+            createStringLiteral("a", '"'),
+          ]),
+        ),
+        createRuleDefinition(
+          "helper",
+          createSequence([
+            createStringLiteral("a", '"'),
+            createCut(),
+            createStringLiteral("b", '"'),
+          ]),
+        ),
+      ],
+    );
+    const { promotedCount } = promote(grammar);
+    expect(promotedCount).toBe(0);
+  });
+
+  it("still promotes under @start when the chain from the annotated entry is safe", () => {
+    // Same shape as above, but entry's later sibling "y" is
+    // FIRST-disjoint from decoy ({a,z} vs {y}), so the whole chain
+    // helper -> decoy -> entry(@start) is provably safe.
+    const grammar = createGrammarDefinition(
+      "StartAnnotatedOk",
+      [createGrammarAnnotation("start", "entry")],
+      [
+        createRuleDefinition(
+          "decoy",
+          createChoice([
+            createSequence([
+              createIdentifier("helper"),
+              createStringLiteral("p", '"'),
+            ]),
+            createStringLiteral("z", '"'),
+          ]),
+        ),
+        createRuleDefinition(
+          "entry",
+          createChoice([
+            createSequence([
+              createIdentifier("decoy"),
+              createStringLiteral("x", '"'),
+            ]),
+            createStringLiteral("y", '"'),
+          ]),
+        ),
+        createRuleDefinition(
+          "helper",
+          createSequence([
+            createStringLiteral("a", '"'),
+            createCut(),
+            createStringLiteral("b", '"'),
+          ]),
+        ),
+      ],
+    );
+    const { grammar: promoted, promotedCount } = promote(grammar);
+    expect(promotedCount).toBe(1);
+    const cuts = collectCuts(promoted.rules[2]?.pattern as Expression);
+    expect(cuts[0]?.type === "Cut" && cuts[0].global).toBe(true);
   });
 });

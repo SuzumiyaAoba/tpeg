@@ -355,11 +355,12 @@ export class OptimizedTPEGCodeGenerator {
    * ask the same `Set.has(expr)` question. */
   private fusionRoots: ReadonlySet<Expression> = new Set();
   /** Whether `commitAtTopLevel` is safe to emit for a `Cut` that is a
-   * direct element of the grammar's start rule's (`rules[0]`) own
-   * top-level Sequence -- computed once per `generateGrammar` call. See
-   * `codegen.ts`'s `isRuleReferencedAnywhere` doc comment: that shape
-   * alone is NOT sufficient, since `rules[0]` being referenced by name
-   * from elsewhere in the grammar (a live backtrack point above what
+   * direct element of the grammar's start rule's own top-level Sequence
+   * (the `@start`-resolved entry rule, `resolveStartRule` in
+   * `grammar-validation.ts`) -- computed once per `generateGrammar` call.
+   * See `codegen.ts`'s `isRuleReferencedAnywhere` doc comment: that shape
+   * alone is NOT sufficient, since the start rule being referenced by
+   * name from elsewhere in the grammar (a live backtrack point above what
    * `commitAtTopLevel` assumes has none) makes the narrow structural
    * condition this codebase's codegen relies on unsound. `true` before
    * the first `generateGrammar` call only as an unused default. */

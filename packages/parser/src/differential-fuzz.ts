@@ -555,7 +555,17 @@ export const compileStart = (
   core: Record<string, unknown>,
   combinator: Record<string, unknown>,
 ): Parser<unknown> => {
-  const body = code.replace(/^export const (\w+)/gm, "const $1");
+  const body = code
+    .replace(/^export const (\w+)/gm, "const $1")
+    // `export { b as start }` -- emitted when the `@start`-named entry
+    // rule isn't literally named `start` (see `codegen.ts`'s start-rule
+    // export handling). A bare `export { ... }` is a SyntaxError inside
+    // `new Function`, so spell the same alias as a plain const instead.
+    .replace(/^export \{ (\w+) as (\w+) \};$/gm, "const $2 = $1;")
+    // `export { performanceMonitor }` -- emitted by `includeMonitoring`
+    // codegen. The binding is already declared; only the `export` needs
+    // stripping.
+    .replace(/^export \{ (\w+) \};$/gm, "");
   const scope = { ...combinator, ...core };
   const factory = new Function(
     ...Object.keys(scope),

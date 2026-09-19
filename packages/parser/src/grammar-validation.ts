@@ -290,10 +290,17 @@ const fatalOnly = (m: FailureModes): FailureModes => ({
  *   analysis does not track always-failing expressions, which can only
  *   ever make it report FEWER unreachable alternatives, never wrongly
  *   flag reachable ones.)
- * - `Choice`: fails only when every alternative fails, and fails
- *   fatally iff some alternative does (`choice` stops at the first
- *   fatal). A non-fatal outcome therefore needs every alternative to be
- *   able to fail non-fatally.
+ * - `Choice`: can never itself fail fatally --
+ *   `tryOrderedCandidates` (`packages/core/src/combinators.ts`) stops
+ *   trying alternatives at the first `fatal` failure but ABSORBS the
+ *   flag, reporting an ordinary failure to whatever encloses the
+ *   choice (a `~` cut is scoped to the choice whose alternative
+ *   contains it -- `commit`'s doc comment). A non-fatal failure is
+ *   therefore possible when every alternative can fail non-fatally
+ *   (all fail, so the choice fails) OR when some alternative can fail
+ *   fatally (its absorbed failure IS the choice's own non-fatal
+ *   failure). Only an alternative that cannot fail at all makes the
+ *   choice infallible.
  * - `Star`/`Optional`/`Quantified{0,..}`: see `fatalOnly` above.
  * - `Plus`/`Quantified{1..,..}`: the first iteration's failure arrives
  *   with its own mode; later iterations behave like `Star` -- which
@@ -387,8 +394,14 @@ const expressionFailureModes = (
       // unreachable-in-some-mode.
       if (altModes.some((m) => !m.nonFatal && !m.fatal)) return NO_FAILURE;
       return {
-        nonFatal: altModes.every((m) => m.nonFatal),
-        fatal: altModes.some((m) => m.fatal),
+        // A `fatal` alternative's failure is ABSORBED at this choice's
+        // own boundary (`tryOrderedCandidates`) and re-emitted as an
+        // ordinary one, so it counts toward `nonFatal`, not `fatal` --
+        // a `Choice` node can never produce a cut-fatal failure for
+        // whatever encloses it.
+        nonFatal:
+          altModes.every((m) => m.nonFatal) || altModes.some((m) => m.fatal),
+        fatal: false,
       };
     }
     default: {

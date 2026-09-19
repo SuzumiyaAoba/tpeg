@@ -94,6 +94,7 @@ import {
   firstSetsDisjoint,
   isNullable,
 } from "./first-sets";
+import { resolveStartRule } from "./grammar-validation";
 import type { Expression, GrammarDefinition, RuleDefinition } from "./types";
 import { createChoice, createSequence } from "./types";
 
@@ -255,9 +256,10 @@ const structurallyEligible = (ctx: CutSiteContext): boolean =>
  * Clause 3, computed for EVERY rule at once: the set of rule names whose
  * every reference site is itself eligible (clause 1 + structural guard)
  * and FIRST-disjoint from its own ancestor `Choice` siblings (clause 2),
- * transitively up to the grammar's start rule (`grammar.rules[0]`).
+ * transitively up to the grammar's start rule (the `@start`-resolved
+ * entry rule, `resolveStartRule` in `grammar-validation.ts`).
  *
- * This is the least fixpoint of `safe(r) = (r == rules[0]) || (sites(r)
+ * This is the least fixpoint of `safe(r) = (r == startRule) || (sites(r)
  * nonempty && every site s of r: siteOk(s) && safe(s.fromRule))`, where
  * `siteOk` bundles the two per-site checks. A worklist propagates `true`
  * only along reference edges, so each site is examined O(1) times total
@@ -332,7 +334,15 @@ const computeSafeReferenceChains = (
     safe.add(name);
     queue.push(name);
   };
-  const startName = grammar.rules[0]?.name;
+  // The chain's root must be the rule parses actually ENTER through --
+  // the `@start`-named rule when the annotation is present, not blindly
+  // `rules[0]` (`resolveStartRule`, `grammar-validation.ts`). With
+  // `@start: x` naming a later rule, `rules[0]` is an ordinary rule that
+  // can itself be invoked mid-parse UNDER another rule's enclosing
+  // `Choice`, so treating it as "nothing above this" could promote a cut
+  // whose `commitAtTopLevel` watermark advance is reachable from a live
+  // backtrack point -- the exact unsoundness the chain exists to prevent.
+  const startName = resolveStartRule(grammar)?.rule.name;
   if (startName !== undefined) markSafe(startName);
 
   while (queue.length > 0) {

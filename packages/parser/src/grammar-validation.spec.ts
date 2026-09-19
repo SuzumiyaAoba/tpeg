@@ -864,6 +864,48 @@ describe("findUnreachableAlternatives: alternatives that stay reachable", () => 
     expect(findUnreachableAlternatives(grammar)).toEqual([]);
   });
 
+  it("does NOT flag an alternative after a Choice whose every alternative can only fail fatally -- the choice ABSORBS the fatal and itself fails non-fatally", () => {
+    // `(~"a") / (~"b")` -- each inner alternative commits
+    // unconditionally, so whichever runs first either succeeds or fails
+    // `fatal` and the INNER choice absorbs that flag at its own boundary
+    // (`tryOrderedCandidates`), emitting an ordinary failure. The inner
+    // choice can therefore never fail fatally itself -- an outer
+    // alternative after it (`"c"` in `start`) stays reachable. (The inner
+    // choices' own second alternatives ARE genuinely dead -- each first
+    // inner alternative can never fail non-fatally -- and are still
+    // reported.)
+    const grammar = grammarFromSource(
+      'start = inner / "c"\ninner = (~ "a") / (~ "b")\ninner2 = (~ "x") / "b"',
+    );
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "inner",
+        deadAlternatives: [2],
+        causeAlternative: 1,
+        causeKind: "committed",
+      },
+      {
+        ruleName: "inner2",
+        deadAlternatives: [2],
+        causeAlternative: 1,
+        causeKind: "committed",
+      },
+    ]);
+  });
+
+  it("does NOT flag a nested Choice used directly as an alternative -- same absorption, one level down", () => {
+    const grammar = grammarFromSource('start = ((~ "a") / (~ "b")) / "c"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      // Only the INNER choice's second alternative is genuinely dead.
+      {
+        ruleName: "start",
+        deadAlternatives: [2],
+        causeAlternative: 1,
+        causeKind: "committed",
+      },
+    ]);
+  });
+
   it("does NOT flag an unresolvable (external) Identifier -- conservatively assumed able to fail ordinarily", () => {
     // A bare `Identifier` naming no local rule is the deliberate escape
     // hatch for binding a hand-written parser; it is opaque to this

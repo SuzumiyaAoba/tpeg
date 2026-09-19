@@ -628,17 +628,19 @@ const containsReferenceTo = (expr: Expression, ruleName: string): boolean =>
  * self- or mutually-recursive reference)?
  *
  * Used to decide whether `commitAtTopLevel` is safe to emit for a `Cut`
- * that is a direct element of the grammar's start rule's (`rules[0]`)
- * own top-level `Sequence`. That shape alone is NOT sufficient: the
+ * that is a direct element of the grammar's start rule's own top-level
+ * `Sequence` (the `@start`-resolved entry rule -- `resolveStartRule` in
+ * `grammar-validation.ts`, which is what callers pass in as `ruleName`).
+ * That shape alone is NOT sufficient: the
  * soundness argument (`commitAtTopLevel`'s doc comment,
  * `packages/combinator/src/logic.ts`) requires no live backtrack point
- * *anywhere above* the cut, which "direct element of `rules[0]`'s
- * top-level `Sequence`" only guarantees if `rules[0]` is EXCLUSIVELY
+ * *anywhere above* the cut, which "direct element of the start rule's
+ * top-level `Sequence`" only guarantees if the start rule is EXCLUSIVELY
  * entered as the grammar's own external entry point -- never invoked as
  * an ordinary rule reference from elsewhere in the same grammar, since
  * every `export const` this generator emits is independently callable
  * and a reference from within a `Choice` (e.g. `real = helper "x" /
- * "hz"`, where `helper` happens to be `rules[0]`) is exactly the live
+ * "hz"`, where `helper` happens to be the start rule) is exactly the live
  * backtrack point the soundness argument requires there be none of. This
  * codebase's own `commitAtTopLevel` doc comment names this precisely:
  * "a cut inside a referenced rule that happens to always be invoked at
