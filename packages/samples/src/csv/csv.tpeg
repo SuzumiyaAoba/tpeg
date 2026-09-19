@@ -1,0 +1,50 @@
+// CSV grammar -- the .tpeg twin of csv.ts.
+//
+// Regenerate the checked-in parser with:
+//   bun run regen            (packages/samples)
+// or directly:
+//   bun run packages/cli/src/cli.ts packages/samples/src/csv/csv.tpeg \
+//     -o packages/samples/src/csv/generated/csv.generated.ts
+//
+// Produces the same string[][] row stream the hand-written parser
+// emits BEFORE the phantom-row filter, so the wrapper can share
+// csv.ts's dropPhantomRows.
+grammar Csv {
+  @version: "1.0"
+  @description: "CSV document -> rows of fields (same semantics as csv.ts)"
+  @start: document
+
+  /// The whole file. `!.` guards against malformed trailing content
+  /// (e.g. an unterminated quote) being silently dropped -- the same
+  /// role `not(any)` plays in csv.ts. No @skip: every byte of a CSV
+  /// field is significant, including whitespace.
+  document = first:row rest:(newline r:row)* !. {
+    return [first, ...rest.map((x: { r: string[] }) => x.r)];
+  }
+
+  /// One row: a field, then any number of `,field` continuations.
+  /// A "row" is never empty -- a bare newline parses as one empty
+  /// field, which is exactly the phantom row dropPhantomRows removes.
+  row = head:field tail:("," f:field)* {
+    return [head, ...tail.map((x: { f: string }) => x.f)];
+  }
+
+  /// Quoted first: a `"` at the field start enables escapes. An
+  /// unquoted field can never contain a `"` (the class excludes it),
+  /// so the ordering can't mis-classify.
+  field = quoted / unquoted
+
+  /// "..." -- the only escape is a doubled quote.
+  quoted = "\"" chars:(escaped_quote / [^"])* "\"" {
+    return chars.join("");
+  }
+  escaped_quote = "\"\"" { return "\""; }
+
+  /// Raw text up to the next delimiter. takeUntil in csv.ts stops at
+  /// `,` CR LF or `"`; the negated class is the same set. Trimming
+  /// matches unquotedField's `.trim()`.
+  unquoted = text:@([^,\r\n"]*) { return text.trim(); }
+
+  /// CRLF (Windows), LF (Unix), or CR (legacy Mac).
+  newline = "\r\n" / "\n" / "\r"
+}

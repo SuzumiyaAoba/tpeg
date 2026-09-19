@@ -2,6 +2,8 @@
 
 このパッケージには、TPEG（TypeScript Parsing Expression Grammar）ライブラリの実用的な例が含まれています。各サンプルは異なる解析機能とユースケースを実証します。
 
+すべてのパーサーサンプルは**2通り**で実装されています：パーサーコンビネーターによる手書き実装（`<name>.ts`）と、`.tpeg`文法ファイルを`generateTypeScriptParser`でコンパイルした実装（`<name>.tpeg` → `generated/<name>.generated.ts`、型付きラッパー`tpeg.ts`経由で公開）。各`tpeg.spec.ts`は差分テストで、同一コーパスを両実装に流して結果が一致すること（不正入力での拒否も含む）を検証します。コミット済みの生成パーサーは`bun run regen`で一括再生成できます。
+
 ## 📋 利用可能なサンプル
 
 ### 🧮 算術計算機
@@ -44,6 +46,7 @@
   - PEG文法構造の実証
   - メタ文法概念の説明
   - 複雑な解析表現の例
+  - `.tpeg`文法による対応実装は`packages/parser/src/self-hosted/`にあります。TPEG自身の文法構文をTPEGで記述し、`tpeg-cli`でコンパイルし、手書き文法パーサーとAST一致を検証しています
 
 ### ⚙️ INI設定ファイルパーサー
 
@@ -137,6 +140,9 @@ bun run url                # URL解析デモ
 # コード生成
 bun run codegen            # .tpeg -> TypeScriptパーサー生成デモ
 bun run codegen:regen      # src/codegen/generated/ のみ再生成
+
+# 文法ツイン
+bun run regen              # 全サンプルの generated/*.generated.ts を再生成
 ```
 
 ### テストを実行
@@ -189,32 +195,22 @@ bunx vp test packages/samples/src/csv/csv.spec.ts
 ```
 src/
 ├── arith/          # 算術計算機サンプル
-│   ├── calculator.ts
+│   ├── calculator.ts       # 手書きパーサー
+│   ├── arith.tpeg          # .tpeg文法ツイン
+│   ├── generated/          # 生成パーサー（コミット済み）
+│   ├── tpeg.ts             # 生成パーサーの型付きラッパー
 │   ├── demo.ts
 │   ├── repl.ts
-│   └── *.spec.ts
-├── csv/            # CSVパーサーサンプル
-│   ├── csv.ts
-│   ├── demo.ts
-│   └── *.spec.ts
-├── json/           # JSONパーサーサンプル
-│   ├── json.ts
-│   ├── demo.ts
-│   └── *.spec.ts
-├── peg/            # PEG文法サンプル
+│   ├── calculator.spec.ts
+│   └── tpeg.spec.ts        # 差分テスト: 両実装の一致を検証
+├── csv/            # CSVパーサーサンプル（同構成: csv.ts / csv.tpeg / generated/ / tpeg.ts）
+├── json/           # JSONパーサーサンプル（同構成）
+├── ini/            # INI設定ファイルパーサーサンプル（同構成）
+├── sexpr/          # S式パーサーサンプル（同構成）
+├── url/            # URLパーサーサンプル（同構成）
+├── peg/            # PEG文法サンプル（手書き。.tpeg版は
+│   │               #  packages/parser/src/self-hosted/）
 │   ├── index.ts
-│   ├── demo.ts
-│   └── *.spec.ts
-├── ini/            # INI設定ファイルパーサーサンプル
-│   ├── ini.ts
-│   ├── demo.ts
-│   └── *.spec.ts
-├── sexpr/          # S式パーサーサンプル
-│   ├── sexpr.ts
-│   ├── demo.ts
-│   └── *.spec.ts
-├── url/            # URLパーサーサンプル
-│   ├── url.ts
 │   ├── demo.ts
 │   └── *.spec.ts
 ├── codegen/        # .tpeg -> TypeScript生成サンプル
@@ -223,6 +219,8 @@ src/
 │   ├── generated/
 │   ├── README.md
 │   └── *.spec.ts
+├── tpeg-utils.ts   # .tpeg読み込み・生成の共通ヘルパー
+├── tpeg-regen.ts   # `bun run regen` -- 全ツインを再生成
 ├── index.ts        # メインエントリーポイント
 └── combinator.spec.ts  # 統合テスト
 ```

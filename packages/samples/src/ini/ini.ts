@@ -47,8 +47,10 @@ export interface IniData {
 
 /**
  * One physical line of the file, classified by what it carries.
+ * Exported so the `.tpeg` grammar twin (`ini.tpeg`) can return the same
+ * line stream and share {@link assembleIniData}.
  */
-type IniLine =
+export type IniLine =
   | { readonly type: "blank" }
   | { readonly type: "section"; readonly name: string }
   | { readonly type: "pair"; readonly key: string; readonly value: string };
@@ -171,10 +173,22 @@ export const parseINI = (input: string): IniData => {
     throw new Error(`INI parse error: ${result.error.message}`);
   }
 
+  return assembleIniData(result.val);
+};
+
+/**
+ * Fold a stream of classified {@link IniLine}s into {@link IniData}.
+ *
+ * Shared by the hand-written parser above and the `.tpeg`-generated
+ * twin (`ini.tpeg` produces the same line stream), so the assembly rules
+ * -- global-vs-section placement, `__proto__`-safe stores, last-wins on
+ * repeated keys -- live in exactly one place.
+ */
+export const assembleIniData = (lines: readonly IniLine[]): IniData => {
   const data: IniData = { globals: {}, sections: {} };
   let current: Record<string, string> = data.globals;
 
-  for (const item of result.val) {
+  for (const item of lines) {
     if (item.type === "section") {
       // `data.sections[name] ??= {}` would read the `__proto__` GETTER
       // for a section literally named `[__proto__]` and then store keys

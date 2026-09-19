@@ -76,6 +76,20 @@ const csvParser: Parser<string[][]> = map(
 );
 
 /**
+ * Drop only the phantom row a trailing (or repeated) line break leaves
+ * behind: a line containing nothing parses as a single empty field
+ * `[""]`. A row of MULTIPLE empty fields -- `,,` or `"",""` -- is a
+ * real record (three/two empty columns respectively), not a blank
+ * line, so "every cell is empty" would wrongly discard it along with
+ * the phantom row.
+ *
+ * Shared by {@link parseCSV} and the `.tpeg` grammar twin (`csv.tpeg`),
+ * which produces the same pre-filter row stream.
+ */
+export const dropPhantomRows = (rows: readonly string[][]): string[][] =>
+  rows.filter((row) => !(row.length === 1 && row[0]?.trim() === ""));
+
+/**
  * Parse CSV string and return array of string arrays.
  *
  * This function parses a CSV string and returns a 2D array where each row
@@ -100,15 +114,7 @@ export const parseCSV = (input: string): string[][] => {
   const result = parse(csvParser)(input);
 
   if (result.success) {
-    // Drop only the phantom row a trailing (or repeated) line break leaves
-    // behind: a line containing nothing parses as a single empty field
-    // `[""]`. A row of MULTIPLE empty fields -- `,,` or `"",""` -- is a
-    // real record (three/two empty columns respectively), not a blank
-    // line, so the previous "every cell is empty" test wrongly discarded
-    // it along with the phantom row.
-    return result.val.filter(
-      (row) => !(row.length === 1 && row[0]?.trim() === ""),
-    );
+    return dropPhantomRows(result.val);
   }
 
   throw new Error(`CSV parse error: ${result.error.message}`);

@@ -19,6 +19,7 @@
     "url": "bun run ./src/url/demo.ts",
     "codegen": "bun run ./src/codegen/demo.ts",
     "codegen:regen": "bun run ./src/codegen/demo.ts --generate-only",
+    "regen": "bun run ./src/tpeg-regen.ts",
     "test": "cd ../.. && vp test packages/samples",
     "test:watch": "cd ../.. && vp test watch packages/samples",
     "typecheck": "tsc --noEmit",

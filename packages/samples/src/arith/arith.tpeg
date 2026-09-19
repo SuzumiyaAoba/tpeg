@@ -1,0 +1,68 @@
+// Arithmetic expression grammar -- the .tpeg twin of calculator.ts.
+//
+// Regenerate the checked-in parser with:
+//   bun run regen            (packages/samples)
+// or directly:
+//   bun run packages/cli/src/cli.ts packages/samples/src/arith/arith.tpeg \
+//     -o packages/samples/src/arith/generated/arith.generated.ts
+//
+// The grammar produces the same ExpressionNode AST shapes
+// (number/binaryOp/unaryOp/group) that calculator.ts's parseToAST
+// builds, so the shared `evaluate`/`astToString` functions work on the
+// generated parser's output unchanged.
+grammar Arithmetic {
+  @version: "1.0"
+  @description: "Arithmetic expressions -> the same AST the hand-written calculator builds"
+  @start: top
+  @skip: ws
+
+  /// A full expression that must consume ALL input -- `!.` is the
+  /// end-of-input idiom, so trailing garbage is an error, not a
+  /// silently ignored suffix.
+  top = e:expression !. { return e; }
+
+  /// + and -, lowest precedence, left-associative via the `rest` fold.
+  expression = left:term rest:(op:add_op right:term)* {
+    let node = left;
+    for (const { op, right } of rest) {
+      node = { type: "binaryOp", operator: op, left: node, right };
+    }
+    return node;
+  }
+
+  /// *, /, % -- higher precedence.
+  term = left:factor rest:(op:mul_op right:factor)* {
+    let node = left;
+    for (const { op, right } of rest) {
+      node = { type: "binaryOp", operator: op, left: node, right };
+    }
+    return node;
+  }
+
+  /// Same alternative order as the hand-written Factor: a
+  /// parenthesized group, a signed number (`-5`, also `- 5` thanks to
+  /// @skip), or a plain number literal. `-(expr)` is deliberately not
+  /// supported, matching calculator.ts.
+  factor = "(" e:expression ")" {
+        return { type: "group", expression: e };
+      }
+      / sign:add_op operand:number_literal {
+        return { type: "unaryOp", operator: sign, operand };
+      }
+      / number_literal
+
+  /// Integer or decimal -> NumberNode. `@noskip` keeps the rule
+  /// lexical: without it @skip would allow whitespace inside the
+  /// literal itself ("1 . 5").
+  @noskip
+  number_literal = text:@([0-9]+ ("." [0-9]+)?) {
+    return { type: "number", value: Number(text) };
+  }
+
+  add_op = "+" / "-"
+  mul_op = "*" / "/" / "%"
+
+  /// Whitespace -- named by @skip, consumed automatically at every
+  /// sequence boundary in the other rules.
+  ws = [ \t\n\r]+
+}

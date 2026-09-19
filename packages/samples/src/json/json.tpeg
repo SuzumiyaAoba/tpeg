@@ -1,0 +1,112 @@
+// JSON grammar -- the .tpeg twin of json.ts's fallback parser.
+//
+// Regenerate the checked-in parser with:
+//   bun run regen            (packages/samples)
+// or directly:
+//   bun run packages/cli/src/cli.ts packages/samples/src/json/json.tpeg \
+//     -o packages/samples/src/json/generated/json.generated.ts
+//
+// Strict like json.ts's custom parser (NOT the shared combinators):
+// no leading zeros, no unescaped control characters, only the legal
+// escape set. Object keys are stored with Object.defineProperty so a
+// "__proto__" key lands as data instead of hitting the inherited
+// setter -- same fix as objectParser in json.ts.
+grammar Json {
+  @version: "1.0"
+  @description: "Strict JSON -> JSONValue (same acceptance as json.ts)"
+  @start: top
+  @skip: ws
+
+  /// A JSON document is one value consuming all input.
+  top = v:value !. { return v; }
+
+  /// Keywords before string/number/object/array -- no alternative is a
+  /// prefix of another, so order only matters for readability.
+  value = "null" { return null; }
+        / "true" { return true; }
+        / "false" { return false; }
+        / string
+        / number
+        / object
+        / array
+
+  /// { "k": v, ... } -- empty object falls out of `pairs?` being null.
+  object = "{" pairs:(first:member rest:("," m:member)*)? "}" {
+    const obj = {};
+    if (pairs !== null) {
+      const all = [pairs.first, ...pairs.rest.map((x: { m: [string, unknown] }) => x.m)];
+      for (const [k, v] of all) {
+        // `obj[k] = v` on "__proto__" would invoke the inherited SETTER
+        // (prototype pollution or silent loss). defineProperty makes it
+        // an own data property, matching JSON.parse.
+        Object.defineProperty(obj, k, {
+          value: v,
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
+      }
+    }
+    return obj;
+  }
+
+  member = k:string ":" v:value { return [k, v]; }
+
+  /// [ v, ... ] -- empty array falls out of `items?` being null.
+  array = "[" items:(first:value rest:("," v:value)*)? "]" {
+    if (items === null) return [];
+    return [items.first, ...items.rest.map((x: { v: unknown }) => x.v)];
+  }
+
+  /// "..." -- @noskip so @skip's whitespace can't leak inside the
+  /// quotes (spaces in a JSON string are CONTENT). Strict escapes
+  /// only: `\<any>` is NOT accepted.
+  @noskip
+  string = "\"" chars:(unicode_escape / simple_escape / string_char)* "\"" {
+    return chars.join("");
+  }
+
+  /// \uXXXX -- four hex digits decoded as one UTF-16 code unit.
+  /// @noskip on every rule reachable from `string`: @skip inserts
+  /// whitespace at each rule's OWN boundaries, so without it each
+  /// hex digit would accept surrounding whitespace inside a string.
+  @noskip
+  unicode_escape = "\\u" h1:hex h2:hex h3:hex h4:hex {
+    return String.fromCharCode(parseInt(h1 + h2 + h3 + h4, 16));
+  }
+
+  /// The eight single-character escapes JSON legalizes. `u` is
+  /// deliberately absent: a `\u` without four hex digits must fail
+  /// (handled by the unicode_escape alternative above only when all
+  /// four are present).
+  @noskip
+  simple_escape = "\\" e:["\\/bfnrt] {
+    switch (e) {
+      case "b": return "\b";
+      case "f": return "\f";
+      case "n": return "\n";
+      case "r": return "\r";
+      case "t": return "\t";
+      default: return e;
+    }
+  }
+
+  /// Any character except `"`, `\`, and unescaped U+0000-U+001F
+  /// control characters (raw newlines included -- JSON forbids them
+  /// inside strings).
+  @noskip
+  string_char = [^\x00-\x1f"\\]
+  @noskip
+  hex = [0-9a-fA-F]
+
+  /// -?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)? -- the grammar
+  /// itself only admits valid JSON numerals, so Number() can't see
+  /// "007" or "-01" here.
+  @noskip
+  number = text:@("-"? ("0" / [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+\-]? [0-9]+)?) {
+    return Number(text);
+  }
+
+  /// JSON whitespace: space, tab, LF, CR.
+  ws = [ \t\n\r]+
+}

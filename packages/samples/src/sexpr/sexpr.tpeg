@@ -1,0 +1,87 @@
+// S-expression grammar -- the .tpeg twin of sexpr.ts.
+//
+// Regenerate the checked-in parser with:
+//   bun run regen            (packages/samples)
+// or directly:
+//   bun run packages/cli/src/cli.ts packages/samples/src/sexpr/sexpr.tpeg \
+//     -o packages/samples/src/sexpr/generated/sexpr.generated.ts
+//
+// Produces the same SExp[] the hand-written parser yields: tagged
+// atoms ({type:"symbol"|"string"|"number"}), nested arrays for lists,
+// and 'x desugared to (quote x).
+//
+// NOTE on @skip: this grammar deliberately does NOT use it. In the
+// hand-written parser, whitespace is consumed by an explicit `skip`
+// element BETWEEN forms -- a `'` quote must be immediately followed
+// by its form (`'x` ok, `' x` is a parse error). With @skip, `sexp`
+// would acquire boundary whitespace of its own and `' x` would
+// wrongly parse. The explicit `s` rule below preserves that edge.
+grammar SExpr {
+  @version: "1.0"
+  @description: "S-expressions -> SExp[] (same semantics as sexpr.ts)"
+  @start: document
+
+  /// A document is any number of top-level forms; `!.` makes malformed
+  /// trailing content an error instead of being silently dropped.
+  document = s forms:(e:sexp s { return e; })* !. { return forms; }
+
+  sexp = quoted / list / atom
+
+  /// 'x -> (quote x). No `s` between the quote and its form -- that is
+  /// what keeps `' x` a parse error, matching sexpr.ts.
+  quoted = "'" e:sexp {
+    return [{ type: "symbol", name: "quote" }, e];
+  }
+
+  /// ( elem elem ... ) -- `s` after `(` and after every element lets
+  /// whitespace and comments appear anywhere between elements.
+  list = "(" s es:(e:sexp s { return e; })* ")" { return es; }
+
+  /// Number before string before symbol: `-5abc` fails the number
+  /// lookahead and falls through to symbol (one symbol in most Lisp
+  /// dialects too).
+  atom = number / string / symbol
+
+  /// -?digits(.digits)? -- the trailing lookahead forces a delimiter
+  /// after the number.
+  number = text:@([+\-]? [0-9]+ ("." [0-9]+)? !symbol_char) {
+    return { type: "number", value: Number(text) };
+  }
+
+  /// "..." with escapes -- mirrors the `quotedString` combinator:
+  /// \uXXXX, the named escapes, and a permissive `\x` -> `x` fallback.
+  string = "\"" chars:(unicode_escape / escape / [^"\\])* "\"" {
+    return { type: "string", value: chars.join("") };
+  }
+
+  unicode_escape = "\\u" h1:hex h2:hex h3:hex h4:hex {
+    return String.fromCharCode(parseInt(h1 + h2 + h3 + h4, 16));
+  }
+
+  /// \<any> -- named escapes map, anything else decodes to the char
+  /// itself (quotedString's permissive default).
+  escape = "\\" c:. {
+    switch (c) {
+      case "n": return "\n";
+      case "r": return "\r";
+      case "t": return "\t";
+      case "b": return "\b";
+      case "f": return "\f";
+      default: return c;
+    }
+  }
+  hex = [0-9a-fA-F]
+
+  /// A symbol is one or more non-delimiter characters. `"` and `;` are
+  /// excluded so a string or comment can start right next to a symbol
+  /// (`foo"bar"`, `foo;note` split cleanly), and `'` is excluded
+  /// because it is the quote macro character.
+  symbol = name:@(symbol_char+) {
+    return { type: "symbol", name };
+  }
+  symbol_char = [^()";' \t\n\r]
+
+  /// Skippable text: whitespace and `;`-to-end-of-line comments.
+  /// Written out at each boundary (see the @skip note at the top).
+  s = ([ \t\n\r] / ";" [^\r\n]*)*
+}

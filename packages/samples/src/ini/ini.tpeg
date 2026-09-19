@@ -1,0 +1,66 @@
+// INI grammar -- the .tpeg twin of ini.ts.
+//
+// Regenerate the checked-in parser with:
+//   bun run regen            (packages/samples)
+// or directly:
+//   bun run packages/cli/src/cli.ts packages/samples/src/ini/ini.tpeg \
+//     -o packages/samples/src/ini/generated/ini.generated.ts
+//
+// Produces the same IniLine[] stream ini.ts's internal parser yields;
+// the wrapper shares ini.ts's assembleIniData for section/key
+// assembly. No @skip: INI is line-oriented and horizontal whitespace
+// is significant, so every skip is written explicitly (hws).
+grammar Ini {
+  @version: "1.0"
+  @description: "INI document -> IniLine[] (assembled by ini.ts's assembleIniData)"
+  @start: document
+
+  /// Every line must be accounted for, then EOF guards against a
+  /// malformed last line being silently dropped.
+  document = lines:line* !. { return lines; }
+
+  /// Section first: `[name]` fails pair (no `=`), while `[a] = b` is a
+  /// valid pair whose key is `[a]` -- same ordering as ini.ts.
+  line = section / pair / blank
+
+  /// [ name ] -- a missing `]` makes the whole alternative fail, so
+  /// `[oops` is rejected rather than absorbed as a pair's key.
+  section = "[" name:@([^\]\r\n]*) "]" hws comment? line_end {
+    return { type: "section", name: name.trim() };
+  }
+
+  /// key = value -- the key requires at least one non-`=` character
+  /// (that, not a `*` over a permissive class, is what makes `= v` a
+  /// parse error instead of an empty-key pair).
+  pair = key:key_text hws "=" hws value:value_text hws comment? line_end {
+    return { type: "pair", key, value };
+  }
+
+  key_text = text:@([^=\r\n]+) { return text.trim(); }
+
+  /// A value runs to end of line or to an inline comment -- a `;`/`#`
+  /// PRECEDED by whitespace. Requiring the whitespace keeps `a#b` and
+  /// `a;b` intact as data.
+  value_text = text:@((!("\r\n" / "\n" / "\r" / [ \t]+ [;#]) .)*) {
+    return text.trim();
+  }
+
+  /// A line carrying only whitespace and/or a comment. EVERY
+  /// alternative consumes input: a zero-width success inside `line*`
+  /// would be an infinite loop (and is rejected at generation time).
+  blank = hws comment? eol { return { type: "blank" }; }
+        / hws comment !. { return { type: "blank" }; }
+        / [ \t]+ !. { return { type: "blank" }; }
+
+  /// `;` or `#` through (not including) the end of the line.
+  comment = [;#] [^\r\n]*
+
+  /// Horizontal whitespace only -- a newline terminates a pair line
+  /// and must never be skipped here.
+  hws = [ \t]*
+
+  /// A line's own terminator: a newline sequence, or end of input so
+  /// the last line needs no trailing newline.
+  line_end = eol / !.
+  eol = "\r\n" / "\n" / "\r"
+}

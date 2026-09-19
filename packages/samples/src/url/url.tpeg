@@ -1,0 +1,71 @@
+// URL grammar -- the .tpeg twin of url.ts.
+//
+// Regenerate the checked-in parser with:
+//   bun run regen            (packages/samples)
+// or directly:
+//   bun run packages/cli/src/cli.ts packages/samples/src/url/url.tpeg \
+//     -o packages/samples/src/url/generated/url.generated.ts
+//
+// Produces the same UrlParts the hand-written parser yields. No
+// @skip: whitespace is never legal inside a URL. The `~` cut after
+// `//` plays the same role as url.ts's commit(): once an authority
+// has begun, a malformed authority/path is a fatal error rather than
+// a fall-back to the opaque-path alternative.
+grammar Url {
+  @version: "1.0"
+  @description: "Absolute URL -> UrlParts (same semantics as url.ts)"
+  @start: url
+
+  /// scheme ":" ( "//" ~ authority path-abempty / path-rootless )
+  ///         [ "?" query ] [ "#" fragment ]
+  url = s:scheme ":"
+        rest:( "//" ~ a:authority p:path_tail? {
+                return { auth: a, path: p === null ? "" : p };
+              }
+              / opaque:@([^?#]*) {
+                return { auth: null, path: opaque };
+              } )
+        q:query? f:fragment? !. {
+    const parts: Record<string, unknown> = { scheme: s, path: rest.path };
+    if (rest.auth !== null) Object.assign(parts, rest.auth);
+    if (q !== null) parts["query"] = q;
+    if (f !== null) parts["fragment"] = f;
+    return parts;
+  }
+
+  /// ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
+  scheme = @([a-zA-Z] [a-zA-Z0-9+\-.]*)
+
+  /// [ userinfo "@" ] host [ ":" port ] -- `:` then a non-digit port
+  /// fails the optional group as a unit, leaving the `:` unconsumed;
+  /// the `!.` in `url` then rejects the input (the `~` keeps it from
+  /// falling back to the opaque alternative, same as commit()).
+  authority = i:(u:userinfo "@" { return u; })?
+              h:host
+              p:(":" n:port { return n; })? {
+    const auth: Record<string, unknown> = { host: h };
+    if (i !== null) auth["userinfo"] = i;
+    if (p !== null) auth["port"] = p;
+    return auth;
+  }
+
+  /// userinfo stops at `@` and can't hide whitespace or a `/` that
+  /// belongs to the path.
+  userinfo = @([^@/?# \t\r\n]+)
+
+  /// host -- reg-name or IPv4; stops at the port `:`, path `/`, `?`,
+  /// `#`, `@`, or whitespace.
+  host = @([^:/?#@ \t\r\n]+)
+
+  port = t:@([0-9]+) { return Number(t); }
+
+  /// path-abempty = *( "/" segment ) -- after an authority the path is
+  /// empty or starts with `/`.
+  path_tail = "/" t:@([^?#]*) { return "/" + t; }
+
+  /// query = raw text up to `#` (or end of input).
+  query = "?" t:@([^#]*) { return t; }
+
+  /// fragment = the rest of the input.
+  fragment = "#" t:@(.*) { return t; }
+}

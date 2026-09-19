@@ -2,6 +2,8 @@
 
 This package contains practical examples of the TPEG (TypeScript Parsing Expression Grammar) library. Each sample demonstrates different parsing capabilities and use cases.
 
+Every parser sample is implemented **twice**: once hand-written with the parser combinators (`<name>.ts`) and once as a `.tpeg` grammar file compiled by `generateTypeScriptParser` (`<name>.tpeg` → `generated/<name>.generated.ts`, exposed through the typed `tpeg.ts` wrapper). Each `tpeg.spec.ts` is a differential test that runs the same corpus through both implementations and asserts they agree — including on malformed input. Regenerate all committed generated parsers with `bun run regen`.
+
 ## 📋 Available Samples
 
 ### 🧮 Arithmetic Calculator
@@ -44,6 +46,7 @@ This package contains practical examples of the TPEG (TypeScript Parsing Express
   - PEG grammar structure demonstration
   - Meta-grammar concept explanation
   - Complex parsing expression examples
+  - Its `.tpeg`-grammar counterpart lives in `packages/parser/src/self-hosted/` — TPEG's own grammar syntax written in TPEG, compiled with `tpeg-cli`, and diffed against the hand-written grammar parser for byte-for-byte AST equivalence
 
 ### ⚙️ INI Config Parser
 
@@ -137,6 +140,9 @@ bun run url                # URL parsing demo
 # Code generation
 bun run codegen            # .tpeg -> TypeScript parser demo
 bun run codegen:regen      # Regenerate src/codegen/generated/ only
+
+# Grammar twins
+bun run regen              # Regenerate every sample's generated/*.generated.ts
 ```
 
 ### Running Tests
@@ -189,32 +195,22 @@ Each sample demonstrates how to use TPEG's basic parser combinators:
 ```
 src/
 ├── arith/          # Arithmetic calculator sample
-│   ├── calculator.ts
+│   ├── calculator.ts       # hand-written parser
+│   ├── arith.tpeg          # .tpeg grammar twin
+│   ├── generated/          # compiled parser (checked in)
+│   ├── tpeg.ts             # typed wrapper over the generated parser
 │   ├── demo.ts
 │   ├── repl.ts
-│   └── *.spec.ts
-├── csv/            # CSV parser sample
-│   ├── csv.ts
-│   ├── demo.ts
-│   └── *.spec.ts
-├── json/           # JSON parser sample
-│   ├── json.ts
-│   ├── demo.ts
-│   └── *.spec.ts
-├── peg/            # PEG grammar sample
+│   ├── calculator.spec.ts
+│   └── tpeg.spec.ts        # differential test: both impls agree
+├── csv/            # CSV parser sample (same layout: csv.ts / csv.tpeg / generated/ / tpeg.ts)
+├── json/           # JSON parser sample (same layout)
+├── ini/            # INI config parser sample (same layout)
+├── sexpr/          # S-expression parser sample (same layout)
+├── url/            # URL parser sample (same layout)
+├── peg/            # PEG grammar sample (hand-written; .tpeg counterpart
+│   │               #  is packages/parser/src/self-hosted/)
 │   ├── index.ts
-│   ├── demo.ts
-│   └── *.spec.ts
-├── ini/            # INI config parser sample
-│   ├── ini.ts
-│   ├── demo.ts
-│   └── *.spec.ts
-├── sexpr/          # S-expression parser sample
-│   ├── sexpr.ts
-│   ├── demo.ts
-│   └── *.spec.ts
-├── url/            # URL parser sample
-│   ├── url.ts
 │   ├── demo.ts
 │   └── *.spec.ts
 ├── codegen/        # .tpeg -> TypeScript generation sample
@@ -223,6 +219,8 @@ src/
 │   ├── generated/
 │   ├── README.md
 │   └── *.spec.ts
+├── tpeg-utils.ts   # shared .tpeg loading / generation helpers
+├── tpeg-regen.ts   # `bun run regen` -- regenerates all twins
 ├── index.ts        # Main entry point
 └── combinator.spec.ts  # Integration tests
 ```
