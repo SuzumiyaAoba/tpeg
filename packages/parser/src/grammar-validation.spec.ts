@@ -10,24 +10,27 @@
  */
 
 import { describe, expect, it } from "vite-plus/test";
-import { parse } from "@suzumiyaaoba/tpeg-core";
+import { createSkip, parse } from "@suzumiyaaoba/tpeg-core";
 import { generateTypeScriptParser } from "./codegen";
 import { generateOptimizedTypeScriptParser } from "./codegen-optimized";
 import { grammarDefinition } from "./grammar";
 import {
   findQualifiedIdentifierReferences,
+  findUnreachableAlternatives,
   validateGeneratedIdentifiers,
   validateGrammar,
 } from "./grammar-validation";
 import {
   createActionExpression,
   createChoice,
+  createCut,
   createGrammarDefinition,
   createIdentifier,
   createLabeledExpression,
   createNegativeLookahead,
   createOptional,
   createQualifiedIdentifier,
+  createQuantified,
   createRuleDefinition,
   createSequence,
   createStar,
@@ -543,6 +546,470 @@ describe("validateGrammar: cut-only patterns", () => {
         optimize: true,
       }),
     ).toThrow(/cannot be a rule body/i);
+  });
+});
+
+describe("findUnreachableAlternatives: infallible earlier alternatives", () => {
+  // An earlier alternative that can never fail at all leaves every later
+  // alternative unmatchable on every input -- PEG's ordered choice takes
+  // the first success, and this one always succeeds.
+
+  it("flags an optional (`?`) first alternative", () => {
+    const grammar = grammarFromSource('start = "a"? / "b"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "start",
+        deadAlternatives: [2],
+        causeAlternative: 1,
+        causeKind: "infallible",
+      },
+    ]);
+  });
+
+  it("flags a `*` repetition first alternative", () => {
+    const grammar = grammarFromSource('start = "a"* / "b"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "start",
+        deadAlternatives: [2],
+        causeAlternative: 1,
+        causeKind: "infallible",
+      },
+    ]);
+  });
+
+  it("flags a `{0,..}` quantified first alternative", () => {
+    const grammar = grammarFromSource('start = "a"{0,3} / "b"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "start",
+        deadAlternatives: [2],
+        causeAlternative: 1,
+        causeKind: "infallible",
+      },
+    ]);
+  });
+
+  it('flags an empty-string-literal first alternative (hand-built AST -- `~`-adjacent trivia keeps `start = "" / "b"` ambiguous in source)', () => {
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createChoice([
+            createStringLiteral("", '"'),
+            createStringLiteral("b", '"'),
+          ]),
+        ),
+      ],
+    );
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "start",
+        deadAlternatives: [2],
+        causeAlternative: 1,
+        causeKind: "infallible",
+      },
+    ]);
+  });
+
+  it("flags an inner Choice that is itself infallible", () => {
+    const grammar = grammarFromSource('start = ("a" / "b"?) / "c"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "start",
+        deadAlternatives: [2],
+        causeAlternative: 1,
+        causeKind: "infallible",
+      },
+    ]);
+  });
+
+  it("flags every alternative after the cause, not just the next one", () => {
+    const grammar = grammarFromSource('start = "a"? / "b" / "c" / "d"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "start",
+        deadAlternatives: [2, 3, 4],
+        causeAlternative: 1,
+        causeKind: "infallible",
+      },
+    ]);
+  });
+
+  it("flags alternatives after a NON-first infallible alternative, pointing at the right cause", () => {
+    const grammar = grammarFromSource('start = "a" / "b"? / "c"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "start",
+        deadAlternatives: [3],
+        causeAlternative: 2,
+        causeKind: "infallible",
+      },
+    ]);
+  });
+
+  it("sees through transparent wrappers: label, action, span, group", () => {
+    for (const body of [
+      'start = x:"a"? / "b"',
+      'start = "a"? { return 1; } / "b"',
+      'start = @"a"? / "b"',
+      'start = ("a"?) / "b"',
+    ]) {
+      const issues = findUnreachableAlternatives(grammarFromSource(body));
+      expect(issues).toHaveLength(1);
+      expect(issues[0]?.deadAlternatives).toEqual([2]);
+      expect(issues[0]?.causeKind).toBe("infallible");
+    }
+  });
+
+  it('flags a repetition of an infallible expression -- `("a"?){2}` can never fail either', () => {
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createChoice([
+            createQuantified(createOptional(createStringLiteral("a", '"')), 2),
+            createStringLiteral("b", '"'),
+          ]),
+        ),
+      ],
+    );
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "start",
+        deadAlternatives: [2],
+        causeAlternative: 1,
+        causeKind: "infallible",
+      },
+    ]);
+  });
+});
+
+describe("findUnreachableAlternatives: committed (fatal-only) earlier alternatives", () => {
+  // An alternative whose every possible failure arrives `fatal` (it can
+  // only fail PAST a `~`) also makes the choice unable to fall through:
+  // on success it wins, on failure it aborts the whole choice. The
+  // distinction from "infallible" matters to the author reading the
+  // error -- a misplaced `~` vs a misplaced `?` -- so `causeKind`
+  // reports it separately.
+
+  it("flags an alternative that can only fail past a `~` after an infallible prefix", () => {
+    const grammar = grammarFromSource('start = ("a"? ~ "b") / "c"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "start",
+        deadAlternatives: [2],
+        causeAlternative: 1,
+        causeKind: "committed",
+      },
+    ]);
+  });
+
+  it("flags a leading `~` alternative -- it commits before anything can fail ordinarily", () => {
+    const grammar = grammarFromSource('start = (~ "a") / "b"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "start",
+        deadAlternatives: [2],
+        causeAlternative: 1,
+        causeKind: "committed",
+      },
+    ]);
+  });
+
+  it("flags an `Optional`/`Star` wrapper around a commit-only expression -- the wrapper re-raises the `fatal`, it does not add a non-fatal mode", () => {
+    for (const body of [
+      'start = ("a" ~ "b")? / "c"',
+      'start = ("a" ~ "b")* / "c"',
+    ]) {
+      const issues = findUnreachableAlternatives(grammarFromSource(body));
+      expect(issues).toHaveLength(1);
+      expect(issues[0]?.causeKind).toBe("committed");
+    }
+  });
+
+  it("flags a `+`/`{1,..}` wrapper around a commit-only expression -- the first iteration's fatal failure passes straight through", () => {
+    // The child must be commit-ONLY (`"a"? ~ "b"`): a child that can
+    // also fail ordinarily (`"a" ~ "b"`) keeps that non-fatal mode
+    // through `+`, since the first iteration can still fail pre-cut.
+    const grammar = grammarFromSource('start = ("a"? ~ "b")+ / "c"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "start",
+        deadAlternatives: [2],
+        causeAlternative: 1,
+        causeKind: "committed",
+      },
+    ]);
+  });
+
+  it("flags a `Skip` alternative whose referenced rule can fail fatally -- `ignore(optional(ref))` re-raises `fatal`, so it is `committed`, not `infallible`", () => {
+    // `Skip` compiles to `ignore(optional(<ref>))`: the ref's ordinary
+    // failure becomes an empty match, but a `fatal` one propagates
+    // (`repetition.ts`). A `Skip` node can therefore still make later
+    // alternatives unreachable -- and the correct `causeKind` is
+    // "committed" (it CAN fail, just never non-fatally), which the
+    // analysis only gets right if `Skip` resolves its reference's
+    // modes instead of reporting `NO_FAILURE`.
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createChoice([
+            createSkip(createIdentifier("ws")),
+            createStringLiteral("b", '"'),
+          ]),
+        ),
+        // `ws` can only fail fatally (it commits unconditionally via
+        // the nullable `" "?` prefix before `~`), so `Skip(ws)` is
+        // fatal-capable -- and can never fail non-fatally either way.
+        createRuleDefinition(
+          "ws",
+          createSequence([
+            createOptional(createStringLiteral(" ", '"')),
+            createCut(),
+            createStringLiteral("x", '"'),
+          ]),
+        ),
+      ],
+    );
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "start",
+        deadAlternatives: [2],
+        causeAlternative: 1,
+        causeKind: "committed",
+      },
+    ]);
+  });
+});
+
+describe("findUnreachableAlternatives: alternatives that stay reachable", () => {
+  it("does NOT flag ordinary failable alternatives", () => {
+    const grammar = grammarFromSource('start = "a" / "b"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([]);
+  });
+
+  it("does NOT flag a committed alternative when its pre-cut prefix can still fail ordinarily", () => {
+    // `"a"` can fail before `~` is ever reached -- on that input the
+    // choice falls through to `"c"` normally.
+    const grammar = grammarFromSource('start = ("a" ~ "b") / "c"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([]);
+  });
+
+  it("does NOT flag a sequence whose failable element comes AFTER the infallible one", () => {
+    const grammar = grammarFromSource('start = "a"? "b" / "c"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([]);
+  });
+
+  it("does NOT flag `+`/`{1,..}` of an expression that can still fail ordinarily -- the first iteration preserves the child's non-fatal mode", () => {
+    for (const body of [
+      'start = "a"+ / "b"',
+      'start = "a"{1,3} / "b"',
+      'start = ("a" ~ "b")+ / "c"',
+    ]) {
+      expect(findUnreachableAlternatives(grammarFromSource(body))).toEqual([]);
+    }
+  });
+
+  it("does NOT flag lookahead alternatives: `&` absorbs even a `fatal` into an ordinary failure, `!` can only ever fail ordinarily", () => {
+    for (const body of [
+      'start = &"a" / "b"',
+      'start = !"a" / "b"',
+      'start = &("a" ~ "b") / "c"',
+      'start = !("a" ~ "b") / "c"',
+    ]) {
+      expect(findUnreachableAlternatives(grammarFromSource(body))).toEqual([]);
+    }
+  });
+
+  it("does NOT flag boundary assertions, character classes, `.`, or `@` on a failable expression", () => {
+    for (const body of [
+      'start = \\b "a" / "b"',
+      'start = [a-z] / "b"',
+      'start = . / "b"',
+      'start = @"a" / "b"',
+    ]) {
+      expect(findUnreachableAlternatives(grammarFromSource(body))).toEqual([]);
+    }
+  });
+
+  it("does NOT flag a trailing `~` with no element after it (nothing is wrapped in `commit`) -- hand-built AST", () => {
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createChoice([
+            createSequence([createStringLiteral("a", '"'), createCut()]),
+            createStringLiteral("b", '"'),
+          ]),
+        ),
+      ],
+    );
+    expect(findUnreachableAlternatives(grammar)).toEqual([]);
+  });
+
+  it("does NOT flag a nested Choice whose pre-cut element can fail", () => {
+    // `("b" ~ "c" / "d")`: the inner choice can fail non-fatally at "b"
+    // before its `~` is reached.
+    const grammar = grammarFromSource('start = ("a" ("b" ~ "c" / "d")) / "e"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([]);
+  });
+
+  it("does NOT flag an unresolvable (external) Identifier -- conservatively assumed able to fail ordinarily", () => {
+    // A bare `Identifier` naming no local rule is the deliberate escape
+    // hatch for binding a hand-written parser; it is opaque to this
+    // analysis, and assuming it can fail non-fatally is the direction
+    // that can only ever under-report (never wrongly flag live code).
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createChoice([
+            createIdentifier("external"),
+            createStringLiteral("b", '"'),
+          ]),
+        ),
+      ],
+    );
+    expect(findUnreachableAlternatives(grammar)).toEqual([]);
+  });
+});
+
+describe("findUnreachableAlternatives: rule references and fixpoint", () => {
+  it("flags an alternative referencing an infallible rule", () => {
+    const grammar = grammarFromSource('start = a / "b"\na = "x"?');
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "start",
+        deadAlternatives: [2],
+        causeAlternative: 1,
+        causeKind: "infallible",
+      },
+    ]);
+  });
+
+  it("resolves infallibility transitively through a reference chain", () => {
+    const grammar = grammarFromSource('start = a / "b"\na = c\nc = "x"?');
+    expect(findUnreachableAlternatives(grammar)).toHaveLength(1);
+    expect(findUnreachableAlternatives(grammar)[0]?.causeKind).toBe(
+      "infallible",
+    );
+  });
+
+  it("flags an alternative referencing a rule that can only fail fatally", () => {
+    const grammar = grammarFromSource('start = tok / "x"\ntok = "a"? ~ "b"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "start",
+        deadAlternatives: [2],
+        causeAlternative: 1,
+        causeKind: "committed",
+      },
+    ]);
+  });
+
+  it("does NOT flag an alternative referencing a rule whose pre-cut prefix can fail", () => {
+    const grammar = grammarFromSource('start = tok / "x"\ntok = "a" ~ "b"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([]);
+  });
+
+  it("converges on a mutually recursive cut-free cycle without false positives", () => {
+    const grammar = grammarFromSource(
+      'start = expr\nexpr = term ("+" term)*\nterm = "n" / "(" expr ")"',
+    );
+    expect(findUnreachableAlternatives(grammar)).toEqual([]);
+  });
+});
+
+describe("findUnreachableAlternatives: nested choices and issue shape", () => {
+  it("finds a dead alternative inside a nested Choice (not just a rule's top-level pattern)", () => {
+    const grammar = grammarFromSource('start = "x" ("a"? / "b") "y"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "start",
+        deadAlternatives: [2],
+        causeAlternative: 1,
+        causeKind: "infallible",
+      },
+    ]);
+  });
+
+  it("reports issues in every rule that has them, naming each rule", () => {
+    const grammar = grammarFromSource('start = "a"? / "b"\nother = "x"* / "y"');
+    const issues = findUnreachableAlternatives(grammar);
+    expect(issues).toHaveLength(2);
+    expect(issues.map((issue) => issue.ruleName)).toEqual(["start", "other"]);
+  });
+
+  it("reports two dead Choice nodes in one rule as two issues", () => {
+    const grammar = grammarFromSource('start = ("a"? / "b") ("c"? / "d")');
+    expect(findUnreachableAlternatives(grammar)).toHaveLength(2);
+  });
+
+  it("does NOT flag a `Skip` node desugaring inserted as a sequence element (it is infallible but never a choice alternative)", () => {
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([
+            createSkip(createIdentifier("ws")),
+            createStringLiteral("a", '"'),
+          ]),
+        ),
+      ],
+    );
+    expect(findUnreachableAlternatives(grammar)).toEqual([]);
+  });
+});
+
+describe("validateGrammar: unreachable ordered-choice alternatives", () => {
+  it("rejects with the rule name, dead positions, cause position, and cause kind", () => {
+    const grammar = grammarFromSource('start = "a"? / "b" / "c"');
+    expect(() => validateGrammar(grammar)).toThrow(
+      /unreachable ordered-choice alternative\(s\)/i,
+    );
+    expect(() => validateGrammar(grammar)).toThrow(/rule "start"/);
+    expect(() => validateGrammar(grammar)).toThrow(
+      /alternative\(s\) 2, 3 unreachable because alternative 1 always succeeds/,
+    );
+  });
+
+  it("describes a committed cause differently from an infallible one", () => {
+    const grammar = grammarFromSource('start = ("a"? ~ "b") / "c"');
+    expect(() => validateGrammar(grammar)).toThrow(
+      /alternative 1 commits via `~` before it can produce an ordinary failure/,
+    );
+  });
+
+  it("end-to-end: both generators reject dead alternatives instead of emitting a parser that can never match them", () => {
+    const grammar = grammarFromSource('start = "a"? / "b"');
+    expect(() =>
+      generateTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+      }),
+    ).toThrow(/unreachable/i);
+    expect(() =>
+      generateOptimizedTypeScriptParser(grammar, {
+        language: "typescript",
+        includeImports: false,
+        includeTypes: false,
+        optimize: true,
+      }),
+    ).toThrow(/unreachable/i);
   });
 });
 

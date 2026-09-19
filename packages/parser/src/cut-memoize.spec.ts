@@ -453,22 +453,27 @@ describe("promoteGlobalCuts (cut promotion beyond the start rule's own top-level
 });
 
 describe("predictiveChoice must not skip an alternative that can commit without consuming input (regression)", () => {
-  // Bug: `"a"? ~ "a" / "b"` on input "b". The first alternative's FIRST
-  // set is correctly computed as {a} (from the literal after the cut),
-  // but `"a"?` can take its empty-match branch regardless of the actual
-  // input character, reach the cut, and then fail FATALLY at offset 0
-  // when the trailing "a" doesn't match "b" either -- a fatal failure at
-  // offset 0 is what the un-optimized `choice` produces too (so the
-  // whole rule fails), but a predictive-dispatch build that skips this
-  // alternative because "b" isn't in {a} never sees that fatal failure
-  // and wrongly falls through to "b". See
+  // Bug: an alternative that can reach `~` while having consumed nothing
+  // must never be skipped by a static next-character guess. The classic
+  // shape `"a"? ~ "a" / "b"` is now rejected outright by
+  // `validateGrammar`'s unreachable-alternative check (the unconditional
+  // commit makes "b" dead code), so these tests use the subtler
+  // `(&"y" / "x") ~ "a"` instead: the inner `Choice` can match EMPTY via
+  // `&"y"` -- letting `~` commit at offset 0 on input "y", a character
+  // NOT in the alternative's FIRST set {x, a} -- yet the alternative can
+  // still fail ordinarily (on non-"x"/non-"y" input, before `~` is
+  // reached), so a later alternative stays legitimately reachable and
+  // the grammar validates. On "yv", base `choice` sees alternative 1's
+  // `fatal` failure and fails the whole rule; a predictive-dispatch
+  // build that skipped it because "y" isn't in {x, a} would wrongly
+  // fall through to "y" "v" and accept. See
   // `packages/parser/src/first-sets.ts`'s `canCommitWithoutConsuming`.
-  test("optimized codegen agrees with base codegen on a cut reachable through a nullable prefix", async () => {
+  test("optimized codegen agrees with base codegen on a cut reachable through a zero-width prefix", async () => {
     const core = await import("@suzumiyaaoba/tpeg-core");
     const combinator = await import("@suzumiyaaoba/tpeg-combinator");
 
     const source = `grammar G {
-      start = "a"? ~ "a" / "b"
+      start = (&"y" / "x") ~ "a" / "y" "v"
     }`;
 
     const parsed = testParse(grammarDefinition, source);
@@ -501,11 +506,14 @@ describe("predictiveChoice must not skip an alternative that can commit without 
     const base = compile(baseResult.code, "start");
     const opt = compile(optResult.code, "start");
 
-    for (const input of ["a", "b", "x"]) {
+    for (const input of ["yv", "xa", "ya", "y", "x", "b", ""]) {
       expect(opt(input, 0).success).toBe(base(input, 0).success);
     }
-    expect(base("b", 0).success).toBe(false);
-    expect(opt("b", 0).success).toBe(false);
+    // "yv" is THE discriminating input: alternative 1 commits at offset
+    // 0 (`&"y"` matched empty) and then fails fatally at "a"; a filter
+    // built from FIRST={x, a} alone would skip it and let "y" "v" win.
+    expect(base("yv", 0).success).toBe(false);
+    expect(opt("yv", 0).success).toBe(false);
   });
 
   test("the same hazard through a referenced rule (not written inline in the Choice)", async () => {
@@ -513,8 +521,8 @@ describe("predictiveChoice must not skip an alternative that can commit without 
     const combinator = await import("@suzumiyaaoba/tpeg-combinator");
 
     const source = `grammar G {
-      start = sub / "b"
-      sub = "a"? ~ "a"
+      start = sub / "y" "v"
+      sub = (&"y" / "x") ~ "a"
     }`;
 
     const parsed = testParse(grammarDefinition, source);
@@ -539,7 +547,11 @@ describe("predictiveChoice must not skip an alternative that can commit without 
       start: Parser<unknown>;
     };
 
-    expect(start("b", 0).success).toBe(false);
+    // "yv": `sub` commits at offset 0 through `&"y"` and then fails
+    // fatally at "a"; a FIRST={x, a} filter that skipped the `sub`
+    // alternative would let "y" "v" accept instead.
+    expect(start("yv", 0).success).toBe(false);
+    expect(start("xa", 0).success).toBe(true);
   });
 });
 

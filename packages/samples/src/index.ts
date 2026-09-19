@@ -18,6 +18,10 @@ Available samples:
   csv      - CSV parser with header support and data conversion
   json     - JSON parser with comprehensive type support
   peg      - PEG meta-grammar parser demonstration
+  ini      - INI config file parser (sections, comments, round-trip)
+  sexpr    - S-expression parser (recursive lists, quote sugar)
+  url      - URL parser (scheme/authority/path/query/fragment)
+  codegen  - Generate a TypeScript parser from a .tpeg grammar file
 
 Usage:
   bun run samples [sample-name]
@@ -28,6 +32,10 @@ Examples:
   bun run samples csv      # Run CSV parser demo
   bun run samples json     # Run JSON parser demo
   bun run samples peg      # Run PEG grammar demo
+  bun run samples ini      # Run INI parser demo
+  bun run samples sexpr    # Run S-expression parser demo
+  bun run samples url      # Run URL parser demo
+  bun run samples codegen  # Run code generation demo
   bun run samples          # Show this help
 
 Individual sample commands:
@@ -36,6 +44,10 @@ Individual sample commands:
   bun run csv              # CSV parser demo
   bun run json             # JSON parser demo
   bun run peg              # PEG grammar demo
+  bun run ini              # INI parser demo
+  bun run sexpr            # S-expression parser demo
+  bun run url              # URL parser demo
+  bun run codegen          # .tpeg -> TypeScript parser demo
 `);
 };
 
@@ -50,6 +62,10 @@ const SAMPLE_SCRIPTS: Record<string, readonly [string, string]> = {
   csv: ["📊 Running CSV Parser Demo...", "csv/demo.ts"],
   json: ["🟢 Running JSON Parser Demo...", "json/demo.ts"],
   peg: ["📝 Running PEG Grammar Demo...", "peg/demo.ts"],
+  ini: ["⚙️ Running INI Config Parser Demo...", "ini/demo.ts"],
+  sexpr: ["🧬 Running S-expression Parser Demo...", "sexpr/demo.ts"],
+  url: ["🔗 Running URL Parser Demo...", "url/demo.ts"],
+  codegen: ["🏗️ Running Code Generation Demo...", "codegen/demo.ts"],
 };
 
 const runSample = (sampleName: string, sampleArgs: string[]) => {
@@ -79,7 +95,10 @@ const runSample = (sampleName: string, sampleArgs: string[]) => {
 const runAllSamples = () => {
   console.log("🎯 Running All TPEG Samples\n");
 
-  const samples = ["arith", "csv", "json", "peg"];
+  // `codegen` is deliberately left out of --all: it regenerates files
+  // under src/codegen/generated/ as part of its demonstration, which is
+  // more side effect than the read-only demos above carry.
+  const samples = ["arith", "csv", "json", "peg", "ini", "sexpr", "url"];
 
   for (const sample of samples) {
     console.log(`\n${"=".repeat(60)}`);

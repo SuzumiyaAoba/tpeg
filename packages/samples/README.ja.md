@@ -45,6 +45,47 @@
   - メタ文法概念の説明
   - 複雑な解析表現の例
 
+### ⚙️ INI設定ファイルパーサー
+
+- **場所**: `src/ini/`
+- **機能**: INI形式の設定ファイルの解析
+- **特徴**:
+  - `[section]`ヘッダーとグローバルキー
+  - `;`/`#`による行コメントと行内コメント
+  - CRLF/LF/CRの改行コード対応
+  - `formatINI`によるラウンドトリップシリアライズ
+
+### 🧬 S式パーサー
+
+- **場所**: `src/sexpr/`
+- **機能**: Lisp形式のS式の解析
+- **特徴**:
+  - `recursive()`によるネストしたリストの再帰処理
+  - シンボル・数値・引用符付き文字列を区別するアトム
+  - `'x`クォート糖衣を`(quote x)`へ変換
+  - `;`行コメント
+  - `printSExp`による表示・ラウンドトリップ
+
+### 🔗 URLパーサー
+
+- **場所**: `src/url/`
+- **機能**: 絶対URLの構成要素への分解
+- **特徴**:
+  - `scheme://userinfo@host:port/path?query#fragment`
+  - オーソリティ省略により`mailto:`形式のURLにも対応
+  - `commit`による不正なオーソリティの厳密なエラー化
+  - `parseQueryParams`によるクエリ文字列デコード
+
+### 🏗️ コード生成（`.tpeg` → TypeScript）
+
+- **場所**: `src/codegen/`（同ディレクトリの`README.md`も参照）
+- **機能**: `.tpeg`文法ファイルからスタンドアロンのTypeScriptパーサーを生成
+- **特徴**:
+  - 完全なパイプライン: 文法ファイルの読み込み → 解析 → 生成 → インポート → 実行
+  - `generateTypeScriptParser`と`generateOptimizedTypeScriptParser`の両方
+  - `@start`/`@skip`/`@noskip`アノテーションと`{ ... }`セマンティックアクション
+  - 同等のCLI使用方法も併記
+
 ## 🚀 使用法
 
 ### すべてのサンプルを実行
@@ -58,6 +99,10 @@ bun run samples arith
 bun run samples csv
 bun run samples json
 bun run samples peg
+bun run samples ini
+bun run samples sexpr
+bun run samples url
+bun run samples codegen
 
 # すべてのサンプルを順次実行
 bun run samples --all
@@ -79,6 +124,19 @@ bun run json               # JSON解析デモ
 
 # PEG文法
 bun run peg                # PEG文法デモ
+
+# INI設定ファイルパーサー
+bun run ini                # INI解析デモ
+
+# S式パーサー
+bun run sexpr              # S式解析デモ
+
+# URLパーサー
+bun run url                # URL解析デモ
+
+# コード生成
+bun run codegen            # .tpeg -> TypeScriptパーサー生成デモ
+bun run codegen:regen      # src/codegen/generated/ のみ再生成
 ```
 
 ### テストを実行
@@ -147,8 +205,26 @@ src/
 │   ├── index.ts
 │   ├── demo.ts
 │   └── *.spec.ts
+├── ini/            # INI設定ファイルパーサーサンプル
+│   ├── ini.ts
+│   ├── demo.ts
+│   └── *.spec.ts
+├── sexpr/          # S式パーサーサンプル
+│   ├── sexpr.ts
+│   ├── demo.ts
+│   └── *.spec.ts
+├── url/            # URLパーサーサンプル
+│   ├── url.ts
+│   ├── demo.ts
+│   └── *.spec.ts
+├── codegen/        # .tpeg -> TypeScript生成サンプル
+│   ├── calc.tpeg
+│   ├── demo.ts
+│   ├── generated/
+│   ├── README.md
+│   └── *.spec.ts
 ├── index.ts        # メインエントリーポイント
-└── combinator.test.ts  # 統合テスト
+└── combinator.spec.ts  # 統合テスト
 ```
 
 ### 新しいサンプルの追加

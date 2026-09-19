@@ -14,6 +14,11 @@
     "arith:examples": "bun run ./src/arith/demo.ts --examples",
     "arith:repl": "bun run ./src/arith/repl.ts",
     "arith:test": "cd ../.. && vp test packages/samples/src/arith/calculator.spec.ts",
+    "ini": "bun run ./src/ini/demo.ts",
+    "sexpr": "bun run ./src/sexpr/demo.ts",
+    "url": "bun run ./src/url/demo.ts",
+    "codegen": "bun run ./src/codegen/demo.ts",
+    "codegen:regen": "bun run ./src/codegen/demo.ts --generate-only",
     "test": "cd ../.. && vp test packages/samples",
     "test:watch": "cd ../.. && vp test watch packages/samples",
     "typecheck": "tsc --noEmit",
@@ -21,6 +26,7 @@
   },
   "dependencies": {
     "@suzumiyaaoba/tpeg-combinator": "workspace:*",
-    "@suzumiyaaoba/tpeg-core": "workspace:*"
+    "@suzumiyaaoba/tpeg-core": "workspace:*",
+    "@suzumiyaaoba/tpeg-parser": "workspace:*"
   }
 }

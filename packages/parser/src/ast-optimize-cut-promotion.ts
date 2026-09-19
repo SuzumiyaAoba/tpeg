@@ -102,22 +102,25 @@ import { createChoice, createSequence } from "./types";
 interface CutSiteContext {
   readonly underLookahead: boolean;
   readonly underZeroableRepetition: boolean;
-  /** The nearest enclosing `Choice`'s alternative that contains this site,
-   * and that alternative's later siblings -- or `null` if no `Choice`
-   * encloses this site at all (e.g. a bare top-level rule pattern). Only
-   * the NEAREST one matters (see the module doc comment above): a cut's
-   * `FAIL_FATAL` is absorbed by its immediately-enclosing `choice`, so no
-   * `Choice` further out within the same rule ever sees it. */
-  readonly nearestChoice: {
+  /** Every `Choice` enclosing this site, outermost first, each recorded
+   * with the alternative that contains the site and that alternative's
+   * later siblings. ALL of them matter (see the module doc comment
+   * above): a cut's `FAIL_FATAL` is absorbed by its immediately-enclosing
+   * `choice` into an ordinary `FAIL`, which then propagates outward --
+   * and every `Choice` further up sees that ordinary failure and may
+   * retry a later sibling from its own start position, below the
+   * watermark the promoted cut already advanced. Checking only the
+   * nearest `Choice` would miss those outer retries entirely. */
+  readonly enclosingChoices: readonly {
     readonly alternative: Expression;
     readonly laterSiblings: readonly Expression[];
-  } | null;
+  }[];
 }
 
 const ROOT_CUT_SITE_CONTEXT: CutSiteContext = {
   underLookahead: false,
   underZeroableRepetition: false,
-  nearestChoice: null,
+  enclosingChoices: [],
 };
 
 interface IdentifierSite extends CutSiteContext {
@@ -150,10 +153,13 @@ const collectIdentifierSites = (
           alt,
           {
             ...ctx,
-            nearestChoice: {
-              alternative: alt,
-              laterSiblings: expr.alternatives.slice(i + 1),
-            },
+            enclosingChoices: [
+              ...ctx.enclosingChoices,
+              {
+                alternative: alt,
+                laterSiblings: expr.alternatives.slice(i + 1),
+              },
+            ],
           },
           identifiers,
         );
@@ -208,35 +214,36 @@ const collectIdentifierSites = (
   }
 };
 
-/** Clause 2: is the site's nearest-enclosing `Choice` alternative (if any)
- * proven FIRST-disjoint from every later sibling at that same level? A
- * nullable later sibling is NEVER treated as excluded (mirrors
- * `computeCutCandidate`'s identical guard in `ast-optimize-cut-insertion.ts`)
- * -- it could match zero characters, so "the next character doesn't start
- * it" proves nothing. No enclosing `Choice` at all (`nearestChoice ===
- * null`) is vacuously safe -- there is no sibling to worry about. */
-const nearestChoiceIsDisjoint = (
+/** Clause 2: at EVERY enclosing `Choice` level (see `enclosingChoices` on
+ * `CutSiteContext` for why the outer levels matter too), is the
+ * alternative containing the site proven FIRST-disjoint from every later
+ * sibling at that same level? A nullable later sibling is NEVER treated
+ * as excluded (mirrors `computeCutCandidate`'s identical guard in
+ * `ast-optimize-cut-insertion.ts`) -- it could match zero characters, so
+ * "the next character doesn't start it" proves nothing. No enclosing
+ * `Choice` at all is vacuously safe -- there is no sibling to worry
+ * about. */
+const enclosingChoicesDisjoint = (
   ctx: CutSiteContext,
   analysis: GrammarFirstSetAnalysis,
-): boolean => {
-  if (!ctx.nearestChoice) return true;
-  const { alternative, laterSiblings } = ctx.nearestChoice;
-  const ownFirst = firstSetOfExpression(
-    alternative,
-    analysis.firstSets,
-    analysis.nullableRules,
-  );
-  if (ownFirst.unknown) return false;
-  return laterSiblings.every((later) => {
-    if (isNullable(later, analysis.nullableRules)) return false;
-    const laterFirst = firstSetOfExpression(
-      later,
+): boolean =>
+  ctx.enclosingChoices.every(({ alternative, laterSiblings }) => {
+    const ownFirst = firstSetOfExpression(
+      alternative,
       analysis.firstSets,
       analysis.nullableRules,
     );
-    return firstSetsDisjoint(ownFirst, laterFirst);
+    if (ownFirst.unknown) return false;
+    return laterSiblings.every((later) => {
+      if (isNullable(later, analysis.nullableRules)) return false;
+      const laterFirst = firstSetOfExpression(
+        later,
+        analysis.firstSets,
+        analysis.nullableRules,
+      );
+      return firstSetsDisjoint(ownFirst, laterFirst);
+    });
   });
-};
 
 /** Clause 1 + the structural guard: no lookahead ancestor, no
  * `Optional`/`Star`/`Quantified{min: 0}` ancestor (see the module doc
@@ -296,7 +303,7 @@ const computeSafeReferenceChains = (
       sites.some(
         ({ site }) =>
           !structurallyEligible(site) ||
-          !nearestChoiceIsDisjoint(site, analysis),
+          !enclosingChoicesDisjoint(site, analysis),
       )
     ) {
       continue; // a site failing its own check: r can never be safe
@@ -390,7 +397,7 @@ const promoteCutsInExpression = (
             const eligible =
               sawNonNullable &&
               structurallyEligible(ctx) &&
-              nearestChoiceIsDisjoint(ctx, analysis) &&
+              enclosingChoicesDisjoint(ctx, analysis) &&
               safeRules.has(ruleName);
             if (eligible) promotedCount++;
             return eligible ? { ...el, global: true } : el;
@@ -405,10 +412,13 @@ const promoteCutsInExpression = (
         const alternatives = e.alternatives.map((alt, i) =>
           visit(alt, {
             ...ctx,
-            nearestChoice: {
-              alternative: alt,
-              laterSiblings: e.alternatives.slice(i + 1),
-            },
+            enclosingChoices: [
+              ...ctx.enclosingChoices,
+              {
+                alternative: alt,
+                laterSiblings: e.alternatives.slice(i + 1),
+              },
+            ],
           }),
         );
         return createChoice(alternatives);

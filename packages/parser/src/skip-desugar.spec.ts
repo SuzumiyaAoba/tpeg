@@ -234,6 +234,29 @@ describe("applySkipDesugar", () => {
     );
   });
 
+  it("extends the transitive closure through a @noskip rule's own references", () => {
+    // `ws -> R -> S` with `R` `@noskip`: `S` is still invoked during the
+    // skip rule's evaluation, so inserting `Skip(ws)` into `S` would both
+    // recurse `ws -> R -> S -> ws` and let that skip consume input the
+    // lexical `R` was never meant to see (e.g. a nested `/*x*/` inside an
+    // outer comment). `S` must be exempt even though it is only reachable
+    // via an already-exempt rule.
+    const grammar = grammarFromSource(
+      '@skip: ws\nstart = "a" "b"\nws = " "* R?\n@noskip\nR = "/*" S "*/"\nS = [a-z]',
+    );
+    const desugared = applySkipDesugar(grammar);
+    expect(countSkips(ruleByName(desugared, "S").pattern)).toBe(0);
+    expect(countSkips(ruleByName(desugared, "R").pattern)).toBe(0);
+    expect(countSkips(ruleByName(desugared, "start").pattern)).toBeGreaterThan(
+      0,
+    );
+    // And the interpreter must reject the nested comment the inserted
+    // skip would otherwise have consumed inside `S`.
+    const interp = makeReferenceInterpreter(grammar);
+    expect(interp("a/*x*/b").ok).toBe(true);
+    expect(interp("a/* /*x*/c*/b").ok).toBe(false);
+  });
+
   it("is idempotent -- a second pass inserts no additional Skips", () => {
     const grammar = grammarFromSource(
       '@skip: ws\nstart = "a" ("b" "c") "d"\nws = " "*',

@@ -86,14 +86,19 @@
  * ## Pre-existing `Cut`s must never be regrouped either
  *
  * `buildCutGroups`/`computeCutCandidate` also refuse to let an alternative
- * that ALREADY contains a `Cut` (a hand-written `~`, or one left over from
- * an earlier pass) participate in any partial-exclusion regrouping --
- * neither as the initiator of a new cut/group nor as a "later" sibling
- * absorbed into someone else's run (`containsCut`, `./ast-optimize-shared.ts`).
- * Wrapping such an alternative in a NEWLY introduced nested `Choice`
- * renarrows that existing `Cut`'s fatal-absorption boundary from the
- * original, flat enclosing `Choice` to the new inner one -- changing which
- * sibling alternatives it suppresses. Concretely, `"b" ~ "c" / "d" / "e"?`:
+ * that can ALREADY fail fatally participate in any partial-exclusion
+ * regrouping -- neither as the initiator of a new cut/group nor as a
+ * "later" sibling absorbed into someone else's run (`canFailFatally`,
+ * `./ast-optimize-shared.ts`). "Can fail fatally" is broader than "contains
+ * a `Cut` node": a hand-written `~` (or one left over from an earlier
+ * pass) is the local case, but a bare `Identifier` -- or any expression
+ * referencing a rule whose own body reaches a `Cut`, at whatever depth --
+ * can produce an escaping `fatal` failure just the same, since a rule
+ * reference is not a fatal-absorption boundary. Wrapping such an
+ * alternative in a NEWLY introduced nested `Choice` renarrows that
+ * fatal failure's absorption boundary from the original, flat enclosing
+ * `Choice` to the new inner one -- changing which sibling alternatives it
+ * suppresses. Concretely, `"b" ~ "c" / "d" / "e"?`:
  * the pre-existing cut in the first alternative is meant to fatal-stop the
  * *whole* 3-way choice once "b" has matched (so `"bx"` must fail outright,
  * never falling through to the nullable `"e"?`). A regrouping that (based
@@ -106,10 +111,26 @@
  * no equivalent guard: it never restructures the `Choice`'s own shape, so
  * it can't renarrow any existing `Cut`'s absorption boundary regardless of
  * whether one is already present.
+ *
+ * The guard must look through `Identifier` references, not just the
+ * alternative's own subtree: for `g = "a" "x" / r / "a" "w"` with
+ * `r = "q"? ~ "z"`, `r` is FIRST-disjoint from `"a"`'s prefix and contains
+ * no `Cut` of its own, so it used to be absorbed into `"a" "x"`'s run --
+ * producing `(("a" ~ "x") / r) / "a" ~ "w"`. On input `"aw"`, `r`'s cut
+ * fires inside the new inner `Choice`, which absorbs the `fatal` at ITS
+ * boundary and lets the outer `Choice` fall through to `"a" "w"` -- where
+ * the original flat `Choice` absorbed it instead and failed the whole
+ * rule. `"aw"` is rejected before the rewrite and accepted after: a real
+ * change to the accepted language, found by comparing the rewritten
+ * grammar against the reference interpreter (`reference-interpreter.ts`).
  */
 
 import { mapChildExpressions } from "@suzumiyaaoba/tpeg-core";
-import { containsCut, containsLabel } from "./ast-optimize-shared";
+import {
+  canFailFatally,
+  computeFatalReachability,
+  containsLabel,
+} from "./ast-optimize-shared";
 import type { GrammarFirstSetAnalysis } from "./first-sets";
 import {
   analyzeFirstSets,
@@ -203,9 +224,9 @@ const findCutPosition = (
  * top level (see `buildCutGroups`) and incorrectly fatal-stop every
  * alternative after it, not just the zero actually proven excluded.
  *
- * `alternative` itself containing a pre-existing `Cut` is the CALLER's
+ * `alternative` itself being able to fail fatally is the CALLER's
  * responsibility to check (see `buildCutGroups`'s initiator guard) -- this
- * function only guards the run against absorbing a cut-bearing LATER
+ * function only guards the run against absorbing a fatal-capable LATER
  * sibling (see the module doc comment's "Pre-existing `Cut`s must never be
  * regrouped either" section).
  */
@@ -213,6 +234,7 @@ const computeCutCandidate = (
   alternative: Expression,
   laterAlternatives: readonly Expression[],
   analysis: GrammarFirstSetAnalysis,
+  fatalReachability: ReadonlyMap<string, boolean>,
 ): { k: number; runLength: number } | null => {
   if (alternative.type !== "Sequence") return null;
   const { elements } = alternative;
@@ -240,14 +262,16 @@ const computeCutCandidate = (
   // excluded, stopping at the first one that isn't -- see the module doc
   // comment's associativity argument for why only a contiguous run
   // (never a run with a gap) can be grouped under this alternative's cut.
-  // A cut-bearing later alternative stops the run just like a nullable or
-  // non-disjoint one: absorbing it into this run would still wrap it in a
-  // newly nested `Choice`, renarrowing ITS OWN pre-existing `Cut`'s
-  // absorption boundary even though it isn't the one initiating this cut.
+  // A fatal-capable later alternative stops the run just like a nullable
+  // or non-disjoint one: absorbing it into this run would still wrap it
+  // in a newly nested `Choice`, renarrowing the boundary ITS OWN fatal
+  // failure (from a `Cut` of its own, or one reachable through a rule
+  // reference -- `canFailFatally` covers both) is absorbed at, even
+  // though it isn't the one initiating this cut.
   let runLength = 0;
   for (const later of laterAlternatives) {
     if (isNullable(later, analysis.nullableRules)) break;
-    if (containsCut(later)) break;
+    if (canFailFatally(later, fatalReachability)) break;
     const laterFirst = firstSetOfExpression(
       later,
       analysis.firstSets,
@@ -280,20 +304,26 @@ const computeCutCandidate = (
 const buildCutGroups = (
   alts: readonly Expression[],
   analysis: GrammarFirstSetAnalysis,
+  fatalReachability: ReadonlyMap<string, boolean>,
 ): Expression[] => {
   const result: Expression[] = [];
   let i = 0;
   while (i < alts.length) {
     const alt = alts[i] as Expression;
     const laterAlternatives = alts.slice(i + 1);
-    // An alternative that already contains a `Cut` must never become the
+    // An alternative that can already fail fatally must never become the
     // initiator of a new grouping either -- see the module doc comment's
     // "Pre-existing `Cut`s must never be regrouped either" section.
     // `computeCutCandidate` itself only guards against absorbing a
-    // cut-bearing LATER sibling into someone else's run, not this case.
-    const candidate = containsCut(alt)
+    // fatal-capable LATER sibling into someone else's run, not this case.
+    const candidate = canFailFatally(alt, fatalReachability)
       ? null
-      : computeCutCandidate(alt, laterAlternatives, analysis);
+      : computeCutCandidate(
+          alt,
+          laterAlternatives,
+          analysis,
+          fatalReachability,
+        );
     if (candidate === null || alt.type !== "Sequence") {
       result.push(alt);
       i += 1;
@@ -306,7 +336,11 @@ const buildCutGroups = (
       createCut(),
       ...alt.elements.slice(k),
     ]);
-    const tail = buildCutGroups(alts.slice(i + 1, i + 1 + runLength), analysis);
+    const tail = buildCutGroups(
+      alts.slice(i + 1, i + 1 + runLength),
+      analysis,
+      fatalReachability,
+    );
     const group = [cutAlt, ...tail];
 
     if (group.length === 1) {
@@ -331,11 +365,14 @@ const buildCutGroups = (
 const insertCutsInExpression = (
   expr: Expression,
   analysis: GrammarFirstSetAnalysis,
+  fatalReachability: ReadonlyMap<string, boolean>,
 ): Expression => {
   switch (expr.type) {
     case "Sequence":
       return createSequence(
-        expr.elements.map((el) => insertCutsInExpression(el, analysis)),
+        expr.elements.map((el) =>
+          insertCutsInExpression(el, analysis, fatalReachability),
+        ),
       );
     case "Choice": {
       // Children first (bottom-up, matching the other rewrites in this
@@ -343,7 +380,7 @@ const insertCutsInExpression = (
       // `first-sets.ts`), so processing order can't change any of this
       // level's own disjointness checks either way.
       const processed = expr.alternatives.map((alt) =>
-        insertCutsInExpression(alt, analysis),
+        insertCutsInExpression(alt, analysis, fatalReachability),
       );
       if (containsLabel(expr)) {
         // Labeled Choice: fall back to the original all-or-nothing,
@@ -361,11 +398,13 @@ const insertCutsInExpression = (
         });
         return createChoice(withCuts);
       }
-      return createChoice(buildCutGroups(processed, analysis));
+      return createChoice(
+        buildCutGroups(processed, analysis, fatalReachability),
+      );
     }
     default:
       return mapChildExpressions(expr, (el) =>
-        insertCutsInExpression(el, analysis),
+        insertCutsInExpression(el, analysis, fatalReachability),
       );
   }
 };
@@ -386,11 +425,23 @@ export const insertAutomaticCuts = (
   grammar: GrammarDefinition,
 ): GrammarDefinition => {
   const analysis = analyzeFirstSets(grammar);
+  // Same "can this rule fail fatally, transitively through `Identifier`
+  // references" fixpoint `leftFactorChoices` uses
+  // (`ast-optimize-shared.ts`): computed once, from the ORIGINAL grammar,
+  // and consulted by every regrouping guard -- a `Cut` this pass itself
+  // inserts is always spliced inside an alternative of some `Choice`,
+  // which absorbs it before it can escape through a reference, so the
+  // original-grammar snapshot stays valid for the whole pass.
+  const fatalReachability = computeFatalReachability(grammar);
   return {
     ...grammar,
     rules: grammar.rules.map((rule) => ({
       ...rule,
-      pattern: insertCutsInExpression(rule.pattern, analysis),
+      pattern: insertCutsInExpression(
+        rule.pattern,
+        analysis,
+        fatalReachability,
+      ),
     })),
   };
 };

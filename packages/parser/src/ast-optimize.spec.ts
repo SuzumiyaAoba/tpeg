@@ -2578,6 +2578,168 @@ describe("insertAutomaticCuts", () => {
         expect(firstAlt.elements.map((e) => e.type)).toContain("Cut");
       }
     });
+
+    it("does not regroup a run member that can only fail fatally through a REFERENCED rule's cut", async () => {
+      // `g = "a" "x" / r / ("q" "v")?` with `r = ("w" / "q") ~ "z"`: `r`
+      // is FIRST-disjoint from "a"'s prefix and contains no `Cut` node
+      // of its own, so a purely local `containsCut` check used to absorb
+      // it into alt0's run -- producing `(("a" ~ "x") / r) / ("q" "v")?`.
+      // On "qv", `r`'s cut fires inside the new inner `Choice`, which
+      // absorbs the `fatal` at ITS boundary and lets the outer `Choice`
+      // fall through to `("q" "v")?` -- where the original flat `Choice`
+      // absorbed it instead and failed the whole rule. The guard must
+      // treat "can fail fatally through an `Identifier` reference"
+      // exactly like a local `Cut` (`canFailFatally`,
+      // `ast-optimize-shared.ts`), since a rule reference is not a
+      // fatal-absorption boundary. `r` is deliberately `("w" / "q") ~
+      // "z"` rather than e.g. `"q"? ~ "z"`: the cut must sit in `r`'s
+      // TOP-LEVEL `Sequence` to escape `r` at all (a `Cut` inside `r`'s
+      // own `Choice` is already absorbed there), AND `r` must still be
+      // able to fail ordinarily (on non-"w"/"q" input, before the cut is
+      // reached) or `validateGrammar` rejects `g`'s last alternative as
+      // unreachable dead code.
+      const grammar = createGrammarDefinition(
+        "ReferencedCutMember",
+        [],
+        [
+          createRuleDefinition(
+            "g",
+            createChoice([
+              createSequence([
+                createStringLiteral("a", '"'),
+                createStringLiteral("x", '"'),
+              ]),
+              createIdentifier("r"),
+              createOptional(
+                createSequence([
+                  createStringLiteral("q", '"'),
+                  createStringLiteral("v", '"'),
+                ]),
+              ),
+            ]),
+          ),
+          createRuleDefinition(
+            "r",
+            createSequence([
+              createChoice([
+                createStringLiteral("w", '"'),
+                createStringLiteral("q", '"'),
+              ]),
+              createCut(),
+              createStringLiteral("z", '"'),
+            ]),
+          ),
+        ],
+      );
+
+      const withCuts = insertAutomaticCuts(grammar);
+      const pattern = withCuts.rules[0]?.pattern;
+      expect(pattern?.type).toBe("Choice");
+      if (pattern?.type !== "Choice") return;
+      // `r` can fail fatally via its own rule's `~`, so it must not be
+      // absorbed into alt0's run: alt0 gets no candidate at all (a
+      // zero-length run with later alternatives present is `null`), and
+      // the Choice comes back with its original flat shape -- all three
+      // alternatives byte-for-byte unchanged.
+      expect(pattern.alternatives.length).toBe(3);
+      expect(pattern.alternatives[0]).toEqual(
+        (grammar.rules[0]?.pattern as Extract<Expression, { type: "Choice" }>)
+          .alternatives[0] as Expression,
+      );
+      expect(pattern.alternatives[1]?.type).toBe("Identifier");
+
+      const original = await compileRuleFor(grammar, "g");
+      const cut = await compileRuleFor(withCuts, "g");
+      // "qv" is THE divergence input: `r` matches "q" past its `~`, then
+      // "z" fails -- a `fatal` failure the original flat `Choice`
+      // absorbs to fail the whole rule, but a regrouped inner `Choice`
+      // absorbs one level too early, letting `("q" "v")?` succeed.
+      for (const input of ["qv", "ax", "wz", "qz", "v", "aqz", "ab", ""]) {
+        const originalResult = original(input, ORIGIN);
+        const cutResult = cut(input, ORIGIN);
+        expect(cutResult.success).toBe(originalResult.success);
+        if (originalResult.success && cutResult.success) {
+          expect(cutResult.next).toBe(originalResult.next);
+        }
+      }
+    });
+
+    it("does not let an alternative referencing a cut-bearing rule initiate a run either", async () => {
+      // `g = r "x" / "a" "w" / "q" "v"` with `r = ("w" / "q") ~ "z"`:
+      // alt0's prefix `r` is FIRST-disjoint from "a" but NOT from "q",
+      // so a run of length 1 would nest [alt0, alt1] into their own
+      // `Choice` -- letting `r`'s cut be absorbed there instead of
+      // suppressing "q" "v" as the original flat `Choice` does. On "qv"
+      // the original fails outright while a regrouped grammar accepts:
+      // alt0's own fatal capability (again, only reachable through the
+      // `r` reference) must disqualify it as an initiator, not just as
+      // a run member.
+      const grammar = createGrammarDefinition(
+        "ReferencedCutInitiator",
+        [],
+        [
+          createRuleDefinition(
+            "g",
+            createChoice([
+              createSequence([
+                createIdentifier("r"),
+                createStringLiteral("x", '"'),
+              ]),
+              createSequence([
+                createStringLiteral("a", '"'),
+                createStringLiteral("w", '"'),
+              ]),
+              createSequence([
+                createStringLiteral("q", '"'),
+                createStringLiteral("v", '"'),
+              ]),
+            ]),
+          ),
+          createRuleDefinition(
+            "r",
+            createSequence([
+              createChoice([
+                createStringLiteral("w", '"'),
+                createStringLiteral("q", '"'),
+              ]),
+              createCut(),
+              createStringLiteral("z", '"'),
+            ]),
+          ),
+        ],
+      );
+
+      const withCuts = insertAutomaticCuts(grammar);
+      const pattern = withCuts.rules[0]?.pattern;
+      expect(pattern?.type).toBe("Choice");
+      if (pattern?.type !== "Choice") return;
+      // alt0 is refused as an initiator: it stays at the OUTER `Choice`'s
+      // own top level, byte-for-byte unchanged -- no cut spliced in, and
+      // not nested inside a new boundary that would absorb `r`'s fatal
+      // failure one level too early. The cut-free [alt1, alt2] tail
+      // still regroups on its own merits (alt1's new cut suppresses only
+      // the proven-excluded alt2), which is what leaves the outer
+      // `Choice` with exactly 2 alternatives.
+      expect(pattern.alternatives.length).toBe(2);
+      expect(pattern.alternatives[0]).toEqual(
+        (grammar.rules[0]?.pattern as Extract<Expression, { type: "Choice" }>)
+          .alternatives[0] as Expression,
+      );
+
+      const original = await compileRuleFor(grammar, "g");
+      const cut = await compileRuleFor(withCuts, "g");
+      // "qv" is the divergence input (alt0 fails fatally through `r`);
+      // "wzx" exercises alt0's success path through `r`; the rest cover
+      // the ordinary-failure and other-alternative paths.
+      for (const input of ["qv", "qx", "wzx", "wz", "aw", "qvz", ""]) {
+        const originalResult = original(input, ORIGIN);
+        const cutResult = cut(input, ORIGIN);
+        expect(cutResult.success).toBe(originalResult.success);
+        if (originalResult.success && cutResult.success) {
+          expect(cutResult.next).toBe(originalResult.next);
+        }
+      }
+    });
   });
 });
 
@@ -2917,6 +3079,85 @@ describe("promoteGlobalCuts", () => {
     const withCuts = insertAutomaticCuts(grammar);
     const { promotedCount } = promote(withCuts);
     expect(promotedCount).toBe(1);
+  });
+
+  it("refuses a cut nested in two Choices when only the OUTER level has an overlapping later sibling", () => {
+    // top = (("a" ~ "b") / "s") / "a3"; start = top "q"
+    // Inner Choice: "a"~"b" FIRST={a} is disjoint from "s" {s}, so the
+    // nearest-level check alone passes. But the outer Choice's later
+    // sibling "a3" FIRST={a} overlaps the outer alternative's FIRST={a,s}
+    // -- on input "a3" the cut fires, the inner Choice absorbs the fatal,
+    // the outer Choice then retries "a3" from below the advanced
+    // watermark, so clause 2 must hold at EVERY enclosing Choice, not
+    // just the nearest.
+    const grammar = createGrammarDefinition(
+      "NestedChoice",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([
+            createIdentifier("top"),
+            createStringLiteral("q", '"'),
+          ]),
+        ),
+        createRuleDefinition(
+          "top",
+          createChoice([
+            createChoice([
+              createSequence([
+                createStringLiteral("a", '"'),
+                createCut(),
+                createStringLiteral("b", '"'),
+              ]),
+              createStringLiteral("s", '"'),
+            ]),
+            createStringLiteral("a3", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const { promotedCount } = promote(grammar);
+    expect(promotedCount).toBe(0);
+  });
+
+  it("promotes a cut nested in two Choices when every level is FIRST-disjoint", () => {
+    // top = (("a" ~ "b") / "s") / "q"; start = top "z"
+    // Inner: {a} vs {s} disjoint; outer: {a,s} vs {q} disjoint -- all
+    // enclosing levels pass, so promotion is sound here.
+    const grammar = createGrammarDefinition(
+      "NestedChoiceOk",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([
+            createIdentifier("top"),
+            createStringLiteral("z", '"'),
+          ]),
+        ),
+        createRuleDefinition(
+          "top",
+          createChoice([
+            createChoice([
+              createSequence([
+                createStringLiteral("a", '"'),
+                createCut(),
+                createStringLiteral("b", '"'),
+              ]),
+              createStringLiteral("s", '"'),
+            ]),
+            createStringLiteral("q", '"'),
+          ]),
+        ),
+      ],
+    );
+
+    const { grammar: promoted, promotedCount } = promote(grammar);
+    expect(promotedCount).toBe(1);
+    const cuts = collectCuts(promoted.rules[1]?.pattern as Expression);
+    expect(cuts.every((c) => c.type === "Cut" && c.global === true)).toBe(true);
   });
 
   it("is a pure marking pass: never inserts, removes, or moves a Cut", () => {

@@ -19,6 +19,8 @@
 
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { isFatalFailure } from "@suzumiyaaoba/tpeg-core";
+import { grammarDefinition } from "./grammar";
+import { findUnreachableAlternatives } from "./grammar-validation";
 
 // --- Deterministic PRNG (linear congruential generator) -----------------
 
@@ -386,10 +388,34 @@ export const genMemoizeAnnotation = (rng: () => number): string => {
  * (which may reference the non-recursive `sub` rule and the mutually
  * recursive `rec1`), the non-recursive `sub` rule, and a `rec1`/`rec2`
  * mutually-recursive pair (see `genRecursiveRuleBody`'s doc comment for why
- * that pair can never be left-recursive). */
+ * that pair can never be left-recursive).
+ *
+ * Retries generation while the result contains an unreachable ordered-
+ * choice alternative (`grammar-validation.ts`'s
+ * `findUnreachableAlternatives`, which every codegen path this harness
+ * drives runs via `validateGrammar`): an always-succeeding early
+ * alternative (`x* / y`, `(a / b?) / c`, `ws / "\n"` when `ws` can't
+ * fail) is a hard generation-time error now, not a differential-testing
+ * opportunity, so drawing one used to cost a whole sample to
+ * `skippedCount` -- at ~10%+ of random grammars the suite's skip-rate
+ * assertion failed outright. A bounded retry keeps those samples;
+ * after 25 draws whatever is produced goes through anyway (landing in
+ * `skippedCount` exactly like before, so the skip-rate check still
+ * guards against a validator that somehow over-rejects). The rng keeps
+ * advancing across attempts, so retrying stays deterministic per seed. */
 export const genGrammarSource = (rng: () => number): string => {
-  const memoAnnotation = genMemoizeAnnotation(rng);
-  return `grammar G {\n  start = ${genExpr(rng, 3, true, ["sub", "rec1"])}\n  sub = ${genExpr(rng, 2, false, [])}\n  ${memoAnnotation}rec1 = ${genRecursiveRuleBody(rng, ["rec1", "rec2"])}\n  rec2 = ${genRecursiveRuleBody(rng, ["rec1", "rec2"])}\n}`;
+  for (let attempt = 0; ; attempt++) {
+    const memoAnnotation = genMemoizeAnnotation(rng);
+    const source = `grammar G {\n  start = ${genExpr(rng, 3, true, ["sub", "rec1"])}\n  sub = ${genExpr(rng, 2, false, [])}\n  ${memoAnnotation}rec1 = ${genRecursiveRuleBody(rng, ["rec1", "rec2"])}\n  rec2 = ${genRecursiveRuleBody(rng, ["rec1", "rec2"])}\n}`;
+    const parsed = grammarDefinition(source, 0);
+    if (
+      attempt === 24 ||
+      !parsed.success ||
+      findUnreachableAlternatives(parsed.val).length === 0
+    ) {
+      return source;
+    }
+  }
 };
 
 export const FIXED_TEST_INPUTS = [
@@ -418,6 +444,22 @@ export const FIXED_TEST_INPUTS = [
   "😀",
   "a😀b",
   "à",
+  // Hiragana / ø / astral-range-boundary inputs -- the `LEAVES` set
+  // contains `[あ-ん]`, `[^あ-ん]`, `[a-zあ]`, `"ø"`, and `[😀-🙏]`, but
+  // without an actual hiragana/ø/astral-boundary character in the inputs
+  // those leaves only ever exercised their failure paths: `[あ-ん]` and
+  // `[a-zあ]` could never match, and the `[😀-🙏]` range's endpoints were
+  // never probed from either side. `ぁ` (U+3041) sits one code point
+  // below `あ` (U+3042) and `🙐` (U+1F650) one above `🙏` (U+1F64F), so
+  // these also pin the range's exclusive boundaries.
+  "ø",
+  "あ",
+  "か",
+  "ん",
+  "ぁ",
+  "🙏",
+  "🙐",
+  "aあb",
   "(a)",
   "[a]",
   "<a>",

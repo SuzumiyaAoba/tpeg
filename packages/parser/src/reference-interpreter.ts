@@ -70,6 +70,7 @@ import type {
   RuleDefinition,
 } from "@suzumiyaaoba/tpeg-core";
 
+import { resolveStartRule } from "./grammar-validation";
 import { applySkipDesugar } from "./skip-desugar";
 
 /** Thrown (not returned) ONLY for unbounded recursion (most likely left
@@ -120,9 +121,12 @@ const DEFAULT_MAX_DEPTH = 5000;
  * performance-sensitive path), so the same instance is safe to call
  * repeatedly across different inputs.
  *
- * @throws {Error} if the grammar has no `start` rule or references an
+ * @throws {Error} if the grammar has no entry rule (no rules at all, or
+ *   a `@start` annotation naming an undeclared rule) or references an
  *   undefined rule -- a malformed-grammar bug the caller should let
- *   surface rather than silently skip.
+ *   surface rather than silently skip. The entry rule is resolved the
+ *   same way the code generators resolve it: the `@start`-named rule,
+ *   or `rules[0]` without the annotation (`resolveStartRule`).
  * @throws {ReferenceInterpreterLimitError} (from the returned function,
  *   not from this call) on exceeding `maxDepth` -- see the class doc
  *   comment. A zero-width repetition is NOT thrown; it's returned as a
@@ -139,10 +143,20 @@ export const makeReferenceInterpreter = (
   const desugared = applySkipDesugar(grammar);
   const rules = new Map<string, RuleDefinition>();
   for (const rule of desugared.rules) rules.set(rule.name, rule);
-  const start = rules.get("start");
-  if (!start) {
-    throw new Error("makeReferenceInterpreter: grammar has no 'start' rule");
+  // Same entry-point resolution the code generators use (`@start`-
+  // named rule, or `rules[0]` when no annotation is present --
+  // `resolveStartRule`, `grammar-validation.ts`). Looking up the
+  // literal name "start" instead would reject a perfectly valid
+  // grammar whose first rule is named something else (or worse,
+  // silently enter through a DIFFERENT rule than codegen when both
+  // `@start: entry` and a rule literally named `start` exist).
+  const resolved = resolveStartRule(desugared);
+  if (resolved === null) {
+    throw new Error(
+      "makeReferenceInterpreter: grammar has no entry rule (no rules, or @start names an undeclared rule)",
+    );
   }
+  const start = resolved.rule;
 
   let depth = 0;
 

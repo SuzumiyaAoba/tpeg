@@ -1,0 +1,59 @@
+// Calculator grammar -- input to the code-generation sample.
+//
+// Compile it with the tpeg CLI:
+//   bun run packages/cli/src/cli.ts packages/samples/src/codegen/calc.tpeg \
+//     -o packages/samples/src/codegen/generated/calc.generated.ts
+//
+// or regenerate it plus the optimized variant with the sample's own
+// generator script (what `bun run codegen` does):
+//   bun run packages/samples/src/codegen/demo.ts --generate-only
+grammar Calculator {
+  @version: "1.0"
+  @description: "Arithmetic expression calculator generated from a .tpeg grammar"
+  @start: top
+  @skip: ws
+
+  /// Entry point: a full expression that must consume ALL input.
+  /// `!.` is the PEG end-of-input idiom -- negative lookahead on "any
+  /// character" succeeds only at end of input, so trailing garbage
+  /// ("1 +" leaves a "+" behind) is a parse error instead of a silent
+  /// prefix match.
+  top = e:expression !. { return e; }
+
+  /// Addition and subtraction (lowest precedence, left-associative).
+  /// `rest` captures [{op, right}, ...] -- one object per repetition.
+  expression = left:term rest:(op:add_op right:term)* {
+    let result = left;
+    for (const { op, right } of rest) {
+      result = op === "+" ? result + right : result - right;
+    }
+    return result;
+  }
+
+  /// Multiplication and division (higher precedence).
+  term = left:factor rest:(op:mul_op right:factor)* {
+    let result = left;
+    for (const { op, right } of rest) {
+      result = op === "*" ? result * right : result / right;
+    }
+    return result;
+  }
+
+  /// A number literal or a parenthesized sub-expression.
+  /// Each alternative carries its own action.
+  factor = n:number { return n; }
+         / "(" e:expression ")" { return e; }
+
+  /// Integer or decimal literal. `@noskip` keeps this rule lexical --
+  /// without it, @skip would let whitespace inside ("- 12" / "1 . 5").
+  /// `@(...)` is the span operator: `text` is the raw matched string.
+  @noskip
+  number = text:@("-"? [0-9]+ ("." [0-9]+)?) { return Number(text); }
+
+  add_op = "+" / "-"
+  mul_op = "*" / "/"
+
+  /// Whitespace -- named by @skip above, so it is consumed automatically
+  /// at every sequence boundary in every other rule.
+  ws = [ \t\n\r]+
+}

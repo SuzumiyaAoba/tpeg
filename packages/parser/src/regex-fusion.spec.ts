@@ -214,7 +214,11 @@ describe("isRuleFusable: structural + determinism gates", () => {
     expect(isRuleFusable(rule, analysis)).toBe(false);
   });
 
-  it("accepts the same nullable-alternative Choice when it sits at the trailing edge (nothing follows it), and produces output identical to the unfused combinator tree across discriminating inputs", async () => {
+  it("accepts a nullable-alternative Choice when it sits at the trailing edge (nothing follows it), and produces output identical to the unfused combinator tree across discriminating inputs", async () => {
+    // `("a" / "b"?)`: the nullable alternative must come LAST -- a
+    // nullable FIRST alternative (`"a"? / "b"`) can never fail, so
+    // `validateGrammar` rejects the grammar's second alternative as
+    // unreachable dead code before codegen ever runs.
     const grammar = createGrammarDefinition(
       "G",
       [],
@@ -222,8 +226,8 @@ describe("isRuleFusable: structural + determinism gates", () => {
         createRuleDefinition(
           "r",
           createChoice([
-            createOptional(createStringLiteral("a", '"')),
-            createStringLiteral("b", '"'),
+            createStringLiteral("a", '"'),
+            createOptional(createStringLiteral("b", '"')),
           ]),
         ),
       ],
@@ -265,12 +269,12 @@ describe("isRuleFusable: structural + determinism gates", () => {
     const unfused = compile(false);
     const fused = compile(true);
 
-    // "a" matches the first (nullable) alternative's non-empty branch;
-    // "b" and "z" and "" all take the first alternative's EMPTY branch
-    // (Optional always succeeds, PEG's ordered choice never reaches the
-    // second alternative once the first has "matched" at all, even
-    // trivially) -- these inputs are chosen to discriminate a wrong
-    // fusion (e.g. one that let the second alternative win instead).
+    // "a" matches the first alternative; "b" takes the second
+    // alternative's non-empty branch; "z" and "" take its EMPTY branch
+    // (Optional always succeeds, so `r` matches empty at offset 0) --
+    // these inputs are chosen to discriminate a wrong fusion (e.g. one
+    // that forced a non-empty match where PEG's trailing `?` allows the
+    // empty branch).
     for (const input of ["a", "b", "z", ""]) {
       const unfusedResult = unfused(input, ORIGIN);
       const fusedResult = fused(input, ORIGIN);

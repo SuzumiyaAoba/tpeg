@@ -74,11 +74,12 @@
  * asserted.
  */
 
+import { mapChildExpressions } from "@suzumiyaaoba/tpeg-core";
 import {
-  forEachExpression,
-  mapChildExpressions,
-} from "@suzumiyaaoba/tpeg-core";
-import { containsLabel, isShapeSensitiveRule } from "./ast-optimize-shared";
+  computeFatalReachability,
+  containsLabel,
+  isShapeSensitiveRule,
+} from "./ast-optimize-shared";
 import type {
   CharacterClass,
   Choice,
@@ -90,101 +91,6 @@ import type {
   StringLiteral,
 } from "./types";
 import { createChoice, createSequence } from "./types";
-
-/**
- * Structural, single-rule-body walk (does NOT follow `Identifier`
- * references) that reports whether `expr` directly contains a `Cut` or a
- * `QualifiedIdentifier` (cross-module, unresolvable here -- treated the
- * same as a `Cut` for this purpose, since this module can't prove it
- * DOESN'T reach one), while collecting every `Identifier` name referenced
- * anywhere in `expr` into `refs`. The two are computed together so
- * `computeFatalReachability`'s fixpoint below only needs one walk per
- * rule. Every element/alternative is walked regardless of what an earlier
- * one already found, so every `Identifier` reference is collected --
- * not just the ones before the first `Cut`/`QualifiedIdentifier`.
- */
-const collectOwnFatalSignal = (
-  expr: Expression,
-  refs: Set<string>,
-): boolean => {
-  let found = false;
-  forEachExpression(expr, (node) => {
-    if (node.type === "Cut" || node.type === "QualifiedIdentifier") {
-      found = true;
-    } else if (node.type === "Identifier") {
-      refs.add(node.name);
-    }
-  });
-  return found;
-};
-
-/**
- * For every rule in `grammar`, `true` if that rule's pattern can, directly
- * or by following `Identifier` references (transitively, to whatever
- * depth, including through a mutual-recursion cycle), reach a `Cut` or an
- * unresolvable `QualifiedIdentifier` -- i.e. is a rule this module must
- * never treat as safe to hoist OUT of a `Choice`'s fatal-absorption
- * boundary (see the module doc comment's "Fatal failures and hoisted
- * prefixes" section). See the module doc comment for why this is a
- * fixpoint rather than a per-call recursive walk.
- */
-const computeFatalReachability = (
-  grammar: GrammarDefinition,
-): ReadonlyMap<string, boolean> => {
-  // `dependents[name]` = the rules that reference `name` -- the reverse
-  // edges of the reference graph, so `true` can be pushed from a rule to
-  // everything that references it instead of re-scanning every rule's
-  // reference list once per propagation step. The naive fixpoint this
-  // replaces was O(rules^2) on a reference chain (one full pass per
-  // propagation step -- `r0 -> r1 -> ... -> rN -> <cut>` needed N passes);
-  // the worklist propagates each `true` along each edge exactly once.
-  const dependents = new Map<string, string[]>();
-  const refsOf = new Map<string, ReadonlySet<string>>();
-  const result = new Map<string, boolean>();
-  const queue: string[] = [];
-
-  for (const rule of grammar.rules) {
-    const refs = new Set<string>();
-    const own = collectOwnFatalSignal(rule.pattern, refs);
-    result.set(rule.name, own);
-    refsOf.set(rule.name, refs);
-    for (const ref of refs) {
-      const list = dependents.get(ref);
-      if (list) {
-        list.push(rule.name);
-      } else {
-        dependents.set(ref, [rule.name]);
-      }
-    }
-  }
-
-  // Seed the queue with every rule already known to reach a `Cut`:
-  // an own `Cut`/`QualifiedIdentifier`, or a reference to a name this
-  // grammar has no rule for (unresolvable here -- conservatively assumed
-  // to be able to fail fatally, the same direction `first-sets.ts`'s
-  // `isNullable` takes for an unresolved reference).
-  for (const rule of grammar.rules) {
-    if (result.get(rule.name)) {
-      queue.push(rule.name);
-      continue;
-    }
-    const refs = refsOf.get(rule.name);
-    if (refs && [...refs].some((name) => !result.has(name))) {
-      result.set(rule.name, true);
-      queue.push(rule.name);
-    }
-  }
-
-  while (queue.length > 0) {
-    const name = queue.pop() as string;
-    for (const dependent of dependents.get(name) ?? []) {
-      if (result.get(dependent)) continue;
-      result.set(dependent, true);
-      queue.push(dependent);
-    }
-  }
-  return result;
-};
 
 /** Shared, per-`leftFactorChoices`-call state threaded through the
  * recursive rewrite so every `Choice` in the grammar consults the same,

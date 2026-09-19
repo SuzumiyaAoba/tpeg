@@ -92,10 +92,20 @@ const computeSkipExemptRules = (
   }
 
   const rulesByName = new Map(grammar.rules.map((r) => [r.name, r]));
+  // `visited` must be tracked separately from `exempt`: a `@noskip` rule
+  // is already in `exempt` when the walk reaches it, but its own
+  // references still count toward the skip rule's transitive closure --
+  // a rule reachable only THROUGH a `@noskip` rule is invoked during the
+  // skip rule's evaluation all the same, so inserting skips into it
+  // recurses `ws -> noskip -> it -> ws` (and lets the inserted skip
+  // consume input the lexical rule was never meant to see). Stopping the
+  // walk at `@noskip` rules left exactly that gap.
+  const visited = new Set<string>();
   const queue: string[] = [skipRuleName];
   while (queue.length > 0) {
     const name = queue.pop() as string;
-    if (exempt.has(name)) continue;
+    if (visited.has(name)) continue;
+    visited.add(name);
     exempt.add(name);
     const rule = rulesByName.get(name);
     if (!rule) continue;

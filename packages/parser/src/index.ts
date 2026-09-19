@@ -124,11 +124,13 @@ export {
   validateGeneratedIdentifiers,
   assertValidTransformFunctionNames,
   findQualifiedIdentifierReferences,
+  findUnreachableAlternatives,
   resolveStartRule,
 } from "./grammar-validation";
 export type {
   GeneratedIdentifierCheckOptions,
   QualifiedIdentifierReference,
+  UnreachableAlternativesIssue,
 } from "./grammar-validation";
 
 // Export the `@skip` desugar pass -- applied internally by every code

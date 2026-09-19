@@ -106,6 +106,23 @@ Alternative matching
 number / string / identifier
 ```
 
+Alternatives are tried strictly left to right and the first success wins --
+there is no backtracking into a later alternative once an earlier one has
+matched, even trivially. An earlier alternative that can never fail in the
+ordinary, backtrackable way therefore makes every later one dead code:
+
+- `"a"? / "b"` -- the `?` always succeeds (possibly matching nothing), so
+  `"b"` is unreachable.
+- `("a"? ~ "b") / "c"` -- the infallible `"a"?` prefix means the `~` is
+  always reached, so any failure arrives `fatal` and aborts the whole
+  choice instead of falling through to `"c"`.
+
+Both shapes are rejected at generation time as grammar-authoring errors
+(`Unreachable ordered-choice alternative(s)`), since they almost always
+mean a misplaced `?`/`~` or alternatives pasted in the wrong order. An
+alternative that can still fail _before_ reaching its `~` (`("a" ~ "b") /
+"c"`) is fine -- the choice falls through normally on that input.
+
 ### Group
 
 Precedence control and grouping

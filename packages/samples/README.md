@@ -45,6 +45,47 @@ This package contains practical examples of the TPEG (TypeScript Parsing Express
   - Meta-grammar concept explanation
   - Complex parsing expression examples
 
+### ⚙️ INI Config Parser
+
+- **Location**: `src/ini/`
+- **Function**: Parsing INI-style configuration files
+- **Features**:
+  - `[section]` headers and global keys
+  - `;`/`#` whole-line and inline comments
+  - CRLF/LF/CR line endings
+  - Round-trip serialization via `formatINI`
+
+### 🧬 S-expression Parser
+
+- **Location**: `src/sexpr/`
+- **Function**: Parsing Lisp-style S-expressions
+- **Features**:
+  - Recursive nested lists via `recursive()`
+  - Symbols, numbers, and quoted strings as distinct atom kinds
+  - `'x` quote sugar desugared to `(quote x)`
+  - `;` line comments
+  - `printSExp` pretty-printing / round-tripping
+
+### 🔗 URL Parser
+
+- **Location**: `src/url/`
+- **Function**: Decomposing absolute URLs into components
+- **Features**:
+  - `scheme://userinfo@host:port/path?query#fragment`
+  - Optional authority so `mailto:`-style URLs parse too
+  - `commit` keeping a malformed authority a hard error
+  - Query-string decoding via `parseQueryParams`
+
+### 🏗️ Code Generation (`.tpeg` → TypeScript)
+
+- **Location**: `src/codegen/` (see its own `README.md`)
+- **Function**: Generating a standalone TypeScript parser from a `.tpeg` grammar file
+- **Features**:
+  - Full pipeline: read grammar file → parse → generate → import → run
+  - Both `generateTypeScriptParser` and `generateOptimizedTypeScriptParser`
+  - `@start`/`@skip`/`@noskip` annotations and `{ ... }` semantic actions
+  - Equivalent CLI usage documented side by side
+
 ## 🚀 Usage
 
 ### Running All Samples
@@ -58,6 +99,10 @@ bun run samples arith
 bun run samples csv
 bun run samples json
 bun run samples peg
+bun run samples ini
+bun run samples sexpr
+bun run samples url
+bun run samples codegen
 
 # Run all samples sequentially
 bun run samples --all
@@ -79,6 +124,19 @@ bun run json               # JSON parsing demo
 
 # PEG grammar
 bun run peg                # PEG grammar demo
+
+# INI config parser
+bun run ini                # INI parsing demo
+
+# S-expression parser
+bun run sexpr              # S-expression parsing demo
+
+# URL parser
+bun run url                # URL parsing demo
+
+# Code generation
+bun run codegen            # .tpeg -> TypeScript parser demo
+bun run codegen:regen      # Regenerate src/codegen/generated/ only
 ```
 
 ### Running Tests
@@ -147,8 +205,26 @@ src/
 │   ├── index.ts
 │   ├── demo.ts
 │   └── *.spec.ts
+├── ini/            # INI config parser sample
+│   ├── ini.ts
+│   ├── demo.ts
+│   └── *.spec.ts
+├── sexpr/          # S-expression parser sample
+│   ├── sexpr.ts
+│   ├── demo.ts
+│   └── *.spec.ts
+├── url/            # URL parser sample
+│   ├── url.ts
+│   ├── demo.ts
+│   └── *.spec.ts
+├── codegen/        # .tpeg -> TypeScript generation sample
+│   ├── calc.tpeg
+│   ├── demo.ts
+│   ├── generated/
+│   ├── README.md
+│   └── *.spec.ts
 ├── index.ts        # Main entry point
-└── combinator.test.ts  # Integration tests
+└── combinator.spec.ts  # Integration tests
 ```
 
 ### Adding New Samples
