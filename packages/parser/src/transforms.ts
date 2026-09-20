@@ -255,13 +255,29 @@ interface TypeMatch {
 }
 
 /**
+ * Maximum generic/parenthesized nesting depth the type grammar recurses
+ * into. `A<A<A<...>>>` and `((((...))))` nest one `parseUnionType` call
+ * per level, and the recursion is direct JavaScript calls (not the
+ * `lazy()`/`recursive()` delegation `PARSER_LIMITS.MAX_RECURSION_DEPTH`
+ * already guards), so an unbounded nested input ran the real call stack
+ * out -- a `RangeError` crash instead of a graceful "Expected type"
+ * failure. 256 is far past any plausible handwritten type while keeping
+ * worst-case stack use small.
+ */
+const MAX_TYPE_NESTING_DEPTH = 256;
+
+/**
  * Parse a named type (`Name`, optionally followed by `<args...>`). Generic
  * arguments are full union types separated by commas, so nested and
  * multi-parameter generics (`Map<K, V>`, `Result<Array<number>>`) work.
  * Returns null when no identifier starts at (post-whitespace) `pos`, or the
  * `<...>` list is malformed -- in which case nothing is consumed.
  */
-const parseNamedType = (input: string, pos: number): TypeMatch | null => {
+const parseNamedType = (
+  input: string,
+  pos: number,
+  depth: number,
+): TypeMatch | null => {
   const nameStart = skipTypeWhitespace(input, pos);
   if (!TYPE_IDENT_START.test(input[nameStart] ?? "")) return null;
   let i = nameStart + 1;
@@ -272,7 +288,7 @@ const parseNamedType = (input: string, pos: number): TypeMatch | null => {
   if (input[open] !== "<") return { end: i, named: { name } };
 
   const argsStart = open + 1;
-  let argEnd = parseUnionType(input, argsStart);
+  let argEnd = parseUnionType(input, argsStart, depth + 1);
   if (!argEnd) return null;
   let j = argEnd.end;
   for (;;) {
@@ -284,7 +300,7 @@ const parseNamedType = (input: string, pos: number): TypeMatch | null => {
       };
     }
     if (input[j] !== ",") return null;
-    argEnd = parseUnionType(input, j + 1);
+    argEnd = parseUnionType(input, j + 1, depth + 1);
     if (!argEnd) return null;
     j = argEnd.end;
   }
@@ -294,7 +310,11 @@ const parseNamedType = (input: string, pos: number): TypeMatch | null => {
  * Parse one primary type: an object-literal type `{...}`, a parenthesized
  * type `( T )`, or a named type.
  */
-const parseTypePrimary = (input: string, pos: number): TypeMatch | null => {
+const parseTypePrimary = (
+  input: string,
+  pos: number,
+  depth: number,
+): TypeMatch | null => {
   const start = skipTypeWhitespace(input, pos);
   const ch = input[start];
   if (ch === "{") {
@@ -302,12 +322,12 @@ const parseTypePrimary = (input: string, pos: number): TypeMatch | null => {
     return end === -1 ? null : { end };
   }
   if (ch === "(") {
-    const inner = parseUnionType(input, start + 1);
+    const inner = parseUnionType(input, start + 1, depth + 1);
     if (!inner) return null;
     const close = skipTypeWhitespace(input, inner.end);
     return input[close] === ")" ? { end: close + 1 } : null;
   }
-  return parseNamedType(input, pos);
+  return parseNamedType(input, pos, depth);
 };
 
 /**
@@ -316,8 +336,12 @@ const parseTypePrimary = (input: string, pos: number): TypeMatch | null => {
  * tuple type `[A, B]`, which this syntax doesn't support) is left
  * unconsumed rather than silently absorbed.
  */
-const parsePostfixType = (input: string, pos: number): TypeMatch | null => {
-  const primary = parseTypePrimary(input, pos);
+const parsePostfixType = (
+  input: string,
+  pos: number,
+  depth: number,
+): TypeMatch | null => {
+  const primary = parseTypePrimary(input, pos, depth);
   if (!primary) return null;
   let end = primary.end;
   let named = primary.named;
@@ -335,16 +359,23 @@ const parsePostfixType = (input: string, pos: number): TypeMatch | null => {
 /**
  * Parse a union/intersection type: postfix types separated by `|` or `&`.
  * A trailing separator with no following member is left unconsumed.
+ * `depth` is the enclosing `<...>`/`(...)` nesting level -- the recursion
+ * re-enters here, so this is the one place the bound is enforced.
  */
-const parseUnionType = (input: string, pos: number): TypeMatch | null => {
-  const first = parsePostfixType(input, pos);
+const parseUnionType = (
+  input: string,
+  pos: number,
+  depth: number,
+): TypeMatch | null => {
+  if (depth > MAX_TYPE_NESTING_DEPTH) return null;
+  const first = parsePostfixType(input, pos, depth);
   if (!first) return null;
   let end = first.end;
   let named = first.named;
   for (;;) {
     const i = skipTypeWhitespace(input, end);
     if (input[i] !== "|" && input[i] !== "&") break;
-    const member = parsePostfixType(input, i + 1);
+    const member = parsePostfixType(input, i + 1, depth);
     if (!member) break;
     end = member.end;
     named = undefined;
@@ -363,7 +394,7 @@ const typeExpression: Parser<ParsedTypeExpression> = (
   input: string,
   pos: number,
 ) => {
-  const match = parseUnionType(input, pos);
+  const match = parseUnionType(input, pos, 0);
   if (!match) {
     return createFailure("Expected type", pos, {
       expected: ["type"],

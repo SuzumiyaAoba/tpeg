@@ -118,6 +118,67 @@ describe("codeContainsIdentifier: `$$` detection across the regex/division bound
   });
 });
 
+describe("codeContainsIdentifier: member-access identifiers are not binding references", () => {
+  test("`x.<name>` is member access, not a use of the destructured binding", () => {
+    // `return obj.x;` reads property `x` of `obj` -- it never reads the
+    // `const { x } = $$` binding `filterReferencedLabels` is deciding
+    // whether to emit, so counting it produced an unused destructure
+    // (a `noUnusedLocals` failure on a saved generated file).
+    expect(codeContainsIdentifier("return obj.x;", "x")).toBe(false);
+    expect(codeContainsIdentifier("return obj?.x;", "x")).toBe(false);
+    expect(codeContainsIdentifier("return x . y;", "y")).toBe(false);
+    expect(codeContainsIdentifier("return a.b.c;", "b")).toBe(false);
+  });
+
+  test("`$$.<label>` still counts `$$` but not the member label", () => {
+    // The important real-grammar shape: reading a label through `$$`
+    // needs the `const $$` binding (still detected -- `$$` is the
+    // object, not the member) but must NOT destructure `<label>`.
+    expect(codeContainsIdentifier("return $$.x;", "$$")).toBe(true);
+    expect(codeContainsIdentifier("return $$.x;", "x")).toBe(false);
+    expect(codeContainsIdentifier("return obj.$$;", "$$")).toBe(false);
+  });
+
+  test("a spread `...<name>` IS a reference, not member access", () => {
+    // `...` is one punctuator -- the identifier after it is a real use.
+    // Treating its final `.` as member access would drop the binding.
+    expect(codeContainsIdentifier("return f(...x);", "x")).toBe(true);
+    expect(codeContainsIdentifier("return [...x];", "x")).toBe(true);
+  });
+
+  test("control: the object of a member expression still counts", () => {
+    expect(codeContainsIdentifier("return x.foo;", "x")).toBe(true);
+    expect(codeContainsIdentifier("return a.b.c;", "a")).toBe(true);
+    // A `?`-then-`:` ternary branch is a reference, not a member name.
+    expect(codeContainsIdentifier("return c ? x : y;", "x")).toBe(true);
+  });
+});
+
+describe("template-interpolation nesting depth cap", () => {
+  test("pathologically deep `${`${...}`}` nesting fails gracefully instead of overflowing the stack", () => {
+    // Every `` ${`` level is a mutual-recursion hop between
+    // skipStringLiteral and scanJsToBlockClose -- direct JS calls, so a
+    // deep enough input previously threw `RangeError: Maximum call
+    // stack size exceeded` rather than a parse failure. Past
+    // `MAX_TEMPLATE_NESTING_DEPTH` (256) the block scans as
+    // "unterminated" -- an ordinary failure the caller already handles.
+    const deep = `{ return ${"`a${".repeat(30_000)}x${"}`".repeat(30_000)}; }`;
+    const result = scanBalancedBraces(deep, 0);
+    expect(result.success).toBe(false);
+    expect(codeContainsIdentifier(deep, "x")).toBe(false);
+  });
+
+  test("nesting within the cap still scans correctly", () => {
+    const input = `{ return ${"`a${".repeat(250)}x${"}`".repeat(250)}; }`;
+    const result = scanBalancedBraces(input, 0);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.next).toBe(input.length);
+    }
+    expect(codeContainsIdentifier(input, "x")).toBe(true);
+  });
+});
+
 describe("scanBalancedBraces / grammarRuleExpression: a regex after a control paren doesn't truncate the block", () => {
   test("scanBalancedBraces consumes a block containing `if (ok) /}/.test(s)` whole", () => {
     const result = parse(scanBalancedBraces)(

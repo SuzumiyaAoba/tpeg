@@ -37,6 +37,7 @@ export const skipStringLiteral = (
   input: string,
   start: number,
   quote: string,
+  templateDepth = 0,
 ): number => {
   let i = start + 1;
   while (i < input.length) {
@@ -49,11 +50,13 @@ export const skipStringLiteral = (
     }
     if (quote === "`" && input[i] === "$" && input[i + 1] === "{") {
       // `${` interpolates a single EXPRESSION, not a statement list --
-      // see `scanJsToBlockClose`'s `startInStatementPosition` doc.
-      const end = scanJsToBlockClose(input, i + 2, false);
-      // An unterminated interpolation means the template itself is
-      // unterminated - same contract as the unterminated-string case.
-      if (end === -1) return input.length;
+      // see `scanJsToBlockClose`'s `startInStatementPosition` doc. The
+      // interpolation body nests one level deeper (`templateDepth + 1`).
+      const end = scanJsToBlockClose(input, i + 2, false, templateDepth + 1);
+      // An unterminated (or depth-cap-rejected) interpolation means the
+      // template itself is unterminated - same contract as the
+      // unterminated-string case.
+      if (end < 0) return input.length;
       i = end;
       continue;
     }
@@ -176,6 +179,14 @@ export const createJsExprTracker = (startInStatementPosition = false) => {
     /** Whether a `/` at this point could open a regex literal. */
     get exprExpected(): boolean {
       return exprExpected;
+    },
+    /** Whether an identifier token at this point is member access
+     * (`x.<word>`/`x?.<word>`) rather than a reference to a binding of
+     * that name -- true when the last significant punctuator was `.`,
+     * the same condition `word()` records as `prevWordIsProp`. Read it
+     * BEFORE calling `word()` for the token being classified. */
+    get propertyPosition(): boolean {
+      return prevTok === "punct" && prevPunct === ".";
     },
     /** Record an identifier or keyword token `w`. */
     word(w: string): void {
@@ -363,6 +374,12 @@ export const advanceJsToken = (
     // Postfix `++`/`--` ends an operand.
     tracker.operand();
     return pos + 2;
+  } else if (ch === "." && input[pos + 1] === "." && input[pos + 2] === ".") {
+    // `...` spread/rest is ONE punctuator, not a member-access `.` --
+    // without this, `f(...x)` left `.` as the last punctuator and the
+    // identifier after it was misclassified as a property name.
+    tracker.punct("...");
+    return pos + 3;
   } else if (ch !== undefined && !isJsWhitespace(ch)) {
     // Any other punctuator cannot end an operand, so a value is expected.
     tracker.punct(ch);
@@ -449,12 +466,37 @@ export const skipBlockComment = (input: string, start: number): number => {
  * literal -- `${ {a:1} }` -- and `}` restores operand position). Without
  * the distinction a `{` first up was always classified as an object
  * literal, desyncing the scan on exactly the block-statement case.
+ *
+ * `templateDepth` counts enclosing `` ${ ... } `` levels -- every
+ * interpolation body re-enters this function one level deeper via
+ * `skipStringLiteral`/`scanTemplateForIdentifier`. Past
+ * `MAX_TEMPLATE_NESTING_DEPTH` the function returns `-2` (distinct from
+ * `-1` "unterminated") so `scanTemplateForIdentifier` can keep the
+ * conservative "identifier may be present" answer instead of dropping a
+ * possibly-needed binding; `skipStringLiteral` collapses both negative
+ * results into its usual "unterminated" contract.
  */
+
+/**
+ * Maximum `${ ... }` interpolation nesting the scanners recurse into.
+ * Each interpolation level is a mutual-recursion hop between
+ * `skipStringLiteral`/`scanTemplateForIdentifier` and
+ * `scanJsToBlockClose`/`codeContainsIdentifier` -- direct JavaScript
+ * calls, not the `lazy()`/`recursive()` delegation
+ * `PARSER_LIMITS.MAX_RECURSION_DEPTH` already guards -- so `` `${`${`...
+ * }`}` `` deep enough ran the real call stack out (`RangeError`) instead
+ * of producing a graceful "unterminated" result. 256 is far past any
+ * plausible handwritten action body.
+ */
+const MAX_TEMPLATE_NESTING_DEPTH = 256;
+
 const scanJsToBlockClose = (
   input: string,
   pos: number,
   startInStatementPosition: boolean,
+  templateDepth = 0,
 ): number => {
+  if (templateDepth > MAX_TEMPLATE_NESTING_DEPTH) return -2;
   let braceDepth = 1;
   let i = pos;
   // Whether a `/` here could open a regex literal -- i.e. a value or
@@ -482,7 +524,7 @@ const scanJsToBlockClose = (
       continue;
     }
     if (ch === '"' || ch === "'" || ch === "`") {
-      i = skipStringLiteral(input, i, ch);
+      i = skipStringLiteral(input, i, ch, templateDepth);
       tracker.operand();
       continue;
     }
@@ -517,6 +559,7 @@ const scanTemplateForIdentifier = (
   input: string,
   pos: number,
   name: string,
+  templateDepth = 0,
 ): { found: boolean; end: number } => {
   let i = pos + 1;
   while (i < input.length) {
@@ -528,13 +571,28 @@ const scanTemplateForIdentifier = (
       return { found: false, end: i + 1 };
     }
     if (input[i] === "$" && input[i + 1] === "{") {
-      const close = scanJsToBlockClose(input, i + 2, false);
+      const close = scanJsToBlockClose(input, i + 2, false, templateDepth + 1);
       if (close === -1) return { found: false, end: input.length };
+      if (close === -2) {
+        // Template-nesting depth cap (`MAX_TEMPLATE_NESTING_DEPTH`):
+        // the interpolation's contents can't be scanned within the
+        // recursion budget, so conservatively report `name` present --
+        // a spurious binding is a loud unused-variable compile error,
+        // while a dropped one is a silent runtime ReferenceError.
+        return { found: true, end: input.length };
+      }
       // The interpolation body is one EXPRESSION -- a `{` first up is an
       // object literal, and a `/` after it is division, so the recursive
       // scan must use expression position too (`codeContainsIdentifier`
       // defaults to statement position for action/transform bodies).
-      if (codeContainsIdentifier(input.slice(i + 2, close - 1), name, false)) {
+      if (
+        codeContainsIdentifier(
+          input.slice(i + 2, close - 1),
+          name,
+          false,
+          templateDepth + 1,
+        )
+      ) {
         return { found: true, end: close };
       }
       i = close;
@@ -558,7 +616,11 @@ const scanTemplateForIdentifier = (
  * `new RegExp("\\b" + label + "\\b")` checks: `$$` is a legal JS
  * identifier token (`$` is an identifier char), so `$$$` or `$$foo` no
  * longer match `$$`, and label names containing regex-significant
- * characters can't corrupt the match. Shares
+ * characters can't corrupt the match. A `name` in member position
+ * (`x.<name>`/`x?.<name>`) doesn't count either -- it reads a property
+ * of some other object, not the binding `filterReferencedLabels` is
+ * deciding whether to destructure, so counting it emitted an unused
+ * binding (`noUnusedLocals` failure on a saved generated file). Shares
  * `scanJsToBlockClose`'s regex-vs-division heuristic: a `/` opens a regex
  * only where a value is expected (after an operator, `(`, `,`, a keyword
  * like `return`, the start of code, ...).
@@ -575,18 +637,19 @@ export const codeContainsIdentifier = (
   code: string,
   name: string,
   startInStatementPosition = true,
+  templateDepth = 0,
 ): boolean => {
   let i = 0;
   const tracker = createJsExprTracker(startInStatementPosition);
   while (i < code.length) {
     const ch = code[i];
     if (ch === '"' || ch === "'") {
-      i = skipStringLiteral(code, i, ch);
+      i = skipStringLiteral(code, i, ch, templateDepth);
       tracker.operand();
       continue;
     }
     if (ch === "`") {
-      const result = scanTemplateForIdentifier(code, i, name);
+      const result = scanTemplateForIdentifier(code, i, name, templateDepth);
       if (result.found) return true;
       i = result.end;
       tracker.operand();
@@ -606,7 +669,13 @@ export const codeContainsIdentifier = (
     }
     if (JS_IDENTIFIER_START.test(ch ?? "")) {
       const { word, end } = scanJsWord(code, i);
-      if (word === name) return true;
+      // `x.<word>`/`x?.<word>` is member access on some other value --
+      // the identifier never reads the `const $$`/`const { <word> }`
+      // bindings an action's capture destructuring produces, so counting
+      // it emitted a binding nothing used (`noUnusedLocals` failure on a
+      // saved generated file). `$$.<word>` keeps working the same way:
+      // `$$` itself is still counted (it's the object, not the member).
+      if (word === name && !tracker.propertyPosition) return true;
       tracker.word(word);
       i = end;
       continue;

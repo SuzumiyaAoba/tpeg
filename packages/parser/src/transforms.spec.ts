@@ -219,6 +219,27 @@ describe("returnTypeSpec", () => {
       expect(result.val.type).toBe("{ x: number }");
     }
   });
+
+  it("should fail gracefully (not crash) on pathologically deep generic nesting", () => {
+    // `A<A<A<...>>>` recurses one `parseUnionType` call per level through
+    // direct JS calls -- unguarded, a deep enough input ran the real call
+    // stack out (`RangeError: Maximum call stack size exceeded`) instead
+    // of producing a parse failure. `MAX_TYPE_NESTING_DEPTH` (256) is
+    // far past any plausible handwritten type; beyond it the type
+    // expression is rejected like any other malformed type.
+    const deep = `-> ${"A<".repeat(30_000)}x${">".repeat(30_000)}`;
+    const result = parse(returnTypeSpec)(deep);
+    expect(result.success).toBe(false);
+  });
+
+  it("should still accept nesting within the depth bound", () => {
+    const input = `-> ${"A<".repeat(200)}x${">".repeat(200)}`;
+    const result = parse(returnTypeSpec)(input);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.next).toBe(input.length);
+    }
+  });
 });
 
 describe("transformFunction", () => {

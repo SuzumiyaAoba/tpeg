@@ -1630,4 +1630,21 @@ describe("action-reference scanning ignores strings and comments (issue #70)", (
     expect(result.code).toContain("const { x }");
     expect(result.code).toContain("const $$");
   });
+
+  test("a label name in member position is NOT destructured", () => {
+    // `return obj.x;` reads property `x` of `obj`, never the `x`
+    // binding -- the destructure would be unused (`noUnusedLocals`
+    // failure on a saved generated file).
+    const result = generateActionRule("return obj.x;");
+    expect(result.code).not.toContain("const { x }");
+    expect(result.code).not.toContain("const $$");
+  });
+
+  test("`$$.x` emits `const $$` but no `x` destructure", () => {
+    // The label is read through `$$` directly: `$$` is needed (the
+    // object of the member access), `const { x }` would be unused.
+    const result = generateActionRule("return $$.x;");
+    expect(result.code).toContain("const $$");
+    expect(result.code).not.toContain("const { x }");
+  });
 });
