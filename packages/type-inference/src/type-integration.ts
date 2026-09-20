@@ -27,9 +27,11 @@ import {
  * viewers), and the text is split on hard newlines so every emitted
  * line keeps its ` * ` gutter.
  */
+const escapeDocCommentText = (text: string): string =>
+  text.replace(/\*\//g, "*\\/");
+
 const docCommentLines = (text: string): string[] =>
-  text
-    .replace(/\*\//g, "*\\/")
+  escapeDocCommentText(text)
     .split(/\r\n|\r|\n/)
     .map((line) => `   * ${line}`);
 
@@ -238,10 +240,29 @@ export class TypeIntegrationEngine {
     // Reject instead of silently disambiguating (a `FooResult2` renames
     // the type out from under the grammar author, the same reason
     // `validateGeneratedIdentifiers` in tpeg-parser rejects rather than
-    // renames). Only DISTINCT rule names count: two rules literally
-    // named the same are a duplicate-rule-name problem, not a
-    // pascalCase collision.
+    // renames).
     {
+      // Two rules literally named the same are a duplicate-rule-name
+      // problem rather than a PascalCase collision, but the outcome here
+      // is the same class of defect: `createTypedGrammar` does not run
+      // `validateGrammar` itself, so without this check a hand-built
+      // grammar carrying duplicate rule names emits a second
+      // `export type <Name>Result` (and, with type guards on, a second
+      // `export function is<Name>Result`) under the identical identifier
+      // -- uncompilable TypeScript, produced with no diagnostic.
+      const ruleNameCounts = new Map<string, number>();
+      for (const rule of typedRules) {
+        ruleNameCounts.set(rule.name, (ruleNameCounts.get(rule.name) ?? 0) + 1);
+      }
+      const duplicatedNames = [...ruleNameCounts]
+        .filter(([, count]) => count > 1)
+        .map(([name]) => name);
+      if (duplicatedNames.length > 0) {
+        throw new Error(
+          `Duplicate rule name(s) ${duplicatedNames.map((n) => `"${n}"`).join(", ")} -- each duplicate emits an \`export type <Name>Result\`/guard under the same identifier. Reject the grammar with \`validateGrammar\` (or remove the duplicate rules) before calling createTypedGrammar.`,
+        );
+      }
+
       const rulesByGeneratedName = new Map<string, Set<string>>();
       for (const rule of typedRules) {
         const generated = this.pascalCase(rule.name);
@@ -285,8 +306,16 @@ export class TypeIntegrationEngine {
         typeDefinitions.push("  /**");
         typeDefinitions.push(...docCommentLines(inferredType.documentation));
         if (rule.dependencies.length > 0) {
+          // Dependency names originate in the grammar's `Identifier` nodes,
+          // so -- like the documentation text above -- they are arbitrary
+          // input to this block comment: a `*/` inside one would terminate
+          // the comment early (#86), and a raw newline would break the
+          // ` * ` gutter. Escape both the same way `docCommentLines` does.
+          const safeDependencies = rule.dependencies.map((name) =>
+            escapeDocCommentText(name).replace(/[\r\n]+/g, " "),
+          );
           typeDefinitions.push(
-            `   * Dependencies: ${rule.dependencies.join(", ")}`,
+            `   * Dependencies: ${safeDependencies.join(", ")}`,
           );
         }
         if (rule.hasCircularDependency) {

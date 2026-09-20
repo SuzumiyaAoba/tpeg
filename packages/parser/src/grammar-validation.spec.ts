@@ -906,6 +906,59 @@ describe("findUnreachableAlternatives: alternatives that stay reachable", () => 
     ]);
   });
 
+  it("does NOT flag an alternative after a nested Choice whose infallible alternative is shadowed by a fatal-capable earlier one", () => {
+    // `("a" ~ "b") / "c"?`: "c"? is infallible, but the inner choice is
+    // NOT -- on "ax" the committed "b" failure is absorbed at the inner
+    // choice's boundary and the inner choice fails ordinarily, so the
+    // outer choice DOES fall through to "d". The old
+    // `altModes.some(infallible)` check marked the inner choice
+    // `NO_FAILURE` by counting "c"? without noticing the fatal-capable
+    // alternative before it -- reporting "d" as dead and making
+    // `validateGrammar` reject a valid grammar.
+    const grammar = grammarFromSource('start = (("a" ~ "b") / "c"?) / "d"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([]);
+  });
+
+  it("does NOT flag through a rule reference either -- the same wrong modes used to propagate through `ruleModes`", () => {
+    const grammar = grammarFromSource(
+      'start = inner / "d"\ninner = ("a" ~ "b") / "c"?\n',
+    );
+    expect(findUnreachableAlternatives(grammar)).toEqual([]);
+  });
+
+  it("does NOT flag on a dead infallible alternative's account either -- an infallible alternative AFTER a fatal-only boundary never runs", () => {
+    // `inner = ("a" ~ "b")* / "c"?`: the `*` alternative can only fail
+    // fatally, so "c"? is genuinely dead -- but the inner choice's own
+    // modes must still be NONFATAL (it can fail on "ax"), which is what
+    // an enclosing context sees. A `NO_FAILURE` here would wrongly flag
+    // "e" in `start = inner / "e"` as dead too.
+    const grammar = grammarFromSource(
+      'start = inner / "e"\ninner = ("a" ~ "b")* / "c"?\n',
+    );
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "inner",
+        deadAlternatives: [2],
+        causeAlternative: 1,
+        causeKind: "committed",
+      },
+    ]);
+  });
+
+  it("still flags alternatives after a genuinely reachable infallible boundary", () => {
+    // `("a" ~ "b")` can fail non-fatally at "a", so "c"? IS reachable --
+    // and since it always succeeds when reached, "d" is truly dead.
+    const grammar = grammarFromSource('start = ("a" ~ "b") / "c"? / "d"');
+    expect(findUnreachableAlternatives(grammar)).toEqual([
+      {
+        ruleName: "start",
+        deadAlternatives: [3],
+        causeAlternative: 2,
+        causeKind: "infallible",
+      },
+    ]);
+  });
+
   it("does NOT flag an unresolvable (external) Identifier -- conservatively assumed able to fail ordinarily", () => {
     // A bare `Identifier` naming no local rule is the deliberate escape
     // hatch for binding a hand-written parser; it is opaque to this
@@ -1052,6 +1105,21 @@ describe("validateGrammar: unreachable ordered-choice alternatives", () => {
         optimize: true,
       }),
     ).toThrow(/unreachable/i);
+  });
+
+  it("does NOT reject a choice whose infallible alternative is shadowed by a fatal-capable earlier one", () => {
+    // `(("a" ~ "b") / "c"?) / "d"`: the inner choice CAN still fail
+    // (its committed alternative's `fatal` is absorbed into an ordinary
+    // failure before "c"? ever runs), so "d" is live -- the old
+    // `NO_FAILURE` mis-analysis rejected this grammar outright.
+    const grammar = grammarFromSource('start = (("a" ~ "b") / "c"?) / "d"');
+    expect(() => validateGrammar(grammar)).not.toThrow();
+    expect(() =>
+      generateTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+      }),
+    ).not.toThrow();
   });
 });
 

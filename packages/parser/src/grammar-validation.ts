@@ -389,18 +389,36 @@ const expressionFailureModes = (
       const altModes = expr.alternatives.map((alt) =>
         expressionFailureModes(alt, ruleModes),
       );
-      // Some alternative that cannot fail at all makes the choice
-      // infallible -- a failure outcome is impossible, not just
-      // unreachable-in-some-mode.
-      if (altModes.some((m) => !m.nonFatal && !m.fatal)) return NO_FAILURE;
+      // Only alternatives up to and including the FIRST one that cannot
+      // fail non-fatally can ever run -- everything after it is dead code
+      // (`findUnreachableAlternatives` reports exactly that boundary). The
+      // choice is infallible only when a reachable alternative is
+      // infallible AND no reachable alternative can fail `fatal`: a
+      // `fatal` failure is absorbed at this choice's own boundary
+      // (`tryOrderedCandidates`) into an ordinary one, but it still IS a
+      // failure -- on that input control never reaches the infallible
+      // alternative at all. Checking `altModes.some(...)` unconditionally
+      // missed both halves of that: it counted an infallible alternative
+      // sitting AFTER a fatal-only boundary (dead code that can never
+      // run), and it ignored a fatal-capable alternative sitting BEFORE
+      // an infallible boundary -- e.g. `("a" ~ "b") / "c"?`, which CAN
+      // fail (on "ax" the committed "b" failure is absorbed and the
+      // choice fails ordinarily) but was reported `NO_FAILURE`, letting
+      // an enclosing `Choice` like `(("a" ~ "b") / "c"?) / "d"` wrongly
+      // flag the still-reachable "d" as dead code.
+      const boundary = altModes.findIndex((m) => !m.nonFatal);
+      const reachable =
+        boundary === -1 ? altModes : altModes.slice(0, boundary + 1);
+      const anyFatal = reachable.some((m) => m.fatal);
+      const anyInfallible = reachable.some((m) => !m.nonFatal && !m.fatal);
+      if (anyInfallible && !anyFatal) return NO_FAILURE;
       return {
         // A `fatal` alternative's failure is ABSORBED at this choice's
         // own boundary (`tryOrderedCandidates`) and re-emitted as an
         // ordinary one, so it counts toward `nonFatal`, not `fatal` --
         // a `Choice` node can never produce a cut-fatal failure for
         // whatever encloses it.
-        nonFatal:
-          altModes.every((m) => m.nonFatal) || altModes.some((m) => m.fatal),
+        nonFatal: reachable.every((m) => m.nonFatal) || anyFatal,
         fatal: false,
       };
     }

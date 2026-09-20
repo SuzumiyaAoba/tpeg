@@ -48,7 +48,9 @@ export const skipStringLiteral = (
       return i + 1;
     }
     if (quote === "`" && input[i] === "$" && input[i + 1] === "{") {
-      const end = scanJsToBlockClose(input, i + 2);
+      // `${` interpolates a single EXPRESSION, not a statement list --
+      // see `scanJsToBlockClose`'s `startInStatementPosition` doc.
+      const end = scanJsToBlockClose(input, i + 2, false);
       // An unterminated interpolation means the template itself is
       // unterminated - same contract as the unterminated-string case.
       if (end === -1) return input.length;
@@ -147,7 +149,7 @@ const BLOCK_KEYWORDS: ReadonlySet<string> = new Set([
  * ASI is deliberately not modeled: `f()\n/re/` is scanned as division even
  * though a real parser inserts a `;` and treats `/re/` as a regex.
  */
-export const createJsExprTracker = () => {
+export const createJsExprTracker = (startInStatementPosition = false) => {
   let exprExpected = true;
   /** Per open `(`: true iff it was a control-statement paren. */
   const parenStack: boolean[] = [];
@@ -159,9 +161,16 @@ export const createJsExprTracker = () => {
   let prevWordIsProp = false;
   /** Last punctuation character seen (`.`, `;`, ...), for context checks. */
   let prevPunct: string | null = null;
-  /** Category of the last significant token. */
+  /** Category of the last significant token. Seeding `"{"` models "just
+   * consumed an opening brace": the scan starts in STATEMENT position, so
+   * a `{` first up is a nested block rather than an object literal
+   * (`openBrace`'s `prevTok !== "{"` check). The alternative `"none"` is
+   * expression position -- inside a `` ${ ... } `` interpolation a `{`
+   * first up is an object literal (`${ {a:1} }` is valid JS), and
+   * `openBrace` must not be fed the `${` itself (it isn't a block
+   * delimiter for `braceStack` accounting either). */
   let prevTok: "word" | "(" | ")" | "{" | "}" | "punct" | "operand" | "none" =
-    "none";
+    startInStatementPosition ? "{" : "none";
 
   return {
     /** Whether a `/` at this point could open a regex literal. */
@@ -431,8 +440,21 @@ export const skipBlockComment = (input: string, start: number): number => {
  * THOSE restores expression position and `if (x) /re/` scans the `/` as
  * a regex opener. The self-hosted grammar's `actionBlock` lacks that
  * statement-paren tracking and mis-scans this case (#104).
+ *
+ * `startInStatementPosition` must be `true` when the block being closed
+ * is a `{ ... }` (its contents are statements, so a leading `{` is a
+ * nested block -- `{ { } /}/ }` -- and `}` ending it restores statement
+ * position) and `false` when it is a `` ${ ... } `` interpolation (its
+ * contents are a single expression, so a leading `{` is an object
+ * literal -- `${ {a:1} }` -- and `}` restores operand position). Without
+ * the distinction a `{` first up was always classified as an object
+ * literal, desyncing the scan on exactly the block-statement case.
  */
-const scanJsToBlockClose = (input: string, pos: number): number => {
+const scanJsToBlockClose = (
+  input: string,
+  pos: number,
+  startInStatementPosition: boolean,
+): number => {
   let braceDepth = 1;
   let i = pos;
   // Whether a `/` here could open a regex literal -- i.e. a value or
@@ -441,7 +463,7 @@ const scanJsToBlockClose = (input: string, pos: number): number => {
   // `{` whether it was a control-statement paren / object literal, so `)`
   // and `}` restore the right expectation (`if (x) /re/` vs `f(x) / re/`,
   // `{v:1} / $$ /` vs `if (x) {} /re/`).
-  const tracker = createJsExprTracker();
+  const tracker = createJsExprTracker(startInStatementPosition);
 
   while (i < input.length) {
     const ch = input[i];
@@ -506,9 +528,13 @@ const scanTemplateForIdentifier = (
       return { found: false, end: i + 1 };
     }
     if (input[i] === "$" && input[i + 1] === "{") {
-      const close = scanJsToBlockClose(input, i + 2);
+      const close = scanJsToBlockClose(input, i + 2, false);
       if (close === -1) return { found: false, end: input.length };
-      if (codeContainsIdentifier(input.slice(i + 2, close - 1), name)) {
+      // The interpolation body is one EXPRESSION -- a `{` first up is an
+      // object literal, and a `/` after it is division, so the recursive
+      // scan must use expression position too (`codeContainsIdentifier`
+      // defaults to statement position for action/transform bodies).
+      if (codeContainsIdentifier(input.slice(i + 2, close - 1), name, false)) {
         return { found: true, end: close };
       }
       i = close;
@@ -536,10 +562,22 @@ const scanTemplateForIdentifier = (
  * `scanJsToBlockClose`'s regex-vs-division heuristic: a `/` opens a regex
  * only where a value is expected (after an operator, `(`, `,`, a keyword
  * like `return`, the start of code, ...).
+ *
+ * `startInStatementPosition` mirrors `scanJsToBlockClose`'s parameter of
+ * the same name: `true` (default) for statement code -- every real
+ * caller passes an action/transform body, where a leading `{` is a block
+ * (`{ } /re/` scans the `/` as a regex) -- and `false` for a single
+ * expression, where a leading `{` is an object literal (`{a:1} / x / 2`
+ * divides twice). `scanTemplateForIdentifier` passes `false` when it
+ * recurses into `` ${ ... } `` bodies.
  */
-export const codeContainsIdentifier = (code: string, name: string): boolean => {
+export const codeContainsIdentifier = (
+  code: string,
+  name: string,
+  startInStatementPosition = true,
+): boolean => {
   let i = 0;
-  const tracker = createJsExprTracker();
+  const tracker = createJsExprTracker(startInStatementPosition);
   while (i < code.length) {
     const ch = code[i];
     if (ch === '"' || ch === "'") {
@@ -609,7 +647,9 @@ export const scanBalancedBraces: Parser<string> = (
     });
   }
 
-  const blockEnd = scanJsToBlockClose(input, openBracePos + 1);
+  // A `{ ... }` action/transform body is a statement list -- see
+  // `scanJsToBlockClose`'s `startInStatementPosition` doc.
+  const blockEnd = scanJsToBlockClose(input, openBracePos + 1, true);
   if (blockEnd === -1) {
     return createFailure("Expected closing brace '}'", pos, {
       expected: ["}"],

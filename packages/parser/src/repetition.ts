@@ -196,8 +196,14 @@ const optionalRepetitionOperator = optional(repetitionOperator);
  * rather than genuine semantic-action code -- see the doc comment on the
  * check in {@link withRepetition} that uses this. Real action bodies
  * essentially always contain a keyword, an operator, a string, or at
- * least a semicolon; none of those are digits, commas, or whitespace. */
-const LOOKS_LIKE_MALFORMED_QUANTIFIER = /^[\d,\s]*$/;
+ * least a semicolon; none of those are digits, commas, or whitespace.
+ * The whitespace set is ASCII-only (`\t\n\v\f\r `), NOT `\s`: `\s` also
+ * matches Unicode whitespace (NBSP, U+2028/29, U+FEFF, ...), and the
+ * self-hosted grammar's `adjacentMalformedQuantifier` (`"{" [0-9,
+ * \t\n\r\v\f]* "}"`) does not -- a `{ \u00A0 }` body is an empty-action
+ * body there, not a botched quantifier, so the two sides would disagree
+ * on exactly the inputs only this hand-rolled check rejects. */
+const LOOKS_LIKE_MALFORMED_QUANTIFIER = /^[0-9, \t\n\r\v\f]*$/;
 
 /**
  * Creates a parser that handles repetition for any base expression parser.

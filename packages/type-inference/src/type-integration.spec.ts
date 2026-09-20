@@ -867,5 +867,49 @@ describe("TypeIntegrationEngine", () => {
         /not a valid TypeScript identifier/,
       );
     });
+
+    it("should escape `*/` inside a dependency name in the Dependencies doc line (regression)", () => {
+      // `analyzeDependencies` collects `Identifier` node names verbatim --
+      // including ones that reference no declared rule (only reachable
+      // from a hand-built AST). Emitting one raw into the ` * ` gutter
+      // used to let an embedded `*/` terminate the block comment early,
+      // turning the remainder into live code in the generated file -- the
+      // same defect class `docCommentLines` already escapes for the
+      // documentation text itself (#86).
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "DepGrammar",
+        [],
+        [createRuleDefinition("a", createIdentifier("x*/y"))],
+      );
+
+      const typedGrammar = new TypeIntegrationEngine({
+        includeDocumentation: true,
+      }).createTypedGrammar(grammar);
+
+      expect(typedGrammar.typeDefinitions).toContain(
+        "   * Dependencies: x*\\/y",
+      );
+      expect(typedGrammar.typeDefinitions).not.toContain("x*/y");
+    });
+
+    it("should reject duplicate rule names instead of emitting duplicate type aliases (regression)", () => {
+      // `createTypedGrammar` does not run `validateGrammar` itself: a
+      // hand-built grammar with two rules named `dup` used to emit
+      // `export type DupResult` (and `export function isDupResult` with
+      // type guards on) twice -- a guaranteed SyntaxError with no
+      // diagnostic.
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "DupGrammar",
+        [],
+        [
+          createRuleDefinition("dup", createStringLiteral("a", '"')),
+          createRuleDefinition("dup", createStringLiteral("b", '"')),
+        ],
+      );
+
+      expect(() => engine.createTypedGrammar(grammar)).toThrow(
+        /Duplicate rule name\(s\) "dup"/,
+      );
+    });
   });
 });

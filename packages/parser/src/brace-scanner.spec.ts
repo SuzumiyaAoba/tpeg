@@ -87,6 +87,35 @@ describe("codeContainsIdentifier: `$$` detection across the regex/division bound
   test("finds `$$` in a plain action body (control)", () => {
     expect(codeContainsIdentifier("return $$;", "$$")).toBe(true);
   });
+
+  test("does NOT report `$$` inside a regex following a leading `{ }` block statement", () => {
+    // At the start of a `{ ... }` action/transform body the scan is in
+    // STATEMENT position, so a leading `{ }` is a nested block (not an
+    // object literal) and `/$$/` after it opens a regex literal -- `$$`
+    // is pattern text. Before `createJsExprTracker` learned the
+    // statement/expression distinction, the leading `{` was always
+    // classified as an object literal, so `}` ended an "operand", `/`
+    // was scanned as division, and `$$` produced a false hit.
+    expect(codeContainsIdentifier("{ } /$$/", "$$")).toBe(false);
+  });
+
+  test("a `{` first up in EXPRESSION position is an object literal, so `/` after it is division", () => {
+    // `${ {a:1} / x / 2 }` interpolates a single expression -- `{a:1}`
+    // is an object, both slashes are division, and `x` is a real
+    // identifier use. `scanTemplateForIdentifier` passes `false` for
+    // exactly this case.
+    expect(codeContainsIdentifier("{a:1} / x / 2", "x", false)).toBe(true);
+    expect(codeContainsIdentifier("{a:1} / $$ / 2", "$$", false)).toBe(true);
+  });
+
+  test("finds identifiers divided out inside a `${ }` interpolation body", () => {
+    // The interpolation body is expression code: `{a:1}` object, `/`
+    // division, so `x` IS a use -- must not be hidden by scanning
+    // `/ x /` as a regex.
+    expect(codeContainsIdentifier("return `${ {a:1} / x / 2 }`;", "x")).toBe(
+      true,
+    );
+  });
 });
 
 describe("scanBalancedBraces / grammarRuleExpression: a regex after a control paren doesn't truncate the block", () => {
@@ -127,6 +156,32 @@ describe("scanBalancedBraces / grammarRuleExpression: a regex after a control pa
     expect(action?.type).toBe("ActionExpression");
     if (action?.type === "ActionExpression") {
       expect(codeContainsIdentifier(action.code, "$$")).toBe(true);
+    }
+  });
+
+  test("scanBalancedBraces consumes a block whose FIRST token is a nested `{ }` followed by a regex", () => {
+    // `{ { } /}/ }` is a block containing an empty block statement and a
+    // `/}/` regex literal -- the `}` inside the regex must not decrement
+    // the brace depth. Before `scanJsToBlockClose` distinguished
+    // statement position from `${ }` expression position, the leading
+    // `{` was classified as an object literal, `/` scanned as division,
+    // and the scan stopped early at the regex's own `}` (returning
+    // ` { } /` instead of ` { } /}/ `).
+    const result = parse(scanBalancedBraces)("{ { } /}/ }");
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe(" { } /}/ ");
+      expect(result.next).toBe(11);
+    }
+  });
+
+  test("an action body starting with a nested block + regex doesn't truncate the rule", () => {
+    const result = parse(grammarDefinition)(
+      'grammar G {\n  a = "x" { { } /}/; return 1; }\n  b = "y"\n}',
+    );
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.rules.map((r) => r.name)).toEqual(["a", "b"]);
     }
   });
 });
