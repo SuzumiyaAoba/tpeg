@@ -455,8 +455,9 @@ export const skipBlockComment = (input: string, start: number): number => {
  * tracker remembers which `(` opened a control-statement paren (`if`,
  * `while`, `for`, `switch`, `catch`, `with`), so `)` closing one of
  * THOSE restores expression position and `if (x) /re/` scans the `/` as
- * a regex opener. The self-hosted grammar's `actionBlock` lacks that
- * statement-paren tracking and mis-scans this case (#104).
+ * a regex opener. The self-hosted grammar's `actionBlock` mirrors this
+ * with its own statement-paren rules (`02-action.tpeg`), verified
+ * case-for-case by `self-hosted/action.compare.spec.ts` (#104).
  *
  * `startInStatementPosition` must be `true` when the block being closed
  * is a `{ ... }` (its contents are statements, so a leading `{` is a

@@ -184,19 +184,21 @@ grammar block's own closing brace, and a character class containing literal
 
 ## Bugs this PoC surfaced
 
-**`brace-scanner.ts`'s multi-line column arithmetic is off by one**, found by
-`action.compare.spec.ts`. Relative to `tpeg-core`'s own `nextPos` convention
-(`utils.ts`): after a match crosses a line break, `brace-scanner.ts` computes
-the new column as `(length of the last consumed line) + 1`, while `nextPos`
-resets column to `0` on a newline and increments per character consumed after
-that - so after one character following the reset, `nextPos` says column `1`,
-`brace-scanner.ts` says column `2`. The self-hosted grammar, built entirely
-from `tpeg-core` combinators, doesn't have this bug because it never does its
-own position arithmetic. This is a pre-existing issue (inherited from the
-original `functionBody` in `transforms.ts`) and is **not fixed here** -
-`offset`/`line` are unaffected, only the reported `column` after a multi-line
-action or transform body, which is display-only (it doesn't affect where
-subsequent parsing resumes).
+**`brace-scanner.ts`'s multi-line column arithmetic used to be off by one**,
+found by `action.compare.spec.ts`. Relative to `tpeg-core`'s `nextPos`
+convention at the time (a threaded `{ offset, line, column }` position):
+after a match crossed a line break, `brace-scanner.ts` computed the new
+column as `(length of the last consumed line) + 1`, while `nextPos` reset
+column to `0` on a newline and incremented per character consumed after
+that - so after one character following the reset, `nextPos` said column
+`1`, `brace-scanner.ts` said column `2`. **No longer present**: since
+`tpeg-core` replaced the threaded `Pos` with plain offsets (`ParseResult`
+now carries `current`/`next` as offsets and `offsetToPos` derives
+line/column on demand), `brace-scanner.ts` does no column arithmetic of
+its own at all - `scanBalancedBraces` returns `next` as a raw offset, so
+there is nothing left that could be off by one. The self-hosted grammar
+was never affected (built entirely from `tpeg-core` combinators, it never
+did its own position arithmetic).
 
 **Generated files with a multi-label action failed `tsc --noEmit`** - this one
 _was_ fixed (`codegen.ts`'s `wrapWithAction`/`filterReferencedLabels`), since

@@ -499,12 +499,15 @@ export interface ParseThroughputResult {
  * then an `optimize: true` result reflects "reparse the same string
  * repeatedly," not steady-state throughput.
  *
- * `warmupInputs` defaults to a *separate* slice of varied inputs (via
- * `generateVariedInputs`-style seeding, offset past `inputs`) rather than
- * reusing `inputs` itself -- reusing them would prime the memoizing
- * parser's cache for the exact strings the timed loop is about to
- * measure, turning the "warmup" into free cache hits inside the timing
- * window too.
+ * `warmupInputs` defaults to `inputs` itself -- callers benchmarking a
+ * memoizing parser MUST pass a *separate* slice of varied inputs (via
+ * `generateVariedInputs`-style seeding, offset past `inputs`, the way
+ * `run.ts`'s `buildInputSets` does), since reusing `inputs` would prime
+ * the memoizing parser's cache for the exact strings the timed loop is
+ * about to measure, turning the "warmup" into free cache hits inside
+ * the timing window too. The permissive default exists only so
+ * non-memoizing configurations (whose parsers carry no cross-call cache)
+ * can omit it.
  */
 export function runParseThroughput(
   name: string,
