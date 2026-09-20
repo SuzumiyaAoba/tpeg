@@ -198,13 +198,17 @@ const parseSimpleString = <T extends string>(
     return fail(input, pos, expectation);
   }
 
-  // Check if the input has enough characters left. The failure position is
-  // `input.length` (not `pos`, the literal's start) so `found` derives to
-  // "end of input" -- a real character may well sit AT `pos` (there's just
-  // not enough of them left to complete the literal), so recording `pos`
-  // itself would make the watermark (`./failure.ts`) report that
-  // character as "found" instead of the true reason: input ran out.
-  if (offset + str.length > input.length) {
+  // A `pos` at or past end-of-input has no characters left to match at
+  // all, so it reports there unconditionally. `offset < input.length`
+  // with insufficient input remaining falls through to the shared
+  // mismatch scan below instead: that scan compares the truncated
+  // `inputSlice` element-by-element and reports the FIRST divergence --
+  // the offset where the remainder actually stops matching `str`, which
+  // is exactly `input.length` when the input is a genuine prefix of `str`
+  // ("comp" vs "complete" -> "end of input") but the real mismatch offset
+  // when it is not ("k=12" vs "while" -> the 'k' at `offset`, not a bogus
+  // "expected at EOF" the literal never even partially matched).
+  if (offset >= input.length) {
     return fail(input, input.length, expectation);
   }
 
@@ -214,6 +218,11 @@ const parseSimpleString = <T extends string>(
     // failure position than `pos` (the literal's start) -- the watermark
     // (`./failure.ts`) only ever gets MORE useful from a more precise
     // position, and this loop only runs on the (discarded) failure path.
+    // `input.slice` clamps its end index to `input.length`, so when fewer
+    // than `str.length` characters remain `inputSlice` is simply shorter
+    // and the first out-of-range index (where `inputSlice[i]` is
+    // `undefined`, which cannot equal `str[i]`) reports at exactly
+    // `input.length` -- the "input ran out mid-match" case above.
     const inputSlice = input.slice(offset, offset + str.length);
     for (let i = 0; i < str.length; i++) {
       if (inputSlice[i] !== str[i]) {
@@ -273,10 +282,14 @@ const parseComplexString = <T extends string>(
     return fail(input, pos, expectation);
   }
 
-  // Check if the input has enough characters left. See
-  // `parseSimpleString`'s equivalent branch for why the failure position
-  // is `input.length`, not `pos`.
-  if (offset + str.length > input.length) {
+  // A `pos` at or past end-of-input reports there unconditionally; with
+  // insufficient input remaining, the character-by-character loop below
+  // already reports the first real divergence (or `input.length` when the
+  // input is a genuine prefix of `str`, where `getCharAt` returns "" --
+  // see `parseSimpleString`'s equivalent branch for why that position is
+  // the right "input ran out" report rather than a bogus EOF claim for an
+  // input that mismatched earlier).
+  if (offset >= input.length) {
     return fail(input, input.length, expectation);
   }
 

@@ -440,6 +440,52 @@ describe("literal parser", () => {
       }
     });
 
+    it("should report the real mismatch offset when short input is not a prefix of the literal", () => {
+      // Purpose: an input shorter than the literal that already diverges
+      // before end-of-input must report at the actual mismatch offset,
+      // not at `input.length` -- claiming "expected at EOF" there blames
+      // a position the literal never even partially matched, and lets
+      // that bogus farthest record hide every genuinely-closer failure
+      // in the shared watermark (`./failure.ts`).
+      const parser = literal("while");
+      const result = parser("k=12", createPos());
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.pos).toBe(0);
+        expect(result.error.expected).toBe('"while"');
+        expect(result.error.found).toBe("k");
+      }
+    });
+
+    it("should report the real mismatch offset for a non-prefix short input at a nonzero start position", () => {
+      const parser = literal("while");
+      // Remaining input "k=" is shorter than "while" and mismatches
+      // immediately -- the report must stay at the literal's start, not
+      // drift to `input.length`.
+      const result = parser("x=k=", createPos(2));
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.pos).toBe(2);
+        expect(result.error.found).toBe("k");
+      }
+    });
+
+    it("should report the real mismatch offset for a non-prefix short input against a Unicode literal", () => {
+      // parseComplexString's equivalent branch: "こX" is shorter than
+      // "こんにちは" and diverges at offset 1, so the failure belongs at
+      // 1, not at `input.length` (2).
+      const parser = literal("こんにちは");
+      const result = parser("こX", createPos());
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.pos).toBe(1);
+        expect(result.error.found).toBe("X");
+      }
+    });
+
     it("should report Unicode character mismatches correctly", () => {
       // Purpose: Verify Unicode character error reporting
       const parser = literal("こんにちは");
