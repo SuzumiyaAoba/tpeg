@@ -37,12 +37,13 @@ export const sepBy = <T, S>(
   // and `separator` are both nullable, `rest` (`zeroOrMore`) can itself
   // fail with its own infinite-loop guard (the parser matched but
   // consumed nothing -- see `createInfiniteLoopError`, `@suzumiyaaoba/
-  // tpeg-core`'s `repetition.ts`), which is NOT marked fatal. Wrapping the
-  // whole thing in `optional` would silently swallow that as "zero
-  // matches", discarding `value`'s already-successful first match (and
-  // every element `rest` had already parsed before tripping the guard)
-  // and reporting zero consumption -- a genuine data-loss bug, not a
-  // backtrack. Trying `value` manually first fixes this: once it has
+  // tpeg-core`'s `repetition.ts`), which is fatal but was NOT always so
+  // (the pre-fatal design is why this hand-rolled shape exists). Wrapping
+  // the whole thing in `optional` would have silently swallowed that as
+  // "zero matches", discarding `value`'s already-successful first match
+  // (and every element `rest` had already parsed before tripping the
+  // guard) and reporting zero consumption -- a genuine data-loss bug, not
+  // a backtrack. Trying `value` manually first fixes this: once it has
   // succeeded, this position is provably the start of a real list, so ANY
   // failure from `rest` past that point (fatal or not) must propagate
   // rather than be reinterpreted as "empty".

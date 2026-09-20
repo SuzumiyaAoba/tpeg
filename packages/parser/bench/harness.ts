@@ -408,7 +408,13 @@ export function compileRule(
 
   // `export const rule = ...` -> `const rule = ...`; the surrounding
   // Function body then returns every rule so the caller can pick one out.
-  const body = generated.code.replace(/^export const (\w+)/gm, "const $1");
+  // Re-export lines (`export { x as start };` from `@start`,
+  // `export { performanceMonitor };` from monitoring) are dropped
+  // outright: `export` is a SyntaxError inside `new Function`, and the
+  // alias adds nothing a caller can't reach via the real rule name.
+  const body = generated.code
+    .replace(/^export const (\w+)/gm, "const $1")
+    .replace(/^export \{[^}]*\};?\s*$/gm, "");
   const ruleNames = [...generated.code.matchAll(/^export const (\w+)/gm)].map(
     (m) => m[1],
   );

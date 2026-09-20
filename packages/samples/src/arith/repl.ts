@@ -128,7 +128,9 @@ function handleCommand(input: string) {
  * This function sets up the readline interface and starts the main
  * REPL loop, handling user input and displaying results.
  */
-async function repl() {
+// Nothing inside is awaited, so this stays synchronous -- declaring it
+// `async` would leave the `repl()` call below a floating promise.
+function repl() {
   printWelcome();
 
   const readline = require("node:readline");

@@ -81,7 +81,9 @@ try {
 
   console.log("\n📤 Exported Parsers:");
   for (const exportName of generated.exports) {
-    console.log(`   • calc_${exportName}`);
+    // `exports` entries already carry the configured namePrefix --
+    // printing `calc_${exportName}` here would double it ("calc_calc_...").
+    console.log(`   • ${exportName}`);
   }
 } catch (error) {
   console.error("❌ Code generation failed:");
