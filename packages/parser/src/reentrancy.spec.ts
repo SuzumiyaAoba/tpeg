@@ -268,6 +268,123 @@ describe("analyzeReentrancy", () => {
     expect([...reentrantRules]).toEqual([]);
   });
 
+  // Regression: `walkSequence` used to `break` at the first non-nullable
+  // element -- correct for the sequence's own `invocableAtZero` result,
+  // but it also stopped collecting `reentrant` findings entirely, so
+  // every overlap at a LATER offset was missed. A sequence opens a new
+  // same-offset window after each non-nullable element; the next tests
+  // pin down the three distinct ways that was being lost.
+  it('flags r for `s = "x" (r / r)` -- a choice double-invocation at a NON-ZERO offset', () => {
+    // Both alternatives of the inner choice invoke `r` at offset 1
+    // (after "x" consumed): identical to the classic `r / r` overlap,
+    // just one character later -- the early-`break` version never even
+    // walked the choice node.
+    const grammar = parse(`
+      grammar G {
+        s = "x" (r / r)
+        r = "a"
+      }
+    `);
+    const { reentrantRules } = analyzeReentrancy(grammar);
+    expect([...reentrantRules]).toEqual(["r"]);
+  });
+
+  it('flags a for `s = "x" a? a "z"` -- optional fallthrough in a later window', () => {
+    // `a?` invokes `a` at offset 1 and yields an empty match on
+    // failure, then the bare `a` runs at the same offset 1. This is the
+    // same optional-fallthrough overlap the `s = (a b)? a c` test pins
+    // at offset 0, just past a consuming element -- which is precisely
+    // what the early `break` skipped over.
+    const grammar = parse(`
+      grammar G {
+        s = "x" a? a "z"
+        a = "q"
+      }
+    `);
+    const { reentrantRules } = analyzeReentrancy(grammar);
+    expect([...reentrantRules]).toEqual(["a"]);
+  });
+
+  it("flags r for `s = (\"x\" &r) r` -- a prefix element's END-position invocation overlapping the next element's start", () => {
+    // Inside the group, `&r` sits after the consuming "x": it invokes
+    // `r` at the group's own end offset, and the bare `r` element that
+    // follows the group starts at that same offset. Neither the group's
+    // `invocableAtZero` (empty -- "x" blocks it) nor a plain
+    // offset-window catches this; it needs `invocableAtEnd` of the
+    // preceding element checked against the next element's
+    // `invocableAtZero`.
+    const grammar = parse(`
+      grammar G {
+        s = ("x" &r) r
+        r = "z"
+      }
+    `);
+    const { reentrantRules } = analyzeReentrancy(grammar);
+    expect([...reentrantRules]).toEqual(["r"]);
+  });
+
+  it('flags r for `s = ("x" r?) r` -- an optional suffix inside a consuming prefix', () => {
+    // Same end-position overlap without an explicit lookahead: `r?`'s
+    // failed attempt invokes `r` at the offset where the group ends,
+    // then the bare `r` element runs there too.
+    const grammar = parse(`
+      grammar G {
+        s = ("x" r?) r
+        r = "z"
+      }
+    `);
+    const { reentrantRules } = analyzeReentrancy(grammar);
+    expect([...reentrantRules]).toEqual(["r"]);
+  });
+
+  it('flags r for `s = ("x" &r)? r` -- end-position invocation through a nullable prefix element', () => {
+    // On the path where the optional group CONSUMES ("x" matched, `&r`
+    // invoked `r` at the group's end), the following `r` runs at that
+    // same offset. The nullable element's own end-invocations are a
+    // separate source from its start-invocations.
+    const grammar = parse(`
+      grammar G {
+        s = ("x" &r)? r
+        r = "z"
+      }
+    `);
+    const { reentrantRules } = analyzeReentrancy(grammar);
+    expect([...reentrantRules]).toEqual(["r"]);
+  });
+
+  it('does NOT flag `s = r? ("x" &r)? "z"` -- the two `r` sources are on mutually exclusive paths', () => {
+    // `r?` invokes `r` at offset 0 (on the empty path). `("x" &r)?`'s
+    // `&r` invokes `r` only on the path where the group CONSUMED --
+    // ending at offset >= 1, while `r?`'s invocation was at 0. No
+    // single offset sees two `r` invocations; an analysis that merges
+    // all earlier "end" sources with all earlier "start" sources
+    // without tracking which element owns each would false-positive
+    // here.
+    const grammar = parse(`
+      grammar G {
+        s = r? ("x" &r)? "z"
+        r = "q"
+      }
+    `);
+    const { reentrantRules } = analyzeReentrancy(grammar);
+    expect([...reentrantRules]).toEqual([]);
+  });
+
+  it('flags a for `s = a{2} "z"` when `a` is nullable -- a bounded quantified re-invokes its body with no progress guard', () => {
+    // `quantified(inner, 2, 2)`'s required `for` loop has no
+    // zero-progress check (`repetition.ts`): a nullable `a` matches
+    // empty twice at the same offset. `assertNoNullableRepetition` only
+    // rejects UNBOUNDED repetitions, so this shape is legal in .tpeg.
+    const grammar = parse(`
+      grammar G {
+        s = a{2} "z"
+        a = "q"?
+      }
+    `);
+    const { reentrantRules } = analyzeReentrancy(grammar);
+    expect([...reentrantRules]).toEqual(["a"]);
+  });
+
   // Dominance minimization (`minimizeByDominance`) must only remove a
   // rule whose EVERY caller resolves, via a chain of unique-caller
   // edges, up to one already-reentrant ancestor. This is the negative

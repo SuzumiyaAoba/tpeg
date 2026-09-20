@@ -1402,8 +1402,27 @@ describe("validateGeneratedIdentifiers: reserved words and import collisions", (
     ).toThrow(/collides with a runtime import/);
   });
 
-  it("end-to-end: a rule name that collides with an import is still accepted with includeImports: false (nothing to collide with)", () => {
+  it("end-to-end: a rule name that collides with a referenced combinator is rejected even with includeImports: false", () => {
+    // `includeImports: false` suppresses the `import` lines, not the
+    // combinator calls: `literal = "a"` still emits `literal("a")`, so
+    // `export const literal = ...literal("a")` would be a TDZ
+    // `ReferenceError` at module evaluation. This used to be accepted --
+    // the collision check looked only at the (empty) emitted import list.
     const grammar = grammarFromSource('start = literal\nliteral = "a"');
+    expect(() =>
+      generateTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+      }),
+    ).toThrow(/collides with a runtime import/);
+  });
+
+  it("end-to-end: a rule name matching an UNREFERENCED combinator is still accepted with includeImports: false", () => {
+    // The check is against names the emitted code actually references,
+    // not every name tpeg-core exports: `literal = [a-z]+` emits
+    // `charClass`/`plus` but never `literal(...)`, so `const literal`
+    // collides with nothing and must keep generating.
+    const grammar = grammarFromSource("start = literal\nliteral = [a-z]+");
     expect(() =>
       generateTypeScriptParser(grammar, {
         includeImports: false,
@@ -1906,6 +1925,67 @@ describe("validateGeneratedIdentifiers: emitted-name shape and external referenc
         language: "typescript",
         includeImports: true,
         includeTypes: true,
+        optimize: true,
+      }),
+    ).toThrow(/collides with a runtime import/);
+  });
+});
+
+describe("validateGeneratedIdentifiers: binding collisions with includeImports: false (regression)", () => {
+  // `includeImports: false` suppresses the `import` statements, not the
+  // combinator CALLS -- the emitted code still references `sequence`,
+  // `untagCapture`, `literal`, etc. and expects the caller to bind them.
+  // A rule whose name collides with one of those references therefore
+  // emits `export const sequence = sequence(...)` -- a TDZ
+  // `ReferenceError` at module evaluation. The collision check used to
+  // run only against the emitted import list (empty in this mode), so
+  // such grammars passed validation and produced broken code.
+  const collidingCases: ReadonlyArray<readonly [string, string]> = [
+    ["sequence", 'start = sequence\nsequence = "a" "b"'],
+    ["untagCapture", 'start = untagCapture\nuntagCapture = "a"'],
+    ["literal", 'start = literal "x"\nliteral = "a"'],
+  ];
+
+  it.each(collidingCases)(
+    "end-to-end: both generators reject rule `%s` even with includeImports: false",
+    (_name, source) => {
+      const grammar = grammarFromSource(source);
+      expect(() =>
+        generateTypeScriptParser(grammar, {
+          includeImports: false,
+          includeTypes: false,
+        }),
+      ).toThrow(/collides with a runtime import/);
+      expect(() =>
+        generateOptimizedTypeScriptParser(grammar, {
+          language: "typescript",
+          includeImports: false,
+          includeTypes: false,
+          optimize: true,
+        }),
+      ).toThrow(/collides with a runtime import/);
+    },
+  );
+
+  it("end-to-end: an @memoize rule named `memoize` is rejected even with includeImports: false", () => {
+    // `memoize` lives in tpeg-combinator, so it is never in the tpeg-core
+    // combinator set -- but an `@memoize` rule emits a `memoize(...)`
+    // wrap, making the name a real reference the collision check must
+    // still cover.
+    const grammar = grammarFromSource(
+      'start = memoize\n@memoize\nmemoize = "a"',
+    );
+    expect(() =>
+      generateTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+      }),
+    ).toThrow(/collides with a runtime import/);
+    expect(() =>
+      generateOptimizedTypeScriptParser(grammar, {
+        language: "typescript",
+        includeImports: false,
+        includeTypes: false,
         optimize: true,
       }),
     ).toThrow(/collides with a runtime import/);

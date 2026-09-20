@@ -1307,32 +1307,35 @@ export class TPEGCodeGenerator {
 
   /**
    * The import statements this grammar's emitted code needs, plus the
-   * exact set of binding names they declare (for
+   * exact set of binding names the emitted code can reference (for
    * `validateGeneratedIdentifiers` to check rule/label/parameter names
-   * against). Both empty when `includeImports` is false -- matching the
-   * emitted code, which then declares nothing.
+   * against). `lines` is empty when `includeImports` is false -- matching
+   * the emitted code, which then declares no imports -- but
+   * `importedBindings` is populated regardless: the emitted code still
+   * CALLS these combinators in that mode (the caller is expected to
+   * supply the bindings), so a rule named e.g. `sequence` or
+   * `untagCapture` would otherwise pass validation and emit
+   * `export const sequence = sequence(...)`, a TDZ `ReferenceError` at
+   * module evaluation.
    */
   private buildImports(
     grammar: GrammarDefinition,
     usedCombinators: ReadonlySet<string>,
     startRuleIsSafeForCommitAtTopLevel: boolean,
   ): { lines: string[]; importedBindings: string[] } {
-    if (!this.options.includeImports) {
-      return { lines: [], importedBindings: [] };
-    }
-    const lines: string[] = [
-      'import type { Parser } from "@suzumiyaaoba/tpeg-core";',
+    // `Parser` is referenced only by the emitted `import type` line
+    // (`includeImports`) and the `: Parser<any>` rule annotations
+    // (`includeTypes`) -- a rule named `Parser` collides with the
+    // generated code only when at least one of those is emitted.
+    const importedBindings: string[] = [
+      ...(this.options.includeImports || this.options.includeTypes
+        ? ["Parser"]
+        : []),
+      ...usedCombinators,
     ];
-    const importedBindings: string[] = ["Parser", ...usedCombinators];
-    const combinators = Array.from(usedCombinators).sort();
-    if (combinators.length > 0) {
-      lines.push(
-        `import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`,
-      );
-    }
     // memoize and commitAtTopLevel both live in tpeg-combinator, not
     // tpeg-core, so they share one import line there rather than being
-    // folded into `combinators` above. memoize is only ever emitted for
+    // folded into `combinators` below. memoize is only ever emitted for
     // a rule carrying an explicit `@memoize` annotation (see
     // generateRule) -- this generator has no automatic memoization
     // heuristic of its own (unlike codegen-optimized.ts).
@@ -1359,12 +1362,24 @@ export class TPEGCodeGenerator {
     ) {
       combinatorPackageImports.push("commitAtTopLevel");
     }
+    importedBindings.push(...combinatorPackageImports);
+    if (!this.options.includeImports) {
+      return { lines: [], importedBindings };
+    }
+    const lines: string[] = [
+      'import type { Parser } from "@suzumiyaaoba/tpeg-core";',
+    ];
+    const combinators = Array.from(usedCombinators).sort();
+    if (combinators.length > 0) {
+      lines.push(
+        `import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`,
+      );
+    }
     if (combinatorPackageImports.length > 0) {
       lines.push(
         `import { ${combinatorPackageImports.join(", ")} } from "@suzumiyaaoba/tpeg-combinator";`,
       );
     }
-    importedBindings.push(...combinatorPackageImports);
     return { lines, importedBindings };
   }
 

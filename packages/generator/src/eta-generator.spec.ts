@@ -1394,6 +1394,65 @@ describe("EtaTPEGCodeGenerator: import precision (regression)", () => {
       ),
     ).toEqual(['import { untagCapture } from "@suzumiyaaoba/tpeg-core";']);
   });
+
+  it("rejects a rule name colliding with a referenced combinator even with includeImports: false", async () => {
+    // `includeImports: false` suppresses the `import` lines, not the
+    // combinator calls -- `sequence = "a" "b"` still emits
+    // `sequence(literal("a"), literal("b"))`, so
+    // `export const sequence = ...sequence(...)` would be a TDZ
+    // `ReferenceError` at module evaluation. The collision check used to
+    // look only at the (empty) emitted import list in this mode.
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([
+            createIdentifier("sequence"),
+            createStringLiteral("x"),
+          ]),
+        ),
+        createRuleDefinition(
+          "sequence",
+          createSequence([createStringLiteral("a"), createStringLiteral("b")]),
+        ),
+      ],
+    );
+
+    await expect(
+      generateEtaTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+        optimize: false,
+      }),
+    ).rejects.toThrow(/collides with a runtime import/);
+  });
+
+  it("accepts a rule name matching an UNREFERENCED combinator with includeImports: false", async () => {
+    // The check is against names the emitted code actually references:
+    // `literal = [a-z]+` emits `charClass`/`plus` but never `literal(...)`,
+    // so `const literal` collides with nothing and must keep generating.
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [
+        createRuleDefinition("start", createIdentifier("literal")),
+        createRuleDefinition(
+          "literal",
+          createPlus(createCharacterClass([createCharRange("a", "z")], false)),
+        ),
+      ],
+    );
+
+    await expect(
+      generateEtaTypeScriptParser(grammar, {
+        includeImports: false,
+        includeTypes: false,
+        optimize: false,
+      }),
+    ).resolves.toBeDefined();
+  });
 });
 
 describe("EtaTPEGCodeGenerator: @memoize annotation (regression)", () => {

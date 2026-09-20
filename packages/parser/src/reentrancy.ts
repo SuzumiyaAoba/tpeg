@@ -33,8 +33,8 @@
  * This module replaces the proxy with the actual condition: a rule name
  * `R` is flagged reentrant iff there is some point in the grammar where
  * two different control-flow paths can both reach an invocation of `R`
- * with zero characters consumed between them. There are exactly three
- * ways that happens in a PEG:
+ * with zero characters consumed between them. The shapes that produces
+ * in a PEG:
  *
  * 1. **Ordered-choice backtracking** -- two alternatives of a `Choice`
  *    both invoke `R` at their own start.
@@ -47,9 +47,24 @@
  *    `&R R` or `!R R'` where `R'` can also reach `R`: the lookahead
  *    itself invokes `R` (even though it consumes nothing), and then the
  *    next sequence element does too.
+ * 4. **A prefix element's end-invocation meeting the next element's
+ *    start** -- `("x" r?) r` or `("x" &R) R`: the group's last
+ *    zero-width element invokes `R` at the offset where the group ends,
+ *    which is exactly where the following element runs.
+ * 5. **A bounded `e{n,m}` over a nullable body** -- `quantified`'s
+ *    required/bounded-optional loops (`packages/core/repetition.ts`)
+ *    have no zero-progress guard, so `a{2}` invokes `a` twice at the
+ *    same offset when `a` can match empty.
  *
- * All three reduce to the same shape once phrased as "which rule names
- * can this expression invoke without consuming a character first,
+ * None of these is offset-specific to a rule's own start: a `Sequence`
+ * can open a NEW same-offset window after every non-nullable element
+ * (`"x" a? a` double-invokes `a` at offset 1, not 0), so `walkSequence`
+ * tracks a fresh overlap window per segment plus each boundary's
+ * `invocableAtEnd` (source 4), rather than stopping at the first
+ * non-nullable element.
+ *
+ * The first three reduce to the same shape once phrased as "which rule
+ * names can this expression invoke without consuming a character first,
  * relative to its own start" -- call that `invocableAtZero`. A `Choice`
  * or a nullable-prefix run of `Sequence` elements is reentrant on `R`
  * exactly when `R` shows up in `invocableAtZero` for more than one of
@@ -164,39 +179,69 @@ interface WalkContext {
    * `invocableAtZero` sets, each seeded with its own rule name -- see
    * `computeRuleInvocableAtZero`. */
   readonly ruleInvocableAtZero: ReadonlyMap<string, ReadonlySet<string>>;
+  /** Converged per-rule `invocableAtEnd` sets -- the rules a rule's own
+   * body can invoke at the position where the rule's match ENDS (the
+   * mirror image of `invocableAtZero`; see `computeRuleInvocableAtEnd`
+   * and `endWalk`). Used by `walkSequence` to detect a rule invoked at
+   * the boundary between two elements by both sides of the boundary
+   * (e.g. `("x" &r) r`: `&r` invokes `r` at the group's end offset,
+   * which is exactly where the bare `r` element then runs). */
+  readonly ruleInvocableAtEnd: ReadonlyMap<string, ReadonlySet<string>>;
   readonly nullableRules: ReadonlyMap<string, boolean>;
 }
-
-/**
- * Unions `elResult`'s `total` into `total`, flagging anything already
- * present as newly reentrant. Shared by `walkSequence` (nullable-prefix
- * elements) and `walkChoice` (all alternatives) -- see the module doc
- * comment for why these are the same computation with a different
- * "which children are simultaneously reachable at offset 0" rule.
- */
-const foldChild = (
-  total: Set<string>,
-  reentrant: Set<string>,
-  elResult: InvocationResult,
-): void => {
-  for (const r of elResult.reentrant) reentrant.add(r);
-  for (const r of elResult.total) {
-    if (total.has(r)) reentrant.add(r);
-  }
-  for (const r of elResult.total) total.add(r);
-};
 
 const walkSequence = (expr: Sequence, ctx: WalkContext): InvocationResult => {
   const total = new Set<string>();
   const reentrant = new Set<string>();
+  // `window` accumulates the rule names invocable at the CURRENT shared
+  // offset -- it aliases `total` while still in the sequence's own
+  // nullable prefix (that first window is exactly `invocableAtZero`,
+  // the value callers expect back), then restarts fresh after every
+  // non-nullable element: each such element consumed >= 1 character on
+  // success, so the elements after it run at a strictly greater offset
+  // -- a new window, where an overlap is every bit as reentrant as one
+  // at offset 0 (`"x" a? a` invokes `a` twice at offset 1). The earlier
+  // version simply `break`ed at the first non-nullable element: correct
+  // for `total` but it also stopped looking for reentrancy entirely,
+  // missing every overlap past that point (`"x" (r / r)`, `"x" a? a`).
+  let window: Set<string> = total;
+  // `endReach` accumulates names invocable at the position where the
+  // already-walked prefix can END (see `endWalk`): for the element just
+  // before a non-nullable consumer that's the consumer's own
+  // end-invocations, and each nullable element adds its own
+  // end-invocations on top (on a path where it consumed but everything
+  // after it matched empty). Any single `endReach` source co-occurs
+  // with a later element's start-invocation, while two `endReach`
+  // sources can never co-occur at one boundary (each needs a different
+  // "last consuming element") -- so merging them into one set is exact,
+  // not an approximation.
+  let endReach = new Set<string>();
   for (const element of expr.elements) {
-    foldChild(total, reentrant, walk(element, ctx));
-    if (!isNullable(element, ctx.nullableRules)) {
-      // Non-nullable: this element is guaranteed to consume at least one
-      // character on success, so nothing after it in the sequence can
-      // still be at offset 0 relative to the sequence's start. Matches
-      // `sequenceFirstSet`'s identical early-break in `first-sets.ts`.
-      break;
+    const elResult = walk(element, ctx);
+    const elEnd = endWalk(element, ctx);
+    for (const r of elResult.reentrant) reentrant.add(r);
+    for (const r of elResult.total) {
+      // `element`'s own start-invocations (offset 0 relative to itself)
+      // land at the current boundary -- flag anything an earlier
+      // same-offset sibling start (`window`) or an earlier element's
+      // end-invocation (`endReach`) already claimed.
+      if (window.has(r) || endReach.has(r)) reentrant.add(r);
+      window.add(r);
+    }
+    if (isNullable(element, ctx.nullableRules)) {
+      // Nullable: stays in the current offset window (its start-
+      // invocation can also land at later boundaries on the all-empty
+      // path -- that's what `window` carrying `elResult.total` forward
+      // means) AND contributes its end-invocations as a new possible
+      // source at the boundary after it.
+      for (const r of elEnd) endReach.add(r);
+    } else {
+      // Non-nullable: guaranteed to consume, so every element after it
+      // starts strictly later -- a new offset window whose only
+      // prefix-end source is THIS element's end-invocations (everything
+      // before it can no longer reach the new boundary).
+      window = new Set<string>();
+      endReach = new Set(elEnd);
     }
   }
   return { total, reentrant };
@@ -310,11 +355,33 @@ const walk = (expr: Expression, ctx: WalkContext): InvocationResult => {
       return walkSequence(expr, ctx);
     case "Choice":
       return walkChoice(expr, ctx);
+    case "Quantified": {
+      const inner = walk(expr.expression, ctx);
+      // A bounded `e{n,m}` invokes its body up to `max` times with NO
+      // zero-progress guard between iterations (`quantified` in
+      // `packages/core/src/repetition.ts`: the required `for` loop and
+      // the bounded-optional loop are plain counters), so a nullable
+      // body is genuinely re-invoked at the same offset -- the same
+      // self-overlap `a a` in a plain Sequence produces, folded into
+      // one node. (`e{n,}` unbounded over a nullable body is rejected
+      // by `assertNoNullableRepetition` at generation time and the
+      // `{0,}`/`{1,}` spellings lower to `zeroOrMore`/`oneOrMore`,
+      // whose guards fire on the first zero-width match; flagging
+      // those too is harmless -- that shape never reaches codegen.)
+      if (
+        (expr.max === undefined || expr.max >= 2) &&
+        isNullable(expr.expression, ctx.nullableRules)
+      ) {
+        const reentrant = new Set<string>(inner.reentrant);
+        for (const r of inner.total) reentrant.add(r);
+        return { total: inner.total, reentrant };
+      }
+      return inner;
+    }
     case "Group":
     case "Star":
     case "Plus":
     case "Optional":
-    case "Quantified":
     case "LabeledExpression":
     case "ActionExpression":
     case "PositiveLookahead":
@@ -327,6 +394,89 @@ const walk = (expr: Expression, ctx: WalkContext): InvocationResult => {
       return walk(expr.expression, ctx);
     default:
       return EMPTY_RESULT;
+  }
+};
+
+/**
+ * `invocableAtEnd(expr)`: the mirror image of `walk`'s `.total` -- the
+ * set of rule names `expr` can invoke AT the position where its own
+ * match ends (rather than where it starts). `walkSequence` uses it to
+ * detect a rule invoked at an element boundary by both sides:
+ * `("x" r?) r` invokes `r` at the end of the group (inside `r?`'s
+ * failed attempt) and again at the bare `r` element's start -- both at
+ * the same input offset.
+ *
+ * Node-for-node, relative to `walk`:
+ *
+ * - `Identifier(R)` resolves to `ruleInvocableAtEnd[R]` (rules R's own
+ *   body invokes at R's end), plus `R` itself when R is nullable: a
+ *   call to R sits at R's start, and only an empty match puts that
+ *   call site at R's end position too.
+ * - `Sequence` scans elements RIGHT-to-left through its nullable
+ *   suffix: each suffix element contributes both its start-invocations
+ *   (`walk(...).total` -- its start coincides with the sequence's end
+ *   when everything after it matched empty) and its own end-invocations
+ *   (`endWalk`), and the first non-nullable element contributes only
+ *   its end-invocations before the scan stops (its start is strictly
+ *   earlier than its end, so its start-invocations can never land at
+ *   the sequence's end offset).
+ * - Repetition wrappers contribute `walk(inner).total` (a repetition
+ *   always makes one final zero-width/failed attempt at its own end
+ *   position) plus `endWalk(inner)` (the last successful iteration's
+ *   end-invocations land there too).
+ * - Lookaheads contribute `walk(inner).total`: a lookahead ends where
+ *   it started, so the invocations it makes at its end position are
+ *   exactly its zero-offset ones.
+ * - Everything else is transparent or empty exactly as in `walk`.
+ */
+const endWalk = (expr: Expression, ctx: WalkContext): ReadonlySet<string> => {
+  switch (expr.type) {
+    case "Identifier": {
+      const known = ctx.ruleInvocableAtEnd.get(expr.name);
+      if (!known) return EMPTY_RESULT.total;
+      if (isNullable(expr, ctx.nullableRules)) {
+        const withSelf = new Set<string>(known);
+        withSelf.add(expr.name);
+        return withSelf;
+      }
+      return known;
+    }
+    case "Sequence": {
+      const acc = new Set<string>();
+      for (let i = expr.elements.length - 1; i >= 0; i--) {
+        const element = expr.elements[i] as Expression;
+        for (const r of endWalk(element, ctx)) acc.add(r);
+        if (!isNullable(element, ctx.nullableRules)) break;
+        for (const r of walk(element, ctx).total) acc.add(r);
+      }
+      return acc;
+    }
+    case "Choice": {
+      const acc = new Set<string>();
+      for (const alternative of expr.alternatives) {
+        for (const r of endWalk(alternative, ctx)) acc.add(r);
+      }
+      return acc;
+    }
+    case "Optional":
+    case "Star":
+    case "Plus":
+    case "Quantified":
+    case "Skip": {
+      const acc = new Set<string>(endWalk(expr.expression, ctx));
+      for (const r of walk(expr.expression, ctx).total) acc.add(r);
+      return acc;
+    }
+    case "PositiveLookahead":
+    case "NegativeLookahead":
+      return walk(expr.expression, ctx).total;
+    case "Group":
+    case "Span":
+    case "LabeledExpression":
+    case "ActionExpression":
+      return endWalk(expr.expression, ctx);
+    default:
+      return EMPTY_RESULT.total;
   }
 };
 
@@ -417,6 +567,174 @@ const computeRuleInvocableAtZero = (
     for (const dep of directDeps.get(rule.name) as ReadonlySet<string>) {
       if (table.has(dep)) absorb(rule.name, [dep]);
     }
+  }
+
+  while (queue.length > 0) {
+    const dep = queue.pop() as string;
+    inQueue.delete(dep);
+    const delta = pending.get(dep) as string[];
+    pending.set(dep, []);
+    for (const dependent of dependents.get(dep) ?? []) {
+      absorb(dependent, delta);
+    }
+  }
+
+  return table;
+};
+
+/**
+ * The rule names `expr` references in positions that contribute to
+ * `endWalk(expr)` -- the dual of `collectZeroOffsetRuleRefs`
+ * (`./first-sets.ts`) for `computeRuleInvocableAtEnd`, mirroring
+ * `endWalk`'s own traversal exactly:
+ *
+ * - `zero` receives every `Identifier` reached through a *zero-offset*
+ *   position inside an end-position context (a nullable `Sequence`
+ *   suffix element, the inner of a repetition/lookahead) -- those
+ *   contribute `ruleInvocableAtZero[name]` (an already-converged
+ *   constant) to the owner's `invocableAtEnd`.
+ * - `end` receives every `Identifier` reached through a *genuinely
+ *   end-position* context (the first non-nullable element of the
+ *   suffix scan, the `Identifier` case itself) -- those contribute
+ *   `ruleInvocableAtEnd[name]`, propagated through the fixpoint, plus
+ *   `name` itself when the referenced rule is nullable (the empty-match
+ *   call site; see `endWalk`'s `Identifier` case).
+ */
+const collectEndRuleRefs = (
+  expr: Expression,
+  nullableRules: ReadonlyMap<string, boolean>,
+  zero: Set<string>,
+  end: Set<string>,
+): void => {
+  switch (expr.type) {
+    case "Identifier":
+      end.add(expr.name);
+      return;
+    case "Sequence":
+      for (let i = expr.elements.length - 1; i >= 0; i--) {
+        const element = expr.elements[i] as Expression;
+        collectEndRuleRefs(element, nullableRules, zero, end);
+        if (!isNullable(element, nullableRules)) break;
+        collectZeroOffsetRuleRefs(element, nullableRules, zero);
+      }
+      return;
+    case "Choice":
+      for (const alternative of expr.alternatives) {
+        collectEndRuleRefs(alternative, nullableRules, zero, end);
+      }
+      return;
+    case "Optional":
+    case "Star":
+    case "Plus":
+    case "Quantified":
+    case "Skip":
+      collectEndRuleRefs(expr.expression, nullableRules, zero, end);
+      collectZeroOffsetRuleRefs(expr.expression, nullableRules, zero);
+      return;
+    case "PositiveLookahead":
+    case "NegativeLookahead":
+      collectZeroOffsetRuleRefs(expr.expression, nullableRules, zero);
+      return;
+    case "Group":
+    case "Span":
+    case "LabeledExpression":
+    case "ActionExpression":
+      collectEndRuleRefs(expr.expression, nullableRules, zero, end);
+      return;
+    default:
+      return;
+  }
+};
+
+/**
+ * Computes, for every rule, the transitive set of rule names its body
+ * can invoke at the position where the rule's match ends -- the
+ * fixpoint feeding `endWalk`'s `Identifier` case, exactly the way
+ * `computeRuleInvocableAtZero` feeds `walk`'s.
+ *
+ * Unlike the zero table there is NO self-seed: a rule's own name is
+ * not invoked at its body's end merely by being invoked at its start.
+ * A rule's name enters its own end set only if its body can invoke it
+ * again at the end position AND it is nullable (so that recursive call
+ * site can sit at the body's end offset) -- the same conditional
+ * `endWalk`'s `Identifier` case applies.
+ *
+ * Edge structure: `end` deps (see `collectEndRuleRefs`) propagate
+ * `ruleInvocableAtEnd` deltas through the worklist; `zero` deps
+ * contribute whole `ruleInvocableAtZero` sets, which are already
+ * converged constants by the time this runs, so they fold into the
+ * seed and need no edges of their own.
+ */
+const computeRuleInvocableAtEnd = (
+  grammar: GrammarDefinition,
+  nullableRules: ReadonlyMap<string, boolean>,
+  ruleInvocableAtZero: ReadonlyMap<string, ReadonlySet<string>>,
+): Map<string, Set<string>> => {
+  const table = new Map<string, Set<string>>(
+    grammar.rules.map((r) => [r.name, new Set<string>()]),
+  );
+
+  // dependents.get(d) = every rule whose end traversal reaches `d`,
+  // i.e. whose `invocableAtEnd` must absorb `table[d]` whenever it grows.
+  const dependents = new Map<string, Set<string>>();
+  const seeds = new Map<string, string[]>();
+  for (const rule of grammar.rules) {
+    const zero = new Set<string>();
+    const end = new Set<string>();
+    collectEndRuleRefs(rule.pattern, nullableRules, zero, end);
+    const seed: string[] = [];
+    for (const dep of zero) {
+      const depZero = ruleInvocableAtZero.get(dep);
+      if (depZero) {
+        for (const name of depZero) seed.push(name);
+      }
+    }
+    for (const dep of end) {
+      if (!table.has(dep)) continue;
+      // A nullable dep's own name is an end-position call site (its
+      // empty match makes call offset == end offset); a self-edge needs
+      // no propagation entry -- absorbing `table[R]` into itself is a
+      // no-op -- but the conditional own-name contribution still counts.
+      if (nullableRules.get(dep)) seed.push(dep);
+      if (dep !== rule.name) {
+        let set = dependents.get(dep);
+        if (!set) {
+          set = new Set();
+          dependents.set(dep, set);
+        }
+        set.add(rule.name);
+      }
+    }
+    seeds.set(rule.name, seed);
+  }
+
+  const pending = new Map<string, string[]>();
+  const inQueue = new Set<string>();
+  const queue: string[] = [];
+  const absorb = (rule: string, names: Iterable<string>): void => {
+    const target = table.get(rule) as Set<string>;
+    let delta = pending.get(rule);
+    if (!delta) {
+      delta = [];
+      pending.set(rule, delta);
+    }
+    for (const name of names) {
+      if (!target.has(name)) {
+        target.add(name);
+        delta.push(name);
+      }
+    }
+    if (delta.length > 0 && !inQueue.has(rule)) {
+      queue.push(rule);
+      inQueue.add(rule);
+    }
+  };
+
+  // Seed each rule's set (zero-dep constants + nullable end-dep names);
+  // the worklist then propagates `table[dep]` growth along the end-dep
+  // edges exactly like `computeRuleInvocableAtZero`.
+  for (const rule of grammar.rules) {
+    absorb(rule.name, seeds.get(rule.name) as string[]);
   }
 
   while (queue.length > 0) {
@@ -597,7 +915,16 @@ export const analyzeReentrancy = (
     grammar,
     nullableRules,
   );
-  const ctx: WalkContext = { ruleInvocableAtZero, nullableRules };
+  const ruleInvocableAtEnd = computeRuleInvocableAtEnd(
+    grammar,
+    nullableRules,
+    ruleInvocableAtZero,
+  );
+  const ctx: WalkContext = {
+    ruleInvocableAtZero,
+    ruleInvocableAtEnd,
+    nullableRules,
+  };
 
   const rawReentrantRules = new Set<string>();
   for (const rule of grammar.rules) {

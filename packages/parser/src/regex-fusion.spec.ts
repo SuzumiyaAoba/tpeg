@@ -53,6 +53,16 @@ function fusabilityByRule(src: string): Record<string, boolean> {
 
 async function compileRuleFor(grammar: GrammarDefinition, ruleName: string) {
   const core = await import("@suzumiyaaoba/tpeg-core");
+  // Generated code may reference tpeg-combinator helpers in addition to
+  // tpeg-core's combinators -- the sandbox must bind them or the factory
+  // throws `ReferenceError` at definition time. Bind only the two names
+  // the generator can emit (see `combinatorPackageImports` in
+  // codegen-optimized.ts): spreading the whole module would collide
+  // with rule names like `number`/`whitespace` that tpeg-combinator
+  // also exports.
+  const { memoize, commitAtTopLevel } =
+    await import("@suzumiyaaoba/tpeg-combinator");
+  const runtime = { ...core, memoize, commitAtTopLevel };
   const generated = generateOptimizedTypeScriptParser(grammar, {
     includeImports: false,
     includeTypes: false,
@@ -64,10 +74,10 @@ async function compileRuleFor(grammar: GrammarDefinition, ruleName: string) {
     (m) => m[1] as string,
   );
   const factory = new Function(
-    ...Object.keys(core),
+    ...Object.keys(runtime),
     `${body}\nreturn { ${ruleNames.join(", ")} };`,
   );
-  const built = factory(...Object.values(core)) as Record<
+  const built = factory(...Object.values(runtime)) as Record<
     string,
     (
       input: string,
@@ -238,6 +248,16 @@ describe("isRuleFusable: structural + determinism gates", () => {
     expect(isRuleFusable(rule, analysis)).toBe(true);
 
     const core = await import("@suzumiyaaoba/tpeg-core");
+    // Generated code may reference tpeg-combinator helpers in addition to
+    // tpeg-core's combinators -- the sandbox must bind them or the factory
+    // throws `ReferenceError` at definition time. Bind only the two names
+    // the generator can emit (see `combinatorPackageImports` in
+    // codegen-optimized.ts): spreading the whole module would collide
+    // with rule names like `number`/`whitespace` that tpeg-combinator
+    // also exports.
+    const { memoize, commitAtTopLevel } =
+      await import("@suzumiyaaoba/tpeg-combinator");
+    const runtime = { ...core, memoize, commitAtTopLevel };
     const compile = (enableRegexFusion: boolean) => {
       const generated = generateOptimizedTypeScriptParser(grammar, {
         includeImports: false,
@@ -250,10 +270,10 @@ describe("isRuleFusable: structural + determinism gates", () => {
         ...generated.code.matchAll(/^export const (\w+)/gm),
       ].map((m) => m[1] as string);
       const factory = new Function(
-        ...Object.keys(core),
+        ...Object.keys(runtime),
         `${body}\nreturn { ${ruleNames.join(", ")} };`,
       );
-      const built = factory(...Object.values(core)) as Record<
+      const built = factory(...Object.values(runtime)) as Record<
         string,
         (
           input: string,
@@ -327,6 +347,16 @@ describe("isRuleFusable: structural + determinism gates", () => {
     expect(isRuleFusable(rule, analysis)).toBe(false);
 
     const core = await import("@suzumiyaaoba/tpeg-core");
+    // Generated code may reference tpeg-combinator helpers in addition to
+    // tpeg-core's combinators -- the sandbox must bind them or the factory
+    // throws `ReferenceError` at definition time. Bind only the two names
+    // the generator can emit (see `combinatorPackageImports` in
+    // codegen-optimized.ts): spreading the whole module would collide
+    // with rule names like `number`/`whitespace` that tpeg-combinator
+    // also exports.
+    const { memoize, commitAtTopLevel } =
+      await import("@suzumiyaaoba/tpeg-combinator");
+    const runtime = { ...core, memoize, commitAtTopLevel };
     const unfused = core.optional(core.optional(core.literal("-")));
 
     const compile = (enableRegexFusion: boolean) => {
@@ -341,10 +371,10 @@ describe("isRuleFusable: structural + determinism gates", () => {
         ...generated.code.matchAll(/^export const (\w+)/gm),
       ].map((m) => m[1] as string);
       const factory = new Function(
-        ...Object.keys(core),
+        ...Object.keys(runtime),
         `${body}\nreturn { ${ruleNames.join(", ")} };`,
       );
-      const built = factory(...Object.values(core)) as Record<
+      const built = factory(...Object.values(runtime)) as Record<
         string,
         (
           input: string,
@@ -371,6 +401,16 @@ describe("isRuleFusable: structural + determinism gates", () => {
 
   it('produces output identical to the unfused combinator tree for "a"? "ab" across inputs that distinguish possessive (PEG) from backtracking (naive regex) optional semantics -- before the fix, "ab" and "aba" wrongly succeeded when fused', async () => {
     const core = await import("@suzumiyaaoba/tpeg-core");
+    // Generated code may reference tpeg-combinator helpers in addition to
+    // tpeg-core's combinators -- the sandbox must bind them or the factory
+    // throws `ReferenceError` at definition time. Bind only the two names
+    // the generator can emit (see `combinatorPackageImports` in
+    // codegen-optimized.ts): spreading the whole module would collide
+    // with rule names like `number`/`whitespace` that tpeg-combinator
+    // also exports.
+    const { memoize, commitAtTopLevel } =
+      await import("@suzumiyaaoba/tpeg-combinator");
+    const runtime = { ...core, memoize, commitAtTopLevel };
     const grammar = createGrammarDefinition(
       "G",
       [],
@@ -404,10 +444,10 @@ describe("isRuleFusable: structural + determinism gates", () => {
         ...generated.code.matchAll(/^export const (\w+)/gm),
       ].map((m) => m[1] as string);
       const factory = new Function(
-        ...Object.keys(core),
+        ...Object.keys(runtime),
         `${body}\nreturn { ${ruleNames.join(", ")} };`,
       );
-      const built = factory(...Object.values(core)) as Record<
+      const built = factory(...Object.values(runtime)) as Record<
         string,
         (
           input: string,
@@ -569,6 +609,16 @@ describe("generateOptimizedTypeScriptParser({ enableRegexFusion: true, includeIm
     });
 
     const core = await import("@suzumiyaaoba/tpeg-core");
+    // Generated code may reference tpeg-combinator helpers in addition to
+    // tpeg-core's combinators -- the sandbox must bind them or the factory
+    // throws `ReferenceError` at definition time. Bind only the two names
+    // the generator can emit (see `combinatorPackageImports` in
+    // codegen-optimized.ts): spreading the whole module would collide
+    // with rule names like `number`/`whitespace` that tpeg-combinator
+    // also exports.
+    const { memoize, commitAtTopLevel } =
+      await import("@suzumiyaaoba/tpeg-combinator");
+    const runtime = { ...core, memoize, commitAtTopLevel };
     const body = generated.code
       .replace(/^import[^\n]*\n?/gm, "")
       .replace(/^export const (\w+)/gm, "const $1");
@@ -576,10 +626,10 @@ describe("generateOptimizedTypeScriptParser({ enableRegexFusion: true, includeIm
       (m) => m[1] as string,
     );
     const factory = new Function(
-      ...Object.keys(core),
+      ...Object.keys(runtime),
       `${body}\nreturn { ${ruleNames.join(", ")} };`,
     );
-    const built = factory(...Object.values(core)) as Record<
+    const built = factory(...Object.values(runtime)) as Record<
       string,
       (
         input: string,
@@ -603,6 +653,16 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
     if (!parsed.success) return;
 
     const core = await import("@suzumiyaaoba/tpeg-core");
+    // Generated code may reference tpeg-combinator helpers in addition to
+    // tpeg-core's combinators -- the sandbox must bind them or the factory
+    // throws `ReferenceError` at definition time. Bind only the two names
+    // the generator can emit (see `combinatorPackageImports` in
+    // codegen-optimized.ts): spreading the whole module would collide
+    // with rule names like `number`/`whitespace` that tpeg-combinator
+    // also exports.
+    const { memoize, commitAtTopLevel } =
+      await import("@suzumiyaaoba/tpeg-combinator");
+    const runtime = { ...core, memoize, commitAtTopLevel };
     const compile = (enableRegexFusion: boolean) => {
       const generated = generateOptimizedTypeScriptParser(parsed.val, {
         includeImports: false,
@@ -617,10 +677,10 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
         ...generated.code.matchAll(/^export const (\w+)/gm),
       ].map((m) => m[1] as string);
       const factory = new Function(
-        ...Object.keys(core),
+        ...Object.keys(runtime),
         `${body}\nreturn { ${ruleNames.join(", ")} };`,
       );
-      const built = factory(...Object.values(core)) as Record<
+      const built = factory(...Object.values(runtime)) as Record<
         string,
         (
           input: string,
@@ -844,15 +904,25 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
     expect(digitsBlock).toContain("regexFusedMap(");
 
     const core = await import("@suzumiyaaoba/tpeg-core");
+    // Generated code may reference tpeg-combinator helpers in addition to
+    // tpeg-core's combinators -- the sandbox must bind them or the factory
+    // throws `ReferenceError` at definition time. Bind only the two names
+    // the generator can emit (see `combinatorPackageImports` in
+    // codegen-optimized.ts): spreading the whole module would collide
+    // with rule names like `number`/`whitespace` that tpeg-combinator
+    // also exports.
+    const { memoize, commitAtTopLevel } =
+      await import("@suzumiyaaoba/tpeg-combinator");
+    const runtime = { ...core, memoize, commitAtTopLevel };
     const body = generated.code.replace(/^export const (\w+)/gm, "const $1");
     const ruleNames = [...generated.code.matchAll(/^export const (\w+)/gm)].map(
       (m) => m[1] as string,
     );
     const factory = new Function(
-      ...Object.keys(core),
+      ...Object.keys(runtime),
       `${body}\nreturn { ${ruleNames.join(", ")} };`,
     );
-    const built = factory(...Object.values(core)) as Record<
+    const built = factory(...Object.values(runtime)) as Record<
       string,
       (
         input: string,
@@ -908,6 +978,16 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
     if (numberRule) expect(isRuleFusable(numberRule, analysis)).toBe(true);
 
     const core = await import("@suzumiyaaoba/tpeg-core");
+    // Generated code may reference tpeg-combinator helpers in addition to
+    // tpeg-core's combinators -- the sandbox must bind them or the factory
+    // throws `ReferenceError` at definition time. Bind only the two names
+    // the generator can emit (see `combinatorPackageImports` in
+    // codegen-optimized.ts): spreading the whole module would collide
+    // with rule names like `number`/`whitespace` that tpeg-combinator
+    // also exports.
+    const { memoize, commitAtTopLevel } =
+      await import("@suzumiyaaoba/tpeg-combinator");
+    const runtime = { ...core, memoize, commitAtTopLevel };
     const compile = (enableRegexFusion: boolean) => {
       const generated = generateOptimizedTypeScriptParser(parsed.val, {
         includeImports: false,
@@ -922,10 +1002,10 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
         ...generated.code.matchAll(/^export const (\w+)/gm),
       ].map((m) => m[1] as string);
       const factory = new Function(
-        ...Object.keys(core),
+        ...Object.keys(runtime),
         `${body}\nreturn { ${ruleNames.join(", ")} };`,
       );
-      const built = factory(...Object.values(core)) as Record<
+      const built = factory(...Object.values(runtime)) as Record<
         string,
         (
           input: string,
@@ -992,6 +1072,16 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
     }
 
     const core = await import("@suzumiyaaoba/tpeg-core");
+    // Generated code may reference tpeg-combinator helpers in addition to
+    // tpeg-core's combinators -- the sandbox must bind them or the factory
+    // throws `ReferenceError` at definition time. Bind only the two names
+    // the generator can emit (see `combinatorPackageImports` in
+    // codegen-optimized.ts): spreading the whole module would collide
+    // with rule names like `number`/`whitespace` that tpeg-combinator
+    // also exports.
+    const { memoize, commitAtTopLevel } =
+      await import("@suzumiyaaoba/tpeg-combinator");
+    const runtime = { ...core, memoize, commitAtTopLevel };
     const compile = (enableRegexFusion: boolean) => {
       const generated = generateOptimizedTypeScriptParser(parsed.val, {
         includeImports: false,
@@ -1004,10 +1094,10 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
         ...generated.code.matchAll(/^export const (\w+)/gm),
       ].map((m) => m[1] as string);
       const factory = new Function(
-        ...Object.keys(core),
+        ...Object.keys(runtime),
         `${body}\nreturn { ${ruleNames.join(", ")} };`,
       );
-      const built = factory(...Object.values(core)) as Record<
+      const built = factory(...Object.values(runtime)) as Record<
         string,
         (
           input: string,
@@ -1058,6 +1148,16 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
     if (sumRule) expect(isRuleFusable(sumRule, analysis)).toBe(false);
 
     const core = await import("@suzumiyaaoba/tpeg-core");
+    // Generated code may reference tpeg-combinator helpers in addition to
+    // tpeg-core's combinators -- the sandbox must bind them or the factory
+    // throws `ReferenceError` at definition time. Bind only the two names
+    // the generator can emit (see `combinatorPackageImports` in
+    // codegen-optimized.ts): spreading the whole module would collide
+    // with rule names like `number`/`whitespace` that tpeg-combinator
+    // also exports.
+    const { memoize, commitAtTopLevel } =
+      await import("@suzumiyaaoba/tpeg-combinator");
+    const runtime = { ...core, memoize, commitAtTopLevel };
     const compile = (enableRegexFusion: boolean) => {
       const generated = generateOptimizedTypeScriptParser(parsed.val, {
         includeImports: false,
@@ -1070,10 +1170,10 @@ describe("emitFusedRule + generateOptimizedTypeScriptParser({ enableRegexFusion:
         ...generated.code.matchAll(/^export const (\w+)/gm),
       ].map((m) => m[1] as string);
       const factory = new Function(
-        ...Object.keys(core),
+        ...Object.keys(runtime),
         `${body}\nreturn { ${ruleNames.join(", ")} };`,
       );
-      const built = factory(...Object.values(core)) as Record<
+      const built = factory(...Object.values(runtime)) as Record<
         string,
         (
           input: string,
@@ -1391,6 +1491,16 @@ async function compileScopedRule(
     throw new Error(`test grammar failed to parse: ${parsed.error.message}`);
   }
   const core = await import("@suzumiyaaoba/tpeg-core");
+  // Generated code may reference tpeg-combinator helpers in addition to
+  // tpeg-core's combinators -- the sandbox must bind them or the factory
+  // throws `ReferenceError` at definition time. Bind only the two names
+  // the generator can emit (see `combinatorPackageImports` in
+  // codegen-optimized.ts): spreading the whole module would collide
+  // with rule names like `number`/`whitespace` that tpeg-combinator
+  // also exports.
+  const { memoize, commitAtTopLevel } =
+    await import("@suzumiyaaoba/tpeg-combinator");
+  const runtime = { ...core, memoize, commitAtTopLevel };
   const generated = generateOptimizedTypeScriptParser(parsed.val, {
     includeImports: false,
     includeTypes: false,
@@ -1403,10 +1513,10 @@ async function compileScopedRule(
     (m) => m[1] as string,
   );
   const factory = new Function(
-    ...Object.keys(core),
+    ...Object.keys(runtime),
     `${body}\nreturn { ${ruleNames.join(", ")} };`,
   );
-  const built = factory(...Object.values(core)) as Record<
+  const built = factory(...Object.values(runtime)) as Record<
     string,
     (
       input: string,

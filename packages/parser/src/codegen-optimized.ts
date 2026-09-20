@@ -488,17 +488,25 @@ export class OptimizedTPEGCodeGenerator {
       ? ["performanceMonitor"]
       : [];
 
-    // Add optimized imports based on usage analysis, then reject a rule
+    // Compute the imports this grammar needs, then reject a rule
     // name, capture label, or transform parameter name that would
     // generate to a reserved word, an internal codegen name, or one of
     // the bindings just collected (plus `performanceMonitor`, a real
     // top-level declaration whenever monitoring is emitted) -- see
     // `validateGeneratedIdentifiers`'s doc comment
     // (`grammar-validation.ts`) for the concrete failure modes.
-    const { lines, bindings } = this.options.includeImports
-      ? this.generateOptimizedImports(desugared)
-      : { lines: [], bindings: [] };
-    imports.push(...lines);
+    //
+    // The binding set is computed even when `includeImports` is false:
+    // the emitted code still CALLS these combinators in that mode (the
+    // caller supplies the bindings), so a rule named e.g. `sequence` or
+    // `untagCapture` would otherwise pass validation and emit
+    // `export const sequence = sequence(...)`, a TDZ `ReferenceError`
+    // at module evaluation. Only the `import` lines themselves stay
+    // gated on `includeImports`.
+    const { lines, bindings } = this.generateOptimizedImports(desugared);
+    if (this.options.includeImports) {
+      imports.push(...lines);
+    }
     validateGeneratedIdentifiers(desugared, {
       namePrefix: this.options.namePrefix,
       importedBindings: [...bindings, ...monitoringBindings],
@@ -589,7 +597,14 @@ export class OptimizedTPEGCodeGenerator {
     bindings: string[];
   } {
     const imports = [];
-    const bindings: string[] = ["Parser"];
+    // `Parser` is referenced only by the emitted `import type` line
+    // (`includeImports`) and the `: Parser<any>` rule annotations
+    // (`includeTypes`) -- a rule named `Parser` collides with the
+    // generated code only when at least one of those is emitted.
+    const bindings: string[] =
+      this.options.includeImports || this.options.includeTypes
+        ? ["Parser"]
+        : [];
 
     // Core imports
     imports.push('import type { Parser } from "@suzumiyaaoba/tpeg-core";');

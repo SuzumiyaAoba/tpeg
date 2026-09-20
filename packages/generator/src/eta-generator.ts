@@ -345,67 +345,89 @@ export class EtaTPEGCodeGenerator {
     analysis: ReturnType<typeof analyzeGrammarPerformance>,
   ): {
     lines: string[];
-    /** Every binding name these `lines` actually import (`"Parser"` plus
-     * `"memoize"` when applicable and each used combinator), for
-     * `validateGeneratedIdentifiers` to check rule names against. Empty
-     * when `includeImports` is false, matching `lines` itself. */
+    /** Every binding name the emitted code can reference (`"Parser"` when
+     * a `Parser` type annotation or import is emitted, `"memoize"` when
+     * applicable, and each used combinator), for
+     * `validateGeneratedIdentifiers` to check rule names against.
+     * `lines` is empty when `includeImports` is false, but `bindings` is
+     * populated regardless: the emitted code still CALLS these
+     * combinators in that mode (the caller supplies the bindings), so a
+     * rule named e.g. `sequence` or `untagCapture` would otherwise pass
+     * validation and emit `export const sequence = sequence(...)`, a TDZ
+     * `ReferenceError` at module evaluation -- matching `codegen.ts`'s
+     * `buildImports` and `codegen-optimized.ts`'s import pass. */
     bindings: string[];
   } {
     const imports = [];
     const bindings: string[] = [];
 
-    if (this.options.includeImports) {
+    // `Parser` is referenced only by the emitted `import type` line
+    // (`includeImports`) and the `: Parser<...>` rule annotations the
+    // templates render (`includeTypes`) -- a rule named `Parser` collides
+    // with the generated code only when at least one of those is emitted.
+    if (this.options.includeImports || this.options.includeTypes) {
       bindings.push("Parser");
+    }
+
+    // Analyze which combinators are actually needed -- unconditionally,
+    // since the emitted code calls them whether or not the import lines
+    // are emitted (see the `bindings` doc above).
+    const usedCombinators = new Set<string>();
+
+    grammar.rules.forEach((rule, index) => {
+      this.collectUsedCombinators(rule.pattern, usedCombinators, index);
+    });
+
+    // Every rule's emitted implementation is wrapped in
+    // `untagCapture(...)` (see `generateRuleImplementation`) regardless
+    // of its pattern -- same rule-boundary normalization
+    // `codegen.ts`/`codegen-optimized.ts` apply -- so the import is
+    // needed unconditionally whenever the grammar declares any rule.
+    if (grammar.rules.length > 0) {
+      usedCombinators.add("untagCapture");
+    }
+
+    // memoize lives in tpeg-combinator, not tpeg-core, so it gets its own
+    // import line rather than being folded into usedCombinators below --
+    // tpeg-core doesn't export it.
+    //
+    // Whether to import it must match the per-rule emission decision
+    // exactly: an explicit `@memoize` annotation (which applies even
+    // when `enableMemoization` is off -- see the rule loop above), or
+    // shouldMemoize's complexity check (estimatedComplexity === "high"
+    // || hasRecursion). The coarser grammar-level
+    // estimatedParseComplexity can stay "low" even when a single small
+    // rule is genuinely recursive, which would skip this import while
+    // a rule's generated code still called memoize().
+    let anyRuleMemoized = grammar.rules.some(
+      (rule) => findMemoizeAnnotation(rule) !== undefined,
+    );
+    if (!anyRuleMemoized && this.options.enableMemoization) {
+      for (const complexity of analysis.ruleComplexity.values()) {
+        if (
+          complexity.estimatedComplexity === "high" ||
+          complexity.hasRecursion
+        ) {
+          anyRuleMemoized = true;
+          break;
+        }
+      }
+    }
+    if (anyRuleMemoized) {
+      bindings.push("memoize");
+    }
+
+    const combinators = Array.from(usedCombinators).sort();
+    bindings.push(...combinators);
+
+    if (this.options.includeImports) {
       // Core imports
       imports.push('import type { Parser } from "@suzumiyaaoba/tpeg-core";');
 
-      // Analyze which combinators are actually needed
-      const usedCombinators = new Set<string>();
-
-      grammar.rules.forEach((rule, index) => {
-        this.collectUsedCombinators(rule.pattern, usedCombinators, index);
-      });
-
-      // Every rule's emitted implementation is wrapped in
-      // `untagCapture(...)` (see `generateRuleImplementation`) regardless
-      // of its pattern -- same rule-boundary normalization
-      // `codegen.ts`/`codegen-optimized.ts` apply -- so the import is
-      // needed unconditionally whenever the grammar declares any rule.
-      if (grammar.rules.length > 0) {
-        usedCombinators.add("untagCapture");
-      }
-
-      // memoize lives in tpeg-combinator, not tpeg-core, so it gets its own
-      // import line rather than being folded into usedCombinators below --
-      // tpeg-core doesn't export it.
-      //
-      // Whether to import it must match the per-rule emission decision
-      // exactly: an explicit `@memoize` annotation (which applies even
-      // when `enableMemoization` is off -- see the rule loop above), or
-      // shouldMemoize's complexity check (estimatedComplexity === "high"
-      // || hasRecursion). The coarser grammar-level
-      // estimatedParseComplexity can stay "low" even when a single small
-      // rule is genuinely recursive, which would skip this import while
-      // a rule's generated code still called memoize().
-      let anyRuleMemoized = grammar.rules.some(
-        (rule) => findMemoizeAnnotation(rule) !== undefined,
-      );
-      if (!anyRuleMemoized && this.options.enableMemoization) {
-        for (const complexity of analysis.ruleComplexity.values()) {
-          if (
-            complexity.estimatedComplexity === "high" ||
-            complexity.hasRecursion
-          ) {
-            anyRuleMemoized = true;
-            break;
-          }
-        }
-      }
       if (anyRuleMemoized) {
         imports.push(
           'import { memoize } from "@suzumiyaaoba/tpeg-combinator";',
         );
-        bindings.push("memoize");
       }
 
       // Generate combinator import. Guarded on `length > 0` -- a grammar
@@ -414,12 +436,10 @@ export class EtaTPEGCodeGenerator {
       // no `tpeg-core` combinator at all, and an unconditional push here
       // emitted `import {  } from "@suzumiyaaoba/tpeg-core";` (valid but
       // pointless) in that case. Mirrors `codegen.ts`'s identical guard.
-      const combinators = Array.from(usedCombinators).sort();
       if (combinators.length > 0) {
         imports.push(
           `import { ${combinators.join(", ")} } from "@suzumiyaaoba/tpeg-core";`,
         );
-        bindings.push(...combinators);
       }
     }
 
