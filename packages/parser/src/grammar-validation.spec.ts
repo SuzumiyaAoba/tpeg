@@ -1186,6 +1186,37 @@ describe("validateGrammar: @start annotations", () => {
  * generators, which is what actually determines `importedBindings` in
  * practice.
  */
+describe("validateGrammar: inert grammar-level flag annotations", () => {
+  it("rejects a typo'd rule annotation that fell through to grammar level", () => {
+    for (const typo of ["@memoise", "@noSkip"]) {
+      const grammar = grammarFromSource(`main = "m"\n${typo}\nhelper = "h"`);
+      expect(() => validateGrammar(grammar)).toThrow(
+        new RegExp(`misplaced flag annotation\\(s\\): ${typo}`),
+      );
+    }
+  });
+
+  it("rejects a trailing `@x` span read as an annotation before a rule header", () => {
+    // docs/peg-grammar.md's "Source-Span Operator" example: `@x` here
+    // is read as a flag annotation for `second`, which silently dropped
+    // it from `first`'s pattern.
+    const grammar = grammarFromSource('first = "a" @x\nsecond = "b"\nx = "c"');
+    expect(() => validateGrammar(grammar)).toThrow(/write `@\(name\)`/);
+  });
+
+  it("accepts key/value metadata annotations, including an empty description", () => {
+    const grammar = grammarFromSource(
+      '@version: "1.0"\n@description: ""\n@custom: "anything"\nmain = "m"',
+    );
+    expect(() => validateGrammar(grammar)).not.toThrow();
+  });
+
+  it("accepts real rule annotations directly above their rule", () => {
+    const grammar = grammarFromSource('@memoize\n@noskip\nmain = "m"');
+    expect(() => validateGrammar(grammar)).not.toThrow();
+  });
+});
+
 describe("validateGeneratedIdentifiers: reserved words and import collisions", () => {
   it("rejects a rule name that is a JS reserved word", () => {
     const grammar = grammarFromSource('class = "a"');

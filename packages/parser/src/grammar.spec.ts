@@ -3,6 +3,7 @@
  */
 
 import { describe, expect, test } from "vite-plus/test";
+import { parse } from "@suzumiyaaoba/tpeg-core";
 import { testParse } from "./test-utils";
 import {
   documentationComment,
@@ -1464,6 +1465,33 @@ grammar Example {
       // ~1200 `grammarDefinition` parses -- same intermittent-timeout
       // exposure as the metamorphic test above.
     }, 20000);
+  });
+
+  describe("parse() error position for a syntax error inside a rule body", () => {
+    // Rule bodies are parsed from a sliced copy of the source, so their
+    // leaf failures recorded into the farthest-failure watermark under a
+    // DIFFERENT input string -- lost as soon as the enclosing grammarItem
+    // choice backtracked. Every such error used to be reported at the
+    // rule's start as 'Expected "transforms" or ... or "}"'.
+    const errorAt = (source: string) => {
+      const result = parse(grammarDefinition)(source);
+      if (result.success) throw new Error("expected a parse failure");
+      return result.error;
+    };
+
+    test.each([
+      ['grammar G {\n  a = "x" [a-]\n  b = "y"\n}', "[a-]", 3],
+      ['grammar G {\n  a = "x" ("y" / )\n  b = "y"\n}', "/ )", 2],
+    ])("%j reports inside the rule body", (source, marker, delta) => {
+      const error = errorAt(source);
+      expect(error.pos).toBe(source.indexOf(marker) + delta);
+      expect(error.message).not.toContain('"transforms"');
+    });
+
+    test("trailing unparseable content after a rule expression reports its own offset", () => {
+      const source = 'grammar G {\n  a = "x" @\n  b = "y"\n}';
+      expect(errorAt(source).pos).toBeGreaterThan(source.indexOf('"x"'));
+    });
   });
 
   describe("JavaScript-aware rule-boundary and action-body scanning", () => {

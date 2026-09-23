@@ -14,6 +14,7 @@ import {
 import { codeContainsIdentifier } from "./brace-scanner";
 import { analyzeFirstSets, assertNoNullableRepetition } from "./first-sets";
 import {
+  findExternalIdentifierReferences,
   findQualifiedIdentifierReferences,
   resolveStartRule,
   validateGeneratedIdentifiers,
@@ -982,6 +983,35 @@ export const buildQualifiedIdentifierWarnings = (
 };
 
 /**
+ * The bare-`Identifier` counterpart of
+ * {@link buildQualifiedIdentifierWarnings}: one warning per distinct
+ * (rule, name) pair referencing a name this grammar declares no rule for
+ * (`findExternalIdentifierReferences`). Such a reference is emitted as a
+ * bare binding the caller must supply (the external-parser escape hatch
+ * -- see `generateIdentifierCode`), which is far more often a misspelled
+ * rule name than an intentional external parser; without a warning the
+ * mistake only surfaced as a `ReferenceError` when the generated module
+ * was loaded.
+ */
+export const buildExternalIdentifierWarnings = (
+  grammar: GrammarDefinition,
+): string[] => {
+  const seen = new Set<string>();
+  const warnings: string[] = [];
+  for (const { ruleName, name } of findExternalIdentifierReferences(grammar)) {
+    const key = `${ruleName}\0${name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    warnings.push(
+      `rule "${ruleName}" references "${name}", which is not a rule of this grammar -- ` +
+        `the generated code refers to it as an external parser binding the caller must ` +
+        `supply themselves (check for a misspelled rule name if that isn't intended).`,
+    );
+  }
+  return warnings;
+};
+
+/**
  * Generates the combinator call for a `Quantified` node, given its
  * already-generated inner expression. Identical between the base and
  * optimized generators (only how `inner` itself was produced differs), so
@@ -1301,7 +1331,10 @@ export class TPEGCodeGenerator {
       code,
       imports,
       exports,
-      warnings: buildQualifiedIdentifierWarnings(desugared),
+      warnings: [
+        ...buildExternalIdentifierWarnings(desugared),
+        ...buildQualifiedIdentifierWarnings(desugared),
+      ],
     };
   }
 
@@ -1323,14 +1356,11 @@ export class TPEGCodeGenerator {
     usedCombinators: ReadonlySet<string>,
     startRuleIsSafeForCommitAtTopLevel: boolean,
   ): { lines: string[]; importedBindings: string[] } {
-    // `Parser` is referenced only by the emitted `import type` line
-    // (`includeImports`) and the `: Parser<any>` rule annotations
-    // (`includeTypes`) -- a rule named `Parser` collides with the
-    // generated code only when at least one of those is emitted.
+    // `Parser` is referenced only by the `: Parser<any>` rule annotations
+    // and the `import type` line emitted alongside them (`includeTypes`)
+    // -- a rule named `Parser` collides with the generated code only then.
     const importedBindings: string[] = [
-      ...(this.options.includeImports || this.options.includeTypes
-        ? ["Parser"]
-        : []),
+      ...(this.options.includeTypes ? ["Parser"] : []),
       ...usedCombinators,
     ];
     // memoize and commitAtTopLevel both live in tpeg-combinator, not
@@ -1366,9 +1396,13 @@ export class TPEGCodeGenerator {
     if (!this.options.includeImports) {
       return { lines: [], importedBindings };
     }
-    const lines: string[] = [
-      'import type { Parser } from "@suzumiyaaoba/tpeg-core";',
-    ];
+    // `Parser` is only referenced by the `: Parser<any>` annotations, so
+    // `includeTypes: false` (the CLI's `--no-types`) must not import it
+    // either -- an unused `import type` fails `noUnusedLocals` and is a
+    // SyntaxError if the output is used as plain JavaScript.
+    const lines: string[] = this.options.includeTypes
+      ? ['import type { Parser } from "@suzumiyaaoba/tpeg-core";']
+      : [];
     const combinators = Array.from(usedCombinators).sort();
     if (combinators.length > 0) {
       lines.push(

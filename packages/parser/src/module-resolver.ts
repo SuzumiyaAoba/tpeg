@@ -12,7 +12,12 @@
  * - Version constraint validation
  */
 
-import { dirname, resolve as resolvePath } from "node:path";
+import {
+  dirname,
+  isAbsolute,
+  normalize,
+  resolve as resolvePath,
+} from "node:path";
 import type {
   ImportStatement,
   ModuleFile,
@@ -55,6 +60,15 @@ export interface ModuleResolutionContext {
   resolving: Set<string>;
   /** File system interface */
   fileSystem: FileSystemInterface;
+  /**
+   * Tail of the queue serializing top-level {@link ModuleResolver.resolveModule}
+   * calls that share this context. `resolving` (above) is the DFS stack of
+   * ONE resolution; two concurrent resolutions interleaving on it made
+   * each see the other's in-progress modules and throw a bogus
+   * `CircularDependencyError` (e.g. `Promise.all([r.resolveModule("c"),
+   * r.resolveModule("d")])` where `c` imports `d`).
+   */
+  queue?: Promise<unknown>;
 }
 
 /**
@@ -124,6 +138,22 @@ export class ModuleResolver {
    * @returns Promise<ResolvedModule> The resolved module
    */
   async resolveModule(modulePath: string): Promise<ResolvedModule> {
+    // Serialize top-level calls sharing this context (see
+    // `ModuleResolutionContext.queue`): each runs its whole DFS alone, so
+    // `resolving` only ever holds a single resolution's stack. Later calls
+    // for already-resolved modules are still cache hits.
+    const previous = this.context.queue ?? Promise.resolve();
+    const run = previous.then(
+      () => this.resolveModuleInternal(modulePath),
+      () => this.resolveModuleInternal(modulePath),
+    );
+    this.context.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async resolveModuleInternal(
+    modulePath: string,
+  ): Promise<ResolvedModule> {
     const normalizedPath = this.normalizePath(modulePath);
 
     // Check cache first
@@ -163,7 +193,7 @@ export class ModuleResolver {
 
       // Resolve dependencies recursively
       for (const depPath of dependencies) {
-        const resolvedDep = await this.resolveModule(depPath);
+        const resolvedDep = await this.resolveModuleInternal(depPath);
         resolvedModule.allDependencies.add(resolvedDep.filePath);
 
         // Add transitive dependencies
@@ -260,9 +290,11 @@ export class ModuleResolver {
     modulePath: string,
     baseDir = this.context.baseDir,
   ): string {
-    // If it's an absolute path, return as-is
-    if (modulePath.startsWith("/")) {
-      return modulePath;
+    // An absolute path is still normalized: returned as-is, `/p/./b.tpeg`
+    // and `/p/sub/../b.tpeg` became cache keys distinct from `/p/b.tpeg`,
+    // loading (and listing as a dependency) the same file several times.
+    if (isAbsolute(modulePath)) {
+      return normalize(modulePath);
     }
 
     // Resolve relative paths
@@ -314,7 +346,7 @@ export class ModuleResolver {
       if (fullParse.success && trailingEnd !== content.length) {
         const { line, column } = offsetToPos(content, trailingEnd);
         throw new ModuleResolutionError(
-          `Failed to parse module file "${filePath}": unexpected content at line ${line}, column ${column} (the import/grammar block(s) before this point parsed successfully, but did not consume the rest of the file)`,
+          `Failed to parse module file "${filePath}": unexpected content at line ${line}, column ${column + 1} (the import/grammar block(s) before this point parsed successfully, but did not consume the rest of the file)`,
           filePath,
         );
       }
@@ -343,7 +375,7 @@ export class ModuleResolver {
           // masks it.
           const { line, column } = offsetToPos(content, fullParse.error.pos);
           throw new ModuleResolutionError(
-            `Failed to parse module file "${filePath}" at line ${line}, column ${column}: ${fullParse.error.message}`,
+            `Failed to parse module file "${filePath}" at line ${line}, column ${column + 1}: ${fullParse.error.message}`,
             filePath,
           );
         }
@@ -376,9 +408,15 @@ export class ModuleResolver {
     const importingDirectory = dirname(moduleFile.filePath);
 
     for (const importStmt of moduleFile.imports) {
-      dependencies.push(
-        this.normalizePath(importStmt.modulePath, importingDirectory),
+      const dependency = this.normalizePath(
+        importStmt.modulePath,
+        importingDirectory,
       );
+      // The same file imported twice (e.g. under two aliases) is still
+      // one dependency.
+      if (!dependencies.includes(dependency)) {
+        dependencies.push(dependency);
+      }
     }
 
     return dependencies;
@@ -506,8 +544,8 @@ export async function resolveQualifiedIdentifier(
       // handling above.
       const resolver = new ModuleResolver(context.baseDir, context.fileSystem);
       resolver.context = context;
-      const importedPath = importStmt.modulePath.startsWith("/")
-        ? importStmt.modulePath
+      const importedPath = isAbsolute(importStmt.modulePath)
+        ? normalize(importStmt.modulePath)
         : context.fileSystem.resolve(
             dirname(fromModule.filePath),
             importStmt.modulePath,

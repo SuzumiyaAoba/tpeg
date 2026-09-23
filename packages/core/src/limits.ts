@@ -34,6 +34,55 @@ export const PARSER_LIMITS = {
 let activeRecursionDepth = 0;
 
 /**
+ * The recursion-depth budget currently in force. `PARSER_LIMITS` holds the
+ * defaults; `parse(parser, { maxRecursionDepth })` (`./utils.ts`) raises or
+ * lowers it for the duration of one top-level parse via
+ * {@link withRecursionDepthLimit}. Previously both limits were hard-coded
+ * constants, so e.g. a JSON document nested a few hundred levels deep (each
+ * level is two rule references) could not be parsed at all.
+ */
+let maxRecursionDepth: number = PARSER_LIMITS.MAX_RECURSION_DEPTH;
+
+/**
+ * Resource limits a single `parse()` call may override. Each must be a
+ * positive integer or `Infinity`.
+ */
+export interface ParseLimitOptions {
+  /** Overrides `PARSER_LIMITS.MAX_INPUT_LENGTH` for this parse. */
+  readonly maxInputLength?: number;
+  /** Overrides `PARSER_LIMITS.MAX_RECURSION_DEPTH` for this parse. Raising
+   * it far beyond the default trades the clean `abort` failure for the
+   * engine's own `RangeError` once the real call stack runs out. */
+  readonly maxRecursionDepth?: number;
+}
+
+/** Throws a `RangeError` for a limit option that is not a positive
+ * integer or `Infinity`. */
+export const validateLimitOption = (name: string, value: number): void => {
+  if (
+    value !== Number.POSITIVE_INFINITY &&
+    (!Number.isInteger(value) || value < 1)
+  ) {
+    throw new RangeError(
+      `Invalid ${name}: ${value} -- must be a positive integer or Infinity`,
+    );
+  }
+};
+
+/** Runs `call` with the recursion-depth budget set to `limit`, restoring
+ * the previous budget afterwards (also when `call` throws), so a nested
+ * `parse()` with its own limit cannot leak it into the outer parse. */
+export const withRecursionDepthLimit = <R>(limit: number, call: () => R): R => {
+  const previous = maxRecursionDepth;
+  maxRecursionDepth = limit;
+  try {
+    return call();
+  } finally {
+    maxRecursionDepth = previous;
+  }
+};
+
+/**
  * Runs `call()` -- a parser invocation -- under the recursion-depth
  * budget, returning a `fatal` `ParseFailure` when the budget is already
  * exhausted.
@@ -52,11 +101,11 @@ export const guardedParserCall = <T>(
   call: () => ParseResult<T>,
   pos: number,
 ): ParseResult<T> => {
-  if (activeRecursionDepth >= PARSER_LIMITS.MAX_RECURSION_DEPTH) {
+  if (activeRecursionDepth >= maxRecursionDepth) {
     return {
       success: false,
       error: {
-        message: `Recursion depth limit exceeded (max ${PARSER_LIMITS.MAX_RECURSION_DEPTH}) -- the input nests deeper than the parser supports`,
+        message: `Recursion depth limit exceeded (max ${maxRecursionDepth}) -- the input nests deeper than the parser supports`,
         pos,
         // `abort` in addition to `fatal`: `fatal` alone is cut semantics,
         // absorbed at the enclosing `choice` boundary -- a limit must

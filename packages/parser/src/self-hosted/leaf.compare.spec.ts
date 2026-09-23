@@ -87,6 +87,9 @@ describe("self-hosted leaf grammar vs hand-written parser", () => {
       "[\\-]",
       "[\\\\]",
       "[\\^]",
+      "[a^]",
+      "[^^]",
+      "[+^-]",
       '["]',
       "[']",
       // unified escape set (escape-sequence.ts): numeric escapes and

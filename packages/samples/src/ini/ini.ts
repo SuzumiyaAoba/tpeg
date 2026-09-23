@@ -221,6 +221,75 @@ export const assembleIniData = (lines: readonly IniLine[]): IniData => {
 };
 
 /**
+ * INI has no escaping or quoting, so some strings simply cannot be
+ * written in a form {@link parseINI} reads back unchanged. Writing them
+ * anyway silently corrupted the data (a padded value came back trimmed,
+ * `v # note` came back as `v`, a key containing `=` split into a
+ * different key/value pair, a newline broke the document), so
+ * {@link formatINI} rejects them instead.
+ */
+const unrepresentable = (what: string, text: string, why: string): Error =>
+  new Error(
+    `formatINI: ${what} ${JSON.stringify(text)} cannot be written as INI -- ${why}`,
+  );
+
+const hasLineBreak = (text: string): boolean => /[\r\n]/.test(text);
+const isPadded = (text: string): boolean => text !== text.trim();
+
+const formatSectionHeader = (name: string): string => {
+  if (hasLineBreak(name) || name.includes("]")) {
+    throw unrepresentable(
+      "section name",
+      name,
+      "it contains a line break or ']'",
+    );
+  }
+  if (isPadded(name)) {
+    throw unrepresentable(
+      "section name",
+      name,
+      "surrounding whitespace is trimmed on read",
+    );
+  }
+  return `[${name}]`;
+};
+
+const formatPair = (key: string, value: string): string => {
+  if (key.trim() === "" || hasLineBreak(key) || key.includes("=")) {
+    throw unrepresentable(
+      "key",
+      key,
+      "a key must be non-blank and contain no line break or '='",
+    );
+  }
+  if (isPadded(key) || /^[[;#]/.test(key)) {
+    throw unrepresentable(
+      "key",
+      key,
+      "surrounding whitespace is trimmed on read, and a leading '[', ';' or '#' starts a section or comment",
+    );
+  }
+  if (hasLineBreak(value)) {
+    throw unrepresentable("value", value, "it contains a line break");
+  }
+  if (isPadded(value)) {
+    throw unrepresentable(
+      "value",
+      value,
+      "surrounding whitespace is trimmed on read",
+    );
+  }
+  if (/[ \t][;#]/.test(value)) {
+    throw unrepresentable(
+      "value",
+      value,
+      "whitespace followed by ';' or '#' starts an inline comment",
+    );
+  }
+  return `${key} = ${value}`;
+};
+
+/**
  * Serialize {@link IniData} back to INI text.
  *
  * Useful for testing round trips and for writing config files. Keys are
@@ -229,21 +298,23 @@ export const assembleIniData = (lines: readonly IniLine[]): IniData => {
  *
  * @param data - The parsed INI structure to serialize
  * @returns INI text ending with a trailing newline per line
+ * @throws Error when a key, value, or section name cannot be written so
+ *   that {@link parseINI} reads it back unchanged (INI has no escaping)
  */
 export const formatINI = (data: IniData): string => {
   const lines: string[] = [];
 
   for (const [key, value] of Object.entries(data.globals)) {
-    lines.push(`${key} = ${value}`);
+    lines.push(formatPair(key, value));
   }
 
   for (const [name, entries] of Object.entries(data.sections)) {
     if (lines.length > 0) {
       lines.push("");
     }
-    lines.push(`[${name}]`);
+    lines.push(formatSectionHeader(name));
     for (const [key, value] of Object.entries(entries)) {
-      lines.push(`${key} = ${value}`);
+      lines.push(formatPair(key, value));
     }
   }
 

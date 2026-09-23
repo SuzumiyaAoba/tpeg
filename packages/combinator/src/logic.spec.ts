@@ -24,6 +24,41 @@ function countedLiteral(char: string, counter: { count: number }) {
 }
 
 describe("logic combinators", () => {
+  describe("memoize: cache scope is one parse() session", () => {
+    it("re-runs the wrapped parser for a second parse() of the same text", () => {
+      const counter = { count: 0 };
+      const memoized = memoize(countedLiteral("a", counter));
+      parse(memoized)("a");
+      parse(memoized)("a");
+      expect(counter.count).toBe(2);
+    });
+
+    it("does not hand a later parse() the value object an earlier one returned", () => {
+      const memoized = memoize((input: string, p: number) => {
+        const r = literal("a")(input, p);
+        return r.success ? { ...r, val: { items: [r.val as string] } } : r;
+      });
+      const first = parse(memoized)("a");
+      if (!first.success) throw new Error("expected success");
+      first.val.items.push("MUTATED");
+      const second = parse(memoized)("a");
+      if (!second.success) throw new Error("expected success");
+      expect(second.val).not.toBe(first.val);
+      expect(second.val.items).toEqual(["a"]);
+    });
+
+    it("still caches repeated calls within one session", () => {
+      const counter = { count: 0 };
+      const memoized = memoize(countedLiteral("a", counter));
+      const twice = (input: string, p: number) => {
+        memoized(input, p);
+        return memoized(input, p);
+      };
+      parse(twice)("a");
+      expect(counter.count).toBe(1);
+    });
+  });
+
   describe("memoize", () => {
     it("should cache results", () => {
       let callCount = 0;

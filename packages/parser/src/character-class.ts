@@ -32,14 +32,19 @@ const charClassChar: Parser<string> = choice(
   // Regular characters (excluding special characters). Only "-" (the
   // range operator, 0x2D) needs to be excluded from this run -- the
   // boundary hops over it by stopping at "," (0x2C) and picking back up
-  // at "." (0x2E). "]"/"\"/"^" stay excluded (they have escapes above).
+  // at "." (0x2E). "]"/"\" stay excluded (they have escapes above).
+  // "^" is special only as the FIRST character (negation, consumed by
+  // `characterClassBrackets` before any member is parsed), so it is an
+  // ordinary member anywhere else -- `[a^]`, `[+^]` -- matching every
+  // mainstream character-class syntax; it used to be a parse error with
+  // nothing documenting why. `\^` still works too.
   // Control bytes 0x00-0x1F and DEL (0x7F) are accepted RAW here for the
   // same reason string literals accept them ("any character except the
   // closing quote/`\\`", `string-literal.ts`): docs/peg-grammar.md's
   // escape-asymmetry note explicitly documents raw control bytes working
   // in both, and values like 0x01-0x07/0x0E-0x1F/0x7F otherwise have no
   // spelling at all (no `\xNN` escape exists in this grammar).
-  charClass(["\u{0000}", ","], [".", "["], ["_", "\u{007F}"]),
+  charClass(["\u{0000}", ","], [".", "["], ["^", "\u{007F}"]),
   // Any non-ASCII character (U+0080 and up, including astral code points
   // outside the BMP), covered as one range so `charClass` (tpeg-core)
   // matches it as a single code point rather than a UTF-16 surrogate

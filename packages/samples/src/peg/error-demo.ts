@@ -40,7 +40,7 @@ const formatParseError = (error: DemoParseError, input: string): string => {
   const { line, column } = offsetToPos(input, error.pos);
 
   return `
-Error at line ${line}, column ${column}:
+Error at line ${line}, column ${column + 1}:
 Message: ${error.message}
 Expected: ${expected}
 Found: ${found}

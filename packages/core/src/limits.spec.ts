@@ -115,4 +115,48 @@ describe("PARSER_LIMITS", () => {
       expect(shallow.success).toBe(true);
     });
   });
+  describe("per-parse overrides (parse(parser, options))", () => {
+    const nested: Parser<unknown> = choice(
+      sequence(
+        literal("("),
+        lazy(() => nested),
+        literal(")"),
+      ),
+      literal("x"),
+    );
+    const nestedInput = (depth: number) =>
+      "(".repeat(depth) + "x" + ")".repeat(depth);
+
+    it("maxInputLength raises and lowers the input-length limit", () => {
+      const big = "a".repeat(PARSER_LIMITS.MAX_INPUT_LENGTH + 1);
+      expect(
+        parse(literal(big), { maxInputLength: big.length })(big).success,
+      ).toBe(true);
+      expect(parse(literal("ab"), { maxInputLength: 1 })("ab").success).toBe(
+        false,
+      );
+    });
+
+    it("maxRecursionDepth applies to that parse only", () => {
+      const input = nestedInput(1500);
+      expect(parse(nested)(input).success).toBe(false);
+      expect(parse(nested, { maxRecursionDepth: 3000 })(input).success).toBe(
+        true,
+      );
+      expect(
+        parse(nested, { maxRecursionDepth: 5 })(nestedInput(10)).success,
+      ).toBe(false);
+      // The override was restored: the default applies again.
+      expect(parse(nested)(input).success).toBe(false);
+      expect(parse(nested)(nestedInput(10)).success).toBe(true);
+    });
+
+    it("rejects invalid limit options up front", () => {
+      expect(() => parse(nested, { maxRecursionDepth: 0 })).toThrow(RangeError);
+      expect(() => parse(nested, { maxInputLength: 1.5 })).toThrow(RangeError);
+      expect(() =>
+        parse(nested, { maxInputLength: Number.POSITIVE_INFINITY }),
+      ).not.toThrow();
+    });
+  });
 });

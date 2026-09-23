@@ -1,8 +1,10 @@
 import { sepBy, takeUntil } from "@suzumiyaaoba/tpeg-combinator";
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
+  andPredicate,
   any,
   choice,
+  filter,
   literal,
   map,
   not,
@@ -62,6 +64,20 @@ const csvRow = sepBy(field, literal(","));
 // Line ending: CRLF (Windows), LF (Unix), or CR (Mac)
 const newline = choice(literal("\r\n"), literal("\n"), literal("\r"));
 
+// A blank line -- nothing but (trimmed-away) unquoted whitespace before
+// the line break or end of input. Recognized HERE, while it is still
+// known that the lone field was unquoted: after parsing, a blank line
+// and a row holding one quoted empty/whitespace field (`""`, `"  "`)
+// both look like `[""]`/`["  "]`, and dropping by value discarded those
+// real records too.
+const blankLine: Parser<null> = map(
+  seq(
+    filter(unquotedField, (value) => value === "", "blank line"),
+    andPredicate(choice(newline, not(any))),
+  ),
+  () => null,
+);
+
 // Parse multiple rows
 //
 // sepBy never fails on its own -- when `value` doesn't match at a position
@@ -70,24 +86,27 @@ const newline = choice(literal("\r\n"), literal("\n"), literal("\r"));
 // that means any malformed trailing content (e.g. a stray, unterminated
 // quote) is silently dropped instead of surfacing as a parse error, even
 // though parseCSV's contract is to throw on malformed input.
-const csvParser: Parser<string[][]> = map(
-  seq(sepBy(csvRow, newline), not(any)),
+const csvParser: Parser<(string[] | null)[]> = map(
+  seq(sepBy(choice(blankLine, csvRow), newline), not(any)),
   ([rows]) => rows,
 );
 
 /**
- * Drop only the phantom row a trailing (or repeated) line break leaves
- * behind: a line containing nothing parses as a single empty field
- * `[""]`. A row of MULTIPLE empty fields -- `,,` or `"",""` -- is a
- * real record (three/two empty columns respectively), not a blank
- * line, so "every cell is empty" would wrongly discard it along with
- * the phantom row.
+ * Drop the phantom rows blank lines (including a trailing line break)
+ * leave behind -- represented as `null` in the pre-filter row stream.
+ * Every other row is a real record, including one whose only field is
+ * a quoted empty or whitespace-only string (`""`, `"  "`), and a row of
+ * several empty fields (`,,` or `"",""`).
  *
  * Shared by {@link parseCSV} and the `.tpeg` grammar twin (`csv.tpeg`),
  * which produces the same pre-filter row stream.
  */
-export const dropPhantomRows = (rows: readonly string[][]): string[][] =>
-  rows.filter((row) => !(row.length === 1 && row[0]?.trim() === ""));
+export const dropPhantomRows = (
+  rows: readonly (readonly string[] | null)[],
+): string[][] =>
+  rows
+    .filter((row): row is readonly string[] => row !== null)
+    .map((row) => [...row]);
 
 /**
  * Parse CSV string and return array of string arrays.
@@ -211,6 +230,13 @@ export const arrayToCSV = (
 
   const escapeField = (field: string): string => {
     const fieldStr = String(field);
+
+    // A single-column row whose value is empty would be written as an
+    // empty line, which reads back as a blank line and is dropped --
+    // quote it so the record survives a write/parse round trip.
+    if (fieldStr === "" && headers.length === 1) {
+      return '""';
+    }
 
     // If field contains comma, quote, or newline, wrap in quotes. A field
     // whose stringification differs from its own trim must ALSO be quoted:

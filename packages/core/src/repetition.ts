@@ -55,7 +55,7 @@ const createInfiniteLoopError = (
       context: [
         "Parser matched but did not consume any input",
         `Input: "${inputPreview}${truncated}"`,
-        `Position: line ${line}, column ${column}`,
+        `Position: line ${line}, column ${column + 1}`,
         ...(additionalContext ? [additionalContext] : []),
       ],
     },

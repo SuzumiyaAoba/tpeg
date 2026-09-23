@@ -23,9 +23,12 @@ import {
   isValidOffset,
   literal,
   map,
+  mergeFailureWatermark,
   oneOrMore,
   optional,
+  restoreFailureWatermark,
   seq as sequence,
+  snapshotFailureWatermark,
   star as zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
@@ -529,7 +532,34 @@ const grammarRuleExpression: Parser<Expression> = (
 
   // Parse the expression within this bounded content, then shift the
   // resulting offset back to be relative to the original input.
+  //
+  // `ruleContent` is a DIFFERENT string from `input`, so every leaf
+  // failure inside `expression()` records into the farthest-failure
+  // watermark (`@suzumiyaaoba/tpeg-core`'s failure.ts) keyed by
+  // `ruleContent` -- replacing whatever the watermark held for `input`,
+  // and itself replaced again by the very next outer failure (the
+  // enclosing grammarItem choice backtracking into its
+  // `transforms`/comment/`}` alternatives). `parse()` then reported
+  // every syntax error inside a rule body at the rule's START with that
+  // unrelated outer expectation list ("Expected "transforms" or ... or
+  // "}", found "a""). Snapshot the outer watermark first, and afterwards
+  // restore it and re-merge the inner contribution shifted back into
+  // `input`'s coordinates, so the real, deeper position wins.
+  const outerWatermark = snapshotFailureWatermark();
   const result = expression()(ruleContent, 0);
+  // Materialize a failure's `error` NOW, while the watermark still holds
+  // the inner contribution: `FAIL`'s `error` is a getter over the
+  // module-global watermark, which the restore below replaces.
+  const innerError = result.success ? undefined : result.error;
+  const innerWatermark = snapshotFailureWatermark();
+  restoreFailureWatermark(outerWatermark);
+  if (innerWatermark.input === ruleContent && innerWatermark.pos >= 0) {
+    mergeFailureWatermark(
+      input,
+      pos + innerWatermark.pos,
+      innerWatermark.expected,
+    );
+  }
 
   if (result.success) {
     // `expression()` succeeding does not by itself mean it consumed the
@@ -547,6 +577,10 @@ const grammarRuleExpression: Parser<Expression> = (
     );
     if (trailingEnd !== ruleContent.length) {
       const unexpected = ruleContent.slice(trailingEnd, trailingEnd + 20);
+      // Record into the watermark too (see above): the plain failure
+      // object below is discarded when the enclosing grammarItem choice
+      // backtracks, so without this `parse()` reports the rule's start.
+      fail(input, pos + trailingEnd, TRAILING_RULE_CONTENT_EXPECTATION);
       return {
         success: false,
         error: {
@@ -572,11 +606,20 @@ const grammarRuleExpression: Parser<Expression> = (
   return {
     success: false,
     error: {
-      ...result.error,
-      pos: pos + result.error.pos,
+      ...innerError,
+      message: innerError?.message ?? "Invalid rule expression",
+      pos: pos + (innerError?.pos ?? 0),
     },
   };
 };
+
+/** Watermark expectation for a rule body with unparseable trailing
+ * content (see `grammarRuleExpression`). Allocated once, per `fail()`'s
+ * contract (`@suzumiyaaoba/tpeg-core`'s failure.ts). */
+const TRAILING_RULE_CONTENT_EXPECTATION = {
+  label: "end of rule expression",
+  parserName: "grammarRuleExpression",
+} as const;
 
 /**
  * Parse any character except newline

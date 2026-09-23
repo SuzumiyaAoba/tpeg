@@ -1,4 +1,5 @@
 import { ASCII_CHARS } from "./char-tables";
+import { escapeControlCharsForDisplay } from "./escape";
 import type { Expectation } from "./failure";
 import { fail } from "./failure";
 import type { NonEmptyString, ParseResult, Parser } from "./types";
@@ -443,7 +444,12 @@ export const literal = <T extends string>(
   // expectation object built on every mismatched character) with a single
   // top-level "expected this whole literal" description. See
   // `./failure.ts`'s `Expectation` doc comment.
-  const expectation: Expectation = { label: `"${str}"`, parserName };
+  // Control characters escaped for display (`"\\n"`, not a raw line
+  // break inside the error message) -- see `escapeControlCharsForDisplay`.
+  const expectation: Expectation = {
+    label: `"${escapeControlCharsForDisplay(str)}"`,
+    parserName,
+  };
 
   return (input: string, pos: number) => {
     if (useOptimizedPath) {

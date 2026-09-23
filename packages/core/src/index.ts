@@ -14,6 +14,7 @@ export * from "./failure";
 export * from "./ignored";
 export * from "./limits";
 export * from "./lookahead";
+export * from "./parse-session";
 export * from "./reference-eval";
 export * from "./regex-fused";
 export * from "./repetition";

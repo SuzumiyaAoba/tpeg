@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  buildExternalIdentifierWarnings,
   buildQualifiedIdentifierWarnings,
   collectTopLevelLabels,
   collectTransformFunctions,
@@ -327,7 +328,10 @@ export class EtaTPEGCodeGenerator {
       code,
       imports,
       exports,
-      warnings: buildQualifiedIdentifierWarnings(desugared),
+      warnings: [
+        ...buildExternalIdentifierWarnings(desugared),
+        ...buildQualifiedIdentifierWarnings(desugared),
+      ],
       performance: {
         estimatedComplexity: performanceAnalysis.estimatedParseComplexity,
         optimizationSuggestions: performanceAnalysis.optimizationSuggestions,
@@ -361,11 +365,11 @@ export class EtaTPEGCodeGenerator {
     const imports = [];
     const bindings: string[] = [];
 
-    // `Parser` is referenced only by the emitted `import type` line
-    // (`includeImports`) and the `: Parser<...>` rule annotations the
-    // templates render (`includeTypes`) -- a rule named `Parser` collides
-    // with the generated code only when at least one of those is emitted.
-    if (this.options.includeImports || this.options.includeTypes) {
+    // `Parser` is referenced only by the `: Parser<...>` rule annotations
+    // the templates render and the `import type` line emitted alongside
+    // them (`includeTypes`) -- a rule named `Parser` collides with the
+    // generated code only then.
+    if (this.options.includeTypes) {
       bindings.push("Parser");
     }
 
@@ -421,8 +425,11 @@ export class EtaTPEGCodeGenerator {
     bindings.push(...combinators);
 
     if (this.options.includeImports) {
-      // Core imports
-      imports.push('import type { Parser } from "@suzumiyaaoba/tpeg-core";');
+      // Core imports. `Parser` only with `includeTypes` (see `bindings`
+      // above): unused, it fails `noUnusedLocals` and isn't valid JS.
+      if (this.options.includeTypes) {
+        imports.push('import type { Parser } from "@suzumiyaaoba/tpeg-core";');
+      }
 
       if (anyRuleMemoized) {
         imports.push(
@@ -452,7 +459,11 @@ export class EtaTPEGCodeGenerator {
   private generatePerformanceImports(): string[] {
     const imports = [];
 
-    if (this.options.includeMonitoring) {
+    // Gated on `includeImports` like every other import line: with
+    // `includeImports: false` the caller supplies all bindings itself,
+    // and this line used to be emitted anyway -- an `import` inside code
+    // meant to be evaluated in a caller-provided scope.
+    if (this.options.includeMonitoring && this.options.includeImports) {
       imports.push(
         'import { globalPerformanceMonitor } from "@suzumiyaaoba/tpeg-generator";',
       );

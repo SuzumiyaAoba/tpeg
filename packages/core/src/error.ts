@@ -1,3 +1,4 @@
+import { escapeControlCharsForDisplay } from "./escape";
 import type { ParseError, ParseResult } from "./types";
 import { isFailure, isValidOffset, offsetToPos } from "./utils";
 
@@ -683,9 +684,16 @@ export const formatParseError = (
 
   const parts: string[] = [];
 
-  // Basic error message
+  // Basic error message. `Pos.column` is 0-based (`./types.ts`); the
+  // human-facing header reports it 1-based like the line number (and like
+  // every editor's `file:line:col`), so "line 1, column 1" is the first
+  // character rather than the second.
   parts.push(
-    color.bold(color.red(formatMessage(messages.parseError, { line, column }))),
+    color.bold(
+      color.red(
+        formatMessage(messages.parseError, { line, column: column + 1 }),
+      ),
+    ),
   );
 
   // Context information
@@ -718,8 +726,17 @@ export const formatParseError = (
     );
   }
 
-  // Found value
-  const normalizedFound = safeStringTrim(found);
+  // Found value. NOT trimmed away: a whitespace or control character is
+  // exactly the kind of unexpected input a reader most needs pointed out,
+  // yet `safeStringTrim` dropped the whole line for a found " ", "\t" or
+  // "\r". Control characters are escaped for display, and a found value
+  // that is still blank after that (a space) is quoted to stay visible.
+  const normalizedFound =
+    typeof found === "string" && found.length > 0
+      ? found.trim().length > 0
+        ? escapeControlCharsForDisplay(found)
+        : `"${escapeControlCharsForDisplay(found)}"`
+      : undefined;
   if (normalizedFound) {
     parts.push(
       color.red(formatMessage(messages.found, { found: normalizedFound })),

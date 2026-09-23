@@ -645,6 +645,29 @@ describe("TypeIntegrationEngine", () => {
       expect(parserInterface).toContain("}");
     });
 
+    it("imports ParseResult and qualifies result types emitted inside typeNamespace", () => {
+      const namespaced = new TypeIntegrationEngine({
+        typeNamespace: "My.Types",
+      });
+      const grammar: GrammarDefinition = createGrammarDefinition(
+        "NsGrammar",
+        [],
+        [createRuleDefinition("word", createStringLiteral("w", '"'))],
+      );
+      const typedGrammar = namespaced.createTypedGrammar(grammar);
+      const parserInterface = namespaced.generateParserInterface(typedGrammar);
+
+      expect(typedGrammar.typeDefinitions).toContain(
+        "export namespace My.Types {",
+      );
+      expect(parserInterface).toContain(
+        'import type { ParseResult } from "@suzumiyaaoba/tpeg-core";',
+      );
+      expect(parserInterface).toContain(
+        "word(input: string): ParseResult<My.Types.WordResult>;",
+      );
+    });
+
     it("should include warnings for circular dependencies in interface", () => {
       const grammar: GrammarDefinition = createGrammarDefinition(
         "CircularGrammar",

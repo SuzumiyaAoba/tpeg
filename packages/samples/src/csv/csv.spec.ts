@@ -285,6 +285,24 @@ describe("CSV Parser", () => {
       ]);
     });
 
+    it("keeps a row whose only field is a quoted empty or whitespace string", () => {
+      expect(parseCSV('x\n""\n"   "\ny')).toEqual([
+        ["x"],
+        [""],
+        ["   "],
+        ["y"],
+      ]);
+    });
+
+    it("drops a whitespace-only unquoted line as blank", () => {
+      expect(parseCSV("x\n   \ny")).toEqual([["x"], ["y"]]);
+    });
+
+    it("round-trips single-column data with empty and whitespace values", () => {
+      const data = [{ a: "" }, { a: " " }, { a: "x" }];
+      expect(parseCSVWithHeaders(arrayToCSV(data))).toEqual(data);
+    });
+
     it("still drops a truly blank line", () => {
       expect(parseCSV("a,b\n1,2\n\n3,4")).toEqual([
         ["a", "b"],

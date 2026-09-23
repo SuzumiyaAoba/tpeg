@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from "vite-plus/test";
 import { TPEGCodeGenerator, generateTypeScriptParser } from "./codegen";
+import { generateOptimizedTypeScriptParser } from "./codegen-optimized";
 import {
   createActionExpression,
   createAnyChar,
@@ -596,6 +597,51 @@ describe("TPEG Code Generation", () => {
       const result = generator.generateGrammar(grammar);
 
       expect(result.warnings).toEqual([]);
+    });
+
+    test("includeTypes: false emits no `import type { Parser }` (valid JS, no unused import)", () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition("main", createStringLiteral("x"))],
+      );
+      for (const result of [
+        generateTypeScriptParser(grammar, { includeTypes: false }),
+        generateOptimizedTypeScriptParser(grammar, { includeTypes: false }),
+      ]) {
+        expect(result.code).not.toContain("import type");
+        expect(result.code).not.toContain("Parser<");
+        expect(result.code).toContain('from "@suzumiyaaoba/tpeg-core"');
+      }
+    });
+
+    test("warns (once per rule) about a bare identifier naming no rule of the grammar", () => {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [
+          createRuleDefinition(
+            "main",
+            createChoice([
+              createIdentifier("exprr"),
+              createIdentifier("exprr"),
+              createIdentifier("expr"),
+            ]),
+          ),
+          createRuleDefinition("expr", createStringLiteral("x")),
+        ],
+      );
+
+      for (const result of [
+        new TPEGCodeGenerator().generateGrammar(grammar),
+        generateOptimizedTypeScriptParser(grammar),
+      ]) {
+        expect(result.warnings).toEqual([
+          expect.stringContaining(
+            'rule "main" references "exprr", which is not a rule of this grammar',
+          ),
+        ]);
+      }
     });
 
     test("should handle complex nested expressions", () => {

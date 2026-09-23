@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { lit } from "./basic";
+import { charClass } from "./char-class";
 import { formatParseError, formatParseResult, reportParseError } from "./error";
 import type { ParseError, ParseResult } from "./types";
 import { parse } from "./utils";
@@ -14,7 +15,7 @@ describe("formatParseError", () => {
 
     const result = formatParseError(error, input);
     expect(result).toContain("line 2");
-    expect(result).toContain("column 1");
+    expect(result).toContain("column 2"); // 1-based: "y" is the 2nd character
     expect(result).toContain("Unexpected character");
   });
 
@@ -162,7 +163,7 @@ describe("formatParseResult", () => {
     const formatted = formatParseResult(result, input);
     expect(formatted).toContain("Parse error");
     expect(formatted).toContain("line 2");
-    expect(formatted).toContain("column 1");
+    expect(formatted).toContain("column 2");
   });
 
   it("should pass options to formatParseError", () => {
@@ -354,5 +355,45 @@ describe("Complex Error Formatting Scenarios", () => {
 
     expect(result).toContain("short line");
     expect(result).not.toContain("short line...");
+  });
+});
+
+describe("control and whitespace characters in diagnostics", () => {
+  it("escapes a control character in a literal's expected label and in the found text", () => {
+    const result = parse(lit("\n"))("\r");
+    if (result.success) throw new Error("expected failure");
+    expect(result.error.message).toBe('Expected "\\n", found "\\r"');
+  });
+
+  it("escapes control characters in a character-class label", () => {
+    const result = parse(charClass(["\x00", "\x1f"]))("a");
+    if (result.success) throw new Error("expected failure");
+    expect(result.error.message).toBe('Expected \\x00-\\x1f, found "a"');
+  });
+
+  it("keeps the Found line for a whitespace or control character", () => {
+    for (const [input, shown] of [
+      ["\t", 'Found: "\\t"'],
+      [" ", 'Found: " "'],
+      ["\r", 'Found: "\\r"'],
+    ] as const) {
+      const result = parse(lit("x"))(input);
+      if (result.success) throw new Error("expected failure");
+      const formatted = formatParseError(result.error, input, {
+        colorize: false,
+      });
+      expect(formatted).toContain(shown);
+    }
+  });
+});
+
+describe("formatParseError: 1-based display column", () => {
+  it("reports the first character of a line as column 1", () => {
+    const formatted = formatParseError(
+      { message: "Unexpected character", pos: 4 },
+      "abc\nxyz",
+      { colorize: false },
+    );
+    expect(formatted).toContain("Parse error at line 2, column 1:");
   });
 });

@@ -8,6 +8,7 @@ import {
   FAIL,
   FAIL_FATAL,
   createFailure,
+  currentParseSession,
   guardedParserCall,
   isFailure,
   isValidOffset,
@@ -30,6 +31,10 @@ import { named } from "./error";
  */
 let watermarkInput: string | null = null;
 let watermarkOffset = 0;
+/** The parse session (`@suzumiyaaoba/tpeg-core`'s parse-session.ts) the
+ * watermark above belongs to: a new session over the SAME input text is
+ * a new parse and must not inherit a previous parse's commit offset. */
+let watermarkSession = -1;
 
 /**
  * `commit()`'s (`@suzumiyaaoba/tpeg-core`) top-level counterpart: marks a
@@ -77,9 +82,11 @@ let watermarkOffset = 0;
 export const commitAtTopLevel =
   <T>(parser: Parser<T>): Parser<T> =>
   (input: string, pos: number) => {
-    if (input !== watermarkInput) {
+    const session = currentParseSession();
+    if (input !== watermarkInput || session !== watermarkSession) {
       watermarkInput = input;
       watermarkOffset = 0;
+      watermarkSession = session;
     }
     // An out-of-contract `pos` must not advance the prune watermark: the
     // child call below fails on its own (every leaf parser enforces
@@ -246,6 +253,12 @@ export const memoize = <T>(
   if (maxCacheSize === 0) return named(parser, parserName);
 
   let cachedInput: string | null = null;
+  // The parse session the cache was built in (see
+  // `@suzumiyaaoba/tpeg-core`'s parse-session.ts): keying on the input
+  // text alone reused one parse's results in the next parse of identical
+  // text, skipping its semantic actions and handing out the same value
+  // objects -- a caller mutating one parse's result corrupted the next.
+  let cachedSession = -1;
   let cache: (MemoEntry<T> | undefined)[] | null = null;
   // Offset that cache[0] corresponds to; entries before this are pruned.
   let base = 0;
@@ -265,7 +278,9 @@ export const memoize = <T>(
       });
     }
 
-    if (input !== cachedInput || !cache) {
+    const session = currentParseSession();
+    if (input !== cachedInput || session !== cachedSession || !cache) {
+      cachedSession = session;
       // A different input than the last call (or the very first call):
       // this is a new parse. Start a fresh table rather than retaining
       // the previous input's entries.
@@ -275,7 +290,11 @@ export const memoize = <T>(
       insertionOrder = maxCacheSize !== undefined ? [] : null;
     }
 
-    if (watermarkInput === input && watermarkOffset > base) {
+    if (
+      watermarkInput === input &&
+      watermarkSession === session &&
+      watermarkOffset > base
+    ) {
       const shiftBy = watermarkOffset - base;
       cache.splice(0, shiftBy);
       if (insertionOrder) {

@@ -218,8 +218,7 @@ exports[`EtaTPEGCodeGenerator > Snapshot Tests > should generate consistent code
 `;
 
 exports[`EtaTPEGCodeGenerator > Snapshot Tests > should generate consistent code without types 1`] = `
-"import type { Parser } from "@suzumiyaaoba/tpeg-core";
-import { choice, literal, untagCapture } from "@suzumiyaaoba/tpeg-core";
+"import { choice, literal, untagCapture } from "@suzumiyaaoba/tpeg-core";
 export const notypes_simple = untagCapture(literal("value"));
 export const notypes_choice = untagCapture(choice(literal("a"), literal("b")));
 "
@@ -227,7 +226,6 @@ export const notypes_choice = untagCapture(choice(literal("a"), literal("b")));
 
 exports[`EtaTPEGCodeGenerator > Snapshot Tests > should generate consistent code without types 2`] = `
 [
-  "import type { Parser } from "@suzumiyaaoba/tpeg-core";",
   "import { choice, literal, untagCapture } from "@suzumiyaaoba/tpeg-core";",
 ]
 `;

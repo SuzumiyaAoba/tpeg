@@ -1,5 +1,11 @@
 import { resetFailureWatermark } from "./failure";
-import { PARSER_LIMITS } from "./limits";
+import { beginParseSession } from "./parse-session";
+import {
+  PARSER_LIMITS,
+  type ParseLimitOptions,
+  validateLimitOption,
+  withRecursionDepthLimit,
+} from "./limits";
 import type {
   NonEmptyArray,
   ParseError,
@@ -253,20 +259,36 @@ export const createFailure = (
  *
  * const parseDigit = parse(digitParser);
  * const result = parseDigit("5"); // Success: { val: 5, ... }
+ *
+ * // Resource limits default to `PARSER_LIMITS` (./limits.ts) and can be
+ * // overridden per parser:
+ * const parseLarge = parse(digitParser, { maxInputLength: 10_000_000 });
  * ```
+ *
+ * @throws {RangeError} (from `parse` itself, not the returned function)
+ *   if a limit option is not a positive integer or `Infinity`.
  */
-export const parse =
-  <T>(parser: Parser<T>) =>
-  (input: string): ParseResult<T> => {
+export const parse = <T>(
+  parser: Parser<T>,
+  options: ParseLimitOptions = {},
+): ((input: string) => ParseResult<T>) => {
+  const maxInputLength =
+    options.maxInputLength ?? PARSER_LIMITS.MAX_INPUT_LENGTH;
+  const maxRecursionDepth =
+    options.maxRecursionDepth ?? PARSER_LIMITS.MAX_RECURSION_DEPTH;
+  validateLimitOption("maxInputLength", maxInputLength);
+  validateLimitOption("maxRecursionDepth", maxRecursionDepth);
+  return (input: string): ParseResult<T> => {
     // Enforced input-length limit (`PARSER_LIMITS.MAX_INPUT_LENGTH`,
-    // ./limits.ts) -- the constant long existed as dead configuration in
-    // the parser package without anything reading it (#114). Returning a
-    // failure rather than throwing keeps `parse()`'s contract total.
-    if (input.length > PARSER_LIMITS.MAX_INPUT_LENGTH) {
+    // ./limits.ts, unless overridden via `options`) -- the constant long
+    // existed as dead configuration in the parser package without
+    // anything reading it (#114). Returning a failure rather than
+    // throwing keeps `parse()`'s contract total.
+    if (input.length > maxInputLength) {
       return {
         success: false,
         error: {
-          message: `Input length ${input.length} exceeds the maximum of ${PARSER_LIMITS.MAX_INPUT_LENGTH}`,
+          message: `Input length ${input.length} exceeds the maximum of ${maxInputLength}`,
           pos: 0,
           fatal: true,
         },
@@ -281,7 +303,13 @@ export const parse =
     // even if this exact `input` string (by value) was already used by an
     // unrelated previous parse.
     resetFailureWatermark();
-    const result = parser(input, 0);
+    // Likewise start a fresh parse session, so session-scoped caches
+    // (`memoize`) never hand this parse a previous parse's results for
+    // the same input text -- see `./parse-session.ts`.
+    beginParseSession();
+    const result = withRecursionDepthLimit(maxRecursionDepth, () =>
+      parser(input, 0),
+    );
     if (result.success) return result;
 
     // A failing `result` here is very likely `FAIL`/`FAIL_FATAL`
@@ -311,6 +339,7 @@ export const parse =
     // copying it into a new object is a no-op for correctness there.
     return { success: false, error: result.error };
   };
+};
 
 /**
  * Type guard to check if a parse result is a failure.

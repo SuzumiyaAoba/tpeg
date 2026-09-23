@@ -6,9 +6,9 @@
 //   bun run packages/cli/src/cli.ts packages/samples/src/csv/csv.tpeg \
 //     -o packages/samples/src/csv/generated/csv.generated.ts
 //
-// Produces the same string[][] row stream the hand-written parser
-// emits BEFORE the phantom-row filter, so the wrapper can share
-// csv.ts's dropPhantomRows.
+// Produces the same (string[] | null)[] row stream the hand-written
+// parser emits BEFORE the phantom-row filter (null = blank line), so the
+// wrapper can share csv.ts's dropPhantomRows.
 grammar Csv {
   @version: "1.0"
   @description: "CSV document -> rows of fields (same semantics as csv.ts)"
@@ -23,27 +23,34 @@ grammar Csv {
   }
 
   /// One row: a field, then any number of `,field` continuations.
-  /// A "row" is never empty -- a bare newline parses as one empty
-  /// field, which is exactly the phantom row dropPhantomRows removes.
+  /// A blank line (one unquoted field that trims to nothing) becomes
+  /// `null` -- the phantom row dropPhantomRows removes. Deciding that
+  /// here, while quotedness is still known, keeps a row holding a single
+  /// quoted empty/whitespace field (`""`, `"  "`) as the real record it is.
   row = head:field tail:("," f:field)* {
-    return [head, ...tail.map((x: { f: string }) => x.f)];
+    const all = [head, ...tail.map((x: { f: { v: string; blank: boolean } }) => x.f)];
+    return all.length === 1 && all[0].blank ? null : all.map((x) => x.v);
   }
 
   /// Quoted first: a `"` at the field start enables escapes. An
   /// unquoted field can never contain a `"` (the class excludes it),
-  /// so the ordering can't mis-classify.
+  /// so the ordering can't mis-classify. Each field is `{ v, blank }`,
+  /// `blank` marking an unquoted field that trims to nothing.
   field = quoted / unquoted
 
   /// "..." -- the only escape is a doubled quote.
   quoted = "\"" chars:(escaped_quote / [^"])* "\"" {
-    return chars.join("");
+    return { v: chars.join(""), blank: false };
   }
   escaped_quote = "\"\"" { return "\""; }
 
   /// Raw text up to the next delimiter. takeUntil in csv.ts stops at
   /// `,` CR LF or `"`; the negated class is the same set. Trimming
   /// matches unquotedField's `.trim()`.
-  unquoted = text:@([^,\r\n"]*) { return text.trim(); }
+  unquoted = text:@([^,\r\n"]*) {
+    const v = text.trim();
+    return { v, blank: v === "" };
+  }
 
   /// CRLF (Windows), LF (Unix), or CR (legacy Mac).
   newline = "\r\n" / "\n" / "\r"

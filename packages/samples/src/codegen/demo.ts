@@ -60,8 +60,8 @@ const loadGrammar = (path: string): GrammarDefinition => {
     const offset = result.success ? result.next : result.error.pos;
     const { line, column } = offsetToPos(source, offset);
     const message = result.success
-      ? `unexpected content after line ${line}, column ${column}`
-      : `line ${line}, column ${column}: ${result.error.message}`;
+      ? `unexpected content after line ${line}, column ${column + 1}`
+      : `line ${line}, column ${column + 1}: ${result.error.message}`;
     throw new Error(`failed to parse ${path}: ${message}`);
   }
 

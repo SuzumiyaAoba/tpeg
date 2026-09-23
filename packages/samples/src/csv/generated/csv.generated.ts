@@ -28,7 +28,8 @@ export const row: Parser<any> = untagCapture((input, pos) => {
     const $$: any = __result.val;
     const { head, tail } = ($$ ?? {});
 
-    return [head, ...tail.map((x: { f: string }) => x.f)];
+    const all = [head, ...tail.map((x: { f: { v: string; blank: boolean } }) => x.f)];
+    return all.length === 1 && all[0].blank ? null : all.map((x) => x.v);
   
   })();
   return {
@@ -49,7 +50,7 @@ export const quoted: Parser<any> = untagCapture((input, pos) => {
     const $$: any = __result.val;
     const { chars } = ($$ ?? {});
 
-    return chars.join("");
+    return { v: chars.join(""), blank: false };
   
   })();
   return {
@@ -82,7 +83,10 @@ export const unquoted: Parser<any> = untagCapture((input, pos) => {
   const __val = (() => {
     const $$: any = __result.val;
     const { text } = ($$ ?? {});
- return text.trim(); 
+
+    const v = text.trim();
+    return { v, blank: v === "" };
+  
   })();
   return {
     success: true,

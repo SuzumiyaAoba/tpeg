@@ -578,6 +578,15 @@ export class TypeIntegrationEngine {
       );
     }
 
+    // Self-contained output: the interface references `ParseResult` and
+    // the `<Rule>Result` types from `createTypedGrammar`'s
+    // `typeDefinitions`. Without the import (and, when those types were
+    // emitted inside `typeNamespace`, without qualifying them) the two
+    // outputs concatenated failed to type-check with "Cannot find name".
+    interfaceLines.push(
+      'import type { ParseResult } from "@suzumiyaaoba/tpeg-core";',
+    );
+    interfaceLines.push("");
     interfaceLines.push("/**");
     interfaceLines.push(
       ` * Generated parser interface for ${typedGrammar.name} grammar`,
@@ -623,8 +632,11 @@ export class TypeIntegrationEngine {
           `Rule name "${rule.name}" generates the type name "${resultType}", which is not a valid TypeScript identifier -- the emitted \`ParseResult<${resultType}>\` reference would fail to parse.`,
         );
       }
+      const resultTypeRef = this.options.typeNamespace
+        ? `${this.options.typeNamespace}.${resultType}`
+        : resultType;
       interfaceLines.push(
-        `  ${methodName}(input: string): ParseResult<${resultType}>;`,
+        `  ${methodName}(input: string): ParseResult<${resultTypeRef}>;`,
       );
     }
 

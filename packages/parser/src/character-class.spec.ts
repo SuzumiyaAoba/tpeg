@@ -66,6 +66,21 @@ describe("characterClass", () => {
       }
     });
 
+    it("treats `^` as an ordinary member anywhere but the first position", () => {
+      const plain = parser("[a^]", pos);
+      expect(plain.success).toBe(true);
+      if (plain.success && plain.val.type === "CharacterClass") {
+        expect(plain.val.negated).toBe(false);
+        expect(plain.val.ranges).toEqual([{ start: "a" }, { start: "^" }]);
+      }
+      const negated = parser("[^^]", pos);
+      expect(negated.success).toBe(true);
+      if (negated.success && negated.val.type === "CharacterClass") {
+        expect(negated.val.negated).toBe(true);
+        expect(negated.val.ranges).toEqual([{ start: "^" }]);
+      }
+    });
+
     it("should parse character classes with escaped characters", () => {
       const result = parser("[\\]\\\\\\^]", pos);
       expect(result.success).toBe(true);
@@ -194,7 +209,10 @@ describe("characterClass", () => {
       });
 
       it("still rejects the class metacharacters unescaped", () => {
-        expect(parser("[a^]", pos).success).toBe(false);
+        // (`^` is no longer one past the first position -- see "treats
+        // `^` as an ordinary member ..." above; `-` and `\` still are.)
+        expect(parser("[a-]", pos).success).toBe(false);
+        expect(parser("[a\\]", pos).success).toBe(false);
         expect(parser("[z-a]", pos).success).toBe(false);
       });
     });

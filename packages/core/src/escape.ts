@@ -72,3 +72,33 @@ export const escapeStringLiteral = (value: string): string => {
   }
   return result;
 };
+
+/**
+ * Escapes only the characters that would corrupt a human-readable
+ * diagnostic -- C0 control characters, DEL, and the U+2028/U+2029 line
+ * separators -- leaving everything else (including quotes and
+ * backslashes) as-is. Used for parse-error labels and the `found` text
+ * in error messages: a literal like `"\n"` or an input character like
+ * `\r` used to be spliced into the message raw, breaking it across lines
+ * (or, for `\r`, rewinding the terminal cursor over it).
+ */
+export const escapeControlCharsForDisplay = (text: string): string => {
+  let result = "";
+  for (const char of text) {
+    const named = NAMED_CONTROL_CHAR_ESCAPES[char];
+    if (named) {
+      result += named;
+      continue;
+    }
+    const code = char.codePointAt(0) ?? 0;
+    if (code < 0x20 || code === 0x7f || code === 0x2028 || code === 0x2029) {
+      result +=
+        code > 0xff
+          ? `\\u${code.toString(16).padStart(4, "0")}`
+          : `\\x${code.toString(16).padStart(2, "0")}`;
+      continue;
+    }
+    result += char;
+  }
+  return result;
+};

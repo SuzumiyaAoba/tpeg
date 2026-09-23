@@ -72,6 +72,7 @@ export {
   wrapWithMemoize,
   wrapWithMonitoring,
   wrapWithTransform,
+  buildExternalIdentifierWarnings,
   buildQualifiedIdentifierWarnings,
   findMemoizeAnnotation,
   forEachSequenceElement,
@@ -122,13 +123,16 @@ export { analyzeReentrancy, type ReentrancyAnalysis } from "./reentrancy";
 export {
   validateGrammar,
   validateGeneratedIdentifiers,
+  assertNoInertFlagAnnotations,
   assertValidTransformFunctionNames,
+  findExternalIdentifierReferences,
   findQualifiedIdentifierReferences,
   findUnreachableAlternatives,
   resolveStartRule,
 } from "./grammar-validation";
 export type {
   GeneratedIdentifierCheckOptions,
+  ExternalIdentifierReference,
   QualifiedIdentifierReference,
   UnreachableAlternativesIssue,
 } from "./grammar-validation";

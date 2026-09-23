@@ -136,6 +136,63 @@ describe("Module Resolution Engine", () => {
       expect(resolved.dependencies).toEqual([]);
     });
 
+    it("does not report a phantom cycle for concurrent resolveModule calls", async () => {
+      // Both calls used to share one `resolving` set: while the first was
+      // still loading base.tpeg's dependency utils.tpeg, the second saw
+      // utils.tpeg "in progress" and threw CircularDependencyError.
+      mockFs.addFile("/test/base.tpeg", BASE_MODULE);
+      mockFs.addFile("/test/utils.tpeg", UTILS_MODULE);
+
+      const [base, utils, again] = await Promise.all([
+        resolver.resolveModule("base.tpeg"),
+        resolver.resolveModule("utils.tpeg"),
+        resolver.resolveModule("base.tpeg"),
+      ]);
+
+      expect(base.dependencies).toEqual(["/test/utils.tpeg"]);
+      expect(utils.filePath).toBe("/test/utils.tpeg");
+      expect(again).toBe(base);
+    });
+
+    it("still reports a real cycle, and a failed call doesn't block later ones", async () => {
+      mockFs.addFile(
+        "/test/a.tpeg",
+        'import "b.tpeg"\ngrammar A {\n  a = "a"\n}\n',
+      );
+      mockFs.addFile(
+        "/test/b.tpeg",
+        'import "a.tpeg"\ngrammar B {\n  b = "b"\n}\n',
+      );
+      mockFs.addFile("/test/utils.tpeg", UTILS_MODULE);
+
+      const [cycle, utils] = await Promise.allSettled([
+        resolver.resolveModule("a.tpeg"),
+        resolver.resolveModule("utils.tpeg"),
+      ]);
+
+      expect(cycle.status).toBe("rejected");
+      expect((cycle as PromiseRejectedResult).reason).toBeInstanceOf(
+        CircularDependencyError,
+      );
+      expect(utils.status).toBe("fulfilled");
+    });
+
+    it("normalizes absolute import paths to one cache entry", async () => {
+      mockFs.addFile(
+        "/test/main.tpeg",
+        'import "/test/./utils.tpeg"\nimport "/test/sub/../utils.tpeg" as u2\ngrammar M {\n  m = "m"\n}\n',
+      );
+      mockFs.addFile("/test/utils.tpeg", UTILS_MODULE);
+
+      const resolved = await resolver.resolveModule("/test/main.tpeg");
+
+      expect(resolved.dependencies).toEqual(["/test/utils.tpeg"]);
+      expect([...resolver.context.cache.keys()].sort()).toEqual([
+        "/test/main.tpeg",
+        "/test/utils.tpeg",
+      ]);
+    });
+
     it("should resolve a module file saved with a UTF-8 BOM", async () => {
       // A BOM is a file-encoding artifact, not grammar content -- without
       // the strip in `loadModule`, a BOM'd module fails to parse at
@@ -355,7 +412,7 @@ describe("Module Resolution Engine", () => {
         ModuleResolutionError,
       );
       await expect(resolver.resolveModule("trailing.tpeg")).rejects.toThrow(
-        /unexpected content at line 2, column 0/,
+        /unexpected content at line 2, column 1/,
       );
     });
 
@@ -399,7 +456,7 @@ this is not a transforms block`,
         ModuleResolutionError,
       );
       await expect(resolver.resolveModule("garbage.tpeg")).rejects.toThrow(
-        /unexpected content at line 4, column 0/,
+        /unexpected content at line 4, column 1/,
       );
     });
 

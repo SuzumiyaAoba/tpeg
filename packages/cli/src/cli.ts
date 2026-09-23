@@ -289,13 +289,13 @@ export function run(argv: string[]): number {
     const { line, column } = offsetToPos(source, pos);
     if (parseResult.success) {
       process.stderr.write(
-        `error: failed to parse "${inputPath}": unexpected content after line ${line}, column ${column} (the grammar/transforms block(s) before this point parsed successfully, but did not consume the rest of the file)\n`,
+        `error: failed to parse "${inputPath}": unexpected content after line ${line}, column ${column + 1} (the grammar/transforms block(s) before this point parsed successfully, but did not consume the rest of the file)\n`,
       );
       return 1;
     }
     const { message, expected, found } = parseResult.error;
     process.stderr.write(
-      `error: failed to parse "${inputPath}" at line ${line}, column ${column}: ${sanitizeForTerminal(message)}\n`,
+      `error: failed to parse "${inputPath}" at line ${line}, column ${column + 1}: ${sanitizeForTerminal(message)}\n`,
     );
     if (expected) {
       const expectedList = Array.isArray(expected)

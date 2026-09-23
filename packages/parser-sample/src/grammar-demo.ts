@@ -162,7 +162,7 @@ for (const grammar of grammarExamples) {
     console.log(`   Error: ${result.error?.message || "Parse failed"}`);
     if (result.error?.pos !== undefined) {
       const { line, column } = offsetToPos(grammar, result.error.pos);
-      console.log(`   Position: line ${line}, column ${column}`);
+      console.log(`   Position: line ${line}, column ${column + 1}`);
     }
   }
 

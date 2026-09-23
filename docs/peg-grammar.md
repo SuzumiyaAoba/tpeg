@@ -71,6 +71,9 @@ Character set matching
 .              // Any character
 ```
 
+`^` negates the class only as its very first character; anywhere else it is
+an ordinary member (`[a^]`, `[^^]` = any character except `^`).
+
 A class member (single character or range endpoint) may be any Unicode code
 point, not just ASCII - `[あ-ん]`, `[é]`, and `[😀-🙏]` (an astral, outside-the-BMP
 range) are all valid, matched exactly like any other range.
@@ -215,7 +218,8 @@ header** - write `@(identifier)` to force the span reading there:
 
 ```tpeg
 first  = "a" @x       // ERROR: `@x` is read as a flag annotation for `second`
-second = "b"
+second = "b"          //   (rejected at generation time: "Unknown or misplaced
+                      //    flag annotation(s): @x")
 
 first  = "a" @(x)     // OK: `x` captured as source text via the span
 second = "b"
@@ -1393,6 +1397,15 @@ These are gaps between this specification and the current `packages/parser`/`pac
 ### `-` inside a character class must be escaped
 
 `-` is the range operator inside `[...]`, so a bare `-` where a class member is expected (`[-]`, `[a-]`) is a parse error, exactly as in most other character-class syntaxes. Write `\-` to mean a literal hyphen (`[\-]`, `[a\-z]`) instead.
+
+### Unknown bare flag annotations are generation errors
+
+A grammar-level `@name` with no value has no meaning (`@start`/`@skip` need a
+rule name; `@memoize`/`@noskip` attach to the rule directly below them and
+are parsed as part of it), so one that reaches code generation - a typo such
+as `@memoise` or `@noSkip`, or a trailing span misread as an annotation (see
+[Source-Span Operator](#source-span-operator)) - is rejected rather than
+silently ignored. Key/value metadata (`@description: "..."`) is unaffected.
 
 ### Recognized-but-unimplemented annotations are parse errors
 

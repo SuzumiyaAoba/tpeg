@@ -26,6 +26,7 @@ import type {
 
 import type { CharSet } from "./char-set";
 import {
+  buildExternalIdentifierWarnings,
   buildQualifiedIdentifierWarnings,
   collectTopLevelLabels,
   collectTransformFunctions,
@@ -575,7 +576,10 @@ export class OptimizedTPEGCodeGenerator {
       code: codeBuilder.join(""),
       imports,
       exports,
-      warnings: buildQualifiedIdentifierWarnings(grammar),
+      warnings: [
+        ...buildExternalIdentifierWarnings(grammar),
+        ...buildQualifiedIdentifierWarnings(grammar),
+      ],
       performance: {
         estimatedComplexity: performanceAnalysis.estimatedParseComplexity,
         optimizationSuggestions: performanceAnalysis.optimizationSuggestions,
@@ -597,17 +601,18 @@ export class OptimizedTPEGCodeGenerator {
     bindings: string[];
   } {
     const imports = [];
-    // `Parser` is referenced only by the emitted `import type` line
-    // (`includeImports`) and the `: Parser<any>` rule annotations
-    // (`includeTypes`) -- a rule named `Parser` collides with the
-    // generated code only when at least one of those is emitted.
-    const bindings: string[] =
-      this.options.includeImports || this.options.includeTypes
-        ? ["Parser"]
-        : [];
+    // `Parser` is referenced only by the `: Parser<any>` rule annotations
+    // and the `import type` line emitted alongside them (`includeTypes`)
+    // -- a rule named `Parser` collides with the generated code only then.
+    const bindings: string[] = this.options.includeTypes ? ["Parser"] : [];
 
-    // Core imports
-    imports.push('import type { Parser } from "@suzumiyaaoba/tpeg-core";');
+    // Core imports. `Parser` is only referenced by the `: Parser<any>`
+    // annotations, so `includeTypes: false` (`--no-types`) omits it -- an
+    // unused `import type` fails `noUnusedLocals` and is a SyntaxError if
+    // the output is used as plain JavaScript.
+    if (this.options.includeTypes) {
+      imports.push('import type { Parser } from "@suzumiyaaoba/tpeg-core";');
+    }
 
     // Analyze which combinators are actually needed
     const usedCombinators = new Set<string>();

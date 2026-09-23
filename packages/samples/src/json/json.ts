@@ -279,9 +279,10 @@ export const jsonParser = (): Parser<JSONValue> => {
 // JSON.parse() rejects the input first). jsonParser() constructs a whole
 // recursive combinator graph including a memoize() cache; without this,
 // repeatedly parsing many invalid/non-standard JSON strings would rebuild
-// that graph from scratch every time. memoize()'s cache is FIFO-bounded
-// (default 1000 distinct input strings), so reusing it here only adds a
-// bounded amount of retained state, not an unbounded one.
+// that graph from scratch every time. memoize() only ever retains the
+// table for the most recently parsed input, and every parse() call
+// starts a fresh one (see tpeg-core's parse-session.ts), so reusing it
+// here neither leaks results between calls nor retains unbounded state.
 let cachedJsonParser: Parser<JSONValue> | undefined;
 
 export const parseJSON = (input: string): JSONValue | null | string => {

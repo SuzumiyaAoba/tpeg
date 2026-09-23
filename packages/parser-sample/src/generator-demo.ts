@@ -40,7 +40,7 @@ if (!parseResult.success) {
   console.error(`   Error: ${parseResult.error?.message}`);
   if (parseResult.error?.pos !== undefined) {
     const { line, column } = offsetToPos(grammarText, parseResult.error.pos);
-    console.error(`   Position: line ${line}, column ${column}`);
+    console.error(`   Position: line ${line}, column ${column + 1}`);
   }
   process.exit(1);
 }

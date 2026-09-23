@@ -124,11 +124,13 @@ console.log(typedGrammar.typeDefinitions);
 const parserInterface = integrationEngine.generateParserInterface(typedGrammar);
 console.log(parserInterface);
 // Output:
+// import type { ParseResult } from "@suzumiyaaoba/tpeg-core";
+//
 // export interface MyGrammarParser {
-//   greeting(input: string): ParseResult<GreetingResult>;
-//   digit(input: string): ParseResult<DigitResult>;
-//   number(input: string): ParseResult<NumberResult>;
-//   expression(input: string): ParseResult<ExpressionResult>;
+//   greeting(input: string): ParseResult<MyGrammarTypes.GreetingResult>;
+//   digit(input: string): ParseResult<MyGrammarTypes.DigitResult>;
+//   number(input: string): ParseResult<MyGrammarTypes.NumberResult>;
+//   expression(input: string): ParseResult<MyGrammarTypes.ExpressionResult>;
 // }
 ```
 

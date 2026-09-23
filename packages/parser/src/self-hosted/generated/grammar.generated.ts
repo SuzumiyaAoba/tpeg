@@ -157,7 +157,7 @@ export const stringLiteralNode: Parser<any> = untagCapture(choice(doubleQuotedSt
 
 export const classEscape: Parser<any> = untagCapture(choice(namedEscape, numericEscape, classLiteralEscape));
 
-export const classChar: Parser<any> = untagCapture(choice(classEscape, negatedCharClass("]", "\\", "^", "-")));
+export const classChar: Parser<any> = untagCapture(choice(classEscape, negatedCharClass("]", "\\", "-")));
 
 export const charRangePair: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(capture("start", classChar), literal("-"), capture("end", classChar)));

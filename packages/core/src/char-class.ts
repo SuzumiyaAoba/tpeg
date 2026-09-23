@@ -1,4 +1,5 @@
 import { ASCII_CHARS } from "./char-tables";
+import { escapeControlCharsForDisplay } from "./escape";
 import type { Expectation } from "./failure";
 import { fail } from "./failure";
 import type { NonEmptyArray, NonEmptyString, Parser } from "./types";
@@ -15,10 +16,13 @@ type CharClassSpec = NonEmptyString | [NonEmptyString, NonEmptyString];
  * @returns String representation for display purposes
  */
 const classToString = (charOrRange: CharClassSpec): string => {
+  // Display-only (an `Expectation` label): control characters escaped
+  // so a class like `[\x00-\x1f]` doesn't splice raw control bytes into
+  // the error message -- see `escapeControlCharsForDisplay`.
   if (typeof charOrRange === "string") {
-    return charOrRange;
+    return escapeControlCharsForDisplay(charOrRange);
   }
-  return `${charOrRange[0]}-${charOrRange[1]}`;
+  return `${escapeControlCharsForDisplay(charOrRange[0])}-${escapeControlCharsForDisplay(charOrRange[1])}`;
 };
 
 /** A single character is just the degenerate range `[cp, cp]` -- folding

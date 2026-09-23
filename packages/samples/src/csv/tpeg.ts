@@ -23,5 +23,5 @@ export const parseCSVTpeg = (input: string): string[][] => {
     throw new Error(`CSV parse error: ${result.error.message}`);
   }
 
-  return dropPhantomRows(result.val as string[][]);
+  return dropPhantomRows(result.val as (string[] | null)[]);
 };

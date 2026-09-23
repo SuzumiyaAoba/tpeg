@@ -1156,6 +1156,21 @@ describe("EtaTPEGCodeGenerator: grammar validation", () => {
     }
   });
 
+  it("includeMonitoring with includeImports: false emits no import line (the caller supplies the binding)", async () => {
+    const grammar = createGrammarDefinition(
+      "TestGrammar",
+      [],
+      [createRuleDefinition("start", createStringLiteral("x"))],
+    );
+    const result = await generateEtaTypeScriptParser(grammar, {
+      optimize: true,
+      includeMonitoring: true,
+      includeImports: false,
+    });
+    expect(result.code).not.toMatch(/^import /m);
+    expect(result.code).toContain('globalPerformanceMonitor.start("start")');
+  });
+
   it("includeMonitoring: false emits no monitor references at all", async () => {
     const grammar = createGrammarDefinition(
       "TestGrammar",

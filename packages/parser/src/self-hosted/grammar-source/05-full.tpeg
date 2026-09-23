@@ -44,7 +44,7 @@ grammar SelfHostFull {
 
   classEscape = namedEscape / numericEscape / classLiteralEscape
 
-  classChar = classEscape / [^\]\\\^\-]
+  classChar = classEscape / [^\]\\\-]
 
   // Mirrors character-class.ts's charRange check: a backwards range like
   // [z-a] is rejected (there is no backtracking-out for a return-based

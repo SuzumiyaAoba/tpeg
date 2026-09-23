@@ -837,6 +837,40 @@ export const findQualifiedIdentifierReferences = (
   return found;
 };
 
+/** One bare `Identifier` reference naming no rule of the grammar -- see
+ * {@link findExternalIdentifierReferences}. */
+export interface ExternalIdentifierReference {
+  readonly ruleName: string;
+  readonly name: string;
+}
+
+/**
+ * Every bare `Identifier` reference in `grammar` that names none of its
+ * own rules. Deliberately NOT rejected (see this module's doc comment:
+ * binding a hand-written parser in by name is an intentional escape
+ * hatch), but -- exactly like a `QualifiedIdentifier` (see
+ * {@link findQualifiedIdentifierReferences}) -- the generated code then
+ * references a binding nothing declares, so `codegen.ts`'s
+ * `buildExternalIdentifierWarnings` surfaces each one as a non-fatal
+ * warning. Without it a misspelled rule name (`start = "a" exprr`)
+ * generated silently and only failed at load time with a bare
+ * `ReferenceError`.
+ */
+export const findExternalIdentifierReferences = (
+  grammar: GrammarDefinition,
+): ExternalIdentifierReference[] => {
+  const declared = new Set(grammar.rules.map((rule) => rule.name));
+  const found: ExternalIdentifierReference[] = [];
+  for (const rule of grammar.rules) {
+    forEachExpression(rule.pattern, (node) => {
+      if (node.type === "Identifier" && !declared.has(node.name)) {
+        found.push({ ruleName: rule.name, name: node.name });
+      }
+    });
+  }
+  return found;
+};
+
 /**
  * Shared validation for the block annotations that take `key: ruleName`
  * -- `@start` (the entry rule) and `@skip` (the automatic-whitespace
@@ -959,6 +993,39 @@ export const resolveStartRule = (
  *   into generated code (`codegen.ts`'s `generateIdentifierCode`), not a
  *   grammar-authoring mistake.
  */
+/**
+ * Metadata keys whose `@key: ""` (empty-string) value is a legitimate,
+ * if unusual, piece of documentation rather than a stray flag -- the
+ * AST can't distinguish `@description: ""` from a bare `@description`,
+ * so these keys are exempt from {@link assertNoInertFlagAnnotations}.
+ */
+const METADATA_ANNOTATION_KEYS: ReadonlySet<string> = new Set([
+  "version",
+  "language_version",
+  "description",
+  "author",
+  "license",
+]);
+
+/**
+ * Rejects grammar-level annotations that carry no value (the bare
+ * `@key` flag form) -- see the call site in {@link validateGrammar}.
+ *
+ * @throws {Error} naming every offending annotation.
+ */
+export const assertNoInertFlagAnnotations = (
+  grammar: GrammarDefinition,
+): void => {
+  const inert = (grammar.annotations ?? []).filter(
+    (a) => a.value === "" && !METADATA_ANNOTATION_KEYS.has(a.key),
+  );
+  if (inert.length === 0) return;
+  const names = inert.map((a) => `@${a.key}`).join(", ");
+  throw new Error(
+    `Unknown or misplaced flag annotation(s): ${names} -- a bare \`@name\` at grammar level has no effect. Rule annotations are \`@memoize\`/\`@memoize: N\` and \`@noskip\`, written directly above the rule they apply to; if \`@name\` was meant as a source-span of rule \`name\` at the end of the previous rule's body, write \`@(name)\` (a bare \`@name\` directly before a rule header is read as an annotation).`,
+  );
+};
+
 export const validateGrammar = (grammar: GrammarDefinition): void => {
   const duplicates = findDuplicateRuleNames(grammar);
   if (duplicates.length > 0) {
@@ -1030,6 +1097,19 @@ export const validateGrammar = (grammar: GrammarDefinition): void => {
     "a grammar can only name one skip rule",
     "fix the name, or remove the annotation to disable automatic whitespace skipping.",
   );
+
+  // A grammar-level annotation with no value is a bare flag (`@foo`):
+  // no grammar-level flag has any meaning (`@start`/`@skip` require a
+  // rule name, `@memoize`/`@noskip` only attach to the rule directly
+  // after them and are parsed as part of it). One reaching here is
+  // therefore always a mistake that would otherwise be silently inert:
+  // a typo'd rule annotation (`@memoise`, `@noSkip` -- the rule then
+  // simply isn't memoized/exempted), or a trailing `@x` span at the end
+  // of a rule body that the rule-body scanner reads as an annotation
+  // because the next line starts a rule header (docs/peg-grammar.md's
+  // "Source-Span Operator" section) -- which silently drops `@x` from
+  // that rule's pattern.
+  assertNoInertFlagAnnotations(grammar);
 
   // Transform-function checks run last: they don't interact with any of
   // the rule-level analyses above (a transform binds to a rule by name --

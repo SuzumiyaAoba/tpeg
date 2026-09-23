@@ -60,6 +60,7 @@
  */
 
 import type { ParseError, ParseFailure } from "./types";
+import { escapeControlCharsForDisplay } from "./escape";
 import { getCharAt, isValidOffset } from "./utils";
 
 /**
@@ -179,7 +180,9 @@ export const materializeParseError = (fatal: boolean): ParseError => {
   const message =
     expected !== undefined
       ? `Expected ${Array.isArray(expected) ? expected.join(" or ") : expected}${
-          found !== undefined ? `, found "${found}"` : ""
+          found !== undefined
+            ? `, found "${escapeControlCharsForDisplay(found)}"`
+            : ""
         }`
       : "Parse failed";
 

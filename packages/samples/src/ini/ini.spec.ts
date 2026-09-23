@@ -174,5 +174,32 @@ describe("INI Parser", () => {
     it("formats empty data as an empty string", () => {
       expect(formatINI({ globals: {}, sections: {} })).toBe("");
     });
+    it("rejects data INI cannot represent instead of silently corrupting it", () => {
+      const cases: [
+        Record<string, string>,
+        Record<string, Record<string, string>>,
+      ][] = [
+        [{ a: " padded " }, {}],
+        [{ a: "v # note" }, {}],
+        [{ a: "v ; note" }, {}],
+        [{ a: "line1\nline2" }, {}],
+        [{ "a=b": "1" }, {}],
+        [{ " a": "1" }, {}],
+        [{ "[a": "1" }, {}],
+        [{}, { "a]b": { k: "v" } }],
+        [{}, { " s ": { k: "v" } }],
+      ];
+      for (const [globals, sections] of cases) {
+        expect(() => formatINI({ globals, sections })).toThrow(/formatINI/);
+      }
+    });
+
+    it("still round-trips representable data, including '=' and ';' inside values", () => {
+      const data = {
+        globals: { a: "x = y", b: "; not a comment", c: "", "d e": "1" },
+        sections: { "": { k: "v" }, s: {} },
+      };
+      expect(parseINI(formatINI(data))).toEqual(data);
+    });
   });
 });
