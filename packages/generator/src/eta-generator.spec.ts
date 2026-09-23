@@ -1248,6 +1248,20 @@ describe("EtaTPEGCodeGenerator: grammar validation", () => {
     );
   });
 
+  it("rejects a rule named `input`/`pos` -- it collides with wrapWithAction/wrapWithTransform/wrapWithMonitoring's own (input, pos) parameters", async () => {
+    for (const name of ["input", "pos"]) {
+      const grammar = createGrammarDefinition(
+        "TestGrammar",
+        [],
+        [createRuleDefinition(name, createStringLiteral("a"))],
+      );
+
+      await expect(generateEtaTypeScriptParser(grammar)).rejects.toThrow(
+        /code generator itself uses internally/,
+      );
+    }
+  });
+
   it("namePrefix makes an otherwise-reserved rule name safe", async () => {
     const grammar = createGrammarDefinition(
       "TestGrammar",

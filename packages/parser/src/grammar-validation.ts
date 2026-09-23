@@ -1136,6 +1136,23 @@ const JS_RESERVED_WORDS: ReadonlySet<string> = new Set([
  * `m = __transformed` under a transforms block generates
  * `const __base = (__transformed);` before `const __transformed = ...`).
  *
+ * `input` and `pos` belong to this same set for a related but distinct
+ * reason: those same three wrapper functions also declare the OUTER
+ * function's own PARAMETERS as `(input, pos) => { ... }` -- not a
+ * `const`, so there is no TDZ, but the collision is just as fatal. A
+ * rule named `input` (or `pos`) referenced from inside an action/
+ * transform/monitoring-wrapped rule generates `lazy(() => input)` sitting
+ * textually inside that very `(input, pos) => { ... }` closure, so it
+ * resolves to the wrapper's own string/number parameter instead of the
+ * top-level `export const input = ...` -- silently, since both are
+ * already-initialized bindings and nothing throws a ReferenceError.
+ * Confirmed: `start = input "z" { return 1; }`, `input = "a"` generates
+ * `const start = (input, pos) => { const __base = (sequence(lazy(() =>
+ * input), literal("z"))); const __result = __base(input, pos); ... }`,
+ * where the `input` inside `lazy(() => input)` is the wrapper's own
+ * `input` parameter -- a `TypeError` the first time `start` actually
+ * runs, not a compile-time error.
+ *
  * Rejected unconditionally as a RULE name regardless of whether any
  * particular occurrence is provably reachable from an action/transform --
  * working out exact reachability across the whole grammar (a rule
@@ -1144,7 +1161,10 @@ const JS_RESERVED_WORDS: ReadonlySet<string> = new Set([
  * to choose. Not applied to labels or transform-parameter names: those
  * are only ever destructured/bound INSIDE that same nested function
  * scope, so at worst they shadow the outer binding (legal, unlike a
- * duplicate top-level `const`) rather than colliding with it.
+ * duplicate top-level `const`, and legal for `input`/`pos` too -- a
+ * label or transform parameter named `input` is bound strictly inside
+ * the wrapper's own IIFE/inner-function scope, an ordinary, harmless
+ * shadow of the outer parameter) rather than colliding with it.
  */
 const RESERVED_INTERNAL_RULE_NAMES: ReadonlySet<string> = new Set([
   "__base",
@@ -1152,6 +1172,8 @@ const RESERVED_INTERNAL_RULE_NAMES: ReadonlySet<string> = new Set([
   "__result",
   "__transformed",
   "__val",
+  "input",
+  "pos",
 ]);
 
 /**

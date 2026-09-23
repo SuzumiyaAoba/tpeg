@@ -1272,6 +1272,25 @@ describe("validateGeneratedIdentifiers: reserved words and import collisions", (
     }
   });
 
+  it("rejects a rule name that collides with the (input, pos) parameters wrapWithAction/wrapWithTransform/wrapWithMonitoring declare, regardless of imports", () => {
+    // Distinct failure mode from __base/__result/__transformed/__val
+    // above: `input`/`pos` collide with those wrappers' own function
+    // PARAMETERS, not a sibling `const` -- a rule named `input` referenced
+    // from inside an action/transform-wrapped rule silently resolves to
+    // the wrapper's own string/number parameter instead of the top-level
+    // rule (a runtime TypeError, not a TDZ ReferenceError), so it must be
+    // rejected the same unconditional way.
+    for (const name of ["input", "pos"]) {
+      const grammar = grammarFromSource(`${name} = "a"`);
+      expect(() =>
+        validateGeneratedIdentifiers(grammar, {
+          namePrefix: "",
+          importedBindings: [],
+        }),
+      ).toThrow(/code generator itself uses internally/);
+    }
+  });
+
   it("rejects a capture label that is a reserved word, even when the enclosing action never references it by name", () => {
     const grammar = grammarFromSource('start = new:"a" { return $$; }');
     expect(() =>
@@ -1298,6 +1317,20 @@ describe("validateGeneratedIdentifiers: reserved words and import collisions", (
     // `(() => { ... })()` scope, legally shadowing the wrapper's
     // `const __base` rather than colliding with it.
     for (const name of ["__base", "__result", "__transformed", "__val"]) {
+      const grammar = grammarFromSource(
+        `start = ${name}:"a" { return ${name}; }`,
+      );
+      expect(() =>
+        validateGeneratedIdentifiers(grammar, {
+          namePrefix: "",
+          importedBindings: [],
+        }),
+      ).not.toThrow();
+    }
+  });
+
+  it("does NOT reject a capture label named `input`/`pos` -- it is destructured inside the action IIFE, where shadowing the wrapper's own parameter is legal", () => {
+    for (const name of ["input", "pos"]) {
       const grammar = grammarFromSource(
         `start = ${name}:"a" { return ${name}; }`,
       );

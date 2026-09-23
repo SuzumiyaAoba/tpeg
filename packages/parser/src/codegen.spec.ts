@@ -1648,3 +1648,32 @@ describe("action-reference scanning ignores strings and comments (issue #70)", (
     expect(result.code).not.toContain("const { x }");
   });
 });
+
+// A rule named `input`/`pos` referenced from inside an action-wrapped rule
+// generates `lazy(() => input)` sitting textually inside
+// `wrapWithAction`'s own `(input, pos) => { ... }` closure -- it would
+// silently resolve to that wrapper's own parameter (a runtime TypeError
+// the first time the rule actually parses) rather than the top-level
+// `export const input = ...` if `RESERVED_INTERNAL_RULE_NAMES`
+// (`grammar-validation.ts`) didn't reject the rule name outright at
+// generation time.
+describe("generateTypeScriptParser rejects a rule named `input`/`pos`", () => {
+  test("throws even when the colliding rule has no action of its own", () => {
+    for (const name of ["input", "pos"]) {
+      const grammar = createGrammarDefinition(
+        "T",
+        [],
+        [
+          createRuleDefinition(
+            "start",
+            createActionExpression(createIdentifier(name), "return 1;"),
+          ),
+          createRuleDefinition(name, createStringLiteral("a", '"')),
+        ],
+      );
+      expect(() => generateTypeScriptParser(grammar)).toThrow(
+        /code generator itself uses internally/,
+      );
+    }
+  });
+});
