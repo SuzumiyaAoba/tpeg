@@ -1,3 +1,9 @@
+import {
+  collectRuleReferences,
+  findRecursiveRuleNames,
+  measureExpression,
+} from "@suzumiyaaoba/tpeg-core";
+export { findRecursiveRuleNames } from "@suzumiyaaoba/tpeg-core";
 /**
  * Performance Optimization Utilities for TPEG Parser
  *
@@ -5,7 +11,6 @@
  * for grammar parsing and code generation operations.
  */
 
-import { childExpressions, forEachExpression } from "@suzumiyaaoba/tpeg-core";
 import { collectZeroOffsetRuleRefs, computeNullableRules } from "./first-sets";
 import type { Expression, GrammarDefinition } from "./types";
 
@@ -81,24 +86,7 @@ export function analyzeExpressionComplexity(
   hasRecursion: boolean;
   estimatedComplexity: "low" | "medium" | "high";
 } {
-  let maxDepth = 0;
-  let nodeCount = 0;
-
-  function analyze(expr: Expression, depth: number): void {
-    nodeCount++;
-    maxDepth = Math.max(maxDepth, depth);
-
-    // `childExpressions` includes an `ActionExpression`'s wrapped
-    // expression, so a rule reference reachable only through a semantic
-    // action (e.g. `x = ( y ) { ... }`) still counts toward this rule's
-    // complexity -- an earlier hand-written switch here omitted that case
-    // and undercounted `nodeCount`/`depth` for every action-bearing rule.
-    for (const child of childExpressions(expr)) {
-      analyze(child, depth + 1);
-    }
-  }
-
-  analyze(expr, 0);
+  const { depth: maxDepth, nodeCount } = measureExpression(expr);
 
   let estimatedComplexity: "low" | "medium" | "high" = "low";
   if (hasRecursion || maxDepth > 10 || nodeCount > 50) {
@@ -229,11 +217,7 @@ export function collectRuleDependencies(
   expr: Expression,
   dependencies: Set<string>,
 ): void {
-  forEachExpression(expr, (node) => {
-    if (node.type === "Identifier") {
-      dependencies.add(node.name);
-    }
-  });
+  for (const name of collectRuleReferences(expr)) dependencies.add(name);
 }
 
 /**
@@ -250,99 +234,6 @@ export function collectRuleDependencies(
  * `generateOptimizedTypeScriptParser` call, which runs this analysis
  * unconditionally) and recursed as deep as the chain itself.
  */
-export function findRecursiveRuleNames(
-  dependencies: ReadonlyMap<string, ReadonlySet<string>>,
-): Set<string> {
-  const recursive = new Set<string>();
-  const index = new Map<string, number>();
-  const lowlink = new Map<string, number>();
-  const onStack = new Set<string>();
-  const sccStack: string[] = [];
-  let nextIndex = 0;
-
-  for (const root of dependencies.keys()) {
-    if (index.has(root)) continue;
-    // Iterative DFS: each work entry carries a node plus the iterator
-    // over its successors, so the post-order lowlink merge into the
-    // parent happens exactly when a node's frame completes.
-    index.set(root, nextIndex);
-    lowlink.set(root, nextIndex);
-    nextIndex++;
-    sccStack.push(root);
-    onStack.add(root);
-    const work: { node: string; it: Iterator<string> }[] = [
-      {
-        node: root,
-        it: dependencies.get(root)?.values() ?? [][Symbol.iterator](),
-      },
-    ];
-
-    while (work.length > 0) {
-      const frame = work[work.length - 1] as {
-        node: string;
-        it: Iterator<string>;
-      };
-      const step = frame.it.next();
-      if (step.done) {
-        work.pop();
-        const node = frame.node;
-        const parentFrame = work[work.length - 1];
-        if (parentFrame) {
-          // Tree edge parent -> node: fold node's lowlink into parent's.
-          lowlink.set(
-            parentFrame.node,
-            Math.min(
-              lowlink.get(parentFrame.node) as number,
-              lowlink.get(node) as number,
-            ),
-          );
-        }
-        if (lowlink.get(node) === index.get(node)) {
-          // `node` is an SCC root: everything above it on `sccStack` is
-          // its component.
-          const scc: string[] = [];
-          for (;;) {
-            const member = sccStack.pop() as string;
-            onStack.delete(member);
-            scc.push(member);
-            if (member === node) break;
-          }
-          if (scc.length > 1) {
-            for (const member of scc) recursive.add(member);
-          } else if ((dependencies.get(node) as Set<string>).has(node)) {
-            // Singleton component: recursive only via a self-loop.
-            recursive.add(node);
-          }
-        }
-        continue;
-      }
-      const succ = step.value;
-      if (!dependencies.has(succ)) continue; // unresolvable: a dead end
-      if (!index.has(succ)) {
-        index.set(succ, nextIndex);
-        lowlink.set(succ, nextIndex);
-        nextIndex++;
-        sccStack.push(succ);
-        onStack.add(succ);
-        work.push({
-          node: succ,
-          it: dependencies.get(succ)?.values() ?? [][Symbol.iterator](),
-        });
-      } else if (onStack.has(succ)) {
-        // Back/cross edge to a node still on the SCC stack.
-        lowlink.set(
-          frame.node,
-          Math.min(
-            lowlink.get(frame.node) as number,
-            index.get(succ) as number,
-          ),
-        );
-      }
-    }
-  }
-  return recursive;
-}
-
 /**
  * Performance monitoring utilities
  */

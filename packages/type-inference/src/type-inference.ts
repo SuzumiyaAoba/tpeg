@@ -1051,37 +1051,12 @@ export class TypeInferenceEngine {
    */
   private inferStarType(expression: Star): InferredType {
     const innerType = this.inferExpressionType(expression.expression);
-
-    if (!this.options.inferArrayTypes) {
-      return {
-        typeString: "string",
-        nullable: false,
-        isArray: false,
-        baseType: "string",
-        imports: innerType.imports,
-        documentation: this.options.generateDocumentation
-          ? "Zero or more repetitions"
-          : undefined,
-      };
-    }
-
-    // Handle parentheses for complex union types
-    const needsParens = innerType.typeString.includes(" | ");
-    const elementType = needsParens
-      ? `(${innerType.typeString})`
-      : innerType.typeString;
-
-    return {
-      typeString: `${elementType}[]`,
-      nullable: false,
-      isArray: true,
-      baseType: innerType.baseType,
-      imports: innerType.imports,
-      documentation: this.options.generateDocumentation
+    return this.inferRepetitionType(
+      innerType,
+      this.options.inferArrayTypes
         ? "Array of zero or more repetitions"
-        : undefined,
-      arrayElement: innerType,
-    };
+        : "Zero or more repetitions",
+    );
   }
 
   /**
@@ -1095,37 +1070,12 @@ export class TypeInferenceEngine {
    */
   private inferPlusType(expression: Plus): InferredType {
     const innerType = this.inferExpressionType(expression.expression);
-
-    if (!this.options.inferArrayTypes) {
-      return {
-        typeString: "string",
-        nullable: false,
-        isArray: false,
-        baseType: "string",
-        imports: innerType.imports,
-        documentation: this.options.generateDocumentation
-          ? "One or more repetitions"
-          : undefined,
-      };
-    }
-
-    // Handle parentheses for complex union types
-    const needsParens = innerType.typeString.includes(" | ");
-    const elementType = needsParens
-      ? `(${innerType.typeString})`
-      : innerType.typeString;
-
-    return {
-      typeString: `${elementType}[]`,
-      nullable: false,
-      isArray: true,
-      baseType: innerType.baseType,
-      imports: innerType.imports,
-      documentation: this.options.generateDocumentation
+    return this.inferRepetitionType(
+      innerType,
+      this.options.inferArrayTypes
         ? "Array of one or more repetitions"
-        : undefined,
-      arrayElement: innerType,
-    };
+        : "One or more repetitions",
+    );
   }
 
   /**
@@ -1174,8 +1124,19 @@ export class TypeInferenceEngine {
   private inferQuantifiedType(expression: Quantified): InferredType {
     const innerType = this.inferExpressionType(expression.expression);
 
+    return this.inferRepetitionType(
+      innerType,
+      `Quantified expression: {${expression.min},${expression.max ?? ""}}`,
+    );
+  }
+
+  /** Builds the shared array/string result for repetition expressions. */
+  private inferRepetitionType(
+    innerType: InferredType,
+    description: string,
+  ): InferredType {
     const documentation = this.options.generateDocumentation
-      ? `Quantified expression: {${expression.min},${expression.max ?? ""}}`
+      ? description
       : undefined;
 
     if (!this.options.inferArrayTypes) {

@@ -20,7 +20,7 @@
  * `eta-generator.ts`'s `shouldMemoize`/`memoize`-import decisions.
  */
 
-import { childExpressions } from "@suzumiyaaoba/tpeg-core";
+import { measureExpression } from "@suzumiyaaoba/tpeg-core";
 import {
   collectRuleDependencies,
   findRecursiveRuleNames,
@@ -54,23 +54,7 @@ export function analyzeExpressionComplexity(
   expr: Expression,
   hasRecursion = false,
 ): ExpressionComplexity {
-  let depth = 0;
-  let nodeCount = 0;
-
-  function analyze(expression: Expression, currentDepth: number): void {
-    nodeCount++;
-    depth = Math.max(depth, currentDepth);
-    // `childExpressions` descends into an `ActionExpression`'s wrapped
-    // expression, so the action's subtree counts toward complexity like
-    // any other nesting -- treating it as a leaf (as an earlier version
-    // of this function did) undercounted `nodeCount`/`depth` for every
-    // rule with a semantic action.
-    for (const child of childExpressions(expression)) {
-      analyze(child, currentDepth + 1);
-    }
-  }
-
-  analyze(expr, 0);
+  const { depth, nodeCount } = measureExpression(expr);
 
   let estimatedComplexity: "low" | "medium" | "high" = "low";
   if (nodeCount > 20 || depth > 10) {

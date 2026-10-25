@@ -37,6 +37,25 @@ describe("TypeIntegrationEngine", () => {
   });
 
   describe("Basic Type Integration", () => {
+    it("records dependencies inside semantic actions without inferring their return type", () => {
+      const grammar = createGrammarDefinition(
+        "Actions",
+        [],
+        [
+          createRuleDefinition("value", createStringLiteral("x", '"')),
+          createRuleDefinition(
+            "start",
+            createActionExpression(createIdentifier("value"), "return $$;"),
+          ),
+        ],
+      );
+
+      const typedGrammar = engine.createTypedGrammar(grammar);
+      const start = typedGrammar.rules.find((rule) => rule.name === "start");
+      expect(start?.dependencies).toEqual(["value"]);
+      expect(start?.inferredType.typeString).toBe("unknown");
+    });
+
     it("should create typed grammar with complete type information", () => {
       const grammar: GrammarDefinition = createGrammarDefinition(
         "TestGrammar",

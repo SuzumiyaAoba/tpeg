@@ -105,18 +105,8 @@ export const commaSeparated = <T>(
   allowTrailing = false,
   parserName?: string,
 ): Parser<T[]> => {
-  const comma = token(literal(","));
-
   const empty = map(notPredicate(valueParser), () => [] as T[]);
-
-  const nonEmpty = map(
-    seq(
-      token(valueParser),
-      zeroOrMore(dropSeparator(comma, token(valueParser))),
-      allowTrailing ? optional(comma) : map(notPredicate(comma), () => []),
-    ),
-    ([first, rest]) => [first, ...rest],
-  );
+  const nonEmpty = commaSeparated1(valueParser, allowTrailing);
 
   // Not `choice(nonEmpty, empty)`: unlike `sepBy` above, `empty`'s
   // `notPredicate(valueParser)` check deliberately distinguishes "nothing

@@ -83,9 +83,20 @@ export const forEachExpression = (
 export const someExpression = (
   expr: Expression,
   predicate: (node: Expression) => boolean,
-): boolean =>
-  predicate(expr) ||
-  childExpressions(expr).some((child) => someExpression(child, predicate));
+): boolean => {
+  const stack = [expr];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) break;
+    if (predicate(current)) return true;
+    const children = childExpressions(current);
+    for (let i = children.length - 1; i >= 0; i--) {
+      const child = children[i];
+      if (child) stack.push(child);
+    }
+  }
+  return false;
+};
 
 /**
  * Returns `expr` with `fn` applied to each direct child, rebuilding the

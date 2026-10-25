@@ -9,7 +9,7 @@ import type {
   GrammarDefinition,
   RuleDefinition,
 } from "@suzumiyaaoba/tpeg-core";
-import { forEachExpression } from "@suzumiyaaoba/tpeg-core";
+import { collectRuleReferences } from "@suzumiyaaoba/tpeg-core";
 import {
   type GrammarTypeInference,
   type InferredType,
@@ -183,7 +183,7 @@ export class TypeIntegrationEngine {
     );
 
     // Analyze dependencies
-    const dependencies = this.analyzeDependencies(rule);
+    const dependencies = [...collectRuleReferences(rule.pattern)];
 
     return {
       ...rule,
@@ -191,37 +191,6 @@ export class TypeIntegrationEngine {
       hasCircularDependency,
       dependencies,
     };
-  }
-
-  /**
-   * Analyze dependencies of a rule by traversing its pattern
-   */
-  private analyzeDependencies(rule: RuleDefinition): string[] {
-    const dependencies = new Set<string>();
-
-    // The traversal goes through `forEachExpression`/`childExpressions`
-    // (@suzumiyaaoba/tpeg-core), which descends into an `ActionExpression`'s
-    // own wrapped expression (not treating the action as a leaf): the
-    // labels/rules that expression references are still real dependencies
-    // for circular-dependency detection and for the "Dependencies: ..."
-    // doc comment this analysis feeds below, even though the action's OWN
-    // result type is `unknown` (`inferActionExpressionType`,
-    // `type-inference.ts`). Before that traversal was shared, a
-    // hand-written switch here omitted the `ActionExpression` case and
-    // every rule using a semantic action silently reported zero
-    // dependencies.
-    //
-    // `QualifiedIdentifier` nodes match no case below: a `module.rule`
-    // reference points OUTSIDE this grammar's own rule set (see
-    // `inferQualifiedIdentifierType`'s doc comment, `type-inference.ts`)
-    // -- not a dependency edge in this grammar's local rule graph.
-    forEachExpression(rule.pattern, (node) => {
-      if (node.type === "Identifier") {
-        dependencies.add(node.name);
-      }
-    });
-
-    return Array.from(dependencies);
   }
 
   /**

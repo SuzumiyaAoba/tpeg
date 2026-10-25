@@ -210,6 +210,44 @@ const result = keyValue('"name":"John"', 0);
 // }
 ```
 
+## Grammar AST Utilities
+
+Grammar node types, constructors (`createSequence`, `createIdentifier`, etc.),
+and type guards remain available from the package entry point. Internally they
+live in `grammar-nodes.ts`, `grammar-builders.ts`, and `grammar-guards.ts`;
+`grammar-types.ts` re-exports them for compatibility.
+
+Use the shared traversal helpers when inspecting grammar expressions:
+
+```typescript
+import {
+  collectRuleReferences,
+  createIdentifier,
+  createSequence,
+  createStar,
+  measureExpression,
+  walkExpression,
+} from "@suzumiyaaoba/tpeg-core";
+
+const expression = createSequence([
+  createIdentifier("item"),
+  createStar(createIdentifier("separator")),
+]);
+
+collectRuleReferences(expression); // Set { "item", "separator" }
+measureExpression(expression); // { depth: 2, nodeCount: 4 }
+walkExpression(expression, (node, depth) => {
+  console.log(node.type, depth);
+});
+```
+
+`expressionChildren` returns immediate children in source order.
+`walkExpression` visits each occurrence in depth-first order; returning `false`
+skips that node's children. `someExpression` stops at the first matching node.
+Traversals include action bodies but do not follow references into other rules.
+`findRecursiveRuleNames` detects cycle members in a rule dependency graph, and
+`collectTopLevelLabels` collects capture names visible to code generation.
+
 ## Error Handling
 
 ```typescript
