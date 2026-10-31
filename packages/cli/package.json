@@ -1,7 +1,7 @@
 {
   "name": "@suzumiyaaoba/tpeg-cli",
   "version": "0.1.0",
-  "description": "Command-line interface for generating TypeScript parsers from TPEG grammar files",
+  "description": "Generate TypeScript, JavaScript, Python, Go and Rust parsers from TPEG grammars",
   "keywords": [
     "cli",
     "code-generation",
@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@suzumiyaaoba/tpeg-core": "workspace:*",
+    "@suzumiyaaoba/tpeg-generator": "workspace:*",
     "@suzumiyaaoba/tpeg-parser": "workspace:*"
   },
   "devDependencies": {

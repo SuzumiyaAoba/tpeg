@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * tpeg -- generate a TypeScript parser from a .tpeg grammar file.
+ * tpeg -- generate a parser from a .tpeg grammar file.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -10,6 +10,7 @@ import {
   parse,
 } from "@suzumiyaaoba/tpeg-core";
 import {
+  bundleGrammarFile,
   generateTypeScriptParser,
   skipTrailingWhitespaceAndComments,
   tpegModuleFile,
@@ -104,6 +105,30 @@ export function run(argv: string[]): number {
   // content, so there's no reason to make a user wait through a read and
   // a parse (potentially of a large file) just to be told the flags
   // don't go together.
+  if (
+    !["typescript", "javascript", "python", "go", "rust"].includes(
+      options.language,
+    )
+  ) {
+    process.stderr.write(
+      `error: unsupported target language "${sanitizeForTerminal(options.language)}"\n`,
+    );
+    return 1;
+  }
+  const nativeTarget = ["python", "go", "rust"].includes(options.language);
+  if (
+    nativeTarget &&
+    (options.optimize || options.regexFusion || !options.types)
+  ) {
+    process.stderr.write(
+      "error: --optimize, --regex-fusion and --no-types apply only to TypeScript/JavaScript targets\n",
+    );
+    return 1;
+  }
+  if (options.packageName !== undefined && options.language !== "go") {
+    process.stderr.write("error: --package-name requires --language go\n");
+    return 1;
+  }
   if (options.regexFusion && !options.optimize) {
     process.stderr.write(
       "error: --regex-fusion/--regex-fusion-subtree requires --optimize (the standard generator has no such option)\n",
@@ -181,7 +206,7 @@ export function run(argv: string[]): number {
   // `buildQualifiedIdentifierWarnings` (wired into both generators)
   // reports as warnings below. Surface the same limitation here so it
   // isn't silent when a file actually declares imports.
-  if (parseResult.val.imports.length > 0) {
+  if (parseResult.val.imports.length > 0 && !options.bundle && !nativeTarget) {
     const list = parseResult.val.imports
       .map((stmt) => `"${stmt.modulePath}"`)
       .join(", ");
@@ -194,7 +219,7 @@ export function run(argv: string[]): number {
   // `ModularGrammarDefinition` carries the module-only fields (imports,
   // exports, moduleInfo) the optimizers/generators don't consume -- pass
   // them the plain `GrammarDefinition` they expect.
-  const parsedGrammar: GrammarDefinition = {
+  let parsedGrammar: GrammarDefinition = {
     type: "GrammarDefinition",
     name: parseResult.val.grammar.name,
     annotations: parseResult.val.grammar.annotations,
@@ -203,6 +228,17 @@ export function run(argv: string[]): number {
       ? { transforms: parseResult.val.grammar.transforms }
       : {}),
   };
+
+  if (options.bundle || nativeTarget) {
+    try {
+      parsedGrammar = bundleGrammarFile(inputPath);
+    } catch (error) {
+      process.stderr.write(
+        `error: ${sanitizeForTerminal((error as Error).message)}\n`,
+      );
+      return 1;
+    }
+  }
 
   // `applyAstOptimizations` (left-factoring, character-class merging,
   // negative-lookahead degeneration -- see packages/parser/src/ast-optimize.ts)
@@ -241,7 +277,10 @@ export function run(argv: string[]): number {
   // the same way every other grammar-authoring mistake in this file is:
   // a clean `error:` line on stderr and a non-zero exit, no output
   // written.
-  let generated: ReturnType<typeof generateTypeScriptParser>;
+  let generated: Pick<
+    ReturnType<typeof generateTypeScriptParser>,
+    "code" | "exports" | "warnings"
+  >;
   try {
     generated = generateParser(grammar, options);
   } catch (error) {

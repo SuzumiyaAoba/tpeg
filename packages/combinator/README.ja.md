@@ -379,3 +379,37 @@ bunx vp test packages/combinator/src/integration.spec.ts
 ## ライセンス
 
 MIT
+
+## 複数の構文エラーからの回復
+
+`recover(parser, options)` は通常の失敗後に `synchronize` で指定した境界を探し、
+`fallback` の値で解析を続けます。`onError` には元のエラーを渡すため、繰り返しの中で
+複数の構文エラーを収集できます。
+
+```typescript
+import {
+  anyChar,
+  charClass,
+  choice,
+  literal,
+  notPredicate,
+  parse,
+  seq,
+  zeroOrMore,
+} from "@suzumiyaaoba/tpeg-core";
+import { recover } from "@suzumiyaaoba/tpeg-combinator";
+
+const errors = [];
+const record = recover(seq(charClass(["0", "9"]), literal(";")), {
+  synchronize: choice(literal(";"), notPredicate(anyChar())),
+  consumeSynchronizer: true,
+  fallback: ({ skipped }) => ({ invalid: skipped }),
+  onError: (error) => errors.push(error),
+});
+const result = parse(zeroOrMore(record))("1;bad;2;");
+```
+
+既定では境界を消費せず、`consumeSynchronizer` で消費するよう変更できます。
+回復時は必ず入力を進め、`maxSkip` で探索距離を UTF-16 単位で制限できます。
+走査はコードポイントごとに進みます。cut の失敗やリソース制限による中断は伝播し、
+回復済みエラーや境界の探索失敗は後続の診断に混ざりません。

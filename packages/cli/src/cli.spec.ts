@@ -79,6 +79,65 @@ describe("tpeg CLI", () => {
     expect(stdout).toContain("Usage: tpeg <input.tpeg> [options]");
   });
 
+  it.each([
+    ["python", "def parse("],
+    ["go", "func Parse("],
+    ["rust", "pub fn parse("],
+  ])("generates a %s parser", (language, declaration) => {
+    const input = join(dir, "grammar.tpeg");
+    writeFileSync(input, SIMPLE_GRAMMAR);
+    const result = captureOutput(() => run([input, "--language", language]));
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toContain(declaration);
+  });
+
+  it("generates JavaScript with types removed from semantic actions", () => {
+    const input = join(dir, "grammar.tpeg");
+    writeFileSync(
+      input,
+      'grammar G { start = digits:[0-9]+ { return (digits as string[]).join(""); } }',
+    );
+    const result = captureOutput(() =>
+      run([input, "--language", "javascript"]),
+    );
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).not.toContain("as string[]");
+    expect(result.stdout).not.toContain("Parser<any>");
+  });
+
+  it.each([
+    ["--language", "unknown"],
+    ["--language", "python", "--optimize"],
+    ["--language", "rust", "--no-types"],
+    ["--language", "typescript", "--package-name", "main"],
+  ])("rejects invalid target flags before reading input: %s", (...flags) => {
+    const result = captureOutput(() => run(["missing.tpeg", ...flags]));
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).not.toContain("could not read");
+    expect(result.stdout).toBe("");
+  });
+
+  it("uses the Go package name and native header supplied by the caller", () => {
+    const input = join(dir, "grammar.tpeg");
+    const header = join(dir, "header.go");
+    writeFileSync(input, SIMPLE_GRAMMAR);
+    writeFileSync(header, 'import "math"');
+    const result = captureOutput(() =>
+      run([
+        input,
+        "--language",
+        "go",
+        "--package-name",
+        "main",
+        "--header",
+        header,
+      ]),
+    );
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toContain("package main");
+    expect(result.stdout).toContain('import "math"');
+  });
+
   it("prints the package version for --version", () => {
     const { exitCode, stdout } = captureOutput(() => run(["--version"]));
     expect(exitCode).toBe(0);

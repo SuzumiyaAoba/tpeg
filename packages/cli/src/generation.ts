@@ -1,3 +1,9 @@
+import { readFileSync } from "node:fs";
+import {
+  generateNativeParser,
+  transpileGeneratedParser,
+  type NativeLanguage,
+} from "@suzumiyaaoba/tpeg-generator";
 import {
   type GeneratedCode,
   type GrammarDefinition,
@@ -32,16 +38,31 @@ export const prepareGrammar = (
 export const generateParser = (
   grammar: GrammarDefinition,
   options: CliOptions,
-): GeneratedCode => {
+): Pick<GeneratedCode, "code" | "exports" | "warnings"> => {
+  const header =
+    options.headerPath === undefined
+      ? undefined
+      : readFileSync(options.headerPath, "utf8").replace(/^\uFEFF/, "");
   const sharedOptions = {
-    includeTypes: options.types,
+    includeTypes: options.language === "javascript" || options.types,
     ...(options.namePrefix !== undefined
       ? { namePrefix: options.namePrefix }
       : {}),
   };
   // Regex fusion happens inside code generation, after every AST rewrite.
   // Leave its default scope intact unless subtree fusion was requested.
-  return options.optimize
+  if (["python", "go", "rust"].includes(options.language)) {
+    return generateNativeParser(grammar, options.language as NativeLanguage, {
+      ...(options.namePrefix !== undefined
+        ? { namePrefix: options.namePrefix }
+        : {}),
+      ...(options.packageName !== undefined
+        ? { packageName: options.packageName }
+        : {}),
+      ...(header !== undefined ? { header } : {}),
+    });
+  }
+  const generated = options.optimize
     ? generateOptimizedTypeScriptParser(grammar, {
         ...sharedOptions,
         ...(options.regexFusion ? { enableRegexFusion: true } : {}),
@@ -50,4 +71,8 @@ export const generateParser = (
           : {}),
       })
     : generateTypeScriptParser(grammar, sharedOptions);
+  if (header !== undefined) generated.code = `${header}\n${generated.code}`;
+  if (options.language === "javascript")
+    generated.code = transpileGeneratedParser(generated.code);
+  return generated;
 };

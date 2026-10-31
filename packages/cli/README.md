@@ -1,6 +1,6 @@
 # @suzumiyaaoba/tpeg-cli
 
-Command-line interface for generating standalone TypeScript parsers from `.tpeg` grammar files.
+Command-line interface for generating TypeScript, JavaScript, Python, Go and Rust parsers from `.tpeg` grammar files.
 
 ## Usage
 
@@ -43,3 +43,36 @@ bun run build                    # compile to dist/
 bun run typecheck
 bun run test
 ```
+
+## Target languages and bundled imports
+
+```bash
+tpeg grammar.tpeg --language javascript -o parser.mjs
+tpeg grammar.tpeg --language python -o parser.py
+tpeg grammar.tpeg --language go --package-name parser -o parser.go
+tpeg grammar.tpeg --language rust -o parser.rs
+tpeg grammar.tpeg --bundle -o parser.ts
+```
+
+`-l`/`--language` selects the target; TypeScript remains the default.
+Native targets require only their standard library. `--package-name` sets
+the Go package name. `--header <file>` prepends imports or declarations;
+TypeScript/JavaScript headers can supply external parser bindings.
+`--name-prefix` prefixes the native
+`parse`/`Parse` entry point. `--optimize`, regex fusion and `--no-types` apply
+only to TypeScript/JavaScript; AST rewrites remain available for all targets.
+
+`--bundle` reads the local import graph, validates versions and exports,
+links selective and aliased imports, and resolves `extends`/`includes`.
+Native targets enable it automatically. A child rule overrides an inherited
+rule, and inherited references use that override; explicit `base.rule`
+references still use the parent's rule. Ambiguous mixin rules require an
+explicit override. Each rule retains the whitespace policy of its defining
+module. Circular imports and incompatible versions fail before output is
+written. Without `--bundle`, TypeScript/JavaScript keep their external-binding
+behavior for imported parsers.
+
+Native transforms must be written for the chosen language; inline
+JavaScript/TypeScript actions cannot be compiled into a native target.
+See the [generator guide](../generator/README.md#native-language-generators-and-plugins)
+for parser APIs, captured-value types, callbacks and Unicode handling.

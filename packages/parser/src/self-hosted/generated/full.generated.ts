@@ -1,3 +1,5 @@
+import { nativeTransformBodies as nativeBodies } from "@suzumiyaaoba/tpeg-parser";
+
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { anyChar, capture, captureSequence, charClass, charClassRun, choice, commit, lazy, literal, negatedCharClass, notPredicate, oneOrMore, optional, quantified, sequence, untagCapture, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
 
@@ -1914,17 +1916,101 @@ export const returnTypeSpec: Parser<any> = untagCapture((input, pos) => {
   };
 });
 
-export const transformFunctionNode: Parser<any> = untagCapture((input, pos) => {
-  const __base = (captureSequence(capture("trivia", wsAndCommentsOrDocs), capture("name", identifierName), wsAndComments, capture("params", parameterList), capture("ret", returnTypeSpec), wsAndComments, capture("body", actionBlock)));
+export const transformFunctionHead: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("trivia", wsAndCommentsOrDocs), capture("name", identifierName), wsAndComments, capture("params", parameterList), capture("ret", returnTypeSpec), wsAndComments));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
-    const { trivia, name, params, ret, body } = ($$ ?? {});
+    const { trivia, name, params, ret } = ($$ ?? {});
 
     const documentation = trivia.filter((t: any) => typeof t === "object" && t !== null).map((t: any) => t.doc);
-    const fn: any = { name, parameters: params, returnType: ret, body };
-    if (documentation.length > 0) fn.documentation = documentation;
+    const head: any = { name, parameters: params, returnType: ret };
+    if (documentation.length > 0) head.documentation = documentation;
+    return head;
+  
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const transformFunctionNode: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("head", transformFunctionHead), capture("body", actionBlock)));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { head, body } = ($$ ?? {});
+
+    const fn: any = { name: head.name, parameters: head.parameters, returnType: head.returnType, body };
+    if (head.documentation !== undefined) fn.documentation = head.documentation;
+    return fn;
+  
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const transformFunctionPythonNode: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("head", transformFunctionHead), capture("body", nativeBodies.python)));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { head, body } = ($$ ?? {});
+
+    const fn: any = { name: head.name, parameters: head.parameters, returnType: head.returnType, body };
+    if (head.documentation !== undefined) fn.documentation = head.documentation;
+    return fn;
+  
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const transformFunctionGoNode: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("head", transformFunctionHead), capture("body", nativeBodies.go)));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { head, body } = ($$ ?? {});
+
+    const fn: any = { name: head.name, parameters: head.parameters, returnType: head.returnType, body };
+    if (head.documentation !== undefined) fn.documentation = head.documentation;
+    return fn;
+  
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const transformFunctionRustNode: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("head", transformFunctionHead), capture("body", nativeBodies.rust)));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { head, body } = ($$ ?? {});
+
+    const fn: any = { name: head.name, parameters: head.parameters, returnType: head.returnType, body };
+    if (head.documentation !== undefined) fn.documentation = head.documentation;
     return fn;
   
   })();
@@ -1955,18 +2041,134 @@ export const transformFunctions: Parser<any> = untagCapture((input, pos) => {
   };
 });
 
-export const transformDefinitionNode: Parser<any> = untagCapture((input, pos) => {
-  const __base = (captureSequence(wsAndComments, literal("transforms"), wsAndCommentsPlus, capture("info", transformSetName), wsAndComments, literal("{"), capture("functions", transformFunctions), wsAndComments, literal("}")));
+export const genericTransformSetName: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("name", identifierName), wsAndComments, literal("@"), wsAndComments, capture("lang", choice(literal("typescript"), literal("java"), literal("cpp"))), notPredicate(langChar)));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { name, lang } = ($$ ?? {});
+ return { name, language: lang }; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const pythonTransformSetName: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("name", identifierName), wsAndComments, literal("@"), wsAndComments, capture("lang", literal("python")), notPredicate(langChar)));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { name, lang } = ($$ ?? {});
+ return { name, language: lang }; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const transformFunctionsPython: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("first", transformFunctionPythonNode), capture("rest", zeroOrMore(transformFunctionPythonNode))));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { first, rest } = ($$ ?? {});
+ return [first, ...rest]; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const goTransformSetName: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("name", identifierName), wsAndComments, literal("@"), wsAndComments, capture("lang", literal("go")), notPredicate(langChar)));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { name, lang } = ($$ ?? {});
+ return { name, language: lang }; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const transformFunctionsGo: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("first", transformFunctionGoNode), capture("rest", zeroOrMore(transformFunctionGoNode))));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { first, rest } = ($$ ?? {});
+ return [first, ...rest]; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const rustTransformSetName: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("name", identifierName), wsAndComments, literal("@"), wsAndComments, capture("lang", literal("rust")), notPredicate(langChar)));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { name, lang } = ($$ ?? {});
+ return { name, language: lang }; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const transformFunctionsRust: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(capture("first", transformFunctionRustNode), capture("rest", zeroOrMore(transformFunctionRustNode))));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { first, rest } = ($$ ?? {});
+ return [first, ...rest]; 
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const transformDefinitionGenericNode: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(wsAndComments, literal("transforms"), wsAndCommentsPlus, capture("info", genericTransformSetName), wsAndComments, literal("{"), capture("functions", transformFunctions), wsAndComments, literal("}")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
   const __val = (() => {
     const $$: any = __result.val;
     const { info, functions } = ($$ ?? {});
 
-    return {
-      type: "TransformDefinition",
-      transformSet: { name: info.name, targetLanguage: info.language, functions },
-    };
+    return { type: "TransformDefinition", transformSet: { name: info.name, targetLanguage: info.language, functions } };
   
   })();
   return {
@@ -1976,6 +2178,65 @@ export const transformDefinitionNode: Parser<any> = untagCapture((input, pos) =>
     next: __result.next,
   };
 });
+
+export const transformDefinitionPythonNode: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(wsAndComments, literal("transforms"), wsAndCommentsPlus, capture("info", pythonTransformSetName), wsAndComments, literal("{"), capture("functions", transformFunctionsPython), wsAndComments, literal("}")));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { info, functions } = ($$ ?? {});
+
+    return { type: "TransformDefinition", transformSet: { name: info.name, targetLanguage: info.language, functions } };
+  
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const transformDefinitionGoNode: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(wsAndComments, literal("transforms"), wsAndCommentsPlus, capture("info", goTransformSetName), wsAndComments, literal("{"), capture("functions", transformFunctionsGo), wsAndComments, literal("}")));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { info, functions } = ($$ ?? {});
+
+    return { type: "TransformDefinition", transformSet: { name: info.name, targetLanguage: info.language, functions } };
+  
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const transformDefinitionRustNode: Parser<any> = untagCapture((input, pos) => {
+  const __base = (captureSequence(wsAndComments, literal("transforms"), wsAndCommentsPlus, capture("info", rustTransformSetName), wsAndComments, literal("{"), capture("functions", transformFunctionsRust), wsAndComments, literal("}")));
+  const __result = __base(input, pos);
+  if (!__result.success) return __result;
+  const __val = (() => {
+    const $$: any = __result.val;
+    const { info, functions } = ($$ ?? {});
+
+    return { type: "TransformDefinition", transformSet: { name: info.name, targetLanguage: info.language, functions } };
+  
+  })();
+  return {
+    success: true,
+    val: __val,
+    current: __result.current,
+    next: __result.next,
+  };
+});
+
+export const transformDefinitionNode: Parser<any> = untagCapture(choice(transformDefinitionPythonNode, transformDefinitionGoNode, transformDefinitionRustNode, transformDefinitionGenericNode));
 
 export const unsupportedAnnotationNode: Parser<any> = untagCapture((input, pos) => {
   const __base = (captureSequence(interWs, literal("@"), capture("key", choice(literal("private"), literal("protected"), literal("public"), literal("internal"), literal("override"), literal("namespace"), literal("ifdef"), literal("ifndef"), literal("endif"), literal("elif"), literal("if"), literal("else"))), notPredicate(identContChar)));

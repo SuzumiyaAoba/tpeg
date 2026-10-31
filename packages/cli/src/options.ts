@@ -3,11 +3,16 @@ import { parseArgs } from "node:util";
 export const USAGE = `Usage: tpeg <input.tpeg> [options]
 
 Parses a .tpeg grammar file (a "grammar Name { ... }" block, optionally
-followed by one or more "transforms Name@typescript { ... }" blocks) and
-generates a standalone TypeScript parser.
+followed by one or more "transforms Name@language { ... }" blocks) and
+generates a parser for the selected target language.
 
 Options:
   -o, --output <path>       Write generated code to this file (default: stdout)
+  -l, --language <target>   typescript (default), javascript, python, go, rust
+      --package-name <id>  Go package name (default: parser)
+      --header <path>      Declarations/imports to prepend from a file
+      --bundle             Resolve local grammar imports and inheritance
+                             (enabled automatically for native targets)
       --name-prefix <name>  Prefix every generated parser export with <name>
       --optimize            Use the performance-optimized code generator
                              (also enables FIRST-set predictive dispatch by
@@ -69,6 +74,10 @@ Examples:
 
 export interface CliOptions {
   output?: string;
+  language: string;
+  packageName?: string;
+  headerPath?: string;
+  bundle: boolean;
   namePrefix?: string;
   optimize: boolean;
   astOptimize: boolean;
@@ -89,6 +98,10 @@ export function parseCliArgs(argv: string[]): {
     args: argv,
     options: {
       output: { type: "string", short: "o" },
+      language: { type: "string", short: "l", default: "typescript" },
+      "package-name": { type: "string" },
+      header: { type: "string" },
+      bundle: { type: "boolean", default: false },
       "name-prefix": { type: "string" },
       optimize: { type: "boolean", default: false },
       "ast-optimize": { type: "boolean", default: false },
@@ -106,6 +119,12 @@ export function parseCliArgs(argv: string[]): {
   return {
     options: {
       ...(values.output !== undefined ? { output: values.output } : {}),
+      language: values.language ?? "typescript",
+      ...(values["package-name"] !== undefined
+        ? { packageName: values["package-name"] }
+        : {}),
+      ...(values.header !== undefined ? { headerPath: values.header } : {}),
+      bundle: values.bundle ?? false,
       ...(values["name-prefix"] !== undefined
         ? { namePrefix: values["name-prefix"] }
         : {}),

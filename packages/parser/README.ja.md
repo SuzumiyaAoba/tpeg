@@ -217,3 +217,27 @@ bun run test
 ## ライセンス
 
 MIT
+
+## 文法モジュールの結合
+
+`bundleGrammarFile(path)` はローカルの `.tpeg` と推移的な import を読み、生成器に
+渡せる単一の `GrammarDefinition` を返します。解析済みの `ModuleFile` を使う場合は
+`bundleGrammarModules(entry, dependencies)` を使います。export・選択 import・別名・
+バージョン制約・`@requires` を検証し、ファイル読み込みでは循環 import も拒否します。
+異なるディレクトリに同名ファイルがあっても別々のモジュールとして扱います。
+
+`extends`・`includes` で継承したルールはローカル宣言で上書きできます。継承ルール内の
+参照は派生側の上書きを使い、明示的な `base.rule` は元の実装を使います。mixin 間で
+ルール名が衝突した場合は明示的な上書きが必要です。変換関数・ルール注釈・定義元の
+空白スキップ方針を保ち、ローカルルールのない派生文法では親の明示的な `@start` を
+引き継ぎます。
+
+```typescript
+import {
+  bundleGrammarFile,
+  generateTypeScriptParser,
+} from "@suzumiyaaoba/tpeg-parser";
+
+const grammar = bundleGrammarFile("./grammar.tpeg");
+const generated = generateTypeScriptParser(grammar);
+```

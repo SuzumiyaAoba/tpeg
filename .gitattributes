@@ -1,0 +1,7 @@
+# Generated parsers preserve authored action/transform text verbatim.
+**/*.generated.ts linguist-generated=true -whitespace
+**/*.generated.js linguist-generated=true -whitespace
+**/*.generated.mjs linguist-generated=true -whitespace
+**/*.generated.py linguist-generated=true -whitespace
+**/*.generated.go linguist-generated=true -whitespace
+**/*.generated.rs linguist-generated=true -whitespace

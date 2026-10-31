@@ -74,6 +74,9 @@ describe("self-hosted transformDefinitionNode vs transforms.ts's transformDefini
       // language names that share a prefix must still resolve to the
       // longest/correct one, and a longer identifier must not be mistaken
       // for a shorter language name
+      'transforms T@python { f() -> X {\n  # } is a comment\n  return {"success": True, "value": "ok"}\n} }',
+      "transforms T@go { f() -> X { _ = `a } ${`; return Result{} } }",
+      'transforms T@rust { f() -> X { /* outer /* } */ still { */ fn borrow<\'a>(x: &\'a str) -> &\'a str { x } let _ = r##"a } "q" {"##; Ok(()) } }',
       `transforms T@go { f() -> X { return 1; } }`,
       `transforms T@rust { f() -> X { return 1; } }`,
       `transforms T@java { f() -> X { return 1; } }`,
