@@ -681,10 +681,34 @@ grammar SelfHostFull {
   // Leading trivia is wsAndCommentsOrDocs so `///` lines before a function
   // attach to its `documentation` field (transforms.ts's
   // docCollectingSeparator) instead of being discarded as plain comments.
-  transformFunctionNode = trivia:wsAndCommentsOrDocs name:identifierName wsAndComments params:parameterList ret:returnTypeSpec wsAndComments body:actionBlock {
+  transformFunctionHead = trivia:wsAndCommentsOrDocs name:identifierName wsAndComments params:parameterList ret:returnTypeSpec wsAndComments {
     const documentation = trivia.filter((t: any) => typeof t === "object" && t !== null).map((t: any) => t.doc);
-    const fn: any = { name, parameters: params, returnType: ret, body };
-    if (documentation.length > 0) fn.documentation = documentation;
+    const head: any = { name, parameters: params, returnType: ret };
+    if (documentation.length > 0) head.documentation = documentation;
+    return head;
+  }
+
+  transformFunctionNode = head:transformFunctionHead body:actionBlock {
+    const fn: any = { name: head.name, parameters: head.parameters, returnType: head.returnType, body };
+    if (head.documentation !== undefined) fn.documentation = head.documentation;
+    return fn;
+  }
+
+  transformFunctionPythonNode = head:transformFunctionHead body:nativeBodies.python {
+    const fn: any = { name: head.name, parameters: head.parameters, returnType: head.returnType, body };
+    if (head.documentation !== undefined) fn.documentation = head.documentation;
+    return fn;
+  }
+
+  transformFunctionGoNode = head:transformFunctionHead body:nativeBodies.go {
+    const fn: any = { name: head.name, parameters: head.parameters, returnType: head.returnType, body };
+    if (head.documentation !== undefined) fn.documentation = head.documentation;
+    return fn;
+  }
+
+  transformFunctionRustNode = head:transformFunctionHead body:nativeBodies.rust {
+    const fn: any = { name: head.name, parameters: head.parameters, returnType: head.returnType, body };
+    if (head.documentation !== undefined) fn.documentation = head.documentation;
     return fn;
   }
 
@@ -703,12 +727,36 @@ grammar SelfHostFull {
   // No wsAndComments between "{" and transformFunctions -- the first
   // function's own wsAndCommentsOrDocs collects any `///` doc lines there;
   // a plain wsAndComments would discard them (see transformFunctions).
-  transformDefinitionNode = wsAndComments "transforms" wsAndCommentsPlus info:transformSetName wsAndComments "{" functions:transformFunctions wsAndComments "}" {
-    return {
-      type: "TransformDefinition",
-      transformSet: { name: info.name, targetLanguage: info.language, functions },
-    };
+  // Foreign bodies use shared lexical primitives; TPEG still parses all
+  // declarations, signatures, documentation and surrounding structure.
+  genericTransformSetName = name:identifierName wsAndComments "@" wsAndComments lang:("typescript" / "java" / "cpp") !langChar { return { name, language: lang }; }
+
+  pythonTransformSetName = name:identifierName wsAndComments "@" wsAndComments lang:"python" !langChar { return { name, language: lang }; }
+  transformFunctionsPython = first:transformFunctionPythonNode rest:transformFunctionPythonNode* { return [first, ...rest]; }
+
+  goTransformSetName = name:identifierName wsAndComments "@" wsAndComments lang:"go" !langChar { return { name, language: lang }; }
+  transformFunctionsGo = first:transformFunctionGoNode rest:transformFunctionGoNode* { return [first, ...rest]; }
+
+  rustTransformSetName = name:identifierName wsAndComments "@" wsAndComments lang:"rust" !langChar { return { name, language: lang }; }
+  transformFunctionsRust = first:transformFunctionRustNode rest:transformFunctionRustNode* { return [first, ...rest]; }
+
+  transformDefinitionGenericNode = wsAndComments "transforms" wsAndCommentsPlus info:genericTransformSetName wsAndComments "{" functions:transformFunctions wsAndComments "}" {
+    return { type: "TransformDefinition", transformSet: { name: info.name, targetLanguage: info.language, functions } };
   }
+
+  transformDefinitionPythonNode = wsAndComments "transforms" wsAndCommentsPlus info:pythonTransformSetName wsAndComments "{" functions:transformFunctionsPython wsAndComments "}" {
+    return { type: "TransformDefinition", transformSet: { name: info.name, targetLanguage: info.language, functions } };
+  }
+
+  transformDefinitionGoNode = wsAndComments "transforms" wsAndCommentsPlus info:goTransformSetName wsAndComments "{" functions:transformFunctionsGo wsAndComments "}" {
+    return { type: "TransformDefinition", transformSet: { name: info.name, targetLanguage: info.language, functions } };
+  }
+
+  transformDefinitionRustNode = wsAndComments "transforms" wsAndCommentsPlus info:rustTransformSetName wsAndComments "{" functions:transformFunctionsRust wsAndComments "}" {
+    return { type: "TransformDefinition", transformSet: { name: info.name, targetLanguage: info.language, functions } };
+  }
+
+  transformDefinitionNode = transformDefinitionPythonNode / transformDefinitionGoNode / transformDefinitionRustNode / transformDefinitionGenericNode
 
   // ---- Grammar item + block, extended with module/transform items ----
   //

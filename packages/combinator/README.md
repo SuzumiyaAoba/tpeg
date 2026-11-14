@@ -379,3 +379,38 @@ For complete API documentation, see the TypeScript definitions in the source cod
 ## License
 
 MIT
+
+## Recovering multiple syntax errors
+
+`recover(parser, options)` searches for the next synchronization boundary after
+an ordinary failure, returns a fallback value, and reports the original error
+through `onError`. This allows a repetition to collect several syntax errors.
+
+```typescript
+import {
+  anyChar,
+  charClass,
+  choice,
+  literal,
+  notPredicate,
+  parse,
+  seq,
+  zeroOrMore,
+} from "@suzumiyaaoba/tpeg-core";
+import { recover } from "@suzumiyaaoba/tpeg-combinator";
+
+const errors = [];
+const record = recover(seq(charClass(["0", "9"]), literal(";")), {
+  synchronize: choice(literal(";"), notPredicate(anyChar())),
+  consumeSynchronizer: true,
+  fallback: ({ skipped }) => ({ invalid: skipped }),
+  onError: (error) => errors.push(error),
+});
+const result = parse(zeroOrMore(record))("1;bad;2;");
+```
+
+By default the synchronizer is left for the caller; `consumeSynchronizer`
+consumes it. Recovery must advance the input. `maxSkip` optionally bounds the
+UTF-16 search distance, and scanning advances by code point. Cut failures and
+resource-limit aborts propagate. Recovered errors and speculative delimiter
+failures do not contaminate later diagnostics.

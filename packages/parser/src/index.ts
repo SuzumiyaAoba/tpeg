@@ -238,3 +238,6 @@ export * from "./namespace-manager";
 
 // Export version management system
 export * from "./version-manager";
+
+export { bundleGrammarFile, bundleGrammarModules } from "./module-bundler";
+export { nativeTransformBodies } from "./native-transform-body";

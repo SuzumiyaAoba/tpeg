@@ -66,7 +66,7 @@ npm install @suzumiyaaoba/tpeg-parser
 
 ### tpeg-generator
 
-TPEGパーサーのためのテンプレートベースのコード生成システム。
+TypeScript・JavaScript・Python・Go・Rust 向けのパーサー生成システム。生成器のプラグインも登録できます。
 
 ```bash
 npm install @suzumiyaaoba/tpeg-generator
@@ -86,7 +86,7 @@ npm install @suzumiyaaoba/tpeg-parser-sample
 
 ### tpeg-cli
 
-`.tpeg` 文法ファイルからスタンドアロンのTypeScriptパーサーを生成する `tpeg` コマンドラインツール。
+`.tpeg` 文法から TypeScript・JavaScript・Python・Go・Rust パーサーを生成する `tpeg` コマンドラインツール。
 
 ```bash
 npm install -g @suzumiyaaoba/tpeg-cli

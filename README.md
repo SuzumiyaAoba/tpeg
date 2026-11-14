@@ -4,7 +4,7 @@
 
 > **Status**: This project is in active development (alpha). APIs may change without notice.
 
-TPEG is a TypeScript library for building parsers using Parsing Expression Grammars (PEGs). It is organized as a Bun/npm monorepo: a small core parsing engine, a combinator library built on top of it, a grammar parser for TPEG's own grammar syntax, and a template-based code generator, plus supporting AST and type-inference packages and example/demo packages.
+TPEG is a TypeScript library for building parsers using Parsing Expression Grammars (PEGs). It includes a core parsing engine, combinators, a parser for TPEG's own grammar syntax, and generators for TypeScript, JavaScript, Python, Go and Rust, plus supporting AST and type-inference packages and examples.
 
 日本語版は [README.ja.md](./README.ja.md) を参照してください.
 
@@ -35,7 +35,7 @@ tpeg-core (no workspace dependencies)
 ├── tpeg-type-inference
 └── tpeg-parser            (depends on tpeg-core, tpeg-combinator)
     ├── tpeg-parser-sample (depends on tpeg-core, tpeg-parser)
-    └── tpeg-cli           (depends on tpeg-core, tpeg-parser)
+    └── tpeg-cli           (depends on tpeg-core, tpeg-parser, tpeg-generator)
 ```
 
 ## Quick example
@@ -101,6 +101,10 @@ Per-package scripts are also available, e.g. `cd packages/core && bun run test`,
 There is no fixed test/package/file count documented here on purpose — those numbers drift with every commit. Run the commands above to see current, accurate ones.
 
 ## Documentation
+
+Generate a parser in another language with `tpeg grammar.tpeg --language python -o parser.py` (also `javascript`, `go`, and `rust`). Native output uses only its language's standard library. Local imports and grammar inheritance can be linked with `--bundle`; native targets enable linking automatically. See the [generator guide](./packages/generator/README.md#native-language-generators-and-plugins) for native APIs, transforms, and custom language plugins.
+
+The [self-hosting tests](./packages/parser/src/self-hosted/) compile TPEG's meta-grammar through three generations and verify identical ASTs and generated code. The handwritten parser remains the production entry point.
 
 - [PEG fundamentals](./docs/peg.md) — an introduction to parsing expression grammars
 - [TPEG grammar specification](./docs/peg-grammar.md) — the grammar definition language TPEG's own parser implements

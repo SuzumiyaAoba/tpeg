@@ -1,0 +1,1 @@
+import { nativeTransformBodies as nativeBodies } from "@suzumiyaaoba/tpeg-parser";

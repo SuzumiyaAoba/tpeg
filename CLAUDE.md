@@ -14,7 +14,7 @@ TPEG is a TypeScript library for building parsers using Parsing Expression Gramm
 - **tpeg-generator**: Code generation system with template-based output using Eta templates
 - **tpeg-parser-sample**: Runnable demos of the grammar parser and generator
 - **tpeg-samples**: Legacy example parsers (JSON, CSV, arithmetic, PEG grammar), built directly on tpeg-core/tpeg-combinator
-- **tpeg-cli**: `tpeg` command-line tool that generates a standalone TypeScript parser from a `.tpeg` grammar file, built on tpeg-core + tpeg-parser
+- **tpeg-cli**: `tpeg` command-line tool generating TypeScript, JavaScript, Python, Go and Rust parsers, built on tpeg-core + tpeg-parser + tpeg-generator
 
 For exact current counts (packages, files, tests), don't trust prose — run the commands in this file (`find packages -name "*.spec.ts" | wc -l`, `vp test`, etc.); they drift with every commit and this file doesn't get updated in lockstep.
 
@@ -121,22 +121,24 @@ tpeg-core (no workspace dependencies)
     ├── tpeg-type-inference (depends on tpeg-core)
     └── tpeg-parser (depends on tpeg-core, tpeg-combinator)
         ├── tpeg-parser-sample (depends on tpeg-core, tpeg-parser)
-        ├── tpeg-cli (depends on tpeg-core, tpeg-parser)
+        ├── tpeg-cli (depends on tpeg-core, tpeg-parser, tpeg-generator)
         └── tpeg-generator (depends on tpeg-core, tpeg-combinator, tpeg-parser, eta templates)
 ```
 
 `tpeg-generator` reuses `tpeg-parser`'s `codegen.ts` building blocks (identifier
 reference resolution, string/char-class escaping, action-expression wrapping)
 rather than keeping its own copies, after those copies were found to have
-drifted out of sync with `codegen.ts`'s fixes. It is not itself a dependency of
-any other package in this repo -- the `tpeg` CLI generates code via
-`tpeg-parser`'s `generateTypeScriptParser`/`generateOptimizedTypeScriptParser`
-directly, not via this Eta-based generator.
+drifted out of sync with `codegen.ts`'s fixes. The CLI uses the parser package's
+base/optimized TypeScript generators and the generator package's JavaScript
+transpilation and native-language generators. Native output uses Eta templates
+and only the target language's standard library. Independent generator
+registries support additional languages. `bundleGrammarFile` links local
+imports and inheritance before generation.
 
 ### Architecture Notes
 
 - The grammar parser (`packages/parser/src/`) implements TPEG's own grammar definition syntax; the spec it follows is `docs/peg-grammar.md`.
-- Code generation (`packages/generator/src/`) turns a parsed grammar into a standalone TypeScript parser using Eta templates, with optimized and base template variants.
+- Code generation (`packages/generator/src/`) supports TypeScript, JavaScript, Python, Go and Rust. Eta templates provide TypeScript base/optimized variants and the native runtimes.
 - Type inference for grammar definitions (`TypeInferenceEngine`, `TypeIntegrationEngine`) lives in its own package, `packages/type-inference/src/`, not in `tpeg-core` — see the migration note below for the correct import.
 - `packages/parser-sample/src/` holds runnable demos of the grammar parser and generator; `packages/samples/` is a separate, older set of hand-written example parsers (JSON, CSV, arithmetic, PEG) that predates the grammar parser and doesn't depend on it.
 - A previous `self-transpile` package (using TPEG to parse its own grammar) was removed; the parser combinator implementation was subsequently split from one large file into the current `primitive`/`string`/`list`/`logic`/`error`/`debug` modules under `packages/combinator/src/`.

@@ -23,6 +23,19 @@ jobs:
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Setup Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
       - name: Build packages
         run: vp run -r build
 
@@ -33,4 +46,6 @@ jobs:
         run: vp run -r typecheck
 
       - name: Run tests
+        env:
+          TPEG_NATIVE_REQUIRED: "1"
         run: vp test

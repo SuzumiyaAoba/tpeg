@@ -30,6 +30,7 @@
       },
       "dependencies": {
         "@suzumiyaaoba/tpeg-core": "workspace:*",
+        "@suzumiyaaoba/tpeg-generator": "workspace:*",
         "@suzumiyaaoba/tpeg-parser": "workspace:*",
       },
       "devDependencies": {

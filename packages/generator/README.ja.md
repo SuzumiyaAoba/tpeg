@@ -211,3 +211,51 @@ bun run typecheck
 ## ライセンス
 
 MIT
+
+## 多言語生成とプラグイン
+
+`generateParser(grammar, { language })` は `typescript`・`javascript`・
+`python`・`go`・`rust` に対応します。JavaScript 出力ではアクション・変換関数内の
+型注釈も除去します。Python・Go・Rust の出力は各言語の標準ライブラリだけで動作します。
+
+```typescript
+import { bundleGrammarFile } from "@suzumiyaaoba/tpeg-parser";
+import { generateParser } from "@suzumiyaaoba/tpeg-generator";
+
+const grammar = bundleGrammarFile("./grammar.tpeg");
+const output = await generateParser(grammar, { language: "python" });
+```
+
+ネイティブ版は PEG の各演算子、ラベル、再帰、span、cut、`@skip`/`@noskip`、
+`@memoize` とキャッシュ件数制限を扱います。変換関数はメモ化した生の解析結果の外側で
+実行し、キャッシュは解析呼び出しごとに分かれます。
+
+| 言語   | 解析 API                                                                              | 値の表現                                |
+| ------ | ------------------------------------------------------------------------------------- | --------------------------------------- |
+| Python | `parse(text, rule=None, offset=0, *, complete=False, max_depth=256, transforms=None)` | 文字列、list、dict、`None`              |
+| Go     | `Parse(input, options ...ParseOptions)`                                               | `any`、`[]any`、`map[string]any`、`nil` |
+| Rust   | `parse(&str)` / `parse_with_options(&str, ParseOptions)`                              | `Value` 列挙型                          |
+
+成功結果には `success`・`val`・`current`・`next`、失敗結果には位置と期待内容を含む
+`error` が入ります。Rust の結果は `to_json()`、Go の結果は `encoding/json` で
+JSON にできます。既定では前方一致し、`complete`/`Complete` を指定すると入力全体との
+一致を要求します。位置は TypeScript 版と同じ UTF-16 オフセットです。
+Go・Rust は Unicode スカラー値のリテラルとコードポイント境界の開始位置を要求します。
+Go は不正な UTF-8 入力も拒否します。Python は単独サロゲートも扱えます。
+エラーメッセージの文言は生成先によって異なる場合があります。
+
+変換処理は `transforms Name@python`・`@go`・`@rust` に対象言語で記述します。
+Python は `{"success": True, "value": ...}`、Go は `TransformResult`、Rust は
+`Result<Value, String>` を返します。解析時に渡した変換コールバックは生成済みの変換を
+上書きします。JavaScript/TypeScript のインラインアクションを他言語へ翻訳する機能は
+なく、ネイティブ生成では明示的なエラーになります。
+
+同期 API は `generateNativeParser(grammar, "go", { packageName: "parser" })`。
+`header` で宣言・import、`namePrefix` で解析関数名の接頭辞を指定できます。
+独自言語の追加には `createGeneratorRegistry().register(plugin)` を使います。
+登録はレジストリごとに独立しています。詳しい変換例とプラグインの形は
+[英語ガイド](./README.md#native-language-generators-and-plugins)を参照してください。
+
+実行検証には `python3`・`go`・`rustc` を使います。パスは `TPEG_PYTHON`・
+`TPEG_GO`・`TPEG_RUSTC` で指定できます。ローカルでは未導入の言語のテストを
+スキップし、CI の `TPEG_NATIVE_REQUIRED=1` ではすべて必須になります。

@@ -230,6 +230,39 @@ export const createFailure = (
   };
 };
 
+const PARSE_ERROR_FIELDS = [
+  "message",
+  "pos",
+  "expected",
+  "found",
+  "parserName",
+  "context",
+  "fatal",
+  "abort",
+] as const;
+
+/**
+ * Shallow-copy an error's enumerable metadata and every standard diagnostic
+ * field, including inherited and non-enumerable fields. Enumerable getters
+ * are evaluated by the spread once; missing fields are read from the source
+ * once. The returned fields are writable data properties.
+ */
+export const cloneParseError = (error: ParseError): ParseError => {
+  const result = { ...error };
+  for (const key of PARSE_ERROR_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(result, key)) continue;
+    const value = error[key];
+    if (value === undefined) continue;
+    Object.defineProperty(result, key, {
+      value,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  }
+  return result;
+};
+
 /**
  * Creates a parser function that runs from the beginning of input.
  *

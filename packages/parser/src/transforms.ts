@@ -11,7 +11,7 @@
  * - Result type specifications
  */
 
-import type { Parser } from "@suzumiyaaoba/tpeg-core";
+import type { ParseResult, Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   choice,
   createFailure,
@@ -33,6 +33,7 @@ import {
   TRANSFORM_SYMBOLS,
 } from "./constants";
 import { identifier } from "./identifier";
+import { nativeTransformBodies } from "./native-transform-body";
 import {
   type TransformDefinition,
   type TransformFunction,
@@ -514,7 +515,17 @@ const returnTypeSpec: Parser<TransformReturnType> = map(
  * mis-parse against the NEXT function's `{`. Gating on the character
  * here (like `composition.ts`'s `actionBlock`) rejects both cleanly.
  */
-const functionBody: Parser<string> = (input, pos) => {
+type LanguageParser<T> = (
+  input: string,
+  pos: number,
+  language?: string,
+) => ParseResult<T>;
+
+const functionBody: LanguageParser<string> = (
+  input,
+  pos,
+  language = "typescript",
+) => {
   if (input[pos] !== "{") {
     return createFailure("Expected opening brace '{'", pos, {
       expected: ["{"],
@@ -522,6 +533,8 @@ const functionBody: Parser<string> = (input, pos) => {
       parserName: "functionBody",
     });
   }
+  if (language === "python" || language === "go" || language === "rust")
+    return nativeTransformBodies[language](input, pos);
   return scanBalancedBraces(input, pos);
 };
 
@@ -587,9 +600,10 @@ const docCollectingSeparator: Parser<string[]> = (input, pos) => {
  * Leading `///` documentation comments are attached to the function's
  * `documentation` field.
  */
-const transformFunction: Parser<TransformFunction> = (
+const transformFunction: LanguageParser<TransformFunction> = (
   input: string,
   pos: number,
+  language = "typescript",
 ) => {
   // optionalWhitespaceOrComment + `///` doc collection
   const whitespaceResult = docCollectingSeparator(input, pos);
@@ -629,7 +643,7 @@ const transformFunction: Parser<TransformFunction> = (
   currentPos = whitespace3Result.success ? whitespace3Result.next : currentPos;
 
   // functionBody
-  const functionBodyResult = functionBody(input, currentPos);
+  const functionBodyResult = functionBody(input, currentPos, language);
   if (!functionBodyResult.success) {
     return functionBodyResult;
   }
@@ -655,9 +669,10 @@ const transformFunction: Parser<TransformFunction> = (
 /**
  * Parse transform functions within a transform set
  */
-const transformFunctions: Parser<TransformFunction[]> = (
+const transformFunctions: LanguageParser<TransformFunction[]> = (
   input: string,
   pos: number,
+  language = "typescript",
 ) => {
   const functions: TransformFunction[] = [];
   let currentPos = pos;
@@ -666,7 +681,7 @@ const transformFunctions: Parser<TransformFunction[]> = (
   // (docCollectingSeparator) skips whitespace/comments AND collects any
   // `///` documentation lines so they attach to the function that follows
   // them, so there is deliberately no separate whitespace skip here.
-  const firstFunctionResult = transformFunction(input, currentPos);
+  const firstFunctionResult = transformFunction(input, currentPos, language);
   if (!firstFunctionResult.success) {
     return firstFunctionResult;
   }
@@ -693,8 +708,9 @@ const transformFunctions: Parser<TransformFunction[]> = (
 
     // 次の関数を試行 (transformFunction re-runs the same doc-collecting
     // separator internally, so pending `///` lines attach to it)
-    const nextFunctionResult = transformFunction(input, currentPos);
+    const nextFunctionResult = transformFunction(input, currentPos, language);
     if (!nextFunctionResult.success) {
+      if (nextFunctionResult.error.abort) return nextFunctionResult;
       // 関数が見つからない場合は終了
       break;
     }
@@ -721,20 +737,32 @@ const transformFunctions: Parser<TransformFunction[]> = (
 // function -- a plain optionalWhitespaceOrComment here would eat those
 // doc lines before transformFunctions could see them (the same reason
 // the loop inside transformFunctions peeks with docCollectingSeparator).
-const transformSet: Parser<TransformSet> = map(
-  sequence(
-    transformsKeyword,
-    requiredWhitespaceOrComment,
-    transformSetName,
-    optionalWhitespaceOrComment,
-    transformBlockOpen,
-    transformFunctions,
-    optionalWhitespaceOrComment,
-    transformBlockClose,
-  ),
-  (results) =>
-    createTransformSet(results[2].name, results[2].language, results[5]),
+const transformSetPrefix = sequence(
+  transformsKeyword,
+  requiredWhitespaceOrComment,
+  transformSetName,
+  optionalWhitespaceOrComment,
+  transformBlockOpen,
 );
+const transformSetSuffix = sequence(
+  optionalWhitespaceOrComment,
+  transformBlockClose,
+);
+const transformSet: Parser<TransformSet> = (input, pos) => {
+  const prefix = transformSetPrefix(input, pos);
+  if (!prefix.success) return prefix;
+  const { name, language } = prefix.val[2];
+  const functions = transformFunctions(input, prefix.next, language);
+  if (!functions.success) return functions;
+  const suffix = transformSetSuffix(input, functions.next);
+  if (!suffix.success) return suffix;
+  return {
+    success: true,
+    val: createTransformSet(name, language, functions.val),
+    current: pos,
+    next: suffix.next,
+  };
+};
 
 // ============================================================================
 // Main Transform Definition Parser

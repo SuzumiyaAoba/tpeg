@@ -229,7 +229,8 @@ export interface Optional {
  * const exact: Quantified = {
  *   type: "Quantified",
  *   expression: identifier,
- *   min: 3
+ *   min: 3,
+ *   max: 3
  * };
  * // 2 to 5 repetitions
  * const range: Quantified = {
@@ -247,7 +248,7 @@ export interface Quantified {
   expression: Expression;
   /** Minimum number of repetitions */
   min: number;
-  /** Maximum number of repetitions (optional for exact counts) */
+  /** Maximum repetitions; omitted or Infinity means unbounded (`{n,}`). */
   max?: number;
 }
 

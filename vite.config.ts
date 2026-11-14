@@ -46,6 +46,8 @@ export default defineConfig({
   },
   test: {
     pool: "forks",
+    // Native compilation and differential suites share the host CPU.
+    maxWorkers: 4,
     execArgv: ["--stack-size=8000"],
     // PBT/fuzz specs multiply their workload by TPEG_FUZZ_SCALE (see the
     // FUZZ_SCALE comments in *pbt*.spec.ts and *laws*.spec.ts, e.g.

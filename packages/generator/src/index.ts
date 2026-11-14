@@ -11,6 +11,27 @@ export {
   generateEtaTypeScriptParser,
 } from "./eta-generator";
 
+export { generateNativeParser } from "./native-generator";
+export {
+  generateJavaScriptParser,
+  transpileGeneratedParser,
+} from "./javascript-generator";
+export type {
+  NativeLanguage,
+  NativeCodeGenOptions,
+  NativeGeneratedCode,
+} from "./native-generator";
+export {
+  CodeGeneratorRegistry,
+  createGeneratorRegistry,
+  generateParser,
+} from "./generator-registry";
+export type {
+  CodeGeneratorPlugin,
+  GeneratedParser,
+  ParserGenerationOptions,
+} from "./generator-registry";
+
 // Export performance utilities
 export {
   PerformanceMonitor,

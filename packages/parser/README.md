@@ -217,3 +217,29 @@ This package is part of the TPEG project. See the main project README for contri
 ## License
 
 MIT
+
+## Bundling grammar modules
+
+`bundleGrammarFile(path)` reads a local `.tpeg` file and its transitive imports
+and returns one `GrammarDefinition` for any code generator.
+`bundleGrammarModules(entry, dependencies)` performs the same linking on
+already-parsed `ModuleFile` values. The linker enforces exports, selective
+imports, aliases, import version constraints, `@requires`, and circular-import
+checks in the file loader. Distinct files may share a basename.
+
+`extends` and `includes` inherit rules. A local declaration overrides an
+inherited rule; an inherited rule's local references dispatch to that override,
+while explicit `base.rule` references retain the parent implementation.
+Conflicting mixins require a local override. Rule-local annotations, transforms,
+and each defining module's whitespace policy are retained. A child with no
+local rules inherits an explicit parent `@start` annotation.
+
+```typescript
+import {
+  bundleGrammarFile,
+  generateTypeScriptParser,
+} from "@suzumiyaaoba/tpeg-parser";
+
+const grammar = bundleGrammarFile("./grammar.tpeg");
+const generated = generateTypeScriptParser(grammar);
+```

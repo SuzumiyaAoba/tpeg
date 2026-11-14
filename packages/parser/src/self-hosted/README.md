@@ -1,15 +1,29 @@
 # TPEG self-hosting proof of concept
 
+`bootstrap.spec.ts` also verifies actual self-compilation: the handwritten
+parser reads `05-full.tpeg` once, its generated parser reads that same source
+to generate the next parser, and a third generation repeats the process.
+Every generation must reproduce the original AST and identical generated
+source. The final parser must also reproduce the ASTs of all earlier grammar
+layers. This runs with both the base and optimized TypeScript generators.
+The bootstrap compiler enables `@memoize` on meta-grammar rules to avoid
+repeated work while reading large grammar sources; semantic actions remain
+unchanged. Run `bun run test -- --run packages/parser/src/self-hosted` from
+the repository root to verify the complete bootstrap and comparison suites.
+
 This directory demonstrates that TPEG's own grammar-definition syntax can be
 described _in TPEG itself_ (using labeled captures + semantic actions,
 `docs/peg-grammar.md`'s "Semantic Actions" section), compiled by the existing
 `tpeg-cli`/`tpeg-parser` code generator, and validated against the
 hand-written parser (`packages/parser/src/composition.ts`, `grammar.ts`, etc.)
-for byte-for-byte AST equivalence.
+for AST equivalence.
 
-**This is a validation artifact, not a replacement.** Nothing in
-`packages/parser/src/*.ts` (outside this directory) was changed. The
-hand-written parser remains the one actually used by `tpeg-parser`/`tpeg-cli`.
+The generated parsers are used for bootstrap and equivalence validation.
+The handwritten parser remains the production entry point. Python, Go and
+Rust transform bodies use the shared `nativeTransformBodies` lexical
+primitives, while TPEG itself describes declarations, signatures and the
+surrounding grammar. `runtime-imports.txt` supplies these bindings when
+regenerating the grammar layers that include transforms.
 
 ## Layout
 
@@ -227,8 +241,10 @@ bun run packages/cli/src/cli.ts packages/parser/src/self-hosted/grammar-source/0
 bun run packages/cli/src/cli.ts packages/parser/src/self-hosted/grammar-source/03-composition.tpeg \
   -o packages/parser/src/self-hosted/generated/composition.generated.ts
 bun run packages/cli/src/cli.ts packages/parser/src/self-hosted/grammar-source/04-grammar.tpeg \
+  --header packages/parser/src/self-hosted/runtime-imports.txt \
   -o packages/parser/src/self-hosted/generated/grammar.generated.ts
 bun run packages/cli/src/cli.ts packages/parser/src/self-hosted/grammar-source/05-full.tpeg \
+  --header packages/parser/src/self-hosted/runtime-imports.txt \
   -o packages/parser/src/self-hosted/generated/full.generated.ts
 ```
 
