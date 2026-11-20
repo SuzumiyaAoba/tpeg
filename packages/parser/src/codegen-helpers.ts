@@ -10,6 +10,7 @@ import {
 } from "@suzumiyaaoba/tpeg-core";
 import { codeContainsIdentifier } from "./brace-scanner";
 import {
+  memoizeCapacity,
   findExternalIdentifierReferences,
   findQualifiedIdentifierReferences,
 } from "./grammar-validation";
@@ -22,7 +23,6 @@ import type {
   Identifier,
   QualifiedIdentifier,
   Quantified,
-  RuleDefinition,
   Sequence,
   TransformFunction,
 } from "./types";
@@ -62,15 +62,7 @@ export const collectTransformFunctions = (
   return byName;
 };
 
-/**
- * Finds a rule's `@memoize` annotation (see `packages/parser/src/grammar.ts`'s
- * `memoizeAnnotation`), if any. If `@memoize` appears more than once on the
- * same rule, the first one wins.
- */
-export const findMemoizeAnnotation = (
-  rule: RuleDefinition,
-): GrammarAnnotation | undefined =>
-  rule.annotations?.find((a) => a.key === "memoize");
+export { findMemoizeAnnotation } from "./grammar-validation";
 
 /**
  * Wraps `parserCode` in a `memoize(...)` call (`@suzumiyaaoba/tpeg-combinator`)
@@ -83,10 +75,12 @@ export const findMemoizeAnnotation = (
 export const wrapWithMemoize = (
   parserCode: string,
   annotation: GrammarAnnotation,
-): string =>
-  annotation.value
-    ? `memoize(${parserCode}, { maxCacheSize: ${Number(annotation.value)} })`
-    : `memoize(${parserCode})`;
+): string => {
+  const capacity = memoizeCapacity(annotation);
+  return capacity === Infinity
+    ? `memoize(${parserCode})`
+    : `memoize(${parserCode}, { maxCacheSize: ${capacity} })`;
+};
 
 /**
  * Wraps a rule's generated parser expression so that, on a successful parse,
@@ -1052,23 +1046,7 @@ export const generateQuantifiedCode = (
     return `quantified(${inner}, ${expr.min})`;
   }
 
-  if (expr.min === expr.max) {
-    // {n} - exactly n. Even {1} goes through `quantified(...)`: emitting
-    // the bare inner parser would return a scalar `T` where every other
-    // repetition form (and `quantified(inner, 1, 1)` itself) produces
-    // `T[]` -- a silent shape change for consumers of `.val`.
-    if (expr.min === 0) {
-      // {0} always matches zero repetitions, producing an empty array --
-      // not "choice()", which always fails.
-      return `quantified(${inner}, 0, 0)`;
-    }
-    return `quantified(${inner}, ${expr.min}, ${expr.max})`;
-  }
-
-  // {n,m} - between n and m. Even {0,1} goes through `quantified(...)`:
-  // emitting `optional(...)` would return `T | null` where every other
-  // `{n,m}` range produces `T[]` -- a silent shape change for consumers
-  // of `.val` (the same reason {1} is not the bare inner parser above).
+  // All finite bounds return arrays, including {0}, {1}, and {0,1}.
   return `quantified(${inner}, ${expr.min}, ${expr.max})`;
 };
 

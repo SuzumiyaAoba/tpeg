@@ -5,13 +5,11 @@
  * This is a basic implementation supporting core TPEG features.
  */
 
-import { analyzeFirstSets, assertNoNullableRepetition } from "./first-sets";
 import {
   resolveStartRule,
   validateGeneratedIdentifiers,
-  validateGrammar,
+  prepareGrammarForGeneration,
 } from "./grammar-validation";
-import { applySkipDesugar } from "./skip-desugar";
 import type {
   ActionExpression,
   AnyChar,
@@ -176,27 +174,7 @@ export class TPEGCodeGenerator {
     this.ruleIndex.clear();
     this.currentRuleIndex = -1;
 
-    // Reject a duplicate rule name or a left-recursive rule outright,
-    // before anything else -- see `grammar-validation.ts`'s doc comment
-    // for why this MUST run before `analyzeFirstSets` (a duplicate name
-    // can make that fixpoint oscillate forever instead of converging).
-    validateGrammar(grammar);
-
-    // `@skip`-desugar BEFORE first-set analysis and every downstream
-    // walk: the grammar the emitted code implements is the desugared
-    // one, so nullable-repetition checks, reference scanning, and the
-    // combinator-import collection must all see the `Skip`-inserted
-    // shape too. Rule names, order, annotations, and transforms are
-    // unchanged by the rewrite -- see `skip-desugar.ts`.
-    const desugared = applySkipDesugar(grammar);
-
-    // Reject an unbounded repetition over a nullable body outright,
-    // before generating any code -- see `assertNoNullableRepetition`'s
-    // doc comment (`first-sets.ts`) for why this has no well-defined PEG
-    // semantics and would otherwise generate code whose behavior depends
-    // on incidental wrapping (e.g. whether the repetition happens to sit
-    // inside an `optional`).
-    assertNoNullableRepetition(desugared, analyzeFirstSets(desugared));
+    const { grammar: desugared } = prepareGrammarForGeneration(grammar);
 
     const imports: string[] = [];
     const exports: string[] = [];

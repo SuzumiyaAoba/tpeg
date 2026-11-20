@@ -25,7 +25,7 @@ import {
   generateQuantifiedCode,
   generateStringLiteralCode,
   findMemoizeAnnotation,
-  applySkipDesugar,
+  prepareGrammarForGeneration,
   resolveStartRule,
   validateGeneratedIdentifiers,
   wrapWithAction,
@@ -34,7 +34,6 @@ import {
   wrapWithTransform,
 } from "@suzumiyaaoba/tpeg-parser";
 import { Eta } from "eta";
-import { validateGrammarForEtaGenerator } from "./grammar-validation";
 import {
   analyzeGrammarPerformance,
   globalPerformanceMonitor,
@@ -131,24 +130,7 @@ export class EtaTPEGCodeGenerator {
    * Generate TypeScript parser code from TPEG grammar
    */
   async generateGrammar(grammar: GrammarDefinition): Promise<GeneratedCode> {
-    // Rejects duplicate rule names, left recursion, a cut-only pattern,
-    // invalid transform function names, and unbounded repetition over a
-    // nullable body BEFORE any code is generated -- the same
-    // `validateGrammar` + `assertNoNullableRepetition` pair
-    // `tpeg-parser`'s own generators run (see `grammar-validation.ts`'s
-    // module doc comment for why this delegates rather than duplicating).
-    validateGrammarForEtaGenerator(grammar);
-
-    // `@skip`-desugar BEFORE every downstream walk -- the same point
-    // `tpeg-parser`'s own generators apply it (`codegen.ts`/
-    // `codegen-optimized.ts`): the grammar the emitted code implements
-    // is the desugared one, so import collection, performance analysis,
-    // and the rules loop must all see the `Skip`-inserted shape. (The
-    // nullable-repetition check inside `validateGrammarForEtaGenerator`
-    // is deliberately still on the ORIGINAL grammar: `Skip` nodes are
-    // always nullable and only ever inserted at sequence boundaries, so
-    // the verdict is provably identical either way.)
-    const desugared = applySkipDesugar(grammar);
+    const { grammar: desugared } = prepareGrammarForGeneration(grammar);
 
     const finishMeasurement = globalPerformanceMonitor.startTimer(
       "eta-grammar-generation",
@@ -194,7 +176,7 @@ export class EtaTPEGCodeGenerator {
       // colliding with `import { literal }`). Imported directly from
       // `tpeg-parser` (already a real dependency of this package -- see
       // `collectTopLevelLabels`/`wrapWithAction`/etc. above), like
-      // `validateGrammarForEtaGenerator` now does for the rest of the
+      // `prepareGrammarForGeneration` now does for the rest of the
       // structural checks.
       const transformsByRuleName = collectTransformFunctions(desugared);
       validateGeneratedIdentifiers(desugared, {
@@ -660,7 +642,7 @@ export class EtaTPEGCodeGenerator {
   // `tpeg-parser`) -- this module previously had no `ActionExpression`
   // case at all, so a grammar with an inline `{ ... }` action threw
   // `Unsupported expression type: ActionExpression` at generation time
-  // even though `validateGrammarForEtaGenerator` (`grammar-validation.ts`)
+  // even though `prepareGrammarForGeneration` (`tpeg-parser`'s grammar validation)
   // accepts the node.
   private generateActionExpression(expr: ActionExpression): string {
     const inner = this.generateExpressionCode(expr.expression);

@@ -131,6 +131,45 @@ export const optional =
  */
 export const opt = optional;
 
+/** An unbounded repetition must advance on every successful iteration. */
+function repeatUnbounded<T>(
+  parser: Parser<T>,
+  minimum: 0 | 1,
+  parserName: string,
+): Parser<T[]> {
+  return (input, pos) => {
+    if (!isValidOffset(pos) || pos > input.length) {
+      return createFailure("Expected a valid position", pos, { parserName });
+    }
+
+    const values: T[] = [];
+    let current = pos;
+    for (;;) {
+      const result = parser(input, current);
+      if (!result.success) {
+        if (values.length < minimum || isFatalFailure(result)) return result;
+        return { success: true, val: values, current: pos, next: current };
+      }
+
+      const next = result.next;
+      const invalid = invalidNextPosition(input, current, next, parserName);
+      if (invalid) return invalid;
+      if (next === current) {
+        if (minimum === 0)
+          return createInfiniteLoopError(input, current, parserName);
+        return createInfiniteLoopError(
+          input,
+          current,
+          parserName || "oneOrMore",
+          `Results so far: ${values.length} item(s)`,
+        );
+      }
+      values.push(result.val);
+      current = next;
+    }
+  };
+}
+
 /**
  * Parser for zero or more occurrences of a pattern.
  *
@@ -139,55 +178,10 @@ export const opt = optional;
  * @param parserName Optional name for error reporting and debugging
  * @returns Parser<T[]> A parser that returns an array of parsed values (possibly empty).
  */
-export const zeroOrMore =
-  <T>(parser: Parser<T>, parserName = "zeroOrMore"): Parser<T[]> =>
-  (input: string, pos) => {
-    // Same out-of-contract-`pos` guard as `optional` above: without it a
-    // `NaN`/negative/fractional `pos` made the loop below see an immediate
-    // child failure and return `{ val: [], current: pos, next: pos }` --
-    // a bogus success echoing the invalid offset back out. `pos ===
-    // input.length` stays legal -- an empty run at EOF.
-    if (!isValidOffset(pos) || pos > input.length) {
-      return createFailure("Expected a valid position", pos, {
-        parserName,
-      });
-    }
-
-    const results: T[] = [];
-    let currentPos = pos;
-
-    while (true) {
-      const result = parser(input, currentPos);
-
-      if (!result.success) {
-        // See `optional` above: a fatal (cut/commit) failure must propagate
-        // rather than be treated as "the repetition simply ends here".
-        if (isFatalFailure(result)) {
-          return result;
-        }
-        break;
-      }
-
-      // Validate before comparing: malformed values must not be coerced
-      // into positions or throw during the progress check.
-      const next = result.next;
-      const invalid = invalidNextPosition(input, currentPos, next, parserName);
-      if (invalid) return invalid;
-      if (next === currentPos) {
-        return createInfiniteLoopError(input, currentPos, parserName);
-      }
-
-      results.push(result.val);
-      currentPos = next;
-    }
-
-    return {
-      success: true,
-      val: results,
-      current: pos,
-      next: currentPos,
-    };
-  };
+export const zeroOrMore = <T>(
+  parser: Parser<T>,
+  parserName = "zeroOrMore",
+): Parser<T[]> => repeatUnbounded(parser, 0, parserName);
 
 /**
  * Alias for {@link zeroOrMore}.
@@ -203,77 +197,16 @@ export const star = zeroOrMore;
 /**
  * Parser for one or more occurrences of a pattern.
  *
- * This implementation is optimized to avoid calling zeroOrMore internally,
- * reducing function call overhead and providing better error messages.
- *
  * @template T Type of the parse result value
  * @param parser Target parser
  * @param parserName Optional name for error reporting and debugging
  * @returns Parser<NonEmptyArray<T>> A parser that returns a non-empty array of parsed values.
  */
-export const oneOrMore =
-  <T>(parser: Parser<T>, parserName = "oneOrMore"): Parser<NonEmptyArray<T>> =>
-  (input: string, pos) => {
-    // Same out-of-contract-`pos` guard as `zeroOrMore` above. A first
-    // iteration on an honest child would fail anyway, but the contract
-    // is enforced here regardless of caller -- see `optional`.
-    if (!isValidOffset(pos) || pos > input.length) {
-      return createFailure("Expected a valid position", pos, {
-        parserName,
-      });
-    }
-
-    const results: T[] = [];
-    let currentPos = pos;
-    let isFirstIteration = true;
-
-    while (true) {
-      const result = parser(input, currentPos);
-
-      if (!result.success) {
-        if (isFirstIteration) {
-          // First iteration failed - relay the child failure UNCHANGED
-          // rather than re-wrapping it with an enriched message (see
-          // `sequence`'s identical reasoning in combinators.ts): the
-          // failed element's own `fail()` call (`./failure.ts`) already
-          // recorded its position/expectation in the shared watermark,
-          // and reading `.error` here to build a wrapper would trigger a
-          // singleton's lazy getter on every `+`-repeated rule's first
-          // failed attempt.
-          return result;
-        }
-        // See `optional` above: a fatal (cut/commit) failure must propagate
-        // rather than be treated as "the repetition simply ends here".
-        if (isFatalFailure(result)) {
-          return result;
-        }
-        // Later iterations failed - break and return what we have
-        break;
-      }
-
-      const next = result.next;
-      const invalid = invalidNextPosition(input, currentPos, next, parserName);
-      if (invalid) return invalid;
-      if (next === currentPos) {
-        return createInfiniteLoopError(
-          input,
-          currentPos,
-          parserName || "oneOrMore",
-          `Results so far: ${results.length} item(s)`,
-        );
-      }
-      results.push(result.val);
-      currentPos = next;
-      isFirstIteration = false;
-    }
-
-    return {
-      success: true,
-      val: results as NonEmptyArray<T>,
-      current: pos,
-      next: currentPos,
-    };
-  };
+export const oneOrMore = <T>(
+  parser: Parser<T>,
+  parserName = "oneOrMore",
+): Parser<NonEmptyArray<T>> =>
+  repeatUnbounded(parser, 1, parserName) as Parser<NonEmptyArray<T>>;
 
 /**
  * Alias for {@link oneOrMore}.
@@ -328,72 +261,32 @@ export const quantified = <T>(
     );
   }
 
-  return (input: string, pos) => {
-    // Same out-of-contract-`pos` guard as `zeroOrMore` above: with `min
-    // === 0` (or after `min` satisfied matches) this parser's own return
-    // is a zero-width success, so it must not be reachable at an invalid
-    // offset. `pos === input.length` stays legal.
+  const limit = max ?? Infinity;
+  return (input, pos) => {
     if (!isValidOffset(pos) || pos > input.length) {
-      return createFailure("Expected a valid position", pos, {
-        parserName,
-      });
+      return createFailure("Expected a valid position", pos, { parserName });
     }
 
     const results: T[] = [];
     let currentPos = pos;
-    let count = 0;
-
-    // Parse exactly min times first (required). This loop is bounded by
-    // `min` itself (a plain `for` counter), so it can never actually loop
-    // forever -- unlike `zeroOrMore`/`oneOrMore`'s genuinely-unbounded
-    // loops, there is nothing here for an infinite-loop guard to protect
-    // against. A zero-width match (a nullable `parser`) is a legitimate
-    // `e{n,m}` result, not an error: e.g. `("a"?){2,2}` on input with no
-    // leading "a" must succeed with two empty matches, per standard PEG
-    // semantics for a bounded repetition.
-    for (let i = 0; i < min; i++) {
+    while (results.length < limit) {
       const result = parser(input, currentPos);
       if (!result.success) {
-        // Relay the child failure UNCHANGED -- see `sequence`'s identical
-        // reasoning in combinators.ts. The failed element's own `fail()`
-        // call already recorded its position/expectation in the shared
-        // watermark.
-        return result;
-      }
-
-      const next = result.next;
-      const invalid = invalidNextPosition(input, currentPos, next, parserName);
-      if (invalid) return invalid;
-      results.push(result.val);
-      currentPos = next;
-      count++;
-    }
-
-    // Parse additional times up to max (optional), or unbounded if max is undefined
-    const limit = max ?? Number.POSITIVE_INFINITY;
-    for (let i = count; i < limit; i++) {
-      const result = parser(input, currentPos);
-      if (!result.success) {
-        // See `optional` above: a fatal (cut/commit) failure must propagate
-        // rather than be treated as "the repetition simply ends here".
-        if (isFatalFailure(result)) {
-          return result;
-        }
-        // Optional repetitions can fail - just break
+        if (results.length < min || isFatalFailure(result)) return result;
         break;
       }
 
       const next = result.next;
       const invalid = invalidNextPosition(input, currentPos, next, parserName);
       if (invalid) return invalid;
-      // Finite repetitions permit zero-width matches. Both an omitted
-      // max and explicit Infinity require progress to avoid divergence.
-      if (!Number.isFinite(limit) && next === currentPos) {
+      // Required iterations are counted even for a zero-width match. Only
+      // the unbounded optional tail needs a progress check.
+      if (limit === Infinity && results.length >= min && next === currentPos) {
         return createInfiniteLoopError(
           input,
           currentPos,
           parserName,
-          `Repetition: ${i + 1} (optional)`,
+          `Repetition: ${results.length + 1} (optional)`,
         );
       }
       results.push(result.val);

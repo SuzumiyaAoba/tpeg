@@ -308,10 +308,10 @@ export const memoize = <T>(
   if (
     maxCacheSize !== undefined &&
     maxCacheSize !== Number.POSITIVE_INFINITY &&
-    (!Number.isInteger(maxCacheSize) || maxCacheSize < 0)
+    (!Number.isSafeInteger(maxCacheSize) || maxCacheSize < 0)
   ) {
     throw new Error(
-      `Invalid memoize cache size: maxCacheSize (${safeStringForDisplay(maxCacheSize)}) must be a non-negative integer or Infinity`,
+      `Invalid memoize cache size: maxCacheSize (${safeStringForDisplay(maxCacheSize)}) must be a non-negative integer within the safe integer range, or Infinity`,
     );
   }
 

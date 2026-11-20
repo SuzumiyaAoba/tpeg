@@ -167,12 +167,12 @@ func (s *parseSession) node(index, pos, depth int) Result {
         if n.min == 1 && !n.flag { result := success(values[0], pos, end); result.captured = scalarCapture; return result }
         return success(values, pos, end)
     case "Choice":
-        best := s.failure(pos, "alternative", false, false)
+        var best Result
         for _, child := range n.children {
             result := s.node(child, pos, depth)
             if result.Success || result.Error.Abort { return result }
             if result.Error.Fatal { err := *result.Error; err.Fatal = false; result.Error = &err; return result }
-            if result.Error.Pos > best.Error.Pos { best = result
+            if best.Error == nil || result.Error.Pos > best.Error.Pos { best = result
             } else if result.Error.Pos == best.Error.Pos {
                 err := *result.Error
                 err.Expected = append([]string{}, best.Error.Expected...)
@@ -184,6 +184,7 @@ func (s *parseSession) node(index, pos, depth int) Result {
                 best = Result{Error: &err}
             }
         }
+        if best.Error == nil { return s.failure(pos, "alternative", false, false) }
         return best
     case "WordBoundary":
         word := func(offset int) bool {

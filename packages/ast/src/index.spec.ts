@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, expectTypeOf, it } from "vite-plus/test";
 import {
   type Char,
   type Identifier,
@@ -45,11 +45,24 @@ import {
   zeroOrMore,
 } from "./index";
 
-// Note: Type-level tests are in index.type-test.ts
-
-// Type-level tests have been moved to a separate file (index.type-test.ts)
-
 describe("AST Type Safety Tests", () => {
+  it("retains literal values when filtering a union of specific node types", () => {
+    const nodes = [literal("start"), identifier("rule")];
+    const literals = nodes.filter(isLiteral);
+    expectTypeOf(literals).toMatchTypeOf<Literal<"start">[]>();
+    expect(literals).toEqual([literal("start")]);
+  });
+
+  it("narrows nodes whose tag is itself a union", () => {
+    const nodes: { type: "literal" | "identifier"; value: "start" }[] = [
+      literal("start"),
+      identifier("start"),
+    ];
+    const values = nodes.filter(isLiteral).map((node) => node.value);
+    expectTypeOf(values).toEqualTypeOf<"start"[]>();
+    expect(values).toEqual(["start"]);
+  });
+
   describe("Type-Level Tests", () => {
     it("should perform compile-time type checking", () => {
       // Type-level tests do nothing at runtime but are type-checked at compile time

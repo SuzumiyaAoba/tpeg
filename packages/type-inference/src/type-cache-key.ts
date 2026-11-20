@@ -1,4 +1,4 @@
-import type { Expression } from "@suzumiyaaoba/tpeg-core";
+import { isZeroRepetition, type Expression } from "@suzumiyaaoba/tpeg-core";
 
 interface CacheShape {
   parts: unknown[];
@@ -81,6 +81,8 @@ function cacheShape(
       });
       // String forms preserve the documentation's distinction between
       // NaN/Infinity and finite bounds, unlike JSON's number conversion.
+      if (isZeroRepetition(expression))
+        return leaf([expression.type, "0", "0"]);
       return unary([
         expression.type,
         String(expression.min),

@@ -4,12 +4,11 @@ import {
   type GrammarDefinition,
 } from "@suzumiyaaoba/tpeg-core";
 import {
-  analyzeFirstSets,
-  applySkipDesugar,
-  assertNoNullableRepetition,
+  findMemoizeAnnotation,
+  memoizeCapacity,
+  prepareGrammarForGeneration,
   collectTopLevelLabels,
   resolveStartRule,
-  validateGrammar,
 } from "@suzumiyaaoba/tpeg-parser";
 
 /** A target-independent instruction tree; native backends embed it as data. */
@@ -30,8 +29,7 @@ export interface PortableGrammar {
 }
 
 export function portableGrammar(grammar: GrammarDefinition): PortableGrammar {
-  validateGrammar(grammar);
-  assertNoNullableRepetition(grammar, analyzeFirstSets(grammar));
+  const { grammar: normalized } = prepareGrammarForGeneration(grammar);
   const names = new Set(grammar.rules.map((rule) => rule.name));
   for (const rule of grammar.rules) {
     forEachExpression(rule.pattern, (expr) => {
@@ -147,22 +145,14 @@ export function portableGrammar(grammar: GrammarDefinition): PortableGrammar {
     nodes.push(node);
     return nodes.length - 1;
   }
-  const normalized = applySkipDesugar(grammar);
   const start = resolveStartRule(grammar);
   if (start === null)
     throw new Error("Cannot generate a parser from an empty grammar");
   return {
     nodes,
     rules: normalized.rules.map((rule) => {
-      const annotation = rule.annotations?.find(
-        (annotation) => annotation.key === "memoize",
-      );
-      const capacity = annotation?.value ? Number(annotation.value) : Infinity;
-      if (
-        capacity !== Infinity &&
-        (!Number.isSafeInteger(capacity) || capacity < 0)
-      )
-        throw new Error(`Invalid memoize capacity for rule "${rule.name}"`);
+      const annotation = findMemoizeAnnotation(rule);
+      const capacity = annotation ? memoizeCapacity(annotation) : Infinity;
       return {
         name: rule.name,
         node: emit(rule.pattern),

@@ -135,46 +135,15 @@ function execute(
   inputs: string[],
   directory: string,
 ): core.ParseResult<unknown>[] {
-  let stdout: string;
+  let runner: string;
   if (language === "python") {
-    writeFileSync(join(directory, "parser.py"), code);
-    stdout = command(
-      commands.python,
-      [
-        "-c",
-        `import json, parser\nfor text in json.loads(${JSON.stringify(JSON.stringify(inputs))}):\n    print(json.dumps(parser.parse(text)))`,
-      ],
-      directory,
-    );
+    runner = `import json, parser\nfor text in json.loads(${JSON.stringify(JSON.stringify(inputs))}):\n    print(json.dumps(parser.parse(text)))`;
   } else if (language === "go") {
-    const source = `${code}\nfunc main() { for _, input := range []string{${inputs.map(goStringLiteral).join(",")}} { data, err := json.Marshal(Parse(input)); if err != nil { panic(err) }; fmt.Println(string(data)) } }\n`;
-    writeFileSync(join(directory, "parser.go"), source);
-    stdout = command(commands.go, ["run", "parser.go"], directory, {
-      ...process.env,
-      GOCACHE:
-        process.env["TPEG_GO_CACHE"] ?? join(tmpdir(), "tpeg-go-build-cache"),
-      GOPATH: join(directory, "go-path"),
-      GOENV: "off",
-      GOTOOLCHAIN: "local",
-      GOWORK: "off",
-      CGO_ENABLED: "0",
-    });
+    runner = `\nfunc main() { for _, input := range []string{${inputs.map(goStringLiteral).join(",")}} { data, err := json.Marshal(Parse(input)); if err != nil { panic(err) }; fmt.Println(string(data)) } }\n`;
   } else {
-    writeFileSync(
-      join(directory, "parser.rs"),
-      `${code}\nfn main() { for input in [${inputs.map(rustString).join(",")}] { println!("{}", parse(input).to_json()); } }\n`,
-    );
-    command(
-      commands.rust,
-      ["--edition=2021", "parser.rs", "-o", "parser"],
-      directory,
-    );
-    stdout = command(join(directory, "parser"), [], directory);
+    runner = `\nfn main() { for input in [${inputs.map(rustString).join(",")}] { println!("{}", parse(input).to_json()); } }\n`;
   }
-  return stdout
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line) as core.ParseResult<unknown>);
+  return executeProgram(language, code, runner, directory);
 }
 
 function executeProgram(
@@ -250,6 +219,50 @@ describe("native parsers execute the same grammars as TypeScript", () => {
     const available =
       spawnSync(commands[language], ["--version"], { encoding: "utf8" })
         .error === undefined;
+    test.skipIf(!available && process.env["TPEG_NATIVE_REQUIRED"] !== "1")(
+      `${language}: zero-count self references and ordered-choice diagnostics`,
+      () => {
+        const parsed = core.parse(grammarDefinition)(
+          'grammar G { start = start{0} ("ab" / "ac" / "x") }',
+        );
+        if (!parsed.success) throw new Error(parsed.error.message);
+        const options =
+          language === "go"
+            ? { packageName: "main", header: 'import "fmt"' }
+            : {};
+        const { code } = generateNativeParser(parsed.val, language, options);
+        const directory = mkdtempSync(join(tmpdir(), `tpeg-${language}-`));
+        try {
+          const [matched, noPrefix, sharedPrefix] = execute(
+            language,
+            code,
+            ["ac", "z", "az"],
+            directory,
+          );
+          expect(matched).toMatchObject({
+            success: true,
+            val: [[], "ac"],
+            next: 2,
+          });
+          const quote = language === "python" ? "'" : '"';
+          const labels = ["ab", "ac", "x"].map(
+            (value) => quote + value + quote,
+          );
+          expect(noPrefix).toMatchObject({
+            success: false,
+            error: { pos: 0, expected: labels },
+          });
+          expect(sharedPrefix).toMatchObject({
+            success: false,
+            error: { pos: 1, expected: labels.slice(0, 2) },
+          });
+        } finally {
+          rmSync(directory, { recursive: true, force: true });
+        }
+      },
+      120000,
+    );
+
     test.skipIf(!available && process.env["TPEG_NATIVE_REQUIRED"] !== "1")(
       `${language}: compile and run every expression, capture, skip, cut, Unicode and transform fixture`,
       () => {

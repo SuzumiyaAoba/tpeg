@@ -14,7 +14,7 @@ import {
   stringLiteral,
   tpegExpression,
 } from "@suzumiyaaoba/tpeg-parser";
-import { initialPos } from "./pos";
+import { parseExample } from "./parse-example";
 
 console.log("🎯 TPEG Parser Basic Demo\n");
 
@@ -23,13 +23,12 @@ const demoParser = <T>(name: string, parser: Parser<T>, inputs: string[]) => {
   console.log(`=== ${name} ===`);
 
   for (const input of inputs) {
-    const pos = initialPos;
-    const result = parser(input, pos);
+    const result = parseExample(parser, input);
 
     if (result.success) {
       console.log(`✅ "${input}" → ${JSON.stringify(result.val, null, 2)}`);
     } else {
-      console.log(`❌ "${input}" → ${result.error?.message || "Parse failed"}`);
+      console.log(`❌ "${input}" → ${result.error.message}`);
     }
   }
   console.log();
@@ -100,15 +99,14 @@ const compositionExamples = [
 ];
 
 for (const expr of compositionExamples) {
-  const pos = initialPos;
-  const result = tpegExpression(expr, pos);
+  const result = parseExample(tpegExpression, expr);
 
   if (result.success) {
     console.log(`✅ Expression: ${expr}`);
     console.log(`   Result: ${JSON.stringify(result.val, null, 2)}`);
   } else {
     console.log(`❌ Expression: ${expr}`);
-    console.log(`   Error: ${result.error?.message || "Parse failed"}`);
+    console.log(`   Error: ${result.error.message}`);
   }
   console.log();
 }

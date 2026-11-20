@@ -16,7 +16,7 @@ import {
   ruleDefinition,
   singleLineComment,
 } from "@suzumiyaaoba/tpeg-parser";
-import { initialPos } from "./pos";
+import { parseExample } from "./parse-example";
 
 console.log("📚 TPEG Grammar Definition Demo (Phase 1.6)\n");
 
@@ -25,15 +25,14 @@ const demoParser = <T>(name: string, parser: Parser<T>, inputs: string[]) => {
   console.log(`=== ${name} ===`);
 
   for (const input of inputs) {
-    const pos = initialPos;
-    const result = parser(input, pos);
+    const result = parseExample(parser, input);
 
     if (result.success) {
       console.log(`✅ Input: ${input}`);
       console.log(`   Result: ${JSON.stringify(result.val, null, 2)}`);
     } else {
       console.log(`❌ Input: ${input}`);
-      console.log(`   Error: ${result.error?.message || "Parse failed"}`);
+      console.log(`   Error: ${result.error.message}`);
     }
     console.log();
   }
@@ -134,8 +133,7 @@ for (const grammar of grammarExamples) {
   console.log(grammar);
   console.log();
 
-  const pos = initialPos;
-  const result = grammarDefinition(grammar, pos);
+  const result = parseExample(grammarDefinition, grammar);
 
   if (result.success) {
     console.log(`✅ Successfully parsed grammar: ${result.val.name}`);
@@ -159,11 +157,9 @@ for (const grammar of grammarExamples) {
     }
   } else {
     console.log("❌ Failed to parse grammar");
-    console.log(`   Error: ${result.error?.message || "Parse failed"}`);
-    if (result.error?.pos !== undefined) {
-      const { line, column } = offsetToPos(grammar, result.error.pos);
-      console.log(`   Position: line ${line}, column ${column + 1}`);
-    }
+    console.log(`   Error: ${result.error.message}`);
+    const { line, column } = offsetToPos(grammar, result.error.pos);
+    console.log(`   Position: line ${line}, column ${column + 1}`);
   }
 
   console.log();

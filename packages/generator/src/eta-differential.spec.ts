@@ -29,7 +29,7 @@
  *   (`generateStringLiteral`/`generateCharacterClass`);
  * - `ActionExpression` (an inline `{ ... }` action) entirely unhandled,
  *   throwing `Unsupported expression type: ActionExpression` at
- *   generation time even though `validateGrammarForEtaGenerator` accepts
+ *   generation time even though `prepareGrammarForGeneration` accepts
  *   the node;
  * - a degenerate cut-only-remainder `Sequence` (`~ "a"` / `"a" ~`) always
  *   wrapped in `sequence(...)`, producing `["a"]` instead of the bare
@@ -147,7 +147,7 @@ describe("Eta generator differential fuzzing (vs. tpeg-parser's base generator)"
           }
         } catch {
           // A construction-time rejection (e.g. `assertNoNullableRepetition`
-          // via `validateGrammarForEtaGenerator`, or a left-recursive/
+          // via `prepareGrammarForGeneration`, or a left-recursive/
           // duplicate-name rule) or a generated-module evaluation compile error -- not a
           // differential-fuzzing concern, since the base generator would
           // have hit an equivalent rejection for the same grammar.

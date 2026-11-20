@@ -43,7 +43,7 @@
  * deliberately independent of whether the expression as a whole might
  * also match *zero* characters (that's `isNullable`, a separate
  * function). A `Star`/`Optional`/`Quantified{0,..}` node's own FIRST set
- * is exactly its wrapped expression's FIRST set for this reason: nested
+ * is its wrapped expression's FIRST set when at least one iteration is possible. Nested
  * inside a `Sequence` (e.g. `"-"? [0-9]+`), `sequenceFirstSet` already
  * handles "this element might match zero characters" by also unioning in
  * the *next* element's FIRST set (via `isNullable`); folding "nullable ->
@@ -84,7 +84,10 @@
  * `unknown`, a one-way flag).
  */
 
-import { childExpressions } from "@suzumiyaaoba/tpeg-core";
+import {
+  collectInvokedRuleReferences,
+  isZeroRepetition,
+} from "@suzumiyaaoba/tpeg-core";
 import {
   type CharSet,
   EMPTY_SET,
@@ -386,6 +389,7 @@ export const collectZeroOffsetRuleRefs = (
   nullableRules: ReadonlyMap<string, boolean>,
   into: Set<string>,
 ): void => {
+  if (isZeroRepetition(expr)) return;
   switch (expr.type) {
     case "Identifier":
       into.add(expr.name);
@@ -514,6 +518,7 @@ export const firstSetOfExpression = (
   ruleFirstSets: ReadonlyMap<string, FirstSet>,
   nullableRules: ReadonlyMap<string, boolean>,
 ): FirstSet => {
+  if (isZeroRepetition(expr)) return EMPTY_FIRST_SET;
   switch (expr.type) {
     case "StringLiteral":
       if (expr.value.length === 1) {
@@ -583,7 +588,7 @@ export const firstSetOfExpression = (
     case "Quantified":
     case "Skip":
     case "Span":
-      // FIRST doesn't depend on repetition bounds: whether this node
+      // Once {0} is handled above, whether this node
       // matches zero times is a *nullability* question (see `isNullable`,
       // consulted separately by `sequenceFirstSet` and by codegen before
       // treating a whole alternative's FIRST set as a valid filter) --
@@ -632,40 +637,6 @@ export const firstSetOfExpression = (
 };
 
 /**
- * Collects every rule name `Identifier`s in `expr` reference, into `into`.
- * Deliberately over-approximates the actual data-flow dependency: it
- * counts an `Identifier` in ANY position (e.g. after a `Sequence`'s
- * non-nullable terminator, or inside a lookahead), even where the
- * fixpoint evaluation above never reads that rule's value. For the
- * worklist-driven fixpoints below that's safe -- an over-wide edge can
- * only cause a redundant recomputation, never a missed update -- and it
- * keeps the dependency graph static instead of depending on the
- * still-converging state.
- *
- * Iterative (explicit stack) rather than recursive: a parsed grammar's
- * nesting depth is bounded by the grammar parser's own recursion guard,
- * but a hand-built AST can nest arbitrarily.
- */
-const collectRuleReferences = (expr: Expression, into: Set<string>): void => {
-  const stack: Expression[] = [expr];
-  while (stack.length > 0) {
-    const node = stack.pop() as Expression;
-    if (node.type === "Identifier") {
-      into.add(node.name);
-      continue;
-    }
-    // `childExpressions` (`@suzumiyaaoba/tpeg-core`) owns the
-    // which-nodes-have-children enumeration -- including the
-    // `ActionExpression` case hand-written copies kept missing; leaves
-    // (StringLiteral/CharacterClass/AnyChar/Cut/QualifiedIdentifier)
-    // contribute nothing.
-    for (const child of childExpressions(node)) {
-      stack.push(child);
-    }
-  }
-};
-
-/**
  * Maps a referenced rule name to the indexes (into `rules`) of every
  * rule whose pattern references it -- the reverse dependency edges both
  * worklist fixpoints below propagate change notifications along.
@@ -674,10 +645,8 @@ const buildRuleDependents = (
   rules: readonly { readonly name: string; readonly pattern: Expression }[],
 ): Map<string, number[]> => {
   const dependents = new Map<string, number[]>();
-  for (let i = 0; i < rules.length; i++) {
-    const refs = new Set<string>();
-    collectRuleReferences((rules[i] as (typeof rules)[number]).pattern, refs);
-    for (const name of refs) {
+  for (const [i, rule] of rules.entries()) {
+    for (const name of collectInvokedRuleReferences(rule.pattern)) {
       const list = dependents.get(name);
       if (list) {
         list.push(i);
@@ -996,6 +965,7 @@ export const canCommitWithoutConsuming = (
   const ruleMemo = new Map<string, boolean>();
 
   const visit = (node: Expression): boolean => {
+    if (isZeroRepetition(node)) return false;
     switch (node.type) {
       case "Cut":
         return true;

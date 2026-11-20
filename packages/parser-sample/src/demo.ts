@@ -12,7 +12,7 @@ import {
   stringLiteral,
   tpegExpression,
 } from "@suzumiyaaoba/tpeg-parser";
-import { initialPos } from "./pos";
+import { parseExample } from "./parse-example";
 
 console.log("🚀 TPEG Parser Complete Demo");
 console.log("============================\n");
@@ -44,8 +44,7 @@ const syntaxExamples = [
 ];
 
 for (const example of syntaxExamples) {
-  const pos = initialPos;
-  const result = example.parser(example.input, pos);
+  const result = parseExample(example.parser, example.input);
   const status = result.success ? "✅" : "❌";
   console.log(`${status} ${example.name}: ${example.input}`);
 
@@ -54,7 +53,7 @@ for (const example of syntaxExamples) {
       `   → ${JSON.stringify(result.val.type || result.val, null, 0)}`,
     );
   } else {
-    console.log(`   → Error: ${result.error?.message || "Parse failed"}`);
+    console.log(`   → Error: ${result.error.message}`);
   }
 }
 
@@ -85,8 +84,7 @@ console.log("Grammar Definition:");
 console.log(calculatorGrammar);
 console.log();
 
-const pos = initialPos;
-const grammarResult = grammarDefinition(calculatorGrammar, pos);
+const grammarResult = parseExample(grammarDefinition, calculatorGrammar);
 
 if (grammarResult.success) {
   const grammar = grammarResult.val;
@@ -110,7 +108,7 @@ if (grammarResult.success) {
   console.log();
 } else {
   console.log("❌ Failed to parse grammar");
-  console.log(`Error: ${grammarResult.error?.message || "Parse failed"}`);
+  console.log(`Error: ${grammarResult.error.message}`);
   console.log();
 }
 

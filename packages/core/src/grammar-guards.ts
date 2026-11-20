@@ -4,6 +4,7 @@ import type {
   CharacterClass,
   Choice,
   Cut,
+  Expression,
   GrammarDefinition,
   Group,
   Identifier,
@@ -144,6 +145,12 @@ export const isOptional = (expr: unknown): expr is Optional =>
  */
 export const isQuantified = (expr: unknown): expr is Quantified =>
   hasNodeType(expr, "Quantified");
+
+/** A zero-count quantifier succeeds with an empty array without invoking its body. */
+export const isZeroRepetition = (expression: Expression): boolean =>
+  expression.type === "Quantified" &&
+  expression.min === 0 &&
+  expression.max === 0;
 
 /**
  * Type guard to check if an expression is a PositiveLookahead.

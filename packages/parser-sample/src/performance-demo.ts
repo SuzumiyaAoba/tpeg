@@ -13,7 +13,7 @@ import {
   globalPerformanceMonitor,
   grammarDefinition,
 } from "@suzumiyaaoba/tpeg-parser";
-import { initialPos } from "./pos";
+import { parseExample } from "./parse-example";
 
 console.log("🚀 TPEG Performance Comparison Demo\n");
 
@@ -37,11 +37,10 @@ console.log(`\n${"=".repeat(60)}\n`);
 
 // Parse the grammar
 console.log("🔍 Parsing Grammar...");
-const pos = initialPos;
-const parseResult = grammarDefinition(testGrammar, pos);
+const parseResult = parseExample(grammarDefinition, testGrammar);
 
 if (!parseResult.success) {
-  console.error("❌ Failed to parse grammar:", parseResult.error?.message);
+  console.error("❌ Failed to parse grammar:", parseResult.error.message);
   process.exit(1);
 }
 

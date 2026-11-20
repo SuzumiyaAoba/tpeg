@@ -164,30 +164,12 @@ export const parseCSV = (input: string): string[][] => {
 export const parseCSVWithHeaders = (
   input: string,
 ): Record<string, string>[] => {
-  const rows = parseCSV(input);
-
-  if (rows.length < 1) {
-    return [];
-  }
-
-  const headers = rows[0];
-  const dataRows = rows.slice(1);
-
-  return dataRows.map((row) => {
-    const obj: Record<string, string> = {};
-    headers?.forEach((header, index) => {
-      // `obj[header] = ...` with a header literally named "__proto__"
-      // would hit Object.prototype's __proto__ setter instead of storing
-      // the field -- same fix as the JSON sample's objectParser.
-      Object.defineProperty(obj, header, {
-        value: row[index] ?? "",
-        enumerable: true,
-        writable: true,
-        configurable: true,
-      });
-    });
-    return obj;
-  });
+  const [headers, ...rows] = parseCSV(input);
+  if (!headers) return [];
+  // fromEntries defines own data properties for every header, including "__proto__".
+  return rows.map((row) =>
+    Object.fromEntries(headers.map((name, index) => [name, row[index] ?? ""])),
+  );
 };
 
 /**
@@ -214,23 +196,17 @@ export const parseCSVWithHeaders = (
 export const arrayToCSV = (
   data: Record<string, string | number | boolean>[],
 ): string => {
-  if (data.length === 0) {
-    return "";
-  }
-
   const firstRow = data[0];
   if (!firstRow) {
     return "";
   }
 
   const headers = Object.keys(firstRow);
-  if (!headers || headers.length === 0) {
+  if (headers.length === 0) {
     return "";
   }
 
-  const escapeField = (field: string): string => {
-    const fieldStr = String(field);
-
+  const escapeField = (fieldStr: string): string => {
     // A single-column row whose value is empty would be written as an
     // empty line, which reads back as a blank line and is dropped --
     // quote it so the record survives a write/parse round trip.
@@ -261,7 +237,13 @@ export const arrayToCSV = (
   const csvRows = [
     headers.map(escapeField).join(","),
     ...data.map((row) =>
-      headers.map((header) => escapeField(String(row[header] ?? ""))).join(","),
+      headers
+        .map((header) =>
+          escapeField(
+            Object.hasOwn(row, header) ? String(row[header] ?? "") : "",
+          ),
+        )
+        .join(","),
     ),
   ];
 

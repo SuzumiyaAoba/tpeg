@@ -179,7 +179,7 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
     expect(coreImportLine).not.toContain("memoize");
   });
 
-  it("does not leak rule names or cached templates across generateGrammar calls on a reused instance", () => {
+  it("emits only the current grammar's rules when a generator is reused", () => {
     const generator = new OptimizedTPEGCodeGenerator({
       language: "typescript",
     });
@@ -200,11 +200,19 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
 
     expect(resultOne.code).toContain("export const firstRule");
     expect(resultTwo.code).toContain("export const secondRule");
-    // The rule-shape template cache is keyed only on
-    // (includeTypes, shouldMemoize), which is identical for both single,
-    // non-memoized rules here -- a generator that leaks its cache across
-    // calls would bake "firstRule" into the second grammar's output too.
     expect(resultTwo.code).not.toContain("firstRule");
+  });
+
+  it("emits rules using only grammar fields when nodes carry additional metadata", () => {
+    const pattern = { ...createStringLiteral("x", '"'), revision: 1n };
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [createRuleDefinition("start", pattern)],
+    );
+    expect(generateOptimizedTypeScriptParser(grammar).code).toContain(
+      'literal("x")',
+    );
   });
 
   it("does not leak which rule names are locally defined across generateGrammar calls", () => {

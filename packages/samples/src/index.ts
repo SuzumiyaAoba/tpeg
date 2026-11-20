@@ -69,7 +69,10 @@ const SAMPLE_SCRIPTS: Record<string, readonly [string, string]> = {
 };
 
 const runSample = (sampleName: string, sampleArgs: string[]) => {
-  const entry = SAMPLE_SCRIPTS[sampleName.toLowerCase()];
+  const name = sampleName.toLowerCase();
+  const entry = Object.hasOwn(SAMPLE_SCRIPTS, name)
+    ? SAMPLE_SCRIPTS[name]
+    : undefined;
   if (!entry) {
     console.error(`❌ Unknown sample: ${sampleName}`);
     console.log("Use --help to see available samples");
@@ -79,10 +82,12 @@ const runSample = (sampleName: string, sampleArgs: string[]) => {
   const [header, script] = entry;
   console.log(`${header}\n`);
 
-  // `process.execPath` is the running Bun binary; the demo .ts files
-  // aren't executable on their own.
   const result = Bun.spawnSync(
-    [process.execPath, join(import.meta.dir, script), ...sampleArgs],
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", script),
+      ...sampleArgs,
+    ],
     {
       stdio: ["inherit", "inherit", "inherit"],
     },
@@ -110,24 +115,23 @@ const runAllSamples = () => {
 };
 
 const main = () => {
-  const args = process.argv.slice(2);
+  const [sampleName, ...sampleArgs] = process.argv.slice(2);
 
-  if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
+  if (
+    sampleName === undefined ||
+    sampleName === "--help" ||
+    sampleName === "-h"
+  ) {
     showHelp();
     return;
   }
 
-  if (args.includes("--all")) {
+  if (sampleName === "--all") {
     runAllSamples();
     return;
   }
 
-  const sampleName = args[0];
-  if (sampleName === undefined) {
-    showHelp();
-    return;
-  }
-  runSample(sampleName, args.slice(1));
+  runSample(sampleName, sampleArgs);
 };
 
 if (import.meta.main) {

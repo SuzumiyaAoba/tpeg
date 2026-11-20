@@ -12,9 +12,11 @@ import {
   createCharRange,
   createChoice,
   createGrammarDefinition,
+  createIdentifier,
   createLabeledExpression,
   createOptional,
   createPositiveLookahead,
+  createQuantified,
   createRuleDefinition,
   createSequence,
   createStar,
@@ -939,6 +941,15 @@ export const reportedNullable: Nullable = ${inferred.nullable};`;
     const sparse: string[] = [];
     sparse.length = 1;
     expect(guard(sparse)).toBe(false);
+  });
+
+  it("infers an empty tuple for a zero-count self reference", async () => {
+    const pattern = createQuantified(createIdentifier("start"), 0, 0);
+    const definitions = generateDefinitions(pattern);
+    expect(definitions).toContain("type StartResult = [];");
+    const guard = guardExport(await compileModule(definitions), "");
+    expect(guard([])).toBe(true);
+    expect(guard(["x"])).toBe(false);
   });
 
   it.each(["__proto__", 'quoted"key\n', "日本語😀"])(

@@ -26,6 +26,7 @@
 
 import {
   escapeStringLiteral,
+  isZeroRepetition,
   unwrapToLabeledExpression,
 } from "@suzumiyaaoba/tpeg-core";
 import { mappedBaseType } from "./type-mappings";
@@ -1532,9 +1533,8 @@ export class TypeInferenceEngine {
    * @returns Inferred type for star repetition
    */
   private inferStarType(expression: Star): InferredType {
-    const innerType = this.inferExpressionType(expression.expression);
     return this.inferRepetitionType(
-      innerType,
+      expression,
       this.options.inferArrayTypes
         ? "Array of zero or more repetitions"
         : "Zero or more repetitions",
@@ -1551,9 +1551,8 @@ export class TypeInferenceEngine {
    * @returns Inferred type for plus repetition
    */
   private inferPlusType(expression: Plus): InferredType {
-    const innerType = this.inferExpressionType(expression.expression);
     return this.inferRepetitionType(
-      innerType,
+      expression,
       this.options.inferArrayTypes
         ? "Array of one or more repetitions"
         : "One or more repetitions",
@@ -1612,22 +1611,23 @@ export class TypeInferenceEngine {
    * @returns Inferred type for quantified expression
    */
   private inferQuantifiedType(expression: Quantified): InferredType {
-    const innerType = this.inferExpressionType(expression.expression);
-
     return this.inferRepetitionType(
-      innerType,
+      expression,
       `Quantified expression: {${expression.min},${expression.max ?? ""}}`,
     );
   }
 
   /** Builds the shared array/string result for repetition expressions. */
   private inferRepetitionType(
-    innerType: InferredType,
+    expression: Star | Plus | Quantified,
     description: string,
   ): InferredType {
     const documentation = this.options.generateDocumentation
       ? description
       : undefined;
+    const innerType = isZeroRepetition(expression)
+      ? undefined
+      : this.inferExpressionType(expression.expression);
 
     if (!this.options.inferArrayTypes) {
       return {
@@ -1635,7 +1635,19 @@ export class TypeInferenceEngine {
         nullable: false,
         isArray: false,
         baseType: "string",
-        imports: innerType.imports,
+        imports: innerType?.imports ?? [],
+        documentation,
+      };
+    }
+
+    if (!innerType) {
+      return {
+        typeString: "[]",
+        nullable: false,
+        isArray: true,
+        baseType: "tuple",
+        imports: [],
+        tupleMembers: [],
         documentation,
       };
     }

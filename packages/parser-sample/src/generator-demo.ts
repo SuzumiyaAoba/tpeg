@@ -13,17 +13,20 @@ import {
   generateTypeScriptParser,
   grammarDefinition,
 } from "@suzumiyaaoba/tpeg-parser";
-import { initialPos } from "./pos";
+import { parseExample } from "./parse-example";
 
 console.log("🏗️  TPEG Parser Generation Demo\n");
 
-// Example grammar definition (single rule due to Phase 1.6 limitation)
+// The usage example below imports both generated rules.
 const grammarText = `grammar Calculator {
   @version: "1.0"
   @description: "Simple arithmetic calculator"
   @author: "TPEG Demo"
   
+  @skip: ws
+  expression = number (("+" / "*") number)*
   number = [0-9]+
+  ws = [ ]+
 }`;
 
 console.log("📝 Input Grammar:");
@@ -32,16 +35,13 @@ console.log(`\n${"=".repeat(60)}\n`);
 
 // Parse the grammar
 console.log("🔍 Parsing Grammar...");
-const pos = initialPos;
-const parseResult = grammarDefinition(grammarText, pos);
+const parseResult = parseExample(grammarDefinition, grammarText);
 
 if (!parseResult.success) {
   console.error("❌ Failed to parse grammar:");
-  console.error(`   Error: ${parseResult.error?.message}`);
-  if (parseResult.error?.pos !== undefined) {
-    const { line, column } = offsetToPos(grammarText, parseResult.error.pos);
-    console.error(`   Position: line ${line}, column ${column + 1}`);
-  }
+  console.error(`   Error: ${parseResult.error.message}`);
+  const { line, column } = offsetToPos(grammarText, parseResult.error.pos);
+  console.error(`   Position: line ${line}, column ${column + 1}`);
   process.exit(1);
 }
 

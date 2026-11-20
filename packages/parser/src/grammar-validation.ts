@@ -49,11 +49,27 @@
  * generation the same way.
  */
 
-import { forEachExpression } from "@suzumiyaaoba/tpeg-core";
+import {
+  childExpressions,
+  forEachExpression,
+  isZeroRepetition,
+} from "@suzumiyaaoba/tpeg-core";
 import { ERROR_MESSAGES } from "./constants";
-import { collectZeroOffsetRuleRefs, computeNullableRules } from "./first-sets";
+import {
+  analyzeFirstSets,
+  assertNoNullableRepetition,
+  collectZeroOffsetRuleRefs,
+  computeNullableRules,
+  type GrammarFirstSetAnalysis,
+} from "./first-sets";
+import { applySkipDesugar } from "./skip-desugar";
 import { findRecursiveRuleNames } from "./performance-utils";
-import type { Expression, GrammarDefinition, RuleDefinition } from "./types";
+import type {
+  Expression,
+  GrammarAnnotation,
+  GrammarDefinition,
+  RuleDefinition,
+} from "./types";
 
 /** Whole-string JavaScript identifier shape -- what every emitted
  * `const`/`function` name (and so every `namePrefix`) must satisfy. */
@@ -71,7 +87,7 @@ const JS_IDENTIFIER_FULL = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
  * Deliberately OVER-approximates through constructs that don't consume
  * input themselves but DO invoke their wrapped expression at the current
  * position -- `Star`/`Plus`/`Optional`/`Quantified` (at least one attempt
- * is always made, even if it may go on to match zero times) and
+ * is made unless the maximum is zero) and
  * `PositiveLookahead`/`NegativeLookahead` (the probe itself is a real
  * invocation at this position, even though its outcome is inverted or
  * discarded, e.g. `!rule "x"`) -- because a genuinely left-recursive
@@ -133,80 +149,27 @@ const findDuplicateRuleNames = (grammar: GrammarDefinition): string[] => {
   return [...duplicates].sort();
 };
 
-/**
- * True where `expr` is a `~` that matches nothing on its own: either a
- * bare `Cut` node, or a `Sequence` whose elements are all `Cut`. Both
- * shapes are reachable from ordinary `.tpeg` surface syntax (`start = ~`,
- * `start = ~ ~`, `(~) "b"`, `(~ ~) "b"`, `~ / "a"`, ...) because
- * `composition.ts` unwraps a single-element `Sequence` down to its bare
- * element -- a rule (or group, or choice alternative, or quantifier body,
- * ...) whose only content is one `~` reduces to a standalone `Cut` node
- * with no enclosing `Sequence` at all.
- *
- * `~` only has meaning as one of SEVERAL elements of a `Sequence`
- * (`codegen.ts`/`codegen-optimized.ts`'s `generateSequence` is the only
- * place that understands it): everywhere else, a `Cut` node makes code
- * generation throw `Unsupported expression type: Cut` outright, and an
- * all-`Cut` `Sequence` would (after `generateSequence` drops every `Cut`)
- * silently generate an always-succeeding empty match -- neither is a
- * useful reading of what the grammar author wrote, so both are rejected
- * here as a grammar-authoring error rather than left to surface as an
- * exception or a silently wrong parser.
- */
-const isCutOnlyPattern = (expr: Expression): boolean =>
-  expr.type === "Cut" ||
-  (expr.type === "Sequence" &&
-    expr.elements.length > 0 &&
-    expr.elements.every((el) => el.type === "Cut"));
-
-/**
- * Recursively walks `expr` looking for a cut-only pattern (see
- * `isCutOnlyPattern`) in any sub-expression position. `context` tracks
- * whether `expr` itself is being visited AS one element of its immediate
- * parent `Sequence` -- the one position where a bare `Cut` is legitimate
- * -- so a normal `"a" ~ "b"` is never flagged for the very `Cut` it's
- * built from, while `(~) "b"` (a `Cut` reached through a `Group`, which
- * does NOT understand `Cut`) still is.
- */
-const containsCutOnlyPattern = (
-  expr: Expression,
-  context: "sequenceElement" | "other",
-): boolean => {
-  if (expr.type === "Cut") {
-    return context !== "sequenceElement";
-  }
+/** A cut is only meaningful as a direct sibling of a non-cut sequence element. */
+const containsCutOnlyPattern = (expr: Expression): boolean => {
+  if (expr.type === "Cut") return true;
   if (expr.type === "Sequence") {
-    if (isCutOnlyPattern(expr)) return true;
-    return expr.elements.some((el) =>
-      containsCutOnlyPattern(el, "sequenceElement"),
+    const { elements } = expr;
+    return (
+      (elements.length > 0 &&
+        elements.every((child) => child.type === "Cut")) ||
+      elements.some(
+        (child) => child.type !== "Cut" && containsCutOnlyPattern(child),
+      )
     );
   }
-  if (expr.type === "Choice") {
-    return expr.alternatives.some((alt) =>
-      containsCutOnlyPattern(alt, "other"),
-    );
-  }
-  if (
-    expr.type === "Group" ||
-    expr.type === "Star" ||
-    expr.type === "Plus" ||
-    expr.type === "Optional" ||
-    expr.type === "Quantified" ||
-    expr.type === "PositiveLookahead" ||
-    expr.type === "NegativeLookahead" ||
-    expr.type === "LabeledExpression" ||
-    expr.type === "ActionExpression"
-  ) {
-    return containsCutOnlyPattern(expr.expression, "other");
-  }
-  return false;
+  return childExpressions(expr).some(containsCutOnlyPattern);
 };
 
 /** Rule names whose pattern contains a cut-only sub-expression anywhere. */
 const findCutOnlyRules = (grammar: GrammarDefinition): string[] => {
   const flagged: string[] = [];
   for (const rule of grammar.rules) {
-    if (containsCutOnlyPattern(rule.pattern, "other")) {
+    if (containsCutOnlyPattern(rule.pattern)) {
       flagged.push(rule.name);
     }
   }
@@ -361,6 +324,7 @@ const expressionFailureModes = (
     case "Plus":
       return expressionFailureModes(expr.expression, ruleModes);
     case "Quantified":
+      if (isZeroRepetition(expr)) return NO_FAILURE;
       return expr.min === 0
         ? fatalOnly(expressionFailureModes(expr.expression, ruleModes))
         : expressionFailureModes(expr.expression, ruleModes);
@@ -655,11 +619,6 @@ const findDuplicateTransformFunctions = (
  * duplicate function name within one transform set -- see the doc comment
  * above {@link TransformNameIssue} for why both are grammar-authoring
  * errors reported at generation time rather than silently dropped.
- * Exported so `@suzumiyaaoba/tpeg-generator`'s separate validator
- * (`packages/generator/src/grammar-validation.ts`) can run the identical
- * check with the identical message rather than keeping a second copy that
- * would drift -- the same reason `validateGeneratedIdentifiers` below is
- * imported there directly.
  *
  * @throws {Error} naming the offending function and its transform set.
  */
@@ -692,18 +651,7 @@ export const assertValidTransformFunctionNames = (
     );
   }
 
-  // A transform signature's parameter LIST (`f(a: T, b: T)`) parses fine,
-  // but codegen has exactly one value to pass the function -- the rule's
-  // own parse result (`__result.val`, bound to `parameters[0]`). There is
-  // no second runtime value a second parameter could mean: emitting it
-  // would bind `undefined`, silently. Before this check, parameters 2+
-  // were simply dropped from the emitted arrow's parameter list, so a
-  // body referencing one compiled cleanly and then threw a
-  // `ReferenceError` the first time the transform ran (#108). Rejected
-  // here (not in `wrapWithTransform`) so all three generators get the
-  // identical failure -- this function is the shared transform validator
-  // both `validateGrammar` (codegen.ts/codegen-optimized.ts) and the Eta
-  // generator's `validateGrammarForEtaGenerator` already call.
+  // A transform receives one argument, the rule's parse result.
   for (const transformDef of grammar.transforms ?? []) {
     const { transformSet } = transformDef;
     for (const fn of transformSet.functions) {
@@ -949,51 +897,6 @@ export const resolveStartRule = (
 };
 
 /**
- * Validates `grammar` for structural problems that have no well-defined
- * PEG semantics at all, throwing on the first category found. Must run
- * before `analyzeFirstSets`/`assertNoNullableRepetition` -- see this
- * module's doc comment for why. Called by both `codegen.ts` and
- * `codegen-optimized.ts` before generating any code, matching
- * `assertNoNullableRepetition`'s existing "grammar-authoring error,
- * reported at generation time" contract.
- *
- * Duplicate rule names are checked (and thrown on) BEFORE left recursion
- * and the `QualifiedIdentifier` collision check: with a duplicate name
- * present, "which rule's pattern does this name refer to" is itself
- * ambiguous, so a report built on top of that would be unreliable.
- *
- * The `QualifiedIdentifier` collision check (see
- * `collectQualifiedIdentifierCollisions`/`findQualifiedIdentifierCollisions`
- * -- deliberately NOT a general undefined-reference check; see that
- * function's own doc comment for why a bare `Identifier` is never flagged)
- * runs right after duplicates, before left recursion: a rule name that's
- * also used as a `QualifiedIdentifier`'s `module` part is treated by
- * `zeroOffsetRuleRefs` as an opaque leaf either way, so left-recursion
- * analysis doesn't depend on this check having already run -- but
- * reporting the collision before a left-recursion report keeps the more
- * directly actionable message first.
- *
- * The cut-only-pattern check (see `isCutOnlyPattern`/`findCutOnlyRules`)
- * and the unreachable-alternative check (see
- * `findUnreachableAlternatives`/`expressionFailureModes`) run next:
- * neither interacts with any of the checks above -- the failure-mode
- * analysis never resolves `Identifier` references, so it is unaffected
- * by left recursion -- so their ordering relative to them is not
- * load-bearing.
- *
- * @throws {Error} if any rule name is declared more than once, or (once
- *   no duplicates remain) if any rule contains a `QualifiedIdentifier`
- *   whose `module` part collides with a locally-declared rule name, or if
- *   any rule is left-recursive, or if any rule's pattern reduces to `~`
- *   matching nothing on its own, or if any `Choice` has alternatives
- *   that can never run (see `findUnreachableAlternatives`).
- *   Deliberately does NOT reject a bare
- *   `Identifier` naming something outside this grammar's own rules --
- *   that's an intentional escape hatch for binding a hand-written parser
- *   into generated code (`codegen.ts`'s `generateIdentifierCode`), not a
- *   grammar-authoring mistake.
- */
-/**
  * Metadata keys whose `@key: ""` (empty-string) value is a legitimate,
  * if unusual, piece of documentation rather than a stray flag -- the
  * AST can't distinguish `@description: ""` from a bare `@description`,
@@ -1026,6 +929,38 @@ export const assertNoInertFlagAnnotations = (
   );
 };
 
+/**
+ * Finds a rule's `@memoize` annotation (see `packages/parser/src/grammar.ts`'s
+ * `memoizeAnnotation`), if any. If `@memoize` appears more than once on the
+ * same rule, the first one wins.
+ */
+export const findMemoizeAnnotation = (
+  rule: RuleDefinition,
+): GrammarAnnotation | undefined =>
+  rule.annotations?.find((a) => a.key === "memoize");
+
+/** A bare @memoize has unlimited capacity. A numeric capacity must be exact. */
+export function memoizeCapacity(annotation: GrammarAnnotation): number {
+  if (annotation.value === "") return Infinity;
+  const capacity = Number(annotation.value);
+  if (
+    !Number.isSafeInteger(capacity) ||
+    capacity < 0 ||
+    !/^\d+$/.test(annotation.value)
+  ) {
+    throw new Error(
+      `Invalid @memoize capacity "${annotation.value}": expected a non-negative safe integer`,
+    );
+  }
+  return capacity;
+}
+
+/**
+ * Check the source grammar's rules, control flow, annotations and transforms.
+ * Check names first so later analyses can resolve each local rule uniquely.
+ * A bare identifier may refer to an externally supplied parser.
+ * @throws {Error} on the first category of structural error found.
+ */
 export const validateGrammar = (grammar: GrammarDefinition): void => {
   const duplicates = findDuplicateRuleNames(grammar);
   if (duplicates.length > 0) {
@@ -1043,6 +978,11 @@ export const validateGrammar = (grammar: GrammarDefinition): void => {
       )
       .join("; ");
     throw new Error(`${ERROR_MESSAGES.UNDEFINED_RULE_REFERENCE}: ${details}`);
+  }
+
+  for (const rule of grammar.rules) {
+    const annotation = findMemoizeAnnotation(rule);
+    if (annotation) memoizeCapacity(annotation);
   }
 
   const leftRecursive = findLeftRecursiveRules(grammar);
@@ -1116,6 +1056,18 @@ export const validateGrammar = (grammar: GrammarDefinition): void => {
   // see TransformNameIssue's doc comment).
   assertValidTransformFunctionNames(grammar);
 };
+
+/** Validate the source, expand @skip, and analyze the grammar that generators emit. */
+export function prepareGrammarForGeneration(source: GrammarDefinition): {
+  grammar: GrammarDefinition;
+  firstSets: GrammarFirstSetAnalysis;
+} {
+  validateGrammar(source);
+  const grammar = applySkipDesugar(source);
+  const firstSets = analyzeFirstSets(grammar);
+  assertNoNullableRepetition(grammar, firstSets);
+  return { grammar, firstSets };
+}
 
 // ============================================================================
 // Generated-identifier safety (reserved words / import collisions)

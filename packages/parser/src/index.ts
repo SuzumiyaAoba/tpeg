@@ -125,6 +125,8 @@ export { analyzeReentrancy, type ReentrancyAnalysis } from "./reentrancy";
 // AST rewrite pass). See `grammar-validation.ts`'s doc comment.
 export {
   validateGrammar,
+  prepareGrammarForGeneration,
+  memoizeCapacity,
   validateGeneratedIdentifiers,
   assertNoInertFlagAnnotations,
   assertValidTransformFunctionNames,
@@ -199,12 +201,7 @@ export {
   promoteGlobalCuts,
 } from "./ast-optimize";
 
-// Export performance utilities. `collectRuleDependencies` and
-// `findRecursiveRuleNames` are the dependency-graph machinery
-// `analyzeGrammarPerformance` is built on -- exported (not just the
-// analysis wrappers) so `@suzumiyaaoba/tpeg-generator`'s own, differently-
-// thresholded analysis can share this exact walk rather than
-// hand-maintaining a driftable copy.
+// Grammar dependency analysis and runtime performance monitoring.
 export {
   hashString,
   stringInterner,

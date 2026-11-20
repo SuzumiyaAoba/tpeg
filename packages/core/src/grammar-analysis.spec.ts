@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  collectInvokedRuleReferences,
   collectRuleReferences,
   collectRequiredTopLevelLabels,
   collectTopLevelLabels,
@@ -19,6 +20,18 @@ import {
 } from "./grammar-builders";
 
 describe("shared grammar analysis", () => {
+  it("keeps references under {0} visible to source tools and out of the call graph", () => {
+    const expression = createSequence([
+      createQuantified(createIdentifier("unused"), 0, 0),
+      createQuantified(createIdentifier("possible"), 0, 1),
+    ]);
+    expect([...collectRuleReferences(expression)]).toEqual([
+      "unused",
+      "possible",
+    ]);
+    expect([...collectInvokedRuleReferences(expression)]).toEqual(["possible"]);
+  });
+
   it("collects unique local references through actions and repetition in source order", () => {
     const expression = createSequence([
       createActionExpression(createIdentifier("first"), "return $$;"),

@@ -1,20 +1,20 @@
-/**
- * Tests for `validateGrammarForEtaGenerator` -- the thin wrapper around
- * `tpeg-parser`'s `validateGrammar` + `assertNoNullableRepetition` (see
- * that module's doc comment for why this delegates rather than keeping a
- * third copy of the checks). These tests pin the categories the Eta
- * generator must reject and, most importantly, the non-quadratic
- * behavior the previous hand-duplicated implementations lacked.
- */
-
 import { describe, expect, it } from "vite-plus/test";
+import * as core from "@suzumiyaaoba/tpeg-core";
+import * as combinator from "@suzumiyaaoba/tpeg-combinator";
 import type {
   GrammarDefinition,
   Identifier,
   RuleDefinition,
   StringLiteral,
 } from "@suzumiyaaoba/tpeg-core";
-import { validateGrammarForEtaGenerator } from "./grammar-validation";
+import {
+  compileStart,
+  generateOptimizedTypeScriptParser,
+  generateTypeScriptParser,
+  grammarDefinition,
+  prepareGrammarForGeneration,
+} from "@suzumiyaaoba/tpeg-parser";
+import { generateEtaTypeScriptParser } from "./eta-generator";
 
 const stringLiteral = (value: string): StringLiteral => ({
   type: "StringLiteral",
@@ -40,8 +40,33 @@ const grammar = (rules: RuleDefinition[]): GrammarDefinition => ({
   rules,
 });
 
-describe("validateGrammarForEtaGenerator", () => {
-  it("rejects a directly left-recursive rule", () => {
+describe("grammar validation before code generation", () => {
+  it.each([
+    ["base", generateTypeScriptParser],
+    ["optimized", generateOptimizedTypeScriptParser],
+    ["Eta", generateEtaTypeScriptParser],
+  ] as const)(
+    "%s accepts a self reference inside {0}",
+    async (_name, generate) => {
+      const parsed = core.parse(grammarDefinition)(
+        'grammar G { start = start{0} "a" }',
+      );
+      if (!parsed.success) throw new Error(parsed.error.message);
+      const { code } = await generate(parsed.val, {
+        includeImports: false,
+        includeTypes: false,
+      });
+      const parse = core.parse(compileStart(code, core, combinator));
+      expect(parse("a")).toMatchObject({
+        success: true,
+        next: 1,
+        val: [[], "a"],
+      });
+      expect(parse("b")).toMatchObject({ success: false, error: { pos: 0 } });
+    },
+  );
+
+  it("rejects a directly left-recursive rule", async () => {
     const g = grammar([
       rule("start", {
         type: "Choice",
@@ -55,19 +80,23 @@ describe("validateGrammarForEtaGenerator", () => {
       }),
     ]);
 
-    expect(() => validateGrammarForEtaGenerator(g)).toThrow(/left-recursive/i);
+    await expect(generateEtaTypeScriptParser(g)).rejects.toThrow(
+      /left-recursive/i,
+    );
   });
 
-  it("rejects duplicate rule names", () => {
+  it("rejects duplicate rule names", async () => {
     const g = grammar([
       rule("start", stringLiteral("a")),
       rule("start", stringLiteral("b")),
     ]);
 
-    expect(() => validateGrammarForEtaGenerator(g)).toThrow(/duplicate rule/i);
+    await expect(generateEtaTypeScriptParser(g)).rejects.toThrow(
+      /duplicate rule/i,
+    );
   });
 
-  it("rejects an unbounded repetition over a nullable body", () => {
+  it("rejects an unbounded repetition over a nullable body", async () => {
     const g = grammar([
       rule("start", {
         type: "Star",
@@ -75,23 +104,25 @@ describe("validateGrammarForEtaGenerator", () => {
       }),
     ]);
 
-    expect(() => validateGrammarForEtaGenerator(g)).toThrow(
+    await expect(generateEtaTypeScriptParser(g)).rejects.toThrow(
       /unbounded repetition/i,
     );
   });
 
-  it("rejects a cut-only rule body", () => {
+  it("rejects a cut-only rule body", async () => {
     const g = grammar([rule("start", { type: "Cut" })]);
 
-    expect(() => validateGrammarForEtaGenerator(g)).toThrow(
+    await expect(generateEtaTypeScriptParser(g)).rejects.toThrow(
       /cannot be a rule body/i,
     );
   });
 
-  it("does not reject a bare Identifier naming an external parser (escape hatch)", () => {
+  it("does not reject a bare Identifier naming an external parser (escape hatch)", async () => {
     const g = grammar([rule("start", identifier("externalParser"))]);
 
-    expect(() => validateGrammarForEtaGenerator(g)).not.toThrow();
+    await expect(generateEtaTypeScriptParser(g)).resolves.toMatchObject({
+      exports: ["start"],
+    });
   });
 
   // Regression: the hand-duplicated `findLeftRecursiveRules` /
@@ -110,7 +141,7 @@ describe("validateGrammarForEtaGenerator", () => {
     rules.push(rule(`r${chainLength}`, stringLiteral("z")));
     const g = grammar(rules);
 
-    expect(() => validateGrammarForEtaGenerator(g)).not.toThrow();
+    expect(() => prepareGrammarForGeneration(g)).not.toThrow();
   });
 
   // Same regression for the cycle direction: a long chain CLOSED into a
@@ -124,6 +155,6 @@ describe("validateGrammarForEtaGenerator", () => {
     rules.push(rule(`r${chainLength}`, identifier("r0")));
     const g = grammar(rules);
 
-    expect(() => validateGrammarForEtaGenerator(g)).toThrow(/left-recursive/i);
+    expect(() => prepareGrammarForGeneration(g)).toThrow(/left-recursive/i);
   });
 });

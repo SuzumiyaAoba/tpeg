@@ -164,18 +164,18 @@ class _Session:
             value = values[0] if node["min"] == 1 and not node["flag"] else values
             return self.ok(value, pos, end, scalar_capture if node["min"] == 1 and not node["flag"] else False)
         if kind == "Choice":
-            best = self.fail(pos, "alternative")
+            best = None
             for child in children:
                 result = self.node(child, pos, depth)
                 if result[0] or result[1].get("abort"):
                     return result
                 if result[1].get("fatal"):
                     return (False, {key: value for key, value in result[1].items() if key != "fatal"})
-                if result[1]["pos"] > best[1]["pos"]:
+                if best is None or result[1]["pos"] > best[1]["pos"]:
                     best = result
                 elif result[1]["pos"] == best[1]["pos"]:
                     best = (False, dict(result[1], expected=list(dict.fromkeys(best[1]["expected"] + result[1]["expected"]))))
-            return best
+            return best if best is not None else self.fail(pos, "alternative")
         if kind == "WordBoundary":
             def word(offset):
                 char, _ = self.char(offset) if offset >= 0 else ("", 0)

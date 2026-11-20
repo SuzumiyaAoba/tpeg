@@ -602,6 +602,9 @@ above the rule it applies to:
 expression = left:term rest:(op:add_op right:term)*
 ```
 
+`N` is a decimal integer from `0` through `9007199254740991`
+(`Number.MAX_SAFE_INTEGER`). A capacity of `0` disables caching for the rule.
+
 This is distinct from the `@key: value` annotations in the
 [Grammar Block](#grammar-block) below (`@start`, `@skip`, etc.), which are
 scoped to the whole grammar, not a single rule - `@memoize` must sit directly

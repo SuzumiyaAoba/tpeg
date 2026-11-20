@@ -147,6 +147,16 @@ describe("CSV Parser", () => {
   });
 
   describe("CSV Generation", () => {
+    it("writes a missing column as empty when its header is an inherited property name", () => {
+      expect(
+        parseCSV(arrayToCSV([{ toString: "first", id: 1 }, { id: 2 }])),
+      ).toEqual([
+        ["toString", "id"],
+        ["first", "1"],
+        ["", "2"],
+      ]);
+    });
+
     it("converts objects to CSV", () => {
       const data = [
         { name: "John", age: 30, city: "New York" },

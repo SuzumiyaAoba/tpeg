@@ -81,6 +81,33 @@ describe("tpeg CLI", () => {
     expect(stdout).toContain("Usage: tpeg <input.tpeg> [options]");
   });
 
+  it.each(["typescript", "javascript", "python", "go", "rust"])(
+    "rejects an unrepresentable @memoize capacity before emitting %s",
+    (language) => {
+      const path = join(dir, "capacity.tpeg");
+      writeFileSync(
+        path,
+        'grammar G { @memoize: 9007199254740993\n start = "x" }',
+      );
+      const result = captureOutput(() => run([path, "--language", language]));
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain(
+        'Invalid @memoize capacity "9007199254740993"',
+      );
+    },
+  );
+
+  it("keeps Unicode line separators and C1 control characters on one diagnostic line", () => {
+    const { stderr, exitCode } = captureOutput(() =>
+      run(["--language", "x\u0085\u2028y", "test.tpeg"]),
+    );
+    expect(exitCode).toBe(1);
+    expect(stderr).toBe(
+      'error: unsupported target language "x\\x85\\u2028y"\n',
+    );
+  });
+
   it.each([
     ["python", "def parse("],
     ["go", "func Parse("],

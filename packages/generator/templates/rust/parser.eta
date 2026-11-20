@@ -174,21 +174,23 @@ impl Session {
                 return success(Value::Array(values), pos, end);
             }
             "Choice" => {
-                let mut best = self.failure(pos, "alternative", false, false);
+                let mut best: Option<ParseResult> = None;
                 for &child in n.children {
                     let mut result = self.node(child, pos, depth);
                     if result.success || result.error.as_ref().unwrap().abort { return result; }
                     let error = result.error.as_mut().unwrap();
                     if error.fatal { error.fatal = false; return result; }
-                    let old = best.error.as_ref().unwrap();
-                    if error.pos > old.pos { best = result; }
-                    else if error.pos == old.pos {
-                        let mut expected = old.expected.clone();
-                        for value in &error.expected { if !expected.contains(value) { expected.push(value.clone()); } }
-                        error.expected = expected; best = result;
+                    if let Some(old) = best.as_ref().and_then(|previous| previous.error.as_ref()) {
+                        if error.pos < old.pos { continue; }
+                        if error.pos == old.pos {
+                            let mut expected = old.expected.clone();
+                            for value in &error.expected { if !expected.contains(value) { expected.push(value.clone()); } }
+                            error.expected = expected;
+                        }
                     }
+                    best = Some(result);
                 }
-                return best;
+                return best.unwrap_or_else(|| self.failure(pos, "alternative", false, false));
             }
             "WordBoundary" => {
                 let word = |offset: Option<usize>| -> bool { offset.and_then(|offset| self.input.get(offset)).map_or(false, |&ch| (65..=90).contains(&ch) || (97..=122).contains(&ch) || (48..=57).contains(&ch) || ch == 95) };

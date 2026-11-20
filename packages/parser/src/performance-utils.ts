@@ -1,4 +1,5 @@
 import {
+  collectInvokedRuleReferences,
   collectRuleReferences,
   findRecursiveRuleNames,
   measureExpression,
@@ -128,9 +129,7 @@ export function analyzeGrammarPerformance(grammar: GrammarDefinition): {
   const leftmostRuleDependencies = new Map<string, Set<string>>();
   const nullableRules = computeNullableRules(grammar);
   for (const rule of grammar.rules) {
-    const dependencies = new Set<string>();
-    collectRuleDependencies(rule.pattern, dependencies);
-    ruleDependencies.set(rule.name, dependencies);
+    ruleDependencies.set(rule.name, collectInvokedRuleReferences(rule.pattern));
 
     const leftmostDependencies = new Set<string>();
     collectZeroOffsetRuleRefs(
@@ -203,15 +202,7 @@ export function analyzeGrammarPerformance(grammar: GrammarDefinition): {
  * nodes are skipped -- a `module.rule` reference points outside this
  * grammar's own rule set.
  *
- * The traversal goes through `forEachExpression`/`childExpressions`
- * (`@suzumiyaaoba/tpeg-core`), which descends into an `ActionExpression`'s
- * wrapped expression -- a rule reference reachable only through a semantic
- * action (e.g. `x = ( y ) { ... }`) is a real dependency for
- * `findRecursiveRuleNames`; omitting that case (as earlier hand-written
- * switches in this repo did, in three separate copies) made such a
- * reference invisible and reported `hasRecursion: false` for a genuinely
- * recursive rule. Exported so `tpeg-generator` shares this exact walk
- * instead of hand-maintaining a second copy.
+ * Includes syntactic references inside actions and zero-count repetitions.
  */
 export function collectRuleDependencies(
   expr: Expression,
@@ -220,20 +211,6 @@ export function collectRuleDependencies(
   for (const name of collectRuleReferences(expr)) dependencies.add(name);
 }
 
-/**
- * Finds every rule name that is part of a reference cycle in the given
- * dependency graph, whether direct (A -> A) or indirect (A -> B -> ... -> A).
- * References to names outside the graph (e.g. rules imported from another
- * module) are not tracked as dependencies and can't participate in a cycle.
- *
- * A rule is on a cycle exactly when it belongs to a strongly connected
- * component of size > 1, or has a self-loop -- so this is one iterative
- * Tarjan SCC pass over the whole graph, O(rules + edges). The `canReach(
- * rule, rule)`-per-rule DFS this replaces was O(rules x edges) (a
- * 10,000-rule reference chain took ~9.4s inside every
- * `generateOptimizedTypeScriptParser` call, which runs this analysis
- * unconditionally) and recursed as deep as the chain itself.
- */
 /**
  * Performance monitoring utilities
  */

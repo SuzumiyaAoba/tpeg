@@ -4,6 +4,7 @@
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { escapeControlCharsForDisplay } from "@suzumiyaaoba/tpeg-core";
 import { isNativeLanguage } from "@suzumiyaaoba/tpeg-generator";
 import {
   bundleGrammarFile,
@@ -20,36 +21,6 @@ function readVersion(): string {
   return pkg.version;
 }
 
-/**
- * Neutralizes control characters (CR, LF, TAB, and other C0 bytes) before
- * writing untrusted text (a grammar's own error `message`/`expected`/`found`
- * strings, which can contain any byte from the source file) to the
- * terminal. A raw `\r` in particular rewinds the cursor to the start of the
- * line and overwrites everything printed so far, making the error
- * unreadable -- this is display-safety, not the JS-string-literal escaping
- * `escapeStringLiteral` (`packages/parser/src/constants.ts`) does (that one
- * also escapes quotes/backslashes for embedding in generated TS source,
- * which would be wrong here and make plain messages harder to read).
- */
-function sanitizeForTerminal(text: string): string {
-  let result = "";
-  for (const char of text) {
-    const code = char.codePointAt(0) ?? 0;
-    if (char === "\n") {
-      result += "\\n";
-    } else if (char === "\r") {
-      result += "\\r";
-    } else if (char === "\t") {
-      result += "\\t";
-    } else if (code < 0x20 || code === 0x7f) {
-      result += `\\x${code.toString(16).padStart(2, "0")}`;
-    } else {
-      result += char;
-    }
-  }
-  return result;
-}
-
 export function run(argv: string[]): number {
   let options: CliOptions;
   let positionals: string[];
@@ -57,7 +28,7 @@ export function run(argv: string[]): number {
     ({ options, positionals } = parseCliArgs(argv));
   } catch (error) {
     process.stderr.write(
-      `error: ${sanitizeForTerminal((error as Error).message)}\n\n`,
+      `error: ${escapeControlCharsForDisplay((error as Error).message)}\n\n`,
     );
     process.stderr.write(USAGE);
     return 1;
@@ -73,7 +44,7 @@ export function run(argv: string[]): number {
       process.stdout.write(`${readVersion()}\n`);
     } catch (error) {
       process.stderr.write(
-        `error: could not read package version: ${sanitizeForTerminal((error as Error).message)}\n`,
+        `error: could not read package version: ${escapeControlCharsForDisplay((error as Error).message)}\n`,
       );
       return 1;
     }
@@ -90,7 +61,7 @@ export function run(argv: string[]): number {
     process.stderr.write(
       `error: unexpected extra argument(s): ${positionals
         .slice(1)
-        .map(sanitizeForTerminal)
+        .map(escapeControlCharsForDisplay)
         .join(", ")} -- only one <input.tpeg> is accepted\n\n`,
     );
     process.stderr.write(USAGE);
@@ -109,7 +80,7 @@ export function run(argv: string[]): number {
     options.language !== "javascript"
   ) {
     process.stderr.write(
-      `error: unsupported target language "${sanitizeForTerminal(options.language)}"\n`,
+      `error: unsupported target language "${escapeControlCharsForDisplay(options.language)}"\n`,
     );
     return 1;
   }
@@ -138,7 +109,7 @@ export function run(argv: string[]): number {
     source = readFileSync(inputPath, "utf8");
   } catch (error) {
     process.stderr.write(
-      `error: could not read "${sanitizeForTerminal(inputPath)}": ${sanitizeForTerminal((error as Error).message)}\n`,
+      `error: could not read "${escapeControlCharsForDisplay(inputPath)}": ${escapeControlCharsForDisplay((error as Error).message)}\n`,
     );
     return 1;
   }
@@ -151,18 +122,18 @@ export function run(argv: string[]): number {
         ? " (the parser did not consume the rest of the file)"
         : "";
     process.stderr.write(
-      `error: failed to parse "${sanitizeForTerminal(inputPath)}" at line ${line}, column ${column}: ${sanitizeForTerminal(message)}${detail}\n`,
+      `error: failed to parse "${escapeControlCharsForDisplay(inputPath)}" at line ${line}, column ${column}: ${escapeControlCharsForDisplay(message)}${detail}\n`,
     );
     if (expected) {
       const expectedList = Array.isArray(expected)
         ? expected.join(", ")
         : expected;
       process.stderr.write(
-        `  expected: ${sanitizeForTerminal(expectedList)}\n`,
+        `  expected: ${escapeControlCharsForDisplay(expectedList)}\n`,
       );
     }
     if (found) {
-      process.stderr.write(`  found: ${sanitizeForTerminal(found)}\n`);
+      process.stderr.write(`  found: ${escapeControlCharsForDisplay(found)}\n`);
     }
     return 1;
   }
@@ -171,7 +142,7 @@ export function run(argv: string[]): number {
   const bundle = options.bundle || nativeTarget;
   if (file.imports.length > 0 && !bundle) {
     const list = file.imports
-      .map((stmt) => `"${sanitizeForTerminal(stmt.modulePath)}"`)
+      .map((stmt) => `"${escapeControlCharsForDisplay(stmt.modulePath)}"`)
       .join(", ");
     process.stderr.write(
       `note: this file declares ${file.imports.length} import(s) (${list}); ` +
@@ -187,7 +158,7 @@ export function run(argv: string[]): number {
     generated = generateParser(prepareGrammar(grammar, options), options);
   } catch (error) {
     process.stderr.write(
-      `error: ${sanitizeForTerminal((error as Error).message)}\n`,
+      `error: ${escapeControlCharsForDisplay((error as Error).message)}\n`,
     );
     return 1;
   }
@@ -198,7 +169,7 @@ export function run(argv: string[]): number {
   // generated code itself when no `--output` is given (`tpeg g.tpeg |
   // some-tool` must not see a warning line mixed into the piped source).
   for (const warning of generated.warnings) {
-    process.stderr.write(`warning: ${sanitizeForTerminal(warning)}\n`);
+    process.stderr.write(`warning: ${escapeControlCharsForDisplay(warning)}\n`);
   }
 
   // `options.output !== undefined`, not a truthiness check: an explicit
@@ -209,12 +180,12 @@ export function run(argv: string[]): number {
       writeFileSync(options.output, generated.code, "utf8");
     } catch (error) {
       process.stderr.write(
-        `error: could not write "${sanitizeForTerminal(options.output)}": ${sanitizeForTerminal((error as Error).message)}\n`,
+        `error: could not write "${escapeControlCharsForDisplay(options.output)}": ${escapeControlCharsForDisplay((error as Error).message)}\n`,
       );
       return 1;
     }
     process.stderr.write(
-      `wrote ${generated.exports.length} parser(s) to ${sanitizeForTerminal(options.output)}\n`,
+      `wrote ${generated.exports.length} parser(s) to ${escapeControlCharsForDisplay(options.output)}\n`,
     );
   } else {
     process.stdout.write(generated.code);

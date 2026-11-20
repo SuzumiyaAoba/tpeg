@@ -158,7 +158,10 @@ import {
   collectZeroOffsetRuleRefs,
   isNullable,
 } from "./first-sets";
-import { collectRuleDependencies } from "./performance-utils";
+import {
+  collectInvokedRuleReferences,
+  isZeroRepetition,
+} from "@suzumiyaaoba/tpeg-core";
 import type { Choice, Expression, GrammarDefinition, Sequence } from "./types";
 
 /** The set of (in-grammar) rule names an expression can invoke with zero
@@ -329,6 +332,7 @@ const walkChoice = (expr: Choice, ctx: WalkContext): InvocationResult => {
  *   findings (`.reentrant`), which FIRST sets have no equivalent of.
  */
 const walk = (expr: Expression, ctx: WalkContext): InvocationResult => {
+  if (isZeroRepetition(expr)) return EMPTY_RESULT;
   switch (expr.type) {
     case "StringLiteral":
     case "CharacterClass":
@@ -430,6 +434,7 @@ const walk = (expr: Expression, ctx: WalkContext): InvocationResult => {
  * - Everything else is transparent or empty exactly as in `walk`.
  */
 const endWalk = (expr: Expression, ctx: WalkContext): ReadonlySet<string> => {
+  if (isZeroRepetition(expr)) return EMPTY_RESULT.total;
   switch (expr.type) {
     case "Identifier": {
       const known = ctx.ruleInvocableAtEnd.get(expr.name);
@@ -606,6 +611,7 @@ const collectEndRuleRefs = (
   zero: Set<string>,
   end: Set<string>,
 ): void => {
+  if (isZeroRepetition(expr)) return;
   switch (expr.type) {
     case "Identifier":
       end.add(expr.name);
@@ -822,14 +828,8 @@ const minimizeByDominance = (
 ): ReadonlySet<string> => {
   const callersOf = new Map<string, Set<string>>();
   for (const rule of grammar.rules) {
-    const referenced = new Set<string>();
-    // `collectRuleDependencies` (`./performance-utils.ts`) gathers every
-    // `Identifier` ANYWHERE in the pattern -- not just at offset zero
-    // like `walk`/`invocableAtZero` above -- because bounding "how many
-    // times can R be invoked from one execution of S's body" needs every
-    // reference to R in that body.
-    collectRuleDependencies(rule.pattern, referenced);
-    for (const name of referenced) {
+    // Include calls at any offset when finding a rule's possible callers.
+    for (const name of collectInvokedRuleReferences(rule.pattern)) {
       let callers = callersOf.get(name);
       if (!callers) {
         callers = new Set();

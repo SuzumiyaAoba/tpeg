@@ -54,6 +54,27 @@ const setHasChar = (set: CharSet | null, c: string): boolean =>
   set !== null && contains(set, c.codePointAt(0) as number);
 
 describe("computeFirstSets", () => {
+  it("excludes characters and cuts that occur only inside a zero-count repetition", () => {
+    const pattern = createQuantified(
+      createSequence([createCut(), createStringLiteral("a", '"')]),
+      0,
+      0,
+    );
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createSequence([pattern, createStringLiteral("b", '"')]),
+        ),
+      ],
+    );
+    const analysis = analyzeFirstSets(grammar);
+    expect(analysis.firstSets.get("start")?.set).toEqual(fromChar("b"));
+    expect(canCommitWithoutConsuming(pattern, analysis)).toBe(false);
+  });
+
   it.each([0xd800, 0xd83d, 0xdbff])(
     "includes astral characters sharing a lead-surrogate literal's prefix (%i)",
     (lead) => {

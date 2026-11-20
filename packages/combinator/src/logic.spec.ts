@@ -293,6 +293,7 @@ describe("logic combinators", () => {
     });
 
     it.each([
+      ["unsafe integer", () => Number.MAX_SAFE_INTEGER + 1],
       ["Symbol", () => Symbol("cache size")],
       ["object without a prototype", () => Object.create(null)],
       [

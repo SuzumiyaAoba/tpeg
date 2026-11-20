@@ -56,17 +56,14 @@ import {
 } from "./codegen";
 import type { GrammarFirstSetAnalysis } from "./first-sets";
 import {
-  analyzeFirstSets,
-  assertNoNullableRepetition,
   canCommitWithoutConsuming,
   predictiveFilterForExpression,
 } from "./first-sets";
 import {
   resolveStartRule,
   validateGeneratedIdentifiers,
-  validateGrammar,
+  prepareGrammarForGeneration,
 } from "./grammar-validation";
-import { applySkipDesugar } from "./skip-desugar";
 import {
   analyzeGrammarPerformance,
   globalPerformanceMonitor,
@@ -290,28 +287,6 @@ const literalPrefixForExpression = (alt: Expression): string | null => {
 };
 
 /**
- * Code template cache for common patterns
- */
-class CodeTemplateCache {
-  private templates = new Map<string, string>();
-
-  get(key: string, generator: () => string): string {
-    const cached = this.templates.get(key);
-    if (cached !== undefined) {
-      return cached;
-    }
-
-    const code = generator();
-    this.templates.set(key, code);
-    return code;
-  }
-
-  clear(): void {
-    this.templates.clear();
-  }
-}
-
-/**
  * High-performance code generator with optimizations
  */
 export class OptimizedTPEGCodeGenerator {
@@ -327,11 +302,8 @@ export class OptimizedTPEGCodeGenerator {
    * one rule shares that rule's name as its failure-message description,
    * matching whole-rule fusion's existing description exactly. */
   private currentRuleName = "";
-  private templateCache = new CodeTemplateCache();
   /** Converged FIRST-set analysis for the grammar currently being
-   * generated, computed once per `generateGrammar` call when
-   * `enablePredictiveDispatch` is on; `null` otherwise (including before
-   * the first `generateGrammar` call). */
+   * generated, computed once per `generateGrammar` call. */
   private firstSetAnalysis: GrammarFirstSetAnalysis | null = null;
   /** Converged reentrancy analysis (`./reentrancy.ts`) for the grammar
    * currently being generated -- the memoization trigger, replacing the
@@ -414,36 +386,14 @@ export class OptimizedTPEGCodeGenerator {
     const finishMeasurement =
       globalPerformanceMonitor.startTimer("grammar-generation");
     try {
-      // Reject a duplicate rule name or a left-recursive rule outright,
-      // before anything else -- see `grammar-validation.ts`'s doc comment
-      // for why this MUST run before `analyzeFirstSets` below (a duplicate
-      // name can make that fixpoint oscillate forever instead of
-      // converging).
-      validateGrammar(grammar);
+      const { grammar: desugared, firstSets } =
+        prepareGrammarForGeneration(grammar);
 
-      // `@skip`-desugar BEFORE first-set analysis and every downstream
-      // walk (reentrancy, fusion planning, performance analysis, the
-      // rules loops): the grammar the emitted code implements is the
-      // desugared one, so every analysis must see the `Skip`-inserted
-      // shape too. Rule names, order, annotations, and transforms are
-      // unchanged by the rewrite -- see `skip-desugar.ts`.
-      const desugared = applySkipDesugar(grammar);
-
-      // Reset per-instance state so a reused generator doesn't leak rule
-      // names or cached expression templates from a previous grammar.
+      // A reused generator starts with the new grammar's bindings and fusion roots.
       this.ruleNames.clear();
       this.ruleIndex.clear();
-      this.templateCache.clear();
       this.fusionRoots = new Set();
-      // Computed unconditionally now (not just when
-      // enablePredictiveDispatch/enableRegexFusion are on): `
-      // assertNoNullableRepetition` below needs a converged FIRST-set
-      // analysis regardless of which optional codegen features are
-      // enabled -- an unbounded repetition over a nullable body has no
-      // well-defined PEG semantics whether or not this grammar happens to
-      // also want predictive dispatch or regex fusion.
-      this.firstSetAnalysis = analyzeFirstSets(desugared);
-      assertNoNullableRepetition(desugared, this.firstSetAnalysis);
+      this.firstSetAnalysis = firstSets;
       // See this field's own doc comment for why the narrow
       // `isStartRuleTopLevel` shape needs this extra check. Which rule IS
       // the start rule comes from `resolveStartRule`
@@ -894,102 +844,82 @@ export class OptimizedTPEGCodeGenerator {
    * `generateExpression` flag of the same shape (see its comment): `true`
    * only for the single top-level call from `generateOptimizedRule` on
    * the start rule's own pattern, forwarded ONLY to the `Sequence` case.
-   * It's folded into the template-cache key below since it can change
-   * the generated output (`commitAtTopLevel` vs `commit`) for otherwise
-   * structurally-identical input.
    */
   private generateOptimizedExpression(
     expr: Expression,
     isStartRuleTopLevelSequence = false,
   ): string {
-    // Checked FIRST, ahead of the template cache below: a fusion root
-    // (`this.fusionRoots`, see its doc comment) is emitted directly via
-    // `generateFusedExpression` and never descended into any further --
-    // this is what makes `expr` the HIGHEST fusable node on its path
-    // actually get compiled as one `regexFusedMap` call rather than
-    // being walked node-by-node into the normal combinator tree. Pure
-    // function of `expr`'s identity (computed once by `planFusion` in
-    // `generateGrammar`), so bypassing the cache costs nothing -- each
-    // root is reached at most once anyway, since the AST is a tree.
+    // Emit each maximal fusion root as a single parser.
     if (this.fusionRoots.has(expr)) {
       return this.generateFusedExpression(expr);
     }
 
-    // Use object identity for caching when possible. Identifier codegen
-    // depends on this.currentRuleIndex (whether the reference needs a
-    // `lazy` wrapper), so it must be part of the key - otherwise the same
-    // rule name referenced from two different rules could reuse a cached
-    // decision that was only correct for the first one.
-    const cacheKey = `expr-${expr.type}-${this.currentRuleIndex}-${isStartRuleTopLevelSequence}-${JSON.stringify(expr)}`;
-
-    return this.templateCache.get(cacheKey, () => {
-      switch (expr.type) {
-        case "StringLiteral":
-          return this.generateStringLiteral(expr);
-        case "CharacterClass":
-          return this.generateOptimizedCharacterClass(expr);
-        case "Identifier":
-          return this.generateIdentifier(expr);
-        case "QualifiedIdentifier":
-          return this.generateQualifiedIdentifier(expr);
-        case "AnyChar":
-          return "anyChar()";
-        case "Sequence":
-          return this.generateOptimizedSequence(
-            expr,
-            isStartRuleTopLevelSequence,
-          );
-        case "Choice":
-          return this.generateOptimizedChoice(expr);
-        case "Group":
-          return this.generateOptimizedExpression(expr.expression);
-        case "Star": {
-          const run = this.options.enableCharClassRun
-            ? tryGenerateCharClassRunCode(expr.expression, 0)
-            : null;
-          if (run !== null) return run;
-          return `zeroOrMore(${this.generateOptimizedExpression(expr.expression)})`;
-        }
-        case "Plus": {
-          const run = this.options.enableCharClassRun
-            ? tryGenerateCharClassRunCode(expr.expression, 1)
-            : null;
-          if (run !== null) return run;
-          return `oneOrMore(${this.generateOptimizedExpression(expr.expression)})`;
-        }
-        case "Optional":
-          return `optional(${this.generateOptimizedExpression(expr.expression)})`;
-        case "Quantified":
-          return this.generateQuantified(expr);
-        case "PositiveLookahead":
-          return `andPredicate(${this.generateOptimizedExpression(expr.expression)})`;
-        case "NegativeLookahead":
-          return `notPredicate(${this.generateOptimizedExpression(expr.expression)})`;
-        case "Skip":
-          // `applySkipDesugar`-inserted boundary skip -- same emission
-          // as `codegen.ts`'s `Skip` case: `ignore` maps the success
-          // value to the `IGNORED` sentinel `sequence`/`captureSequence`
-          // filter out, so the rule's own value shape is unchanged.
-          return `ignore(optional(${this.generateOptimizedExpression(expr.expression)}))`;
-        case "Span":
-          // `@expr` source-text extraction -- same emission as
-          // `codegen.ts`'s `Span` case: `span` replaces the produced
-          // value with the consumed source text.
-          return `span(${this.generateOptimizedExpression(expr.expression)})`;
-        case "WordBoundary":
-          // `\b` / `\B` word-boundary assertion -- a bare parser
-          // constant (`packages/core/src/boundary.ts`), no call.
-          return expr.negated ? "nonWordBoundary" : "wordBoundary";
-        case "LabeledExpression":
-          return this.generateLabeledExpression(expr);
-        case "ActionExpression":
-          return this.generateActionExpression(expr);
-        default:
-          throw new Error(
-            `Unsupported expression type: ${(expr as { type: string }).type}`,
-          );
+    switch (expr.type) {
+      case "StringLiteral":
+        return this.generateStringLiteral(expr);
+      case "CharacterClass":
+        return this.generateOptimizedCharacterClass(expr);
+      case "Identifier":
+        return this.generateIdentifier(expr);
+      case "QualifiedIdentifier":
+        return this.generateQualifiedIdentifier(expr);
+      case "AnyChar":
+        return "anyChar()";
+      case "Sequence":
+        return this.generateOptimizedSequence(
+          expr,
+          isStartRuleTopLevelSequence,
+        );
+      case "Choice":
+        return this.generateOptimizedChoice(expr);
+      case "Group":
+        return this.generateOptimizedExpression(expr.expression);
+      case "Star": {
+        const run = this.options.enableCharClassRun
+          ? tryGenerateCharClassRunCode(expr.expression, 0)
+          : null;
+        if (run !== null) return run;
+        return `zeroOrMore(${this.generateOptimizedExpression(expr.expression)})`;
       }
-    });
+      case "Plus": {
+        const run = this.options.enableCharClassRun
+          ? tryGenerateCharClassRunCode(expr.expression, 1)
+          : null;
+        if (run !== null) return run;
+        return `oneOrMore(${this.generateOptimizedExpression(expr.expression)})`;
+      }
+      case "Optional":
+        return `optional(${this.generateOptimizedExpression(expr.expression)})`;
+      case "Quantified":
+        return this.generateQuantified(expr);
+      case "PositiveLookahead":
+        return `andPredicate(${this.generateOptimizedExpression(expr.expression)})`;
+      case "NegativeLookahead":
+        return `notPredicate(${this.generateOptimizedExpression(expr.expression)})`;
+      case "Skip":
+        // `applySkipDesugar`-inserted boundary skip -- same emission
+        // as `codegen.ts`'s `Skip` case: `ignore` maps the success
+        // value to the `IGNORED` sentinel `sequence`/`captureSequence`
+        // filter out, so the rule's own value shape is unchanged.
+        return `ignore(optional(${this.generateOptimizedExpression(expr.expression)}))`;
+      case "Span":
+        // `@expr` source-text extraction -- same emission as
+        // `codegen.ts`'s `Span` case: `span` replaces the produced
+        // value with the consumed source text.
+        return `span(${this.generateOptimizedExpression(expr.expression)})`;
+      case "WordBoundary":
+        // `\b` / `\B` word-boundary assertion -- a bare parser
+        // constant (`packages/core/src/boundary.ts`), no call.
+        return expr.negated ? "nonWordBoundary" : "wordBoundary";
+      case "LabeledExpression":
+        return this.generateLabeledExpression(expr);
+      case "ActionExpression":
+        return this.generateActionExpression(expr);
+      default:
+        throw new Error(
+          `Unsupported expression type: ${(expr as { type: string }).type}`,
+        );
+    }
   }
 
   private generateStringLiteral(expr: StringLiteral): string {

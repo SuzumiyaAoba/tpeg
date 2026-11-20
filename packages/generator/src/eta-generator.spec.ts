@@ -1159,17 +1159,6 @@ describe("EtaTPEGCodeGenerator", () => {
   });
 });
 
-// `generateGrammar` now runs `validateGrammarForEtaGenerator`
-// (`grammar-validation.ts`) before generating any code -- previously this
-// generator ran no structural validation at all, so a left-recursive
-// grammar compiled to a parser that stack-overflowed at runtime, a
-// duplicate rule name silently let the later declaration win, an
-// unbounded repetition over a nullable body compiled to a parser that
-// threw an infinite-loop error at runtime instead of being rejected at
-// generation time, and a cut-only rule body (`~` on its own) compiled
-// successfully to a parser that matched nothing. See that module's doc
-// comment for why this is a duplicate of
-// `packages/parser/src/grammar-validation.ts` rather than a shared import.
 describe("EtaTPEGCodeGenerator: grammar validation", () => {
   it("rejects a left-recursive rule instead of generating a stack-overflowing parser", async () => {
     const grammar = createGrammarDefinition(

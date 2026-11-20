@@ -1,16 +1,7 @@
 /**
  * Performance analysis utilities for the Eta-based code generator.
  *
- * The dependency-graph machinery (`collectRuleDependencies`,
- * `findRecursiveRuleNames`, `PerformanceMonitor`/
- * `globalPerformanceMonitor`) is re-exported from `tpeg-parser`, whose
- * `performance-utils.ts` is the canonical implementation. This module
- * used to hand-maintain a ~400-line duplicate of that file ("keep them
- * in sync; there is no automated check tying the two together"), and the
- * copies had already drifted both ways: an `ActionExpression`-traversal
- * gap was found and fixed independently in each, and this copy's
- * quadratic `canReach` recursion check had to be re-ported after
- * `tpeg-parser`'s moved to an iterative Tarjan SCC pass.
+ * Dependency traversal and cycle detection are shared with the parser via tpeg-core.
  *
  * What stays local is only the ANALYSIS layer, because this package's
  * thresholds genuinely differ from `tpeg-parser`'s (its
@@ -20,11 +11,11 @@
  * `eta-generator.ts`'s `shouldMemoize`/`memoize`-import decisions.
  */
 
-import { measureExpression } from "@suzumiyaaoba/tpeg-core";
 import {
-  collectRuleDependencies,
+  collectInvokedRuleReferences,
   findRecursiveRuleNames,
-} from "@suzumiyaaoba/tpeg-parser";
+  measureExpression,
+} from "@suzumiyaaoba/tpeg-core";
 import type {
   Expression,
   ExpressionComplexity,
@@ -85,9 +76,7 @@ export function analyzeGrammarPerformance(
   // rule is genuinely recursive.
   const ruleDependencies = new Map<string, Set<string>>();
   for (const rule of grammar.rules) {
-    const dependencies = new Set<string>();
-    collectRuleDependencies(rule.pattern, dependencies);
-    ruleDependencies.set(rule.name, dependencies);
+    ruleDependencies.set(rule.name, collectInvokedRuleReferences(rule.pattern));
   }
   const recursiveRuleNames = findRecursiveRuleNames(ruleDependencies);
 

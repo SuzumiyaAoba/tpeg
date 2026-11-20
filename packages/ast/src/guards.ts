@@ -1,14 +1,9 @@
 import type { PegAstNode } from "./nodes";
 
-/**
- * Builds a type guard for a specific AST node `type` tag. Every `isX`
- * guard below differs only in which tag it checks and which node type it
- * narrows to, so that mechanical variation is factored out here rather
- * than hand-duplicated across all of them.
- */
+/** Narrow the tag while preserving the caller's value, children and metadata types. */
 const createTypeGuard =
   <Tag extends PegAstNode["type"]>(type: Tag) =>
-  (node: PegAstNode): node is Extract<PegAstNode, { type: Tag }> =>
+  <Node extends PegAstNode>(node: Node): node is Node & { type: Tag } =>
     node.type === type;
 
 /**

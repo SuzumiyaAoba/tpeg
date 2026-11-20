@@ -482,13 +482,17 @@ describe("findQualifiedIdentifierReferences", () => {
   });
 });
 
-// `~` cannot be a rule body (or sub-expression) on its own: it only has
-// meaning as one of several elements of a sequence. See
-// `grammar-validation.ts`'s `isCutOnlyPattern`/`containsCutOnlyPattern` doc
-// comments for why both a bare `Cut` node and an all-`Cut` `Sequence` are
-// reachable from ordinary `.tpeg` source text once `composition.ts`
-// unwraps a single-element sequence.
+// A cut requires a sibling in the same sequence that matches an expression.
 describe("validateGrammar: cut-only patterns", () => {
+  it("checks cut placement inside source spans", () => {
+    expect(() => validateGrammar(grammarFromSource("start = @(~)"))).toThrow(
+      /cannot be a rule body/i,
+    );
+    expect(() =>
+      validateGrammar(grammarFromSource('start = @("a" ~ "b")')),
+    ).not.toThrow();
+  });
+
   it("rejects a rule body that is nothing but `~`", () => {
     const grammar = grammarFromSource("start = ~");
     expect(() => validateGrammar(grammar)).toThrow(/cannot be a rule body/i);

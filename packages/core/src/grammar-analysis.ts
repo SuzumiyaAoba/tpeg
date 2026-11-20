@@ -1,4 +1,5 @@
 import { unwrapToLabeledExpression } from "./expression-traversal";
+import { isZeroRepetition } from "./grammar-guards";
 import type { Expression } from "./grammar-nodes";
 import { walkExpression } from "./grammar-traversal";
 
@@ -15,17 +16,26 @@ export const measureExpression = (
   return { depth, nodeCount };
 };
 
-/**
- * Collects unqualified rule references in first-occurrence order.
- * Qualified identifiers refer to external modules, not this grammar's rules.
- */
-export const collectRuleReferences = (expression: Expression): Set<string> => {
+function ruleReferences(
+  expression: Expression,
+  invokedOnly: boolean,
+): Set<string> {
   const references = new Set<string>();
   walkExpression(expression, (node) => {
     if (node.type === "Identifier") references.add(node.name);
+    return !invokedOnly || !isZeroRepetition(node);
   });
   return references;
-};
+}
+
+/** Unqualified rule names in first-occurrence order, including references inside {0}. */
+export const collectRuleReferences = (expression: Expression): Set<string> =>
+  ruleReferences(expression, false);
+
+/** Potential runtime dependencies. A {0} body contributes no calls. */
+export const collectInvokedRuleReferences = (
+  expression: Expression,
+): Set<string> => ruleReferences(expression, true);
 
 /**
  * Finds rules that belong to a reference cycle, in graph insertion order.

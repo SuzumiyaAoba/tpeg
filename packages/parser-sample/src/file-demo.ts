@@ -15,7 +15,7 @@ import {
   stringLiteral,
   tpegExpression,
 } from "@suzumiyaaoba/tpeg-parser";
-import { initialPos } from "./pos";
+import { parseExample } from "./parse-example";
 
 console.log("📁 TPEG Parser File-Based Demo\n");
 
@@ -92,25 +92,22 @@ const demoBasicSyntaxFile = (filename: string) => {
   if (!content) return;
 
   const inputs = parseInputs(content);
+  const parsers = [
+    { name: "String Literal", parser: stringLiteral },
+    { name: "Character Class", parser: characterClass },
+    { name: "Identifier", parser: identifier },
+    { name: "Expression", parser: tpegExpression },
+  ];
 
   for (const input of inputs) {
     console.log(`Testing: ${input}`);
 
-    // Try different parsers to see which one matches
-    const parsers = [
-      { name: "String Literal", parser: stringLiteral },
-      { name: "Character Class", parser: characterClass },
-      { name: "Identifier", parser: identifier },
-      { name: "Expression", parser: tpegExpression },
-    ];
-
     let matched = false;
-    const pos = initialPos;
 
     for (const { name, parser } of parsers) {
-      const result = parser(input, pos);
+      const result = parseExample(parser, input);
       if (result.success) {
-        console.log(`  ✅ ${name}: ${result.val.type || typeof result.val}`);
+        console.log(`  ✅ ${name}: ${result.val.type}`);
         matched = true;
         break;
       }
@@ -163,8 +160,7 @@ const demoStructuredInputFile = (filename: string) => {
 
     for (const input of inputs.slice(0, 3)) {
       // Show first 3 examples from each section
-      const pos = initialPos;
-      const result = tpegExpression(input, pos);
+      const result = parseExample(tpegExpression, input);
 
       if (result.success) {
         console.log(`  ✅ "${input}" → ${result.val.type}`);
