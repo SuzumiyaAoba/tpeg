@@ -19,7 +19,7 @@ import {
   snapshotFailureWatermark,
 } from "./failure";
 import { optional } from "./repetition";
-import type { Parser } from "./types";
+import type { ParseSuccess, Parser } from "./types";
 import { createFailure, parse } from "./utils";
 
 // The farthest-failure watermark (`./failure.ts`) is module-global state
@@ -979,6 +979,26 @@ describe("predictiveChoice", () => {
 });
 
 describe("sequence", () => {
+  it("reads each value once and advances from the position before its getter runs", () => {
+    let valueReads = 0;
+    const first: ParseSuccess<string> = {
+      success: true,
+      current: 0,
+      next: 1,
+      get val() {
+        first.next = 0;
+        return valueReads++ === 0 ? "a" : "wrong";
+      },
+    };
+    expect(sequence(() => first, lit("b"))("ab", 0)).toEqual({
+      success: true,
+      val: ["a", "b"],
+      current: 0,
+      next: 2,
+    });
+    expect(valueReads).toBe(1);
+  });
+
   it("should be an alias for seq", () => {
     const input = "abc";
     const pos = 0;

@@ -18,6 +18,7 @@
   },
   "files": [
     "dist",
+    "runtime",
     "README.md",
     "package.json"
   ],

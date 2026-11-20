@@ -61,7 +61,9 @@ export function run(argv: string[]): number {
   try {
     ({ options, positionals } = parseCliArgs(argv));
   } catch (error) {
-    process.stderr.write(`error: ${(error as Error).message}\n\n`);
+    process.stderr.write(
+      `error: ${sanitizeForTerminal((error as Error).message)}\n\n`,
+    );
     process.stderr.write(USAGE);
     return 1;
   }
@@ -76,7 +78,7 @@ export function run(argv: string[]): number {
       process.stdout.write(`${readVersion()}\n`);
     } catch (error) {
       process.stderr.write(
-        `error: could not read package version: ${(error as Error).message}\n`,
+        `error: could not read package version: ${sanitizeForTerminal((error as Error).message)}\n`,
       );
       return 1;
     }
@@ -141,7 +143,7 @@ export function run(argv: string[]): number {
     source = readFileSync(inputPath, "utf8");
   } catch (error) {
     process.stderr.write(
-      `error: could not read "${inputPath}": ${(error as Error).message}\n`,
+      `error: could not read "${sanitizeForTerminal(inputPath)}": ${sanitizeForTerminal((error as Error).message)}\n`,
     );
     return 1;
   }
@@ -168,22 +170,21 @@ export function run(argv: string[]): number {
   // whitespace and comments after the last rule/transform, exactly like
   // one would expect at the end of a normal source file, without
   // requiring literal end-of-input immediately after the last token.
-  const consumedThroughEnd =
-    parseResult.success &&
-    skipTrailingWhitespaceAndComments(source, parseResult.next) ===
-      source.length;
-  if (!parseResult.success || !consumedThroughEnd) {
-    const pos = parseResult.success ? parseResult.next : parseResult.error.pos;
+  const trailingEnd = parseResult.success
+    ? skipTrailingWhitespaceAndComments(source, parseResult.next)
+    : 0;
+  if (!parseResult.success || trailingEnd !== source.length) {
+    const pos = parseResult.success ? trailingEnd : parseResult.error.pos;
     const { line, column } = offsetToPos(source, pos);
     if (parseResult.success) {
       process.stderr.write(
-        `error: failed to parse "${inputPath}": unexpected content after line ${line}, column ${column + 1} (the grammar/transforms block(s) before this point parsed successfully, but did not consume the rest of the file)\n`,
+        `error: failed to parse "${sanitizeForTerminal(inputPath)}": unexpected content at line ${line}, column ${column + 1} (the grammar/transforms block(s) before this point parsed successfully, but did not consume the rest of the file)\n`,
       );
       return 1;
     }
     const { message, expected, found } = parseResult.error;
     process.stderr.write(
-      `error: failed to parse "${inputPath}" at line ${line}, column ${column + 1}: ${sanitizeForTerminal(message)}\n`,
+      `error: failed to parse "${sanitizeForTerminal(inputPath)}" at line ${line}, column ${column + 1}: ${sanitizeForTerminal(message)}\n`,
     );
     if (expected) {
       const expectedList = Array.isArray(expected)
@@ -208,7 +209,7 @@ export function run(argv: string[]): number {
   // isn't silent when a file actually declares imports.
   if (parseResult.val.imports.length > 0 && !options.bundle && !nativeTarget) {
     const list = parseResult.val.imports
-      .map((stmt) => `"${stmt.modulePath}"`)
+      .map((stmt) => `"${sanitizeForTerminal(stmt.modulePath)}"`)
       .join(", ");
     process.stderr.write(
       `note: this file declares ${parseResult.val.imports.length} import(s) (${list}); ` +
@@ -228,7 +229,6 @@ export function run(argv: string[]): number {
       ? { transforms: parseResult.val.grammar.transforms }
       : {}),
   };
-
   if (options.bundle || nativeTarget) {
     try {
       parsedGrammar = bundleGrammarFile(inputPath);
@@ -284,7 +284,9 @@ export function run(argv: string[]): number {
   try {
     generated = generateParser(grammar, options);
   } catch (error) {
-    process.stderr.write(`error: ${(error as Error).message}\n`);
+    process.stderr.write(
+      `error: ${sanitizeForTerminal((error as Error).message)}\n`,
+    );
     return 1;
   }
 
@@ -294,7 +296,7 @@ export function run(argv: string[]): number {
   // generated code itself when no `--output` is given (`tpeg g.tpeg |
   // some-tool` must not see a warning line mixed into the piped source).
   for (const warning of generated.warnings) {
-    process.stderr.write(`warning: ${warning}\n`);
+    process.stderr.write(`warning: ${sanitizeForTerminal(warning)}\n`);
   }
 
   // `options.output !== undefined`, not a truthiness check: an explicit
@@ -305,12 +307,12 @@ export function run(argv: string[]): number {
       writeFileSync(options.output, generated.code, "utf8");
     } catch (error) {
       process.stderr.write(
-        `error: could not write "${options.output}": ${(error as Error).message}\n`,
+        `error: could not write "${sanitizeForTerminal(options.output)}": ${sanitizeForTerminal((error as Error).message)}\n`,
       );
       return 1;
     }
     process.stderr.write(
-      `wrote ${generated.exports.length} parser(s) to ${options.output}\n`,
+      `wrote ${generated.exports.length} parser(s) to ${sanitizeForTerminal(options.output)}\n`,
     );
   } else {
     process.stdout.write(generated.code);

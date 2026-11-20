@@ -1,4 +1,5 @@
 import { isFatalFailure } from "./failure";
+import { safeStringForDisplay } from "./escape";
 import type { NonEmptyArray, Parser } from "./types";
 import { createFailure, isValidOffset, offsetToPos } from "./utils";
 
@@ -62,6 +63,20 @@ const createInfiniteLoopError = (
   );
 };
 
+/** A successful child must return an integer offset within the input
+ * that does not go backwards. Keep the failure positioned at the valid
+ * call site rather than adopting the child's malformed offset. */
+const createInvalidNextPositionError = (
+  position: number,
+  parserName: string,
+  next: number,
+) =>
+  createFailure(
+    `Invalid next position in ${parserName}: ${safeStringForDisplay(next)}`,
+    position,
+    { parserName, fatal: true },
+  );
+
 /**
  * Parser for optional content (zero or one occurrence).
  *
@@ -86,11 +101,15 @@ export const optional =
     const result = parser(input, pos);
 
     if (result.success) {
+      const next = result.next;
+      if (!isValidOffset(next) || next < pos || next > input.length) {
+        return createInvalidNextPositionError(pos, "optional", next);
+      }
       return {
         success: true,
         val: result.val,
         current: pos,
-        next: result.next,
+        next,
       };
     }
 
@@ -159,21 +178,18 @@ export const zeroOrMore =
         break;
       }
 
-      // Check for infinite loop (position doesn't advance). Written as
-      // `!(result.next > currentPos)` rather than `result.next ===
-      // currentPos`: a `next` that is NaN (`NaN > x` is always false) or
-      // somehow behind `currentPos` is every bit as non-terminating as a
-      // zero-width match -- `next = currentPos` was only the COMMON
-      // shape of "no progress", not the only one. A child parser
-      // violating the `next > current` success invariant has no
-      // well-defined repetition semantics; flag it here, loudly,
-      // instead of looping forever.
-      if (!(result.next > currentPos)) {
+      // Validate before comparing: malformed values must not be coerced
+      // into positions or throw during the progress check.
+      const next = result.next;
+      if (!isValidOffset(next) || next < currentPos || next > input.length) {
+        return createInvalidNextPositionError(currentPos, parserName, next);
+      }
+      if (next === currentPos) {
         return createInfiniteLoopError(input, currentPos, parserName);
       }
 
       results.push(result.val);
-      currentPos = result.next;
+      currentPos = next;
     }
 
     return {
@@ -246,11 +262,11 @@ export const oneOrMore =
         break;
       }
 
-      // Check for infinite loop (position doesn't advance) -- see
-      // `zeroOrMore` above for why this is `!(result.next >
-      // currentPos)` rather than `result.next === currentPos` (a `NaN`
-      // or backwards `next` is equally non-terminating).
-      if (!(result.next > currentPos)) {
+      const next = result.next;
+      if (!isValidOffset(next) || next < currentPos || next > input.length) {
+        return createInvalidNextPositionError(currentPos, parserName, next);
+      }
+      if (next === currentPos) {
         return createInfiniteLoopError(
           input,
           currentPos,
@@ -258,9 +274,8 @@ export const oneOrMore =
           `Results so far: ${results.length} item(s)`,
         );
       }
-
       results.push(result.val);
-      currentPos = result.next;
+      currentPos = next;
       isFirstIteration = false;
     }
 
@@ -292,8 +307,8 @@ export const plus = oneOrMore;
  * @param max Maximum number of repetitions (inclusive, undefined for unbounded)
  * @param parserName Optional name for error reporting and debugging
  * @returns Parser<T[]> A parser that returns an array of parsed values with the specified count.
- * @throws {Error} If the range is invalid (`min` is negative, or `max` is less
- *   than `min`). An invalid range is a grammar authoring error rather than a
+ * @throws {Error} If `min` is not a non-negative safe integer, or `max`
+ *   is neither Infinity nor a safe integer at least `min`. An invalid range is a grammar authoring error rather than a
  *   parse failure, so it is reported eagerly when the parser is constructed
  *   instead of when it is applied to input.
  */
@@ -311,17 +326,17 @@ export const quantified = <T>(
   // of unbounded, handled by `limit` below) but no other non-integer.
   if (!Number.isSafeInteger(min) || min < 0) {
     throw new Error(
-      `Invalid quantified range: minimum (${min}) must be a non-negative safe integer`,
+      `Invalid quantified range: minimum (${safeStringForDisplay(min)}) must be a non-negative safe integer`,
     );
   }
 
   if (
     max !== undefined &&
-    (max < min ||
-      (max !== Number.POSITIVE_INFINITY && !Number.isSafeInteger(max)))
+    max !== Number.POSITIVE_INFINITY &&
+    (!Number.isSafeInteger(max) || max < min)
   ) {
     throw new Error(
-      `Invalid quantified range: maximum (${max}) must be a safe integer not less than minimum (${min}), or Infinity`,
+      `Invalid quantified range: maximum (${safeStringForDisplay(max)}) must be a safe integer not less than minimum (${min}), or Infinity`,
     );
   }
 
@@ -358,8 +373,12 @@ export const quantified = <T>(
         return result;
       }
 
+      const next = result.next;
+      if (!isValidOffset(next) || next < currentPos || next > input.length) {
+        return createInvalidNextPositionError(currentPos, parserName, next);
+      }
       results.push(result.val);
-      currentPos = result.next;
+      currentPos = next;
       count++;
     }
 
@@ -377,27 +396,13 @@ export const quantified = <T>(
         break;
       }
 
-      // Check for infinite loop (position doesn't advance) -- only
-      // meaningful when `limit` is unbounded: a genuinely FINITE `max`
-      // already bounds this loop via `limit`, exactly like the required
-      // loop above, so a zero-width match there is likewise a legitimate
-      // result, not an infinite loop. Gated on `!Number.isFinite(limit)`
-      // rather than `max === undefined`: `max` itself can be
-      // `Number.POSITIVE_INFINITY` (an explicit spelling of "unbounded" --
-      // this codebase already blesses that spelling elsewhere, see
-      // `@suzumiyaaoba/tpeg-combinator`'s `memoize` cache-size option) and
-      // the constructor-time validation above (`max < min`) accepts it
-      // silently, since `Infinity < min` is always `false`. Checking
-      // `max === undefined` alone left that spelling of unbounded WITHOUT
-      // this guard: `quantified(optional(literal("a")), 0,
-      // Number.POSITIVE_INFINITY)` on input with no leading "a" looped
-      // forever (confirmed: `optional`'s zero-width match makes `limit`
-      // itself already `Infinity`, so the tail loop never terminates on
-      // its own either), pushing an unboundedly growing array the whole
-      // time. `!(result.next > currentPos)` rather than `result.next ===
-      // currentPos`, same as `zeroOrMore` above: a `NaN` or backwards
-      // `next` is equally non-terminating.
-      if (!Number.isFinite(limit) && !(result.next > currentPos)) {
+      const next = result.next;
+      if (!isValidOffset(next) || next < currentPos || next > input.length) {
+        return createInvalidNextPositionError(currentPos, parserName, next);
+      }
+      // Finite repetitions permit zero-width matches. Both an omitted
+      // max and explicit Infinity require progress to avoid divergence.
+      if (!Number.isFinite(limit) && next === currentPos) {
         return createInfiniteLoopError(
           input,
           currentPos,
@@ -405,9 +410,8 @@ export const quantified = <T>(
           `Repetition: ${i + 1} (optional)`,
         );
       }
-
       results.push(result.val);
-      currentPos = result.next;
+      currentPos = next;
     }
 
     return {

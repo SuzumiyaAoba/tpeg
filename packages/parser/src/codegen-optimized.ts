@@ -25,10 +25,12 @@ import type {
 } from "./types";
 
 import type { CharSet } from "./char-set";
+import { codeContainsIdentifier } from "./brace-scanner";
 import {
   buildExternalIdentifierWarnings,
   buildQualifiedIdentifierWarnings,
   collectTopLevelLabels,
+  collectRequiredTopLevelLabels,
   collectTransformFunctions,
   filterReferencedLabels,
   findMemoizeAnnotation,
@@ -409,183 +411,191 @@ export class OptimizedTPEGCodeGenerator {
    * Generate optimized TypeScript parser code from a TPEG grammar
    */
   generateGrammar(grammar: GrammarDefinition): OptimizedGeneratedCode {
-    globalPerformanceMonitor.start("grammar-generation");
+    const finishMeasurement =
+      globalPerformanceMonitor.startTimer("grammar-generation");
+    try {
+      // Reject a duplicate rule name or a left-recursive rule outright,
+      // before anything else -- see `grammar-validation.ts`'s doc comment
+      // for why this MUST run before `analyzeFirstSets` below (a duplicate
+      // name can make that fixpoint oscillate forever instead of
+      // converging).
+      validateGrammar(grammar);
 
-    // Reject a duplicate rule name or a left-recursive rule outright,
-    // before anything else -- see `grammar-validation.ts`'s doc comment
-    // for why this MUST run before `analyzeFirstSets` below (a duplicate
-    // name can make that fixpoint oscillate forever instead of
-    // converging).
-    validateGrammar(grammar);
+      // `@skip`-desugar BEFORE first-set analysis and every downstream
+      // walk (reentrancy, fusion planning, performance analysis, the
+      // rules loops): the grammar the emitted code implements is the
+      // desugared one, so every analysis must see the `Skip`-inserted
+      // shape too. Rule names, order, annotations, and transforms are
+      // unchanged by the rewrite -- see `skip-desugar.ts`.
+      const desugared = applySkipDesugar(grammar);
 
-    // `@skip`-desugar BEFORE first-set analysis and every downstream
-    // walk (reentrancy, fusion planning, performance analysis, the
-    // rules loops): the grammar the emitted code implements is the
-    // desugared one, so every analysis must see the `Skip`-inserted
-    // shape too. Rule names, order, annotations, and transforms are
-    // unchanged by the rewrite -- see `skip-desugar.ts`.
-    const desugared = applySkipDesugar(grammar);
-
-    // Reset per-instance state so a reused generator doesn't leak rule
-    // names or cached expression templates from a previous grammar.
-    this.ruleNames.clear();
-    this.ruleIndex.clear();
-    this.templateCache.clear();
-    this.fusionRoots = new Set();
-    // Computed unconditionally now (not just when
-    // enablePredictiveDispatch/enableRegexFusion are on): `
-    // assertNoNullableRepetition` below needs a converged FIRST-set
-    // analysis regardless of which optional codegen features are
-    // enabled -- an unbounded repetition over a nullable body has no
-    // well-defined PEG semantics whether or not this grammar happens to
-    // also want predictive dispatch or regex fusion.
-    this.firstSetAnalysis = analyzeFirstSets(desugared);
-    assertNoNullableRepetition(desugared, this.firstSetAnalysis);
-    // See this field's own doc comment for why the narrow
-    // `isStartRuleTopLevel` shape needs this extra check. Which rule IS
-    // the start rule comes from `resolveStartRule`
-    // (`grammar-validation.ts`): the rule named by `@start` when the
-    // annotation is present, `rules[0]` otherwise -- `index ===
-    // startRuleIndex` below replaces the historical `index === 0` so
-    // the resolved rule, not just the first-declared one, gets the
-    // top-level treatment.
-    const startRule = resolveStartRule(desugared);
-    this.startRuleIndex = startRule?.index ?? -1;
-    const startRuleName = startRule?.rule.name;
-    this.startRuleIsSafeForCommitAtTopLevel =
-      startRuleName !== undefined &&
-      !isRuleReferencedAnywhere(desugared, startRuleName);
-    this.reentrancyAnalysis = this.options.enableMemoization
-      ? analyzeReentrancy(desugared)
-      : null;
-    if (this.options.enableRegexFusion && this.firstSetAnalysis) {
-      this.fusionRoots = planFusion(desugared, this.firstSetAnalysis, {
-        scope: this.options.regexFusionScope,
-        minWeight: this.options.regexFusionMinWeight,
-      }).roots;
-    }
-
-    const performanceAnalysis = analyzeGrammarPerformance(desugared);
-    const imports: string[] = [];
-    const exports: string[] = [];
-    const parts: string[] = [];
-
-    // Collect all rule names and their declaration order first for
-    // reference resolution (see generateIdentifier) - generateOptimizedImports
-    // below needs ruleIndex populated to know whether a "lazy" import is
-    // required.
-    desugared.rules.forEach((rule, index) => {
-      this.ruleNames.add(stringInterner.intern(rule.name));
-      this.ruleIndex.set(rule.name, index);
-    });
-
-    // `includeMonitoring` appends a module-scope `const
-    // performanceMonitor` plus `export { performanceMonitor }` (see
-    // `generateMonitoringCode`) -- not an import, but a top-level
-    // declaration a rule named `performanceMonitor` would collide with
-    // (duplicate `const`), so it joins the checked bindings exactly like
-    // an imported name.
-    const monitoringBindings = this.options.includeMonitoring
-      ? ["performanceMonitor"]
-      : [];
-
-    // Compute the imports this grammar needs, then reject a rule
-    // name, capture label, or transform parameter name that would
-    // generate to a reserved word, an internal codegen name, or one of
-    // the bindings just collected (plus `performanceMonitor`, a real
-    // top-level declaration whenever monitoring is emitted) -- see
-    // `validateGeneratedIdentifiers`'s doc comment
-    // (`grammar-validation.ts`) for the concrete failure modes.
-    //
-    // The binding set is computed even when `includeImports` is false:
-    // the emitted code still CALLS these combinators in that mode (the
-    // caller supplies the bindings), so a rule named e.g. `sequence` or
-    // `untagCapture` would otherwise pass validation and emit
-    // `export const sequence = sequence(...)`, a TDZ `ReferenceError`
-    // at module evaluation. Only the `import` lines themselves stay
-    // gated on `includeImports`.
-    const { lines, bindings } = this.generateOptimizedImports(desugared);
-    if (this.options.includeImports) {
-      imports.push(...lines);
-    }
-    validateGeneratedIdentifiers(desugared, {
-      namePrefix: this.options.namePrefix,
-      importedBindings: [...bindings, ...monitoringBindings],
-    });
-
-    // Generate parser for each rule with optimization, applying a matching
-    // TypeScript transform function (if the grammar declares one)
-    const transformsByRuleName = collectTransformFunctions(desugared);
-    desugared.rules.forEach((rule, index) => {
-      this.currentRuleIndex = index;
-      this.currentRuleName = rule.name;
-      const ruleCode = this.generateOptimizedRule(
-        rule,
-        transformsByRuleName.get(rule.name),
-        index === this.startRuleIndex &&
-          this.startRuleIsSafeForCommitAtTopLevel,
-      );
-      parts.push(ruleCode);
-      // Same as codegen.ts's generateGrammar: record the PREFIXED name
-      // (`export const <namePrefix><rule.name>` is what's actually
-      // emitted), matching eta-generator.ts.
-      exports.push(stringInterner.intern(this.options.namePrefix + rule.name));
-    });
-
-    // Same `@start` alias as codegen.ts's generateGrammar: an explicit
-    // `@start: <name>` emits `export { <name> as start }` so the entry
-    // point is reachable under one stable name. Skipped when the
-    // resolved rule's own emitted name is already `start`; a DIFFERENT
-    // rule emitting `start` throws rather than silently dropping the
-    // alias (which would hand the caller the wrong rule under the
-    // entry-point name).
-    if (startRule?.explicit) {
-      const startEmittedName = this.options.namePrefix + startRule.rule.name;
-      if (startEmittedName !== "start") {
-        if (
-          desugared.rules.some(
-            (rule) => `${this.options.namePrefix}${rule.name}` === "start",
-          )
-        ) {
-          throw new Error(
-            `Rule name "start" collides with the \`start\` export alias @start emits for entry rule "${startRule.rule.name}" -- rename the rule, or set a namePrefix so the rule no longer emits that name.`,
-          );
-        }
-        parts.push(`export { ${startEmittedName} as start };`);
-        exports.push("start");
+      // Reset per-instance state so a reused generator doesn't leak rule
+      // names or cached expression templates from a previous grammar.
+      this.ruleNames.clear();
+      this.ruleIndex.clear();
+      this.templateCache.clear();
+      this.fusionRoots = new Set();
+      // Computed unconditionally now (not just when
+      // enablePredictiveDispatch/enableRegexFusion are on): `
+      // assertNoNullableRepetition` below needs a converged FIRST-set
+      // analysis regardless of which optional codegen features are
+      // enabled -- an unbounded repetition over a nullable body has no
+      // well-defined PEG semantics whether or not this grammar happens to
+      // also want predictive dispatch or regex fusion.
+      this.firstSetAnalysis = analyzeFirstSets(desugared);
+      assertNoNullableRepetition(desugared, this.firstSetAnalysis);
+      // See this field's own doc comment for why the narrow
+      // `isStartRuleTopLevel` shape needs this extra check. Which rule IS
+      // the start rule comes from `resolveStartRule`
+      // (`grammar-validation.ts`): the rule named by `@start` when the
+      // annotation is present, `rules[0]` otherwise -- `index ===
+      // startRuleIndex` below replaces the historical `index === 0` so
+      // the resolved rule, not just the first-declared one, gets the
+      // top-level treatment.
+      const startRule = resolveStartRule(desugared);
+      this.startRuleIndex = startRule?.index ?? -1;
+      const startRuleName = startRule?.rule.name;
+      this.startRuleIsSafeForCommitAtTopLevel =
+        startRuleName !== undefined &&
+        !isRuleReferencedAnywhere(desugared, startRuleName);
+      this.reentrancyAnalysis = this.options.enableMemoization
+        ? analyzeReentrancy(desugared)
+        : null;
+      if (this.options.enableRegexFusion && this.firstSetAnalysis) {
+        this.fusionRoots = planFusion(desugared, this.firstSetAnalysis, {
+          scope: this.options.regexFusionScope,
+          minWeight: this.options.regexFusionMinWeight,
+        }).roots;
       }
+
+      const performanceAnalysis = analyzeGrammarPerformance(desugared);
+      const imports: string[] = [];
+      const exports: string[] = [];
+      const parts: string[] = [];
+
+      // Collect all rule names and their declaration order first for
+      // reference resolution (see generateIdentifier) - generateOptimizedImports
+      // below needs ruleIndex populated to know whether a "lazy" import is
+      // required.
+      desugared.rules.forEach((rule, index) => {
+        this.ruleNames.add(stringInterner.intern(rule.name));
+        this.ruleIndex.set(rule.name, index);
+      });
+
+      // `includeMonitoring` appends a module-scope `const
+      // performanceMonitor` plus `export { performanceMonitor }` (see
+      // `generateMonitoringCode`) -- not an import, but a top-level
+      // declaration a rule named `performanceMonitor` would collide with
+      // (duplicate `const`), so it joins the checked bindings exactly like
+      // an imported name.
+      const monitoringBindings = this.options.includeMonitoring
+        ? ["performanceMonitor"]
+        : [];
+
+      // Compute the imports this grammar needs, then reject a rule
+      // name, capture label, or transform parameter name that would
+      // generate to a reserved word, an internal codegen name, or one of
+      // the bindings just collected (plus `performanceMonitor`, a real
+      // top-level declaration whenever monitoring is emitted) -- see
+      // `validateGeneratedIdentifiers`'s doc comment
+      // (`grammar-validation.ts`) for the concrete failure modes.
+      //
+      // The binding set is computed even when `includeImports` is false:
+      // the emitted code still CALLS these combinators in that mode (the
+      // caller supplies the bindings), so a rule named e.g. `sequence` or
+      // `untagCapture` would otherwise pass validation and emit
+      // `export const sequence = sequence(...)`, a TDZ `ReferenceError`
+      // at module evaluation. Only the `import` lines themselves stay
+      // gated on `includeImports`.
+      const { lines, bindings } = this.generateOptimizedImports(desugared);
+      if (this.options.includeImports) {
+        imports.push(...lines);
+      }
+      const transformsByRuleName = collectTransformFunctions(desugared);
+      validateGeneratedIdentifiers(desugared, {
+        namePrefix: this.options.namePrefix,
+        importedBindings: [...bindings, ...monitoringBindings],
+        requiresGlobalThis:
+          transformsByRuleName.size > 0 || this.options.includeMonitoring,
+      });
+
+      // Generate parser for each rule with optimization, applying a matching
+      // TypeScript transform function (if the grammar declares one)
+      desugared.rules.forEach((rule, index) => {
+        this.currentRuleIndex = index;
+        this.currentRuleName = rule.name;
+        const ruleCode = this.generateOptimizedRule(
+          rule,
+          transformsByRuleName.get(rule.name),
+          index === this.startRuleIndex &&
+            this.startRuleIsSafeForCommitAtTopLevel,
+        );
+        parts.push(ruleCode);
+        // Same as codegen.ts's generateGrammar: record the PREFIXED name
+        // (`export const <namePrefix><rule.name>` is what's actually
+        // emitted), matching eta-generator.ts.
+        exports.push(
+          stringInterner.intern(this.options.namePrefix + rule.name),
+        );
+      });
+
+      // Same `@start` alias as codegen.ts's generateGrammar: an explicit
+      // `@start: <name>` emits `export { <name> as start }` so the entry
+      // point is reachable under one stable name. Skipped when the
+      // resolved rule's own emitted name is already `start`; a DIFFERENT
+      // rule emitting `start` throws rather than silently dropping the
+      // alias (which would hand the caller the wrong rule under the
+      // entry-point name).
+      if (startRule?.explicit) {
+        const startEmittedName = this.options.namePrefix + startRule.rule.name;
+        if (startEmittedName !== "start") {
+          if (
+            desugared.rules.some(
+              (rule) => `${this.options.namePrefix}${rule.name}` === "start",
+            )
+          ) {
+            throw new Error(
+              `Rule name "start" collides with the \`start\` export alias @start emits for entry rule "${startRule.rule.name}" -- rename the rule, or set a namePrefix so the rule no longer emits that name.`,
+            );
+          }
+          parts.push(`export { ${startEmittedName} as start };`);
+          exports.push("start");
+        }
+      }
+
+      // Add performance monitoring if enabled
+      if (this.options.includeMonitoring) {
+        parts.push(this.generateMonitoringCode());
+      }
+
+      // Efficiently combine all parts
+      const codeBuilder = [];
+
+      if (this.options.includeImports && imports.length > 0) {
+        codeBuilder.push(imports.join("\n"), "\n");
+      }
+
+      codeBuilder.push(parts.join("\n\n"));
+
+      const generationTime = finishMeasurement();
+
+      return {
+        code: codeBuilder.join(""),
+        imports,
+        exports,
+        warnings: [
+          ...buildExternalIdentifierWarnings(grammar),
+          ...buildQualifiedIdentifierWarnings(grammar),
+        ],
+        performance: {
+          estimatedComplexity: performanceAnalysis.estimatedParseComplexity,
+          optimizationSuggestions: performanceAnalysis.optimizationSuggestions,
+          generationTime,
+        },
+      };
+    } finally {
+      finishMeasurement();
     }
-
-    // Add performance monitoring if enabled
-    if (this.options.includeMonitoring) {
-      parts.push(this.generateMonitoringCode());
-    }
-
-    // Efficiently combine all parts
-    const codeBuilder = [];
-
-    if (this.options.includeImports && imports.length > 0) {
-      codeBuilder.push(imports.join("\n"), "\n");
-    }
-
-    codeBuilder.push(parts.join("\n\n"));
-
-    const generationTime = globalPerformanceMonitor.end("grammar-generation");
-
-    return {
-      code: codeBuilder.join(""),
-      imports,
-      exports,
-      warnings: [
-        ...buildExternalIdentifierWarnings(grammar),
-        ...buildQualifiedIdentifierWarnings(grammar),
-      ],
-      performance: {
-        estimatedComplexity: performanceAnalysis.estimatedParseComplexity,
-        optimizationSuggestions: performanceAnalysis.optimizationSuggestions,
-        generationTime,
-      },
-    };
   }
 
   /**
@@ -823,7 +833,12 @@ export class OptimizedTPEGCodeGenerator {
     }
 
     if (transformFn) {
-      parserCode = wrapWithTransform(rule.name, parserCode, transformFn);
+      parserCode = wrapWithTransform(
+        rule.name,
+        parserCode,
+        transformFn,
+        this.options.includeTypes,
+      );
     }
 
     // `includeMonitoring` times every invocation of this rule against the
@@ -865,7 +880,10 @@ export class OptimizedTPEGCodeGenerator {
    */
   private generateFusedExpression(expr: Expression): string {
     const { source, valueExpr } = emitFusedExpression(expr);
-    return `regexFusedMap(${JSON.stringify(source)}, ${JSON.stringify(this.currentRuleName)}, (m) => ${valueExpr})`;
+    // PEG offsets may split a surrogate pair after a literal. Fused
+    // sources contain no anchors/lookbehind, so suffix matching is safe.
+    const parameter = codeContainsIdentifier(valueExpr, "m") ? "m" : "";
+    return `regexFusedMap(${JSON.stringify(source)}, ${JSON.stringify(this.currentRuleName)}, (${parameter}) => ${valueExpr}, true)`;
   }
 
   /**
@@ -975,8 +993,10 @@ export class OptimizedTPEGCodeGenerator {
   }
 
   private generateStringLiteral(expr: StringLiteral): string {
-    return generateStringLiteralCode(expr.value, (s) =>
-      stringInterner.intern(s),
+    return generateStringLiteralCode(
+      expr.value,
+      (s) => stringInterner.intern(s),
+      this.options.includeTypes,
     );
   }
 
@@ -1229,7 +1249,13 @@ export class OptimizedTPEGCodeGenerator {
       expr.code,
       collectTopLevelLabels(expr.expression),
     );
-    return wrapWithAction(inner, expr.code, labels, this.options.includeTypes);
+    return wrapWithAction(
+      inner,
+      expr.code,
+      labels,
+      this.options.includeTypes,
+      labels.length > 0 ? collectRequiredTopLevelLabels(expr.expression) : [],
+    );
   }
 
   /**
@@ -1246,25 +1272,25 @@ const performanceMonitor = {
   // A stack of start times per operation, not a single timestamp:
   // monitored rules can recurse, nesting same-name start/end pairs --
   // a lone timestamp silently drops the outer measurement (#109).
-  startTimes: new Map${t ? "<string, number[]>" : ""}(),
-  metrics: new Map${t ? "<string, { total: number; count: number }>" : ""}(),
+  startTimes: new globalThis.Map${t ? "<string, number[]>" : ""}(),
+  metrics: new globalThis.Map${t ? "<string, { total: number; count: number }>" : ""}(),
 
   start(operation${t ? ": string" : ""})${t ? ": void" : ""} {
     const stack = this.startTimes.get(operation);
     if (stack) {
-      stack.push(performance.now());
+      stack.push(globalThis.performance.now());
     } else {
-      this.startTimes.set(operation, [performance.now()]);
+      this.startTimes.set(operation, [globalThis.performance.now()]);
     }
   },
 
   end(operation${t ? ": string" : ""})${t ? ": number" : ""} {
     const stack = this.startTimes.get(operation);
-    if (stack === undefined || stack.length === 0) return 0;
+    if (stack === void 0 || stack.length === 0) return 0;
     const startTime = stack.pop()${t ? " as number" : ""};
     if (stack.length === 0) this.startTimes.delete(operation);
 
-    const duration = performance.now() - startTime;
+    const duration = globalThis.performance.now() - startTime;
     const existing = this.metrics.get(operation) || { total: 0, count: 0 };
     this.metrics.set(operation, {
       total: existing.total + duration,
@@ -1275,9 +1301,9 @@ const performanceMonitor = {
   },
 
   report()${t ? ": void" : ""} {
-    console.log('Parser Performance Report:');
+    globalThis.console.log('Parser Performance Report:');
     for (const [op, metrics] of this.metrics) {
-      console.log(\`  \${op}: \${metrics.count} calls, avg \${(metrics.total / metrics.count).toFixed(2)}ms\`);
+      globalThis.console.log(\`  \${op}: \${metrics.count} calls, avg \${(metrics.total / metrics.count).toFixed(2)}ms\`);
     }
   }
 };

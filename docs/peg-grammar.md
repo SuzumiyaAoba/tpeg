@@ -52,6 +52,11 @@ TPEG separates grammar definition from type information to maintain language-agn
 
 Direct string matching
 
+`""` and `''` match the empty string at any valid input position, including
+end of input. They capture `""` and consume no characters. Finite repetitions
+such as `""{2,3}` are allowed; unbounded repetitions (`*`, `+`, `{n,}`) of a
+nullable expression are rejected during generation.
+
 ```tpeg
 "hello"        // String literal
 'world'        // Single quotes allowed
@@ -454,8 +459,30 @@ Two things are in scope inside the action's code:
   sequence containing one or more labeled elements, every label is bound by
   name. This is the same label set the sequence's own `captureSequence` merge
   produces (see the [Capture Structure Reference Table](#capture-structure-reference-table)
-  above), so `$$.someLabel` and the bare variable `someLabel` are always the
-  same value.
+  above). For a field present in the matched capture, `$$.someLabel` and
+  the bare variable `someLabel` are the same value. A possibly missing
+  label is read only from own enumerable fields; inherited properties
+  and intrinsic non-enumerable fields such as a string or array's `length`
+  do not become label values. The raw `$$` value is unchanged.
+
+Any number of grouping parentheses is transparent when collecting these
+labels. Labels inside optional or repeated expressions still follow the
+scope rule below.
+
+The raw value is read before entering the scope containing labels and action-local declarations. Names such as `__result` are valid labels and action-local variables; they do not shadow the generated parser result used to obtain `$$`.
+
+The generator omits capture bindings that the action does not reference.
+If the action contains a bare reference to `eval`, it conservatively keeps
+`$$` and all directly visible labels, since the evaluated source can compute
+their names at runtime. Typed output adds harmless reads of these bindings
+so `noUnusedLocals` also accepts this case. Text inside strings, comments or
+regular expressions, and unrelated object property names, do not count as
+references. Object and class method names, including generator methods such
+as `*value()` and `async *value()`, do not reference a binding of that name.
+The object member modifiers `get`, `set`, and `async` are also recognized as
+syntax. Shorthand properties such as `{ get }` read the binding named `get`.
+Expressions in computed method keys and method bodies still count as references. Unicode escapes in identifiers refer to the same bindings as
+their ordinary spellings, such as `\u0024\u0024` for `$$`.
 
 ```tpeg
 // Single label: `digits` is bound directly (here, $$ is { digits: [...] })

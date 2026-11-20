@@ -1,5 +1,8 @@
 import { collectTopLevelLabels } from "@suzumiyaaoba/tpeg-core";
-export { collectTopLevelLabels } from "@suzumiyaaoba/tpeg-core";
+export {
+  collectTopLevelLabels,
+  collectRequiredTopLevelLabels,
+} from "@suzumiyaaoba/tpeg-core";
 import {
   childExpressions,
   escapeStringLiteral,
@@ -89,38 +92,56 @@ export const wrapWithMemoize = (
  * Wraps a rule's generated parser expression so that, on a successful parse,
  * the matching TypeScript transform function's body runs against the parse
  * result (the rule's capture structure) and its Result<T> return value
- * becomes the parser's own success/failure outcome.
+ * becomes the parser's own success/failure outcome. Snapshot the positions
+ * and read the input value once before invoking user code so result reuse
+ * cannot change consumption or replace the value in rejection diagnostics.
  */
 export const wrapWithTransform = (
   ruleName: string,
   parserCode: string,
   transformFn: TransformFunction,
+  includeTypes = false,
 ): string => {
   const paramName = transformFn.parameters[0]?.name ?? "captures";
-  return `(input, pos) => {
+  // Keep the capture binding even when only dynamically referenced by
+  // authored code. A harmless read satisfies noUnusedParameters in typed
+  // output without changing the function's scope or invocation arguments.
+  const parameterUse =
+    includeTypes && !codeContainsIdentifier(transformFn.body, paramName)
+      ? `    void ${paramName};\n`
+      : "";
+  return `(input${includeTypes ? ": string" : ""}, pos${includeTypes ? ": number" : ""})${includeTypes ? ": ReturnType<Parser<any>>" : ""} => {
   const __base = (${parserCode});
   const __result = __base(input, pos);
   if (!__result.success) return __result;
-  const __transformed = ((${paramName}) => {
-${transformFn.body}
-  })(__result.val);
+  const { current: __current, next: __next } = __result;
+  const __val = __result.val;
+  const __transformed${includeTypes ? ": any" : ""} = ((${paramName}${includeTypes ? ": any" : ""}) => {
+${parameterUse}${transformFn.body}
+  })(__val);
   if (!__transformed.success) {
+    let __found${includeTypes ? ": string | undefined" : ""};
+    try {
+      __found = globalThis.JSON.stringify(__val);
+    } catch {
+      __found = "<unserializable value>";
+    }
     return {
       success: false,
       error: {
         message: __transformed.error ?? "Transform failed",
-        pos: __result.current,
+        pos: __current,
         parserName: "${ruleName}",
         expected: "successful transform",
-        found: JSON.stringify(__result.val),
+        ...(__found === void 0 ? {} : { found: __found }),
       },
     };
   }
   return {
     success: true,
     val: __transformed.value,
-    current: __result.current,
-    next: __result.next,
+    current: __current,
+    next: __next,
   };
 }`;
 };
@@ -438,7 +459,12 @@ export const collectUsedCombinators = (
   };
   switch (expr.type) {
     case "StringLiteral":
-      combinators.add("literal");
+      if (expr.value.length === 0) {
+        combinators.add("map");
+        combinators.add("sequence");
+      } else {
+        combinators.add("literal");
+      }
       break;
     case "CharacterClass":
       combinators.add(expr.negated ? "negatedCharClass" : "charClass");
@@ -646,11 +672,6 @@ export const isRuleReferencedAnywhere = (
   grammar.rules.some((rule) => containsReferenceTo(rule.pattern, ruleName));
 
 /**
- * Returns the label a single expression is bound to, unwrapping a `Group`
- * (which is transparent at codegen time) - or undefined if the expression
- * isn't a (possibly grouped) `LabeledExpression`.
- */
-/**
  * Narrows a label list down to the ones an action's code actually mentions
  * (matched as a whole identifier token, so a label named `char` doesn't
  * false-match inside `charAt` -- and no longer false-matches inside string
@@ -661,31 +682,40 @@ export const isRuleReferencedAnywhere = (
  * would otherwise be a real `tsc --noEmit` failure on a saved generated file
  * under `noUnusedLocals` - never surfaced by dynamically `new Function`-eval'd
  * generated code in this package's own tests, which skips type-checking
- * entirely.
+ * entirely. A bare eval reference can access any of the bindings by a
+ * computed name, so retain all labels in that case; wrapWithAction emits
+ * harmless reads to satisfy typed output's noUnusedLocals check.
  */
 export const filterReferencedLabels = (
   code: string,
   labels: string[],
-): string[] => labels.filter((label) => codeContainsIdentifier(code, label));
+): string[] =>
+  codeContainsIdentifier(code, "eval")
+    ? [...labels]
+    : labels.filter((label) => codeContainsIdentifier(code, label));
 
 /**
  * Wraps an alternative's generated parser expression so that, on a
  * successful parse, the semantic action code runs with `$$` bound to the
  * raw match value and (if the wrapped expression carries labeled captures)
  * each label destructured as its own named variable, then returns the
- * action's own return value as the parser's result.
+ * action's own return value as the parser's result. Preserve the match's
+ * positions before reading its value or invoking user code: either can
+ * reenter a custom parser that reuses the same result object.
  */
 export const wrapWithAction = (
   parserCode: string,
   actionCode: string,
   labels: string[],
   includeTypes: boolean,
+  requiredLabels: readonly string[] = [],
 ): string => {
-  // Only declare `$$` when something can actually reference it - a label
+  // Only declare `$$` when something can reference it - a label
   // destructure reads it, and the whole-token check covers a bare `$$` in
   // the action body (e.g. `return $$.join("")` for an unlabeled
   // expression, including one inside a `${ ... }` interpolation) WITHOUT
-  // counting a `$$` inside a string literal, comment, or regex body --
+  // counting a `$$` inside a string literal, comment, or regex body. A bare
+  // eval reference may inspect it dynamically and requires the binding too --
   // the previous substring check did, emitting an unused `const $$` that
   // fails `tsc --noEmit` under `noUnusedLocals` (see
   // `filterReferencedLabels` above, and `codeContainsIdentifier` in
@@ -695,8 +725,11 @@ export const wrapWithAction = (
   // own `tsc --noEmit` under `noUnusedLocals` (never surfaced by this
   // package's own tests, which execute generated code via `new Function`
   // rather than saving and compiling it as a file).
+  const dynamicReferences = codeContainsIdentifier(actionCode, "eval");
   const needsCaptureValue =
-    labels.length > 0 || codeContainsIdentifier(actionCode, "$$");
+    labels.length > 0 ||
+    dynamicReferences ||
+    codeContainsIdentifier(actionCode, "$$");
   // captureSequence()'s return type is a union of the merged capture object
   // and a positional tuple (it can't statically know which one a given call
   // produces), so an untyped $$ fails to typecheck a destructure of any
@@ -718,41 +751,77 @@ export const wrapWithAction = (
   // an alternative that carries none of these labels (a bare
   // `notPredicate`/`andPredicate`, an unlabeled literal, an action
   // returning `undefined`, ...) leaves `$$` as `undefined` or some
-  // non-capture value, not the merged capture object every `label` name is
-  // expected to be a property of. A plain `const { a } = $$;` throws
-  // ("Cannot destructure property 'a' from null or undefined value")
-  // instead of leaving `a` `undefined` as the spec promises -- destructure
-  // from `($$ ?? {})` so a missing/non-object match value degrades to every
-  // label being `undefined`, never a runtime crash.
+  // non-capture value. Read possibly absent labels only from own enumerable
+  // fields; ordinary destructuring would expose prototype properties or
+  // a string/array's length instead of undefined. Guaranteed own labels
+  // retain ordinary destructuring without extra presence checks.
+  const required = new Set(requiredLabels);
   const destructure =
-    labels.length > 0
-      ? `    const { ${labels.join(", ")} } = ($$ ?? {});\n`
+    labels.length === 0
+      ? ""
+      : labels.every((label) => required.has(label))
+        ? `    const { ${labels.join(", ")} } = ($$ ?? {});\n`
+        : labels
+            .map((label) => {
+              const property = JSON.stringify(label);
+              const value = `$$[${property}]`;
+              // Capture fields are own enumerable properties. A fresh object
+              // supplies the intrinsic without resolving a rule/label named
+              // Object, globalThis, or propertyIsEnumerable. Only the selected
+              // field's getter is read; strings/arrays' length is not a label.
+              const read = required.has(label)
+                ? value
+                : `({}).propertyIsEnumerable.call($$ ?? {}, ${property}) ? ${value} : void 0`;
+              return `    const ${label}${includeTypes ? ": any" : ""} = ${read};\n`;
+            })
+            .join("");
+  // Direct eval can reference any capture, including names computed at
+  // runtime. TypeScript does not count those references for noUnusedLocals.
+  const dynamicBindingUses =
+    includeTypes && dynamicReferences
+      ? ["$$", ...labels].map((name) => `    void ${name};\n`).join("")
       : "";
-  return `(input, pos) => {
+  // Read the wrapper's result before entering the scope that declares
+  // labels and runs authored code. Otherwise a label or a const/let/var/
+  // function/class declaration named __result shadows that read.
+  const scopedAction = needsCaptureValue
+    ? `${captureBinding}    return (() => {
+${destructure}${dynamicBindingUses}${actionCode}
+    })();`
+    : actionCode;
+  return `(input${includeTypes ? ": string" : ""}, pos${includeTypes ? ": number" : ""})${includeTypes ? ": ReturnType<Parser<any>>" : ""} => {
   const __base = (${parserCode});
   const __result = __base(input, pos);
   if (!__result.success) return __result;
+  const { current: __current, next: __next } = __result;
   const __val = (() => {
-${captureBinding}${destructure}${actionCode}
+${scopedAction}
   })();
   return {
     success: true,
     val: __val,
-    current: __result.current,
-    next: __result.next,
+    current: __current,
+    next: __next,
   };
 }`;
 };
 
 /**
- * Generates a `literal(...)` call for a `StringLiteral` node. Shared between
+ * Generates a parser for a `StringLiteral` node. Shared between
  * `codegen.ts` and `codegen-optimized.ts` (which passes `stringInterner.intern`
  * as `intern` to dedupe the escaped literal text across a grammar).
  */
 export const generateStringLiteralCode = (
   value: string,
   intern: (s: string) => string = identity,
-): string => `literal("${intern(escapeStringLiteral(value))}")`;
+  includeTypes = false,
+): string =>
+  // Core's `literal` deliberately accepts only non-empty strings. An empty
+  // sequence validates the position and succeeds even at EOF; mapping its
+  // value preserves the grammar's exact empty-string result type.
+  value.length === 0
+    ? `map(sequence(), () => ""${includeTypes ? " as const" : ""})`
+    : `literal("${intern(escapeStringLiteral(value))}")`;
 
 /**
  * Renders a `CharacterClass` node's `ranges` as the comma-joined argument
@@ -950,6 +1019,11 @@ export const generateQuantifiedCode = (
   inner: string,
   enableCharClassRun = true,
 ): string => {
+  // The default maximum is unbounded. Avoid emitting a global Infinity
+  // reference: it may be shadowed by a rule in the generated module.
+  if (expr.max === Number.POSITIVE_INFINITY) {
+    return `quantified(${inner}, ${expr.min})`;
+  }
   if (expr.max === undefined) {
     // {n,} - at least n
     if (expr.min === 0) {

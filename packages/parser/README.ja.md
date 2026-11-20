@@ -205,6 +205,31 @@ interface AnyChar {
 bun run test
 ```
 
+差分テスト用の `compileStart`、`evaluateGeneratedModule`、ベンチマークの実行処理は、生成済み
+JavaScript を、モジュール直下の `this`、`arguments`、`new.target` の振る舞いを保って
+実行します。同梱の `runtime/native-evaluator.mjs` をバンドルせずに読み込むため、
+パッケージをコピーするときは `dist` とともにこのファイルも保持してください。
+これらの検証用ヘルパーには、ESM を同期的に `require()` できる実行環境が必要です。
+Node.js 20.19 以降、22.12 以降、Bun などが該当します。Node.js の対応状況は
+[モジュール読み込みの公式ドキュメント](https://nodejs.org/download/release/v20.19.0/docs/api/modules.html#loading-ecmascript-modules-using-require)
+を参照してください。文法の解析やソースコードの生成では、この実行処理を読み込みません。
+検証用ヘルパーは本プロジェクトの生成する JavaScript を対象とします。
+`tpeg-core` と `tpeg-combinator` の別名を使わない名前付き import には、渡された補助関数の
+値を使用します。import する名前は、渡されたスコープ自身のプロパティに存在する必要があります。
+その他の import と `import.meta` には対応していません。TypeScript は実行前に変換してください。
+渡された補助関数の値は構築時に名前ごとに取得し、定数として束縛します。
+直接の `eval` を含め、補助関数の変数への再代入は例外になります。
+参照先のオブジェクトのプロパティは引き続き変更できます。補助関数の getter は束縛の準備前に読み取り、
+生成コードの初期化は一時的な評価データを復元してから実行します。
+
+`evaluateGeneratedModule(code, scope)` は、モジュールの export した値を返します。
+第3引数で解析規則を選択すると、各 export が関数であることを確認し、戻り値の型に規則名を保持します。
+
+```typescript
+const { start } = evaluateGeneratedModule(generated.code, helpers, ["start"]);
+const result = start("input", 0);
+```
+
 ## 依存関係
 
 - `@suzumiyaaoba/tpeg-core`: コア解析機能と型

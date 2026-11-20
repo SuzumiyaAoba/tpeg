@@ -96,7 +96,10 @@
  */
 
 import { mapChildExpressions } from "@suzumiyaaoba/tpeg-core";
-import { isShapeSensitiveRule } from "./ast-optimize-shared";
+import {
+  isCharacterClassLiteral,
+  isShapeSensitiveRule,
+} from "./ast-optimize-shared";
 import {
   ALL_CHARS,
   type CharSet,
@@ -137,7 +140,7 @@ const charSetView = (expr: Expression): CharSet | null => {
     const raw = charRangesToSet(expr.ranges);
     return expr.negated ? complement(raw) : raw;
   }
-  if (expr.type === "StringLiteral" && [...expr.value].length === 1) {
+  if (expr.type === "StringLiteral" && isCharacterClassLiteral(expr.value)) {
     return fromChar(expr.value);
   }
   return null;

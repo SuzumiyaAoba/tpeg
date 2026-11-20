@@ -12,6 +12,7 @@ import {
   buildExternalIdentifierWarnings,
   buildQualifiedIdentifierWarnings,
   collectTopLevelLabels,
+  collectRequiredTopLevelLabels,
   collectTransformFunctions,
   collectUsedCombinators,
   filterReferencedLabels,
@@ -150,195 +151,202 @@ export class EtaTPEGCodeGenerator {
     // the verdict is provably identical either way.)
     const desugared = applySkipDesugar(grammar);
 
-    globalPerformanceMonitor.start("eta-grammar-generation");
-
-    const performanceAnalysis = analyzeGrammarPerformance(desugared);
-
-    // Reset per-instance state so a reused generator doesn't leak rule
-    // names/order from a previous grammar into this one's identifier
-    // resolution.
-    this.ruleNames.clear();
-    this.ruleIndex.clear();
-    desugared.rules.forEach((rule, index) => {
-      this.ruleNames.add(rule.name);
-      this.ruleIndex.set(rule.name, index);
-    });
-
-    const { lines: imports, bindings: importedBindings } = this.generateImports(
-      desugared,
-      performanceAnalysis,
-    );
-    // `generatePerformanceImports()` (below) contributes its own binding,
-    // `globalPerformanceMonitor`, whenever monitoring is on -- but only
-    // gets CALLED later, inside the `this.options.optimize` branch that
-    // builds `templateData`, well after this check used to run. A rule
-    // actually named `globalPerformanceMonitor` slipped through this
-    // validation as a result, producing generated code with both
-    // `import { globalPerformanceMonitor } from "@suzumiyaaoba/tpeg-
-    // generator";` and `export const globalPerformanceMonitor = ...;` --
-    // a duplicate-export `SyntaxError`/bundler failure this check exists
-    // specifically to catch. Reserving the name here unconditionally
-    // (rather than only under the same `optimize && includeMonitoring`
-    // gate that actually emits the import below) costs nothing -- no
-    // real grammar names a rule after this package's own monitor -- and
-    // stays correct even if that gate's shape changes later.
-    const importedBindingsWithPerformance = this.options.includeMonitoring
-      ? [...importedBindings, "globalPerformanceMonitor"]
-      : importedBindings;
-    // Reject a rule name, capture label, or transform parameter name
-    // that would generate to a reserved word, an internal codegen name,
-    // or one of the bindings `imports` above actually declares -- see
-    // `validateGeneratedIdentifiers`'s doc comment
-    // (`packages/parser/src/grammar-validation.ts`) for the concrete
-    // failure modes (e.g. a rule named `class`, or one named `literal`
-    // colliding with `import { literal }`). Imported directly from
-    // `tpeg-parser` (already a real dependency of this package -- see
-    // `collectTopLevelLabels`/`wrapWithAction`/etc. above), like
-    // `validateGrammarForEtaGenerator` now does for the rest of the
-    // structural checks.
-    validateGeneratedIdentifiers(desugared, {
-      namePrefix: this.options.namePrefix,
-      importedBindings: importedBindingsWithPerformance,
-    });
-    const exports: string[] = [];
-    const rules: RuleTemplateData[] = [];
-
-    // Generate template data for each rule, applying a matching TypeScript
-    // transform function (if the grammar declares one) to the rule's result
-    const transformsByRuleName = collectTransformFunctions(desugared);
-    desugared.rules.forEach((rule, index) => {
-      this.currentRuleIndex = index;
-      const complexity = performanceAnalysis.ruleComplexity.get(rule.name);
-      const transformFn = transformsByRuleName.get(rule.name);
-      // An explicit `@memoize` annotation wins over `shouldMemoize`'s
-      // complexity heuristic (and applies even when `enableMemoization`
-      // is off) -- mirroring codegen-optimized.ts's "the user directly
-      // saying memoize this rule" contract. Previously this generator
-      // ignored the annotation entirely.
-      const memoizeAnnotation = findMemoizeAnnotation(rule);
-      const memoized = memoizeAnnotation
-        ? false
-        : this.shouldMemoize(complexity);
-      const baseImplementation = this.generateRuleImplementation(rule);
-
-      // When a transform or monitoring applies, memoization (if any) is
-      // baked into the wrapper's own base-parser call instead of left to
-      // the template's `memoize(<%= implementation %>)` wrapping -- that
-      // would otherwise memoize the *transformed* result (or sit INSIDE
-      // the monitoring timer, hiding memo hits), re-running the
-      // transform's own caching semantics differently from
-      // codegen.ts/codegen-optimized.ts. An annotated rule's wrap is
-      // likewise always baked here: the `rule-memoized.eta` template
-      // only emits a bare `memoize(...)`, which can't carry
-      // `@memoize: N`'s `{ maxCacheSize: N }` argument.
-      const bakeWrappers =
-        transformFn !== undefined || this.options.includeMonitoring;
-      const memoizedImplementation = memoizeAnnotation
-        ? wrapWithMemoize(baseImplementation, memoizeAnnotation)
-        : memoized && bakeWrappers
-          ? `memoize(${baseImplementation})`
-          : baseImplementation;
-      let implementation = transformFn
-        ? wrapWithTransform(rule.name, memoizedImplementation, transformFn)
-        : memoizedImplementation;
-      // `includeMonitoring` previously only imported and re-exported
-      // `globalPerformanceMonitor` without ever calling it -- instrument
-      // each rule here so the option actually measures something. The wrap
-      // is outermost so the timing covers memoization and the transform.
-      if (this.options.includeMonitoring) {
-        implementation = wrapWithMonitoring(
-          rule.name,
-          implementation,
-          "globalPerformanceMonitor",
-          this.options.includeTypes,
-        );
-      }
-
-      const ruleData: RuleTemplateData = {
-        namePrefix: this.options.namePrefix,
-        name: rule.name,
-        type: this.inferRuleType(rule),
-        implementation,
-        memoized: bakeWrappers ? false : memoized,
-        includeTypes: this.options.includeTypes,
-        comment: this.generateRuleComment(complexity) || undefined,
-        complexity: complexity || undefined,
-      };
-
-      rules.push(ruleData);
-      exports.push(this.options.namePrefix + rule.name);
-    });
-
-    const templateData: ParserTemplateData = {
-      imports,
-      rules,
-      options: this.options,
-    };
-
-    // The `globalPerformanceMonitor` import and its re-export footer are
-    // needed by BOTH template families whenever monitoring is on --
-    // previously they were gated on `optimize`, so `optimize: false` +
-    // `includeMonitoring: true` produced instrumented rules calling an
-    // unimported binding. Both generators self-empty (`[]`/`""`) when
-    // monitoring is off, so assigning them unconditionally is free.
-    templateData.performanceImports = this.generatePerformanceImports();
-    templateData.footer = this.generateFooter();
-
-    // Same `@start` alias as `codegen.ts`'s generateGrammar: an explicit
-    // `@start: <name>` emits `export { <name> as start }` (appended to
-    // the footer, which both templates render verbatim at end-of-file)
-    // so the entry point is reachable under one stable name. Skipped
-    // when the resolved rule's own emitted name is already `start`; a
-    // DIFFERENT rule emitting `start` throws rather than silently
-    // dropping the alias.
-    const startRule = resolveStartRule(desugared);
-    if (startRule?.explicit) {
-      const startEmittedName = this.options.namePrefix + startRule.rule.name;
-      if (startEmittedName !== "start") {
-        if (
-          desugared.rules.some(
-            (rule) => `${this.options.namePrefix}${rule.name}` === "start",
-          )
-        ) {
-          throw new Error(
-            `Rule name "start" collides with the \`start\` export alias @start emits for entry rule "${startRule.rule.name}" -- rename the rule, or set a namePrefix so the rule no longer emits that name.`,
-          );
-        }
-        templateData.footer = `${templateData.footer}\nexport { ${startEmittedName} as start };`;
-        exports.push("start");
-      }
-    }
-
-    // Add the generated-file header for the optimized template
-    if (this.options.optimize) {
-      templateData.header = this.generateHeader(desugared);
-    }
-
-    // Generate code using appropriate template
-    const templateName = this.options.optimize
-      ? "optimized/parser-file"
-      : "base/parser-file";
-    const code = await this.eta.renderAsync(templateName, templateData);
-
-    const generationTime = globalPerformanceMonitor.end(
+    const finishMeasurement = globalPerformanceMonitor.startTimer(
       "eta-grammar-generation",
     );
+    try {
+      const performanceAnalysis = analyzeGrammarPerformance(desugared);
 
-    return {
-      code,
-      imports,
-      exports,
-      warnings: [
-        ...buildExternalIdentifierWarnings(desugared),
-        ...buildQualifiedIdentifierWarnings(desugared),
-      ],
-      performance: {
-        estimatedComplexity: performanceAnalysis.estimatedParseComplexity,
-        optimizationSuggestions: performanceAnalysis.optimizationSuggestions,
-        generationTime,
-        templateEngine: "eta",
-      },
-    };
+      // Reset per-instance state so a reused generator doesn't leak rule
+      // names/order from a previous grammar into this one's identifier
+      // resolution.
+      this.ruleNames.clear();
+      this.ruleIndex.clear();
+      desugared.rules.forEach((rule, index) => {
+        this.ruleNames.add(rule.name);
+        this.ruleIndex.set(rule.name, index);
+      });
+
+      const { lines: imports, bindings: importedBindings } =
+        this.generateImports(desugared, performanceAnalysis);
+      // `generatePerformanceImports()` (below) contributes its own binding,
+      // `globalPerformanceMonitor`, whenever monitoring is on -- but only
+      // gets CALLED later, inside the `this.options.optimize` branch that
+      // builds `templateData`, well after this check used to run. A rule
+      // actually named `globalPerformanceMonitor` slipped through this
+      // validation as a result, producing generated code with both
+      // `import { globalPerformanceMonitor } from "@suzumiyaaoba/tpeg-
+      // generator";` and `export const globalPerformanceMonitor = ...;` --
+      // a duplicate-export `SyntaxError`/bundler failure this check exists
+      // specifically to catch. Reserving the name here unconditionally
+      // (rather than only under the same `optimize && includeMonitoring`
+      // gate that actually emits the import below) costs nothing -- no
+      // real grammar names a rule after this package's own monitor -- and
+      // stays correct even if that gate's shape changes later.
+      const importedBindingsWithPerformance = this.options.includeMonitoring
+        ? [...importedBindings, "globalPerformanceMonitor"]
+        : importedBindings;
+      // Reject a rule name, capture label, or transform parameter name
+      // that would generate to a reserved word, an internal codegen name,
+      // or one of the bindings `imports` above actually declares -- see
+      // `validateGeneratedIdentifiers`'s doc comment
+      // (`packages/parser/src/grammar-validation.ts`) for the concrete
+      // failure modes (e.g. a rule named `class`, or one named `literal`
+      // colliding with `import { literal }`). Imported directly from
+      // `tpeg-parser` (already a real dependency of this package -- see
+      // `collectTopLevelLabels`/`wrapWithAction`/etc. above), like
+      // `validateGrammarForEtaGenerator` now does for the rest of the
+      // structural checks.
+      const transformsByRuleName = collectTransformFunctions(desugared);
+      validateGeneratedIdentifiers(desugared, {
+        namePrefix: this.options.namePrefix,
+        importedBindings: importedBindingsWithPerformance,
+        requiresGlobalThis: transformsByRuleName.size > 0,
+      });
+      const exports: string[] = [];
+      const rules: RuleTemplateData[] = [];
+
+      // Generate template data for each rule, applying a matching TypeScript
+      // transform function (if the grammar declares one) to the rule's result
+      desugared.rules.forEach((rule, index) => {
+        this.currentRuleIndex = index;
+        const complexity = performanceAnalysis.ruleComplexity.get(rule.name);
+        const transformFn = transformsByRuleName.get(rule.name);
+        // An explicit `@memoize` annotation wins over `shouldMemoize`'s
+        // complexity heuristic (and applies even when `enableMemoization`
+        // is off) -- mirroring codegen-optimized.ts's "the user directly
+        // saying memoize this rule" contract. Previously this generator
+        // ignored the annotation entirely.
+        const memoizeAnnotation = findMemoizeAnnotation(rule);
+        const memoized = memoizeAnnotation
+          ? false
+          : this.shouldMemoize(complexity);
+        const baseImplementation = this.generateRuleImplementation(rule);
+
+        // When a transform or monitoring applies, memoization (if any) is
+        // baked into the wrapper's own base-parser call instead of left to
+        // the template's `memoize(<%= implementation %>)` wrapping -- that
+        // would otherwise memoize the *transformed* result (or sit INSIDE
+        // the monitoring timer, hiding memo hits), re-running the
+        // transform's own caching semantics differently from
+        // codegen.ts/codegen-optimized.ts. An annotated rule's wrap is
+        // likewise always baked here: the `rule-memoized.eta` template
+        // only emits a bare `memoize(...)`, which can't carry
+        // `@memoize: N`'s `{ maxCacheSize: N }` argument.
+        const bakeWrappers =
+          transformFn !== undefined || this.options.includeMonitoring;
+        const memoizedImplementation = memoizeAnnotation
+          ? wrapWithMemoize(baseImplementation, memoizeAnnotation)
+          : memoized && bakeWrappers
+            ? `memoize(${baseImplementation})`
+            : baseImplementation;
+        let implementation = transformFn
+          ? wrapWithTransform(
+              rule.name,
+              memoizedImplementation,
+              transformFn,
+              this.options.includeTypes,
+            )
+          : memoizedImplementation;
+        // `includeMonitoring` previously only imported and re-exported
+        // `globalPerformanceMonitor` without ever calling it -- instrument
+        // each rule here so the option actually measures something. The wrap
+        // is outermost so the timing covers memoization and the transform.
+        if (this.options.includeMonitoring) {
+          implementation = wrapWithMonitoring(
+            rule.name,
+            implementation,
+            "globalPerformanceMonitor",
+            this.options.includeTypes,
+          );
+        }
+
+        const ruleData: RuleTemplateData = {
+          namePrefix: this.options.namePrefix,
+          name: rule.name,
+          type: this.inferRuleType(rule),
+          implementation,
+          memoized: bakeWrappers ? false : memoized,
+          includeTypes: this.options.includeTypes,
+          comment: this.generateRuleComment(complexity) || undefined,
+          complexity: complexity || undefined,
+        };
+
+        rules.push(ruleData);
+        exports.push(this.options.namePrefix + rule.name);
+      });
+
+      const templateData: ParserTemplateData = {
+        imports,
+        rules,
+        options: this.options,
+      };
+
+      // The `globalPerformanceMonitor` import and its re-export footer are
+      // needed by BOTH template families whenever monitoring is on --
+      // previously they were gated on `optimize`, so `optimize: false` +
+      // `includeMonitoring: true` produced instrumented rules calling an
+      // unimported binding. Both generators self-empty (`[]`/`""`) when
+      // monitoring is off, so assigning them unconditionally is free.
+      templateData.performanceImports = this.generatePerformanceImports();
+      templateData.footer = this.generateFooter();
+
+      // Same `@start` alias as `codegen.ts`'s generateGrammar: an explicit
+      // `@start: <name>` emits `export { <name> as start }` (appended to
+      // the footer, which both templates render verbatim at end-of-file)
+      // so the entry point is reachable under one stable name. Skipped
+      // when the resolved rule's own emitted name is already `start`; a
+      // DIFFERENT rule emitting `start` throws rather than silently
+      // dropping the alias.
+      const startRule = resolveStartRule(desugared);
+      if (startRule?.explicit) {
+        const startEmittedName = this.options.namePrefix + startRule.rule.name;
+        if (startEmittedName !== "start") {
+          if (
+            desugared.rules.some(
+              (rule) => `${this.options.namePrefix}${rule.name}` === "start",
+            )
+          ) {
+            throw new Error(
+              `Rule name "start" collides with the \`start\` export alias @start emits for entry rule "${startRule.rule.name}" -- rename the rule, or set a namePrefix so the rule no longer emits that name.`,
+            );
+          }
+          templateData.footer = `${templateData.footer}\nexport { ${startEmittedName} as start };`;
+          exports.push("start");
+        }
+      }
+
+      // Add the generated-file header for the optimized template
+      if (this.options.optimize) {
+        templateData.header = this.generateHeader(desugared);
+      }
+
+      // Generate code using appropriate template
+      const templateName = this.options.optimize
+        ? "optimized/parser-file"
+        : "base/parser-file";
+      const code = await this.eta.renderAsync(templateName, templateData);
+
+      const generationTime = finishMeasurement();
+
+      return {
+        code,
+        imports,
+        exports,
+        warnings: [
+          ...buildExternalIdentifierWarnings(desugared),
+          ...buildQualifiedIdentifierWarnings(desugared),
+        ],
+        performance: {
+          estimatedComplexity: performanceAnalysis.estimatedParseComplexity,
+          optimizationSuggestions: performanceAnalysis.optimizationSuggestions,
+          generationTime,
+          templateEngine: "eta",
+        },
+      };
+    } finally {
+      finishMeasurement();
+    }
   }
 
   /**
@@ -591,7 +599,11 @@ export class EtaTPEGCodeGenerator {
   // a raw control byte inside a `"..."` source literal, invalid
   // TypeScript.
   private generateStringLiteral(expr: StringLiteral): string {
-    return generateStringLiteralCode(expr.value);
+    return generateStringLiteralCode(
+      expr.value,
+      undefined,
+      this.options.includeTypes,
+    );
   }
 
   private generateCharacterClass(expr: CharacterClass): string {
@@ -707,7 +719,13 @@ export class EtaTPEGCodeGenerator {
       expr.code,
       collectTopLevelLabels(expr.expression),
     );
-    return wrapWithAction(inner, expr.code, labels, this.options.includeTypes);
+    return wrapWithAction(
+      inner,
+      expr.code,
+      labels,
+      this.options.includeTypes,
+      labels.length > 0 ? collectRequiredTopLevelLabels(expr.expression) : [],
+    );
   }
 
   /**

@@ -85,9 +85,8 @@ const engine = new TypeInferenceEngine({
   enableCaching: true,
   detectCircularDependencies: true,
   customTypeMappings: new Map([
-    ["email", "string"],
-    ["url", "string"],
-    ["uuid", "string"],
+    ['"hello"', "string"],
+    ['"world"', "string"],
   ]),
 });
 ```
@@ -133,6 +132,95 @@ console.log(parserInterface);
 //   expression(input: string): ParseResult<MyGrammarTypes.ExpressionResult>;
 // }
 ```
+
+生成された型ガードは、必須のキャプチャプロパティとその値を再帰的に検証し、
+配列内のオブジェクトやオプション値にも対応します。配列の空き要素も検証対象です。
+セマンティックアクションなどで `unknown` と推論されたルールは `undefined` を含む
+すべての値を受け入れます。ラベル付きの `unknown` 値では、そのプロパティの存在が必要です。
+各タプル要素の検証では、要素を一度だけ取得し、その値に対して入れ子の検証を行います。
+後続の要素は、それまでの検証に成功した場合だけ取得します。
+型だけで結果が決まる場合は値を取得しません。`unknown[]` は配列かどうか、`never[]` は
+空の配列かどうか、`unknown` のキャプチャはプロパティが存在するかどうかを確認します。
+`unknown` を含む共用体は、選択肢の値を検証せずにすべての値を受け入れます。
+配列の検証には標準のメソッドを使用するため、配列自身の `findIndex` の差し替えは判定に影響しません。
+`Array` や `undefined` を名前空間の一部に使った場合も型ガードは動作します。
+名前空間にはドット区切りの識別子を指定でき、`class` などの予約語を先頭に置いた名前や
+`yield` など strict モードで使えない名前は、型定義・インターフェースの生成時にエラーになります。
+型ガードを生成する場合は、`await`、`eval`、`arguments` や、入れ子の `Types.class` など、
+実行時の変数として使えない名前も拒否します。型定義のみの場合は TypeScript が許可する名前を使用できます。
+入れ子の名前空間は自身のプロパティとして初期化するため、`Types.__proto__` や
+`Types.constructor` を生成しても標準オブジェクトを書き換えません。既存の自身のプロパティは保持します。
+
+`ParserResult` は、すべてのルールの結果を表す共用体用に予約されています。
+`parser`、`Parser`、`_parser` など、PascalCase変換後の結果型名が `ParserResult` になるルールは、
+理由を示した生成エラーになります。結果型名が重ならないように、そのルールを改名してください。
+`parse` ルールと、先頭が `ParseResult` の名前空間は使用できます。
+必要な場合はパーサーインターフェース内でコアの `ParseResult` を別名でimportし、
+生成するルールの結果型名を保持します。
+
+カスタム型マッピングのキーは、子の式を推論した後の型文字列と完全一致で照合します。
+値は型全体を置き換えるため、`"a"[]` を `unknown` に置き換えると、型ガードに配列の制約は残りません。
+マッピングは生成する型を変更します。パーサーの値は文法とアクションによって決まります。
+型ガードは `string`、`number`、`boolean`、`bigint`、`symbol`、`object`、`unknown`、`any`、
+`never`、`void`、`undefined`、`null` と、引用符で囲んだ単独の文字列リテラル型へのマッピングに対応します。
+外部の型名、配列型、複合型など、それ以外の置換先には独自の検証関数が必要です。
+それらの型ガードを生成すると、理由を示したエラーになります。`generateTypeGuards: false` を指定すると
+型定義を生成でき、参照する型の宣言は別途用意します。同じ型へのマッピングでは元の形の検証を保持します。
+
+渡した `customTypeMappings` のMapへの変更は、キャッシュ済みの式を含め、その後の推論に反映します。
+キャッシュには、その式自身と子の推論が参照したマッピングを記録します。
+参照した値が変わった場合は再推論し、無関係な項目の変更ではキャッシュを再利用します。
+getterが推論中にマッピングを変更する場合や、同じエンジンで文法の推論を入れ子で呼ぶ場合にも適用します。
+
+保持した文法のルールのパターンも、その後の式の推論で参照します。
+参照先のパターンを置き換えたり、その内容を変更したりすると、間接的な参照や
+外側の配列・タプル・キャプチャを含め、依存するキャッシュを再推論します。
+推論に必要なパターンや式のアクセサーを読む参照は、親も含めてキャッシュを避け、getterと例外の動作を保持します。
+新たに発生した循環と、深さの増加による再帰制限も再検証します。
+
+直接のラベルがあるシーケンスでは、選択・任意・グループ・値をそのまま返す単一要素の
+シーケンスが渡す同じ階層のキャプチャも合成します。後のキャプチャが先のフィールドを
+上書きするため、`x:"a" (x:"b" / "c")` は `{ x: "b" } | { x: "a" }` と推論します。
+ルールの境界、キャプチャの配列、入れ子で合成済みのオブジェクトからは、同じ階層の
+フィールドを合流しません。`inferObjectTypes` が有効なら、通常の選択肢の値の
+共用体推論を無効にしても、このフィールドの解析を行います。
+
+ラベルのないセマンティックアクションや外部パーサーは、変更した値や新しいキーを
+含む任意のキャプチャを返せます。ラベルのあるシーケンスでは、その分岐の型に
+`unknown`の文字列インデックスシグネチャを含め、先のフィールドの値も`unknown`へ
+広げます。必須のフィールドの存在は保持します。後の確実なキャプチャは値の型を
+正確な型へ戻しますが、任意のキャプチャでは先の任意の値が見える可能性が残ります。
+登録済みの規則の境界ではタグを外し、配列やアクション全体へのラベルの内部からも
+フィールドを合成しません。アクションのコードは解析しないため、通常のオブジェクトや
+スカラーを返すだけのアクションでも、このように型の精度を広げます。
+
+ラベルのあるシーケンスの、ラベルのない要素では、グループ・選択・任意要素・値を
+そのまま返す単一要素のシーケンスを通るキャプチャのタグを判定します。
+フィールドを合流できないスカラー値・配列・入れ子で合成済みのオブジェクト・
+登録済みの規則の値は推論しません。規則の境界では登録の有無だけを確認するため、
+`start = x:"a" (start)?`でも不要な循環警告を出さず、結果を`{ x: "a" }`と推論します。
+合流するフィールドの値には、通常の値の推論とカスタム型マッピングを適用します。
+値とキャプチャの解析はキャッシュを分け、依存と深さを検証します。合流しない式でも、
+その式自体の型を求めた場合は、通常どおり値を解析します。
+循環の診断は、値の推論で遭遇した循環を表し、すべての再帰呼び出しを列挙するものでは
+ありません。`getDependencies`は、合流しない値も含め、文法AST内の規則参照を返します。
+
+途中の合成でキャプチャの組み合わせが256種類を超える場合は、必須・任意フィールドを
+持つ単一のオブジェクト型へまとめます。フィールドが取りうる値と後の上書きを保持し、
+フィールド間の相関を広げます。`InferredType.optionalObjectProperties` は
+`objectProperties` の任意フィールドを示します。生成した型ガードは、そのフィールドの
+欠如を許可し、存在する場合は値を検証します。明示的な `undefined` は、値の型が
+許可する場合だけ受け入れます。
+
+このまとめた型では、`constructor`・`__proto__`など`Object.prototype`から継承する
+名前の任意フィールドに`unknown`を含めます。自身のキャプチャがない場合でも、
+プロパティの取得で継承した値が見えるためです。後の確実なキャプチャが同じ名前を
+上書きすると、その値の正確な型に戻ります。通常の任意フィールドは、存在する値を
+引き続き検証します。
+
+`InferredType.nullable` は、型全体が `null` または `undefined` を含むかを表します。
+`unknown`、`void` と、nullable な型を含む共用体では true になります。
+配列やキャプチャオブジェクトの内部に nullable な値があっても、その配列・オブジェクト自体は nullable にはなりません。
 
 ### 複雑な文法の例
 
@@ -243,9 +331,9 @@ TPEG文法の型推論を実行するメインクラス。
 - `inferArrayTypes` (boolean): 繰り返し演算子の配列型推論を行うかどうか (デフォルト: true)
 - `inferUnionTypes` (boolean): 選択演算子のユニオン型推論を行うかどうか (デフォルト: true)
 - `inferObjectTypes` (boolean): シーケンス演算子のオブジェクト型推論を行うかどうか (デフォルト: true)
-- `customTypeMappings` (Map<string, string>): 特定のパターンのカスタム型マッピング
+- `customTypeMappings` (Map<string, string>): 推論した型文字列との完全一致による型の置換
 - `generateDocumentation` (boolean): JSDocコメントを生成するかどうか (デフォルト: true)
-- `maxRecursionDepth` (number): スタックオーバーフローを防ぐ最大再帰深度 (デフォルト: 100)
+- `maxRecursionDepth` (number): 再帰的な型推論の最大深度。0以上の安全な整数を指定 (デフォルト: 100)
 - `enableCaching` (boolean): パフォーマンスのためのキャッシュを有効にするかどうか (デフォルト: true)
 - `detectCircularDependencies` (boolean): 循環依存を検出するかどうか (デフォルト: true)
 
@@ -254,6 +342,10 @@ TPEG文法の型推論を実行するメインクラス。
 - `inferGrammarTypes(grammar: GrammarDefinition): GrammarTypeInference`: 完全な文法の型推論
 - `inferExpressionType(expression: Expression): InferredType`: 特定の式の型推論
 
+`generateDocumentation: false` では、未知の型や推論失敗時の代替型を含め、
+推論した型のドキュメントを生成しません。警告と循環依存の情報は、
+文法の型推論結果から引き続き取得できます。
+
 ### TypeIntegrationEngine
 
 型推論とコード生成を組み合わせて、型安全なパーサー生成を強化。
@@ -261,7 +353,7 @@ TPEG文法の型推論を実行するメインクラス。
 #### コンストラクタオプション
 
 - `includeDocumentation` (boolean): 生成された型にJSDocコメントを含めるかどうか (デフォルト: true)
-- `customTypeMappings` (Map<string, string>): 特定のパターンのカスタム型マッピング
+- `customTypeMappings` (Map<string, string>): 推論した型文字列との完全一致による型の置換
 - `generateTypeGuards` (boolean): 推論された型の型ガードを生成するかどうか (デフォルト: false)
 - `typeNamespace` (string): 生成された型の名前空間 (オプション)
 
@@ -272,6 +364,10 @@ TPEG文法の型推論を実行するメインクラス。
 - `getTypeInfo(typedGrammar: TypedGrammarDefinition, ruleName: string): InferredType | undefined`: 特定のルールの型情報を取得
 - `hasCircularDependency(typedGrammar: TypedGrammarDefinition, ruleName: string): boolean`: ルールに循環依存があるかチェック
 - `getDependencies(typedGrammar: TypedGrammarDefinition, ruleName: string): string[]`: ルールの全ての依存関係を取得
+
+`includeDocumentation: false` は、推論したドキュメントと、生成するすべてのJSDocを無効にします。
+型ガードの説明、結果型の共用体、パーサーインターフェースのヘッダーにも適用します。
+型定義・インターフェース・型ガードと診断情報は引き続き利用できます。
 
 ### 型定義
 
@@ -284,7 +380,7 @@ interface InferredType {
   isArray: boolean; // 型が配列かどうか
   baseType: string; // 基本型（string、numberなど）
   imports: string[]; // 必要なインポート
-  documentation: string; // 生成されたドキュメント
+  documentation?: string | undefined; // ドキュメント生成が有効な場合に設定
 }
 ```
 
@@ -295,7 +391,13 @@ interface GrammarTypeInference {
   ruleTypes: Map<string, InferredType>; // 各ルールの型情報
   circularDependencies: string[][]; // 検出された循環依存
   imports: string[]; // 必要なインポート
-  documentation: string; // 生成されたドキュメント
+  warnings: string[]; // ドキュメント設定によらず返す推論の診断
+  stats: {
+    typesInferred: number;
+    cacheHits: number;
+    cacheMisses: number;
+    inferenceTime: number;
+  };
 }
 ```
 
@@ -317,6 +419,27 @@ interface TypedGrammarDefinition extends Omit<GrammarDefinition, "rules"> {
 - 循環依存検出は無限ループを避けるために最適化
 - 大きな文法は設定可能な再帰制限で効率的に処理
 - メモリ使用量は効率的なデータ構造で最適化
+
+キャッシュキーには型推論に必要なフィールドを使用し、AST の追加メタデータや
+`toJSON` は参照しません。必要なフィールドが getter の場合や、残りの再帰深度を超える
+子がある場合はキャッシュを使用しません。`enableCaching: false` ではキーを作りません。
+キャッシュの有無によらず、キャプチャのプロパティやドキュメントを含む推論結果は一致します。
+
+キャッシュした結果には、参照先のルールを展開する深さを含め、必要な推論深度を記録します。
+残りの深度に収まる場合だけ再利用するため、キャッシュやルールの順序によって
+深度制限のエラーは変わりません。深さが異なる位置でも、余裕があれば再利用できます。
+処理中のルール状態は失敗時も終了時に解除するため、文法の推論後に式を推論し、
+同じ文法のルールを参照しても、古い状態による循環依存のエラーは発生しません。
+
+`inferGrammarTypes` が入れ子になった場合、内側には独立したルール定義・型キャッシュ・
+深度の記録・統計を用意します。解析対象の AST の getter が同じエンジンで別の文法を推論しても、
+内側が終了または例外を送出した後に、外側は自身の状態で処理を再開します。
+各文法の経過時間も自身の開始時刻から計測します。通常の推論を終えた文法は、
+その後の `inferExpressionType` から引き続き参照できます。
+
+深度制限は再帰的な型推論に適用します。セマンティックアクションや先読みなど、
+演算子自身から型が決まる式では、子の型を推論する必要はありません。
+キャプチャを包む透過的なグループの展開や依存関係の走査は、深い木でもコールスタックを使い切りません。
 
 ## エラーハンドリング
 

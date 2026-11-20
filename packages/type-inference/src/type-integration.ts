@@ -15,6 +15,7 @@ import {
   type InferredType,
   TypeInferenceEngine,
 } from "./type-inference";
+import { isStringLiteralType, mappedBaseType } from "./type-mappings";
 
 /**
  * Renders one logical documentation line inside a generated JSDoc block
@@ -50,6 +51,79 @@ const TS_IDENTIFIER_FULL = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
  * dotted form of the same check. */
 const TS_DOTTED_IDENTIFIER_FULL =
   /^[a-zA-Z_$][a-zA-Z0-9_$]*(\.[a-zA-Z_$][a-zA-Z0-9_$]*)*$/;
+
+// Type-only namespaces allow keyword properties after a dot (`Types.class`).
+// Runtime namespaces also introduce local bindings for those segments.
+const TS_NAMESPACE_ROOT_KEYWORDS = new Set([
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "enum",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "function",
+  "if",
+  "import",
+  "in",
+  "instanceof",
+  "new",
+  "null",
+  "return",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "typeof",
+  "var",
+  "void",
+  "while",
+  "with",
+]);
+const TS_NAMESPACE_STRICT_KEYWORDS = new Set([
+  "implements",
+  "interface",
+  "let",
+  "package",
+  "private",
+  "protected",
+  "public",
+  "static",
+  "yield",
+]);
+const TS_NAMESPACE_RUNTIME_KEYWORDS = new Set([
+  ...TS_NAMESPACE_ROOT_KEYWORDS,
+  "await",
+  "eval",
+  "arguments",
+]);
+
+interface TypeGuardContext {
+  arrayConstructor: string;
+  usesArrayConstructor: boolean;
+}
+
+interface TypeGuardExpression {
+  code: string;
+  usesArrayConstructor?: boolean;
+}
+
+function namespaceAlias(name: string, segments: readonly string[]): string {
+  while (segments.includes(name)) name += "_";
+  return name;
+}
 
 /**
  * Enhanced rule information with type inference
@@ -88,7 +162,7 @@ export interface TypedGrammarDefinition extends Omit<
 export interface TypeIntegrationOptions {
   /** Whether to include JSDoc comments in generated types */
   includeDocumentation: boolean;
-  /** Custom type mappings for specific patterns */
+  /** Replacements keyed by exact inferred type strings */
   customTypeMappings: Map<string, string>;
   /** Whether to generate type guards for the inferred types */
   generateTypeGuards: boolean;
@@ -123,6 +197,24 @@ export class TypeIntegrationEngine {
       customTypeMappings: this.options.customTypeMappings,
       generateDocumentation: this.options.includeDocumentation,
     });
+  }
+
+  private validateTypeNamespace(emitRuntimeNamespace = false): string[] {
+    const namespace = this.options.typeNamespace;
+    if (!namespace) return [];
+    const segments = namespace.split(".");
+    if (
+      !TS_DOTTED_IDENTIFIER_FULL.test(namespace) ||
+      TS_NAMESPACE_ROOT_KEYWORDS.has(segments[0] ?? "") ||
+      segments.some((segment) => TS_NAMESPACE_STRICT_KEYWORDS.has(segment)) ||
+      (emitRuntimeNamespace &&
+        segments.some((segment) => TS_NAMESPACE_RUNTIME_KEYWORDS.has(segment)))
+    ) {
+      throw new Error(
+        `typeNamespace "${namespace}" is not a valid TypeScript namespace name${emitRuntimeNamespace ? " for generated runtime guards" : ""}. Use dotted identifiers with no reserved bindings (e.g. "My.Grammar").`,
+      );
+    }
+    return segments;
   }
 
   /**
@@ -168,11 +260,13 @@ export class TypeIntegrationEngine {
     // If no type information found, create a default type
     const defaultType: InferredType = {
       typeString: "unknown",
-      nullable: false,
+      nullable: true,
       isArray: false,
       baseType: "unknown",
       imports: [],
-      documentation: `No type information available for rule ${rule.name}`,
+      documentation: this.options.includeDocumentation
+        ? `No type information available for rule ${rule.name}`
+        : undefined,
     };
 
     const finalInferredType = inferredType || defaultType;
@@ -201,6 +295,21 @@ export class TypeIntegrationEngine {
     typedRules: TypedRuleDefinition[],
   ): string {
     const typeDefinitions: string[] = [];
+    const namespaceSegments = this.validateTypeNamespace(
+      this.options.generateTypeGuards && typedRules.length > 0,
+    );
+    const guardContext: TypeGuardContext = {
+      arrayConstructor: "Array",
+      usesArrayConstructor: false,
+    };
+    if (namespaceSegments.includes("Array")) {
+      // Capture the global constructor outside the namespace. Avoid all
+      // namespace segments so an inner namespace cannot shadow the alias.
+      guardContext.arrayConstructor = namespaceAlias(
+        "__tpegArray",
+        namespaceSegments,
+      );
+    }
 
     // Distinct rule names can collapse to the same PascalCase identifier
     // (`foo` vs `Foo`, `foo_bar` vs `fooBar`, ...), which would emit two
@@ -254,15 +363,49 @@ export class TypeIntegrationEngine {
             `Rule name "${[...names][0] as string}" generates the type name "${generated}Result", which is not a valid TypeScript identifier -- the emitted \`export type ${generated}Result = ...\` would fail to parse. Rule names must consist of ASCII letters, digits, "_", and "-" only (and must not start with a digit).`,
           );
         }
+        if (`${generated}Result` === "ParserResult") {
+          throw new Error(
+            `Rule "${[...names][0] as string}" generates the type name "ParserResult", which is reserved for the union of all parser result types -- rename the rule so its generated type name is distinct.`,
+          );
+        }
       }
     }
 
     // Add namespace if specified
     if (this.options.typeNamespace) {
-      if (!TS_DOTTED_IDENTIFIER_FULL.test(this.options.typeNamespace)) {
-        throw new Error(
-          `typeNamespace "${this.options.typeNamespace}" is not a valid TypeScript namespace name -- \`export namespace ${this.options.typeNamespace} {\` would fail to parse. Use dotted identifiers only (e.g. "My.Grammar").`,
+      if (
+        this.options.generateTypeGuards &&
+        namespaceSegments.length > 1 &&
+        typedRules.length > 0
+      ) {
+        // Namespace lowering reuses `parent.child || {}`. Preinitialize an
+        // own property so `constructor`, `__proto__`, etc. cannot reuse an
+        // inherited global object. Keep existing own namespace members.
+        const objectConstructor = namespaceAlias(
+          "__tpegObject",
+          namespaceSegments,
         );
+        const globalObject =
+          namespaceSegments[0] === "globalThis"
+            ? "Object"
+            : "globalThis.Object";
+        typeDefinitions.push(
+          `const ${objectConstructor} = ${globalObject};`,
+          "",
+        );
+        for (let index = 1; index < namespaceSegments.length; index++) {
+          const parentNamespace = namespaceSegments.slice(0, index).join(".");
+          const parentName = namespaceSegments[index - 1] as string;
+          const key = JSON.stringify(namespaceSegments[index]);
+          typeDefinitions.push(
+            `export namespace ${parentNamespace} {`,
+            `  if (!${objectConstructor}.prototype.hasOwnProperty.call(${parentName}, ${key})) {`,
+            `    ${objectConstructor}.defineProperty(${parentName}, ${key}, { value: {}, writable: true, enumerable: true, configurable: true });`,
+            "  }",
+            "}",
+            "",
+          );
+        }
       }
       typeDefinitions.push(`export namespace ${this.options.typeNamespace} {`);
     }
@@ -301,7 +444,9 @@ export class TypeIntegrationEngine {
       );
 
       if (this.options.generateTypeGuards) {
-        typeDefinitions.push(this.generateTypeGuard(ruleName, inferredType));
+        typeDefinitions.push(
+          this.generateTypeGuard(ruleName, inferredType, guardContext),
+        );
       }
 
       typeDefinitions.push("");
@@ -311,7 +456,9 @@ export class TypeIntegrationEngine {
     const resultTypes = typedRules.map(
       (rule) => `${this.pascalCase(rule.name)}Result`,
     );
-    typeDefinitions.push("  /** Union of all parser result types */");
+    if (this.options.includeDocumentation) {
+      typeDefinitions.push("  /** Union of all parser result types */");
+    }
     typeDefinitions.push(
       `  export type ParserResult = ${resultTypes.length > 0 ? resultTypes.join(" | ") : "never"};`,
     );
@@ -319,6 +466,20 @@ export class TypeIntegrationEngine {
     // Close namespace if specified
     if (this.options.typeNamespace) {
       typeDefinitions.push("}");
+    }
+
+    if (
+      guardContext.usesArrayConstructor &&
+      guardContext.arrayConstructor !== "Array"
+    ) {
+      // A root namespace named globalThis shadows that identifier at the
+      // module level; in that case Array itself is still the global binding.
+      const globalArray =
+        namespaceSegments[0] === "globalThis" ? "Array" : "globalThis.Array";
+      typeDefinitions.unshift(
+        `const ${guardContext.arrayConstructor} = ${globalArray};`,
+        "",
+      );
     }
 
     return typeDefinitions.join("\n");
@@ -330,37 +491,64 @@ export class TypeIntegrationEngine {
   private generateTypeGuard(
     ruleName: string,
     inferredType: InferredType,
+    context: TypeGuardContext,
   ): string {
     const guardName = `is${ruleName}Result`;
     const typeName = `${ruleName}Result`;
-    const guardImplementation = `return ${this.guardExpression(inferredType)};`;
+    const expression = this.guardExpression(inferredType, "value", context);
+    if (expression.usesArrayConstructor) context.usesArrayConstructor = true;
+    const parameter =
+      expression.code === "true" || expression.code === "false"
+        ? "_value"
+        : "value";
+    const guardImplementation = `return ${expression.code};`;
 
     return [
-      `  /** Type guard for ${typeName} */`,
-      `  export function ${guardName}(value: unknown): value is ${typeName} {`,
+      ...(this.options.includeDocumentation
+        ? [`  /** Type guard for ${typeName} */`]
+        : []),
+      `  export function ${guardName}(${parameter}: unknown): ${parameter} is ${typeName} {`,
       `    ${guardImplementation}`,
       "  }",
     ].join("\n");
   }
 
   /**
-   * Build the boolean expression (no "return"/";") that checks whether
-   * `valueExpr` matches an inferred type, for use in a type guard body.
+   * Build the boolean expression and its required globals for a type guard.
+   * Keep dependencies with the expression so simplifying a constant guard
+   * also removes globals referenced only by its discarded checks.
    * `valueExpr` is the JS expression naming the value under test --
    * `"value"` at the top level, an element/member expression inside
    * array/tuple checks.
    */
   private guardExpression(
     inferredType: InferredType,
-    valueExpr = "value",
-  ): string {
+    valueExpr: string,
+    context: TypeGuardContext,
+  ): TypeGuardExpression {
+    if (inferredType.mappedFrom && !mappedBaseType(inferredType.typeString)) {
+      throw new Error(
+        `Cannot generate a type guard for custom type mapping ${JSON.stringify(inferredType.mappedFrom.typeString)} -> ${JSON.stringify(inferredType.typeString)}: its runtime shape is not known. Disable generateTypeGuards and provide your own validator for this type.`,
+      );
+    }
     // Checked before the string-literal heuristic below: a union's own
     // typeString (e.g. `"yes" | "no"`) can itself start and end with a
     // quote, which would otherwise be misread as a single string literal.
     if (inferredType.baseType === "union" && inferredType.unionMembers) {
-      return inferredType.unionMembers
-        .map((member) => `(${this.guardExpression(member, valueExpr)})`)
-        .join(" || ");
+      const members = inferredType.unionMembers.map((member) =>
+        this.guardExpression(member, valueExpr, context),
+      );
+      if (members.some((member) => member.code === "true")) {
+        return { code: "true" };
+      }
+      const alternatives = members.filter((member) => member.code !== "false");
+      if (alternatives.length === 0) return { code: "false" };
+      return {
+        code: alternatives.map((member) => `(${member.code})`).join(" || "),
+        usesArrayConstructor: alternatives.some(
+          (member) => member.usesArrayConstructor,
+        ),
+      };
     }
     // Checked BEFORE `baseType`'s own per-kind branches below: `inferStarType`/
     // `inferPlusType`/`inferQuantifiedType` (type-inference.ts) all set
@@ -375,33 +563,76 @@ export class TypeIntegrationEngine {
     // return type is a bare `value is T` predicate -- any boolean expression
     // type-checks regardless of whether it agrees with the runtime shape.
     if (inferredType.isArray) {
-      return this.arrayGuardExpression(inferredType, valueExpr);
+      return this.arrayGuardExpression(inferredType, valueExpr, context);
     }
-    if (
-      inferredType.typeString.startsWith('"') &&
-      inferredType.typeString.endsWith('"')
-    ) {
+    if (isStringLiteralType(inferredType.typeString)) {
       // String literal type
-      const literal = inferredType.typeString.slice(1, -1);
-      return `typeof ${valueExpr} === "string" && ${valueExpr} === "${literal}"`;
+      return {
+        code: `typeof ${valueExpr} === "string" && ${valueExpr} === ${inferredType.typeString.trim()}`,
+      };
     }
     if (inferredType.baseType === "string") {
-      return `typeof ${valueExpr} === "string"`;
+      return { code: `typeof ${valueExpr} === "string"` };
     }
     if (inferredType.baseType === "number") {
-      return `typeof ${valueExpr} === "number"`;
+      return { code: `typeof ${valueExpr} === "number"` };
     }
     if (inferredType.baseType === "boolean") {
-      return `typeof ${valueExpr} === "boolean"`;
+      return { code: `typeof ${valueExpr} === "boolean"` };
+    }
+    if (
+      inferredType.baseType === "bigint" ||
+      inferredType.baseType === "symbol"
+    ) {
+      return { code: `typeof ${valueExpr} === "${inferredType.baseType}"` };
     }
     if (inferredType.baseType === "object") {
-      return `typeof ${valueExpr} === "object" && ${valueExpr} !== null`;
+      const objectCheck = `((typeof ${valueExpr} === "object" && ${valueExpr} !== null) || typeof ${valueExpr} === "function")`;
+      if (!inferredType.objectProperties) return { code: objectCheck };
+      const propertyChecks = Array.from(
+        inferredType.objectProperties,
+        ([name, type]) => {
+          const key = JSON.stringify(name);
+          const optional = inferredType.optionalObjectProperties?.has(name);
+          const expression = this.guardExpression(type, "field", context);
+          if (expression.code === "false")
+            return optional
+              ? { code: `!(${key} in ${valueExpr})` }
+              : expression;
+          if (expression.code === "true") {
+            return { code: optional ? "true" : `(${key} in ${valueExpr})` };
+          }
+          const propertyExpr = `(${valueExpr} as Record<string, unknown>)[${key}]`;
+          // Bind once so TypeScript can narrow a stable identifier through
+          // nested checks, and an accessor is not read repeatedly.
+          return {
+            code: optional
+              ? `(!(${key} in ${valueExpr}) || ((field: unknown) => ${expression.code})(${propertyExpr}))`
+              : `(${key} in ${valueExpr}) && ((field: unknown) => ${expression.code})(${propertyExpr})`,
+            usesArrayConstructor: expression.usesArrayConstructor,
+          };
+        },
+      );
+      if (propertyChecks.some((check) => check.code === "false")) {
+        return { code: "false" };
+      }
+      return {
+        code: [objectCheck, ...propertyChecks.map((check) => check.code)].join(
+          " && ",
+        ),
+        usesArrayConstructor: propertyChecks.some(
+          (check) => check.usesArrayConstructor,
+        ),
+      };
     }
-    if (inferredType.baseType === "void") {
+    if (
+      inferredType.baseType === "void" ||
+      inferredType.baseType === "undefined"
+    ) {
       // Lookaheads (inferLookaheadType) never produce a value, so the
       // runtime result actually is undefined -- unlike the generic
       // fallback below, "!== undefined" would be backwards here.
-      return `${valueExpr} === undefined`;
+      return { code: `${valueExpr} === void 0` };
     }
     if (inferredType.baseType === "never") {
       // An always-failing parser (a zero-alternative `Choice` -- see
@@ -409,16 +640,22 @@ export class TypeIntegrationEngine {
       // value, so no runtime value is a `never`. Without this branch the
       // generic fallback below would emit `value !== undefined`, which
       // OR'd into an enclosing union guard accepts every defined value.
-      return "false";
+      return { code: "false" };
     }
     if (inferredType.baseType === "null") {
       // The `null` half of `optional()`'s `T | null` (NULL_INFERRED_TYPE
       // in type-inference.ts). The generic fallback `!== undefined`
       // would accept null -- and every other defined value -- so this
       // needs its own exact check.
-      return `${valueExpr} === null`;
+      return { code: `${valueExpr} === null` };
     }
-    return `${valueExpr} !== undefined`;
+    if (
+      inferredType.baseType === "unknown" ||
+      inferredType.baseType === "any"
+    ) {
+      return { code: "true" };
+    }
+    return { code: `${valueExpr} !== void 0` };
   }
 
   /**
@@ -432,20 +669,56 @@ export class TypeIntegrationEngine {
   private arrayGuardExpression(
     inferredType: InferredType,
     valueExpr: string,
-  ): string {
+    context: TypeGuardContext,
+  ): TypeGuardExpression {
+    const arrayConstructor = context.arrayConstructor;
+    const arrayCheck = `${arrayConstructor}.isArray(${valueExpr})`;
     if (inferredType.tupleVariants) {
-      const variants = inferredType.tupleVariants.map((members) =>
-        this.tupleVariantGuard(members, valueExpr),
-      );
-      return `Array.isArray(${valueExpr}) && (${variants.join(" || ")})`;
+      const variants = inferredType.tupleVariants
+        .map((members) => this.tupleVariantGuard(members, valueExpr, context))
+        .filter((variant) => variant.code !== "false");
+      if (variants.length === 0) return { code: "false" };
+      return {
+        code: `${arrayCheck} && (${variants.map((variant) => `(${variant.code})`).join(" || ")})`,
+        usesArrayConstructor: true,
+      };
     }
     if (inferredType.tupleMembers) {
-      return `Array.isArray(${valueExpr}) && ${this.tupleVariantGuard(inferredType.tupleMembers, valueExpr)}`;
+      const tuple = this.tupleVariantGuard(
+        inferredType.tupleMembers,
+        valueExpr,
+        context,
+      );
+      if (tuple.code === "false") return tuple;
+      return {
+        code: `${arrayCheck} && ${tuple.code}`,
+        usesArrayConstructor: true,
+      };
     }
     if (inferredType.arrayElement) {
-      return `Array.isArray(${valueExpr}) && ${valueExpr}.every((el: unknown) => ${this.guardExpression(inferredType.arrayElement as InferredType, "el")})`;
+      const element = this.guardExpression(
+        inferredType.arrayElement,
+        "el",
+        context,
+      );
+      // Constant element predicates need no indexed reads. A never[] can
+      // contain no elements; unknown[] accepts any array, including holes.
+      if (element.code === "true") {
+        return { code: arrayCheck, usesArrayConstructor: true };
+      }
+      if (element.code === "false") {
+        return {
+          code: `${arrayCheck} && ${valueExpr}.length === 0`,
+          usesArrayConstructor: true,
+        };
+      }
+      // findIndex visits holes as undefined, whereas every skips them.
+      return {
+        code: `${arrayCheck} && ${arrayConstructor}.prototype.findIndex.call(${valueExpr}, (el: unknown) => !(${element.code})) === -1`,
+        usesArrayConstructor: true,
+      };
     }
-    return `Array.isArray(${valueExpr})`;
+    return { code: arrayCheck, usesArrayConstructor: true };
   }
 
   /**
@@ -456,16 +729,29 @@ export class TypeIntegrationEngine {
   private tupleVariantGuard(
     members: InferredType[],
     valueExpr: string,
-  ): string {
+    context: TypeGuardContext,
+  ): TypeGuardExpression {
     const lengthCheck = `${valueExpr}.length === ${members.length}`;
-    if (members.length === 0) return lengthCheck;
-    const memberChecks = members
-      .map(
-        (member, i) =>
-          `(${this.guardExpression(member, `${valueExpr}[${i}]`)})`,
-      )
-      .join(" && ");
-    return `${lengthCheck} && ${memberChecks}`;
+    const memberChecks = members.map((member, i) => {
+      const expression = this.guardExpression(member, "field", context);
+      if (expression.code === "true" || expression.code === "false") {
+        return expression;
+      }
+      // Bind only when this member is reached, preserving short-circuiting
+      // while keeping accessor values stable through nested checks.
+      return {
+        code: `((field: unknown) => ${expression.code})(${valueExpr}[${i}])`,
+        usesArrayConstructor: expression.usesArrayConstructor,
+      };
+    });
+    if (memberChecks.some((check) => check.code === "false")) {
+      return { code: "false" };
+    }
+    const checks = memberChecks.filter((check) => check.code !== "true");
+    return {
+      code: [lengthCheck, ...checks.map((check) => check.code)].join(" && "),
+      usesArrayConstructor: checks.some((check) => check.usesArrayConstructor),
+    };
   }
 
   /**
@@ -536,6 +822,22 @@ export class TypeIntegrationEngine {
    */
   generateParserInterface(typedGrammar: TypedGrammarDefinition): string {
     const interfaceLines: string[] = [];
+    const namespaceSegments = this.validateTypeNamespace();
+    const resultTypeNames = typedGrammar.rules.map(
+      (rule) => `${this.pascalCase(rule.name)}Result`,
+    );
+    // Keep the core result wrapper distinct from a generated ParseResult
+    // alias or a root namespace of that name. Nested namespace members
+    // cannot shadow this module-level import.
+    const parseResultType =
+      namespaceSegments[0] === "ParseResult" ||
+      (namespaceSegments.length === 0 &&
+        resultTypeNames.includes("ParseResult"))
+        ? namespaceAlias("__tpegParseResult", [
+            ...namespaceSegments,
+            ...resultTypeNames,
+          ])
+        : "ParseResult";
 
     // `${name}Parser` is emitted as the interface identifier -- a
     // hand-built grammar carrying a non-identifier name would produce a
@@ -552,18 +854,26 @@ export class TypeIntegrationEngine {
     // `typeDefinitions`. Without the import (and, when those types were
     // emitted inside `typeNamespace`, without qualifying them) the two
     // outputs concatenated failed to type-check with "Cannot find name".
-    interfaceLines.push(
-      'import type { ParseResult } from "@suzumiyaaoba/tpeg-core";',
-    );
-    interfaceLines.push("");
-    interfaceLines.push("/**");
-    interfaceLines.push(
-      ` * Generated parser interface for ${typedGrammar.name} grammar`,
-    );
-    interfaceLines.push(
-      " * This interface provides type-safe access to all parser rules",
-    );
-    interfaceLines.push(" */");
+    if (typedGrammar.rules.length > 0) {
+      const importName =
+        parseResultType === "ParseResult"
+          ? "ParseResult"
+          : `ParseResult as ${parseResultType}`;
+      interfaceLines.push(
+        `import type { ${importName} } from "@suzumiyaaoba/tpeg-core";`,
+      );
+      interfaceLines.push("");
+    }
+    if (this.options.includeDocumentation) {
+      interfaceLines.push("/**");
+      interfaceLines.push(
+        ` * Generated parser interface for ${typedGrammar.name} grammar`,
+      );
+      interfaceLines.push(
+        " * This interface provides type-safe access to all parser rules",
+      );
+      interfaceLines.push(" */");
+    }
     interfaceLines.push(`export interface ${typedGrammar.name}Parser {`);
 
     for (const rule of typedGrammar.rules) {
@@ -605,7 +915,7 @@ export class TypeIntegrationEngine {
         ? `${this.options.typeNamespace}.${resultType}`
         : resultType;
       interfaceLines.push(
-        `  ${methodName}(input: string): ParseResult<${resultTypeRef}>;`,
+        `  ${methodName}(input: string): ${parseResultType}<${resultTypeRef}>;`,
       );
     }
 

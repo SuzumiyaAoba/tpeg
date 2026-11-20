@@ -1,98 +1,111 @@
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { anyChar, capture, captureSequence, charClassRun, choice, lazy, literal, negatedCharClass, notPredicate, span, untagCapture, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
 
-export const document: Parser<any> = untagCapture((input, pos) => {
+export const document: Parser<any> = untagCapture((input: string, pos: number): ReturnType<Parser<any>> => {
   const __base = (captureSequence(capture("first", lazy(() => row)), capture("rest", zeroOrMore(captureSequence(lazy(() => newline), capture("r", lazy(() => row))))), notPredicate(anyChar())));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
+  const { current: __current, next: __next } = __result;
   const __val = (() => {
     const $$: any = __result.val;
+    return (() => {
     const { first, rest } = ($$ ?? {});
 
     return [first, ...rest.map((x: { r: string[] }) => x.r)];
   
+    })();
   })();
   return {
     success: true,
     val: __val,
-    current: __result.current,
-    next: __result.next,
+    current: __current,
+    next: __next,
   };
 });
 
-export const row: Parser<any> = untagCapture((input, pos) => {
+export const row: Parser<any> = untagCapture((input: string, pos: number): ReturnType<Parser<any>> => {
   const __base = (captureSequence(capture("head", lazy(() => field)), capture("tail", zeroOrMore(captureSequence(literal(","), capture("f", lazy(() => field)))))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
+  const { current: __current, next: __next } = __result;
   const __val = (() => {
     const $$: any = __result.val;
+    return (() => {
     const { head, tail } = ($$ ?? {});
 
     const all = [head, ...tail.map((x: { f: { v: string; blank: boolean } }) => x.f)];
     return all.length === 1 && all[0].blank ? null : all.map((x) => x.v);
   
+    })();
   })();
   return {
     success: true,
     val: __val,
-    current: __result.current,
-    next: __result.next,
+    current: __current,
+    next: __next,
   };
 });
 
 export const field: Parser<any> = untagCapture(choice(lazy(() => quoted), lazy(() => unquoted)));
 
-export const quoted: Parser<any> = untagCapture((input, pos) => {
+export const quoted: Parser<any> = untagCapture((input: string, pos: number): ReturnType<Parser<any>> => {
   const __base = (captureSequence(literal("\""), capture("chars", zeroOrMore(choice(lazy(() => escaped_quote), negatedCharClass("\"")))), literal("\"")));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
+  const { current: __current, next: __next } = __result;
   const __val = (() => {
     const $$: any = __result.val;
+    return (() => {
     const { chars } = ($$ ?? {});
 
     return { v: chars.join(""), blank: false };
   
+    })();
   })();
   return {
     success: true,
     val: __val,
-    current: __result.current,
-    next: __result.next,
+    current: __current,
+    next: __next,
   };
 });
 
-export const escaped_quote: Parser<any> = untagCapture((input, pos) => {
+export const escaped_quote: Parser<any> = untagCapture((input: string, pos: number): ReturnType<Parser<any>> => {
   const __base = (literal("\"\""));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
+  const { current: __current, next: __next } = __result;
   const __val = (() => {
  return "\""; 
   })();
   return {
     success: true,
     val: __val,
-    current: __result.current,
-    next: __result.next,
+    current: __current,
+    next: __next,
   };
 });
 
-export const unquoted: Parser<any> = untagCapture((input, pos) => {
+export const unquoted: Parser<any> = untagCapture((input: string, pos: number): ReturnType<Parser<any>> => {
   const __base = (capture("text", span(charClassRun([",", "\r", "\n", "\""], 0, true))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
+  const { current: __current, next: __next } = __result;
   const __val = (() => {
     const $$: any = __result.val;
+    return (() => {
     const { text } = ($$ ?? {});
 
     const v = text.trim();
     return { v, blank: v === "" };
   
+    })();
   })();
   return {
     success: true,
     val: __val,
-    current: __result.current,
-    next: __result.next,
+    current: __current,
+    next: __next,
   };
 });
 

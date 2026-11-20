@@ -92,6 +92,22 @@ export class ExportResolutionError extends Error {
   }
 }
 
+/** Duplicate declarations cannot be addressed independently: every
+ * grammar in a module contributes to the same rule namespace. */
+export class DuplicateRuleDefinitionError extends Error {
+  constructor(
+    public readonly ruleName: string,
+    public readonly moduleName: string,
+    public readonly firstGrammar: string,
+    public readonly secondGrammar: string,
+  ) {
+    super(
+      `Duplicate rule '${ruleName}' in module '${moduleName}': declared in grammar '${firstGrammar}' and again in grammar '${secondGrammar}' -- module rule names must be unique.`,
+    );
+    this.name = "DuplicateRuleDefinitionError";
+  }
+}
+
 /**
  * Qualified-name resolution error.
  */
@@ -143,6 +159,9 @@ export class NamespaceManager {
    * comment) instead of the second registration silently overwriting
    * the first's `scopes`/`moduleRules` entry. */
   private moduleFilePaths = new Map<string, string>();
+  /** Normalized file path -> its current namespace. Also keeps exact
+   * import lookup and namespace refresh independent of module count. */
+  private moduleNamesByPath = new Map<string, string>();
   /** Selective import lists: module name -> (import alias -> the rule
    * names `import "m.tpeg" { r1, r2 }` brings into scope). Imports
    * without a `{...}` list have no entry here -- they expose everything
@@ -154,22 +173,25 @@ export class NamespaceManager {
    *
    * @throws {ModuleNameCollisionError} if a DIFFERENT `filePath` was
    *   already registered under the same derived module name (no explicit
-   *   `@namespace` on one or both) -- re-registering the SAME `filePath`
-   *   (e.g. re-resolving an already-registered module) is not a
-   *   collision and simply refreshes its entry.
+   *   `@namespace` on one or both). A normalized file path identifies the
+   *   same module: re-registering it refreshes the entry, removing its
+   *   previous namespace if the name changed.
    * @throws {ExportResolutionError} if any grammar's `@export: [...]`
    *   lists a rule name the module never declares -- see that error's
    *   doc comment for the phantom-export failure mode this prevents.
+   * @throws {DuplicateRuleDefinitionError} if multiple declarations use
+   *   the same rule name, within one grammar or across sibling grammars.
    */
   registerModule(moduleFile: ModuleFile): void {
     const moduleName =
       moduleFile.moduleInfo?.namespace ||
       this.extractModuleName(moduleFile.filePath);
+    const pathKey = normalizeModulePath(moduleFile.filePath);
 
     const existingFilePath = this.moduleFilePaths.get(moduleName);
     if (
       existingFilePath !== undefined &&
-      existingFilePath !== moduleFile.filePath
+      normalizeModulePath(existingFilePath) !== pathKey
     ) {
       throw new ModuleNameCollisionError(
         moduleName,
@@ -177,8 +199,8 @@ export class NamespaceManager {
         moduleFile.filePath,
       );
     }
-    // NOTE: no shared state (`moduleFilePaths`, `selectiveImports`,
-    // `scopes`, `moduleRules`) is written until the export validation
+    // NOTE: no shared state (`moduleFilePaths`, `moduleNamesByPath`, `selectiveImports`,
+    // `scopes`, `moduleRules`) is written until all registration validation
     // below has passed -- a registration that fails with
     // `ExportResolutionError` must leave no residue behind, or a later
     // registration of a DIFFERENT file under this module name would hit
@@ -231,6 +253,18 @@ export class NamespaceManager {
     for (const grammar of moduleFile.grammars) {
       // Process rules
       for (const rule of grammar.rules) {
+        if (rules.has(rule.name)) {
+          const firstGrammar =
+            moduleFile.grammars.find((candidate) =>
+              candidate.rules.some((existing) => existing.name === rule.name),
+            )?.name ?? grammar.name;
+          throw new DuplicateRuleDefinitionError(
+            rule.name,
+            moduleName,
+            firstGrammar,
+            grammar.name,
+          );
+        }
         scope.localRules.add(rule.name);
         rules.set(rule.name, rule);
       }
@@ -266,6 +300,16 @@ export class NamespaceManager {
     }
 
     // Commit phase -- nothing below this point can throw.
+    // Re-registering a file under a changed @namespace replaces the old
+    // registration. Keep it intact until all validation has succeeded.
+    const previousName = this.moduleNamesByPath.get(pathKey);
+    if (previousName !== undefined && previousName !== moduleName) {
+      this.moduleFilePaths.delete(previousName);
+      this.selectiveImports.delete(previousName);
+      this.scopes.delete(previousName);
+      this.moduleRules.delete(previousName);
+    }
+    this.moduleNamesByPath.set(pathKey, moduleName);
     this.moduleFilePaths.set(moduleName, moduleFile.filePath);
     if (scopeSelectiveImports.size > 0) {
       this.selectiveImports.set(moduleName, scopeSelectiveImports);
@@ -625,21 +669,8 @@ export class NamespaceManager {
         : `${importerDir}/${modulePath}`,
     );
 
-    const pathMatches = new Set<string>();
-    for (const [moduleName, filePath] of this.moduleFilePaths) {
-      if (normalizeModulePath(filePath) === resolvedPath) {
-        pathMatches.add(moduleName);
-      }
-    }
-    if (pathMatches.size === 1) {
-      return [...pathMatches][0];
-    }
-    if (pathMatches.size > 1) {
-      throw new QualifiedNameResolutionError(
-        modulePath,
-        `Module path '${modulePath}' is ambiguous: it resolves to '${resolvedPath}', which is the filePath of multiple registered modules: ${[...pathMatches].join(", ")}`,
-      );
-    }
+    const byPath = this.moduleNamesByPath.get(resolvedPath);
+    if (byPath !== undefined) return byPath;
 
     const basename = this.extractModuleName(modulePath);
     const candidates = new Set<string>();
@@ -691,6 +722,7 @@ export class NamespaceManager {
     // down) would be wrongly rejected with a `ModuleNameCollisionError`
     // even though `getRegisteredModules()` reports nothing registered.
     this.moduleFilePaths.clear();
+    this.moduleNamesByPath.clear();
     this.selectiveImports.clear();
   }
 }

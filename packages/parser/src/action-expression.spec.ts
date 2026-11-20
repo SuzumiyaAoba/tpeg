@@ -3,6 +3,7 @@
  * alternative.
  */
 
+import { evaluateGeneratedModule } from "./generated-runtime";
 import { describe, expect, test } from "vite-plus/test";
 import { generateTypeScriptParser } from "./codegen";
 import { generateOptimizedTypeScriptParser } from "./codegen-optimized";
@@ -270,12 +271,7 @@ describe("ActionExpression code generation (runtime)", () => {
       includeTypes: false,
     });
 
-    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-    const moduleFactory = new Function(
-      ...Object.keys(core),
-      `${body}\nreturn { number };`,
-    );
-    const { number } = moduleFactory(...Object.values(core));
+    const { number } = evaluateGeneratedModule(result.code, core, ["number"]);
 
     const parsed = number("123abc", 0);
     expect(parsed.success).toBe(true);
@@ -310,12 +306,7 @@ describe("ActionExpression code generation (runtime)", () => {
     });
     expect(result.code).toContain("captureSequence(");
 
-    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-    const moduleFactory = new Function(
-      ...Object.keys(core),
-      `${body}\nreturn { pair };`,
-    );
-    const { pair } = moduleFactory(...Object.values(core));
+    const { pair } = evaluateGeneratedModule(result.code, core, ["pair"]);
 
     const parsed = pair("ab", 0);
     expect(parsed.success).toBe(true);
@@ -348,12 +339,7 @@ describe("ActionExpression code generation (runtime)", () => {
       includeImports: false,
       includeTypes: false,
     });
-    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-    const moduleFactory = new Function(
-      ...Object.keys(core),
-      `${body}\nreturn { number };`,
-    );
-    const { number } = moduleFactory(...Object.values(core));
+    const { number } = evaluateGeneratedModule(result.code, core, ["number"]);
 
     const parsed = number("abc", 0);
     expect(parsed.success).toBe(false);
@@ -393,12 +379,7 @@ describe("ActionExpression code generation (runtime)", () => {
       includeImports: false,
       includeTypes: false,
     });
-    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-    const moduleFactory = new Function(
-      ...Object.keys(core),
-      `${body}\nreturn { start };`,
-    );
-    const { start } = moduleFactory(...Object.values(core));
+    const { start } = evaluateGeneratedModule(result.code, core, ["start"]);
 
     const parsedA = start("a", 0);
     expect(parsedA.success).toBe(true);
@@ -449,12 +430,7 @@ describe("ActionExpression code generation (runtime)", () => {
         includeImports: false,
         includeTypes: false,
       });
-      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-      const moduleFactory = new Function(
-        ...Object.keys(core),
-        `${body}\nreturn { start };`,
-      );
-      const { start } = moduleFactory(...Object.values(core));
+      const { start } = evaluateGeneratedModule(result.code, core, ["start"]);
 
       const matched = start("x", 0);
       expect(matched.success).toBe(true);
@@ -495,12 +471,7 @@ describe("ActionExpression code generation (runtime)", () => {
       includeImports: false,
       includeTypes: false,
     });
-    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-    const moduleFactory = new Function(
-      ...Object.keys(core),
-      `${body}\nreturn { start };`,
-    );
-    const { start } = moduleFactory(...Object.values(core));
+    const { start } = evaluateGeneratedModule(result.code, core, ["start"]);
 
     const parsed = start("ab", 0);
     expect(parsed.success).toBe(true);
@@ -544,12 +515,7 @@ describe("ActionExpression code generation (runtime)", () => {
     expect(result.code).toContain("const { a } = ($$ ?? {});");
     expect(result.code).not.toContain("const { a, a } = ($$ ?? {});");
 
-    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-    const moduleFactory = new Function(
-      ...Object.keys(core),
-      `${body}\nreturn { start };`,
-    );
-    const { start } = moduleFactory(...Object.values(core));
+    const { start } = evaluateGeneratedModule(result.code, core, ["start"]);
 
     const parsed = start("xy", 0);
     expect(parsed.success).toBe(true);
@@ -582,12 +548,7 @@ describe("ActionExpression code generation (runtime)", () => {
       includeImports: false,
       includeTypes: false,
     });
-    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-    const moduleFactory = new Function(
-      ...Object.keys(core),
-      `${body}\nreturn { start };`,
-    );
-    const { start } = moduleFactory(...Object.values(core));
+    const { start } = evaluateGeneratedModule(result.code, core, ["start"]);
 
     const parsed = start("b", 0);
     expect(parsed.success).toBe(true);
@@ -620,12 +581,7 @@ describe("ActionExpression code generation (runtime)", () => {
     });
     expect(result.code).toContain("captureSequence(");
 
-    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-    const moduleFactory = new Function(
-      ...Object.keys(core),
-      `${body}\nreturn { pair };`,
-    );
-    const { pair } = moduleFactory(...Object.values(core));
+    const { pair } = evaluateGeneratedModule(result.code, core, ["pair"]);
 
     const parsed = pair("ab", 0);
     expect(parsed.success).toBe(true);
@@ -639,7 +595,7 @@ describe("ActionExpression code generation (runtime)", () => {
     // merged capture object and a positional tuple, so an untyped `$$`
     // fails `tsc --noEmit` (TS2339) when a multi-label action destructures
     // it - even though the generated code runs correctly (this package's
-    // other runtime tests all use `new Function`, which never typechecks
+    // other runtime tests execute generated JavaScript without typechecking
     // anything, so this class of bug was invisible until a real .ts file
     // generated from a multi-label action was actually compiled).
     const grammar = createGrammarDefinition(
@@ -666,7 +622,7 @@ describe("ActionExpression code generation (runtime)", () => {
     expect(withTypes.code).toContain("const $$: any = __result.val;");
 
     // includeTypes: false must stay free of type syntax entirely, so the
-    // output remains valid to run directly (e.g. via `new Function`, as
+    // output remains valid to run directly (via the module evaluator, as
     // this file's other tests do) without a TypeScript transpile step.
     const withoutTypes = generateTypeScriptParser(grammar, {
       includeImports: false,

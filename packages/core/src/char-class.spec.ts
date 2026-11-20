@@ -260,6 +260,35 @@ describe("charClass", () => {
 });
 
 describe("charClassRun", () => {
+  it.each([
+    -1,
+    2,
+    0.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+  ])("rejects an unsupported minimum of %s at construction", (min) => {
+    expect(() => charClassRun(["a"], min as 0 | 1)).toThrow(
+      "Invalid character class run minimum",
+    );
+  });
+
+  it("rejects non-numeric minimums without treating them as zero", () => {
+    for (const min of [
+      0n,
+      "0",
+      Symbol("minimum"),
+      null,
+      undefined,
+      Object.create(null),
+      new Number(0),
+    ]) {
+      expect(() => charClassRun(["a"], min as 0 | 1)).toThrow(
+        "Invalid character class run minimum",
+      );
+    }
+  });
+
   it("returns the same array, .next, and success as oneOrMore(charClass(...)) across a mixed corpus (min=1)", () => {
     const specs: [string, string] = ["0", "9"];
     const inputs = ["", "5", "42", "42abc", "abc", "1234567890x"];

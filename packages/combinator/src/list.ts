@@ -65,14 +65,19 @@ export const sepBy = <T, S>(
       return { success: true, val: [], current: pos, next: pos };
     }
 
-    const restResult = rest(input, first.next);
+    // A child parser may reuse its result object on the next invocation.
+    // Keep the first value before asking it to parse the remaining items.
+    const firstNext = first.next;
+    const firstValue = first.val;
+    const restResult = rest(input, firstNext);
     if (!restResult.success) return restResult;
+    const next = restResult.next;
 
     return {
       success: true,
-      val: [first.val, ...restResult.val],
+      val: [firstValue, ...restResult.val],
       current: pos,
-      next: restResult.next,
+      next,
     };
   };
 
@@ -97,6 +102,20 @@ export const sepBy1 = <T, S>(
   return named(parser, parserName);
 };
 
+const commaSeparatedTail = <T>(
+  item: Parser<T>,
+  allowTrailing: boolean,
+): Parser<T[]> => {
+  const comma = token(literal(","));
+  return map(
+    seq(
+      zeroOrMore(dropSeparator(comma, item)),
+      allowTrailing ? optional(comma) : map(notPredicate(comma), () => []),
+    ),
+    ([rest]) => rest,
+  );
+};
+
 /**
  * Parser for comma-separated values with customizable value parser.
  */
@@ -105,27 +124,38 @@ export const commaSeparated = <T>(
   allowTrailing = false,
   parserName?: string,
 ): Parser<T[]> => {
-  const empty = map(notPredicate(valueParser), () => [] as T[]);
-  const nonEmpty = commaSeparated1(valueParser, allowTrailing);
+  const item = token(valueParser);
+  const tail = commaSeparatedTail(item, allowTrailing);
 
-  // Not `choice(nonEmpty, empty)`: unlike `sepBy` above, `empty`'s
-  // `notPredicate(valueParser)` check deliberately distinguishes "nothing
-  // here at all" (fall back to `[]`) from "something's here but malformed"
-  // (e.g. a disallowed trailing comma, which makes `nonEmpty` fail even
-  // though a value WAS present -- `empty`'s own check then also fails,
-  // correctly rejecting the whole thing) -- `optional(nonEmpty)` would
-  // collapse that second case into a silent `[]` too. This still needs the
-  // same fix `sepBy` needed, though: a `fatal` (cut/commit) failure from
-  // inside `nonEmpty` must propagate to whatever encloses
-  // `commaSeparated(...)`, not be laundered into "try `empty` instead" by
-  // `choice`'s boundary-absorption (see `commit`'s doc comment,
-  // `@suzumiyaaoba/tpeg-core`). Replicating `choice`'s two-alternative
-  // trial by hand, but returning a fatal failure as-is instead of
-  // absorbing it, keeps both properties.
+  // Decide whether the list is empty from the first token's result. A
+  // separate raw valueParser probe would miss leading whitespace and
+  // could turn a malformed nonempty list into []. Once an item matches,
+  // every failure from the tail must propagate. Cut/abort failures from
+  // the first item likewise stay failures rather than selecting [].
   const parser: Parser<T[]> = (input, pos) => {
-    const result = nonEmpty(input, pos);
-    if (result.success || isFatalFailure(result)) return result;
-    return empty(input, pos);
+    if (!isValidOffset(pos) || pos > input.length) {
+      return createFailure("Expected a valid position", pos, {
+        parserName: parserName ?? "commaSeparated",
+      });
+    }
+
+    const first = item(input, pos);
+    if (!first.success) {
+      if (isFatalFailure(first)) return first;
+      return { success: true, val: [], current: pos, next: pos };
+    }
+
+    const firstNext = first.next;
+    const firstValue = first.val;
+    const rest = tail(input, firstNext);
+    if (!rest.success) return rest;
+    const next = rest.next;
+    return {
+      success: true,
+      val: [firstValue, ...rest.val],
+      current: pos,
+      next,
+    };
   };
 
   return named(parser, parserName);
@@ -139,16 +169,12 @@ export const commaSeparated1 = <T>(
   allowTrailing = false,
   parserName?: string,
 ): Parser<NonEmptyArray<T>> => {
-  const comma = token(literal(","));
+  const item = token(valueParser);
 
   // The shared `token(valueParser)` prefix is parsed once; branching only on
   // what follows avoids re-parsing it for the (common) single-element case.
   const parser = map(
-    seq(
-      token(valueParser),
-      zeroOrMore(dropSeparator(comma, token(valueParser))),
-      allowTrailing ? optional(comma) : map(notPredicate(comma), () => []),
-    ),
+    seq(item, commaSeparatedTail(item, allowTrailing)),
     ([first, rest]) => [first, ...rest] as NonEmptyArray<T>,
   );
 

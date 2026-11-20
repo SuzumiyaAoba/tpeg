@@ -4,8 +4,20 @@
  * restrictions, shape-sensitivity gating).
  */
 
-import { forEachExpression, someExpression } from "@suzumiyaaoba/tpeg-core";
+import {
+  forEachExpression,
+  getSingleCodePoint,
+  someExpression,
+} from "@suzumiyaaoba/tpeg-core";
 import type { Expression, GrammarDefinition, RuleDefinition } from "./types";
+
+/** Whether literal(value) agrees with a one-code-point character class.
+ * A lone lead surrogate may match the first half of an astral input,
+ * whereas a character class always reads the whole code point. */
+export const isCharacterClassLiteral = (value: string): boolean => {
+  const code = getSingleCodePoint(value);
+  return code !== undefined && !(code >= 0xd800 && code <= 0xdbff);
+};
 
 /** Does `expr` contain a `LabeledExpression` anywhere in its subtree?
  * Used by `ast-optimize-left-factor.ts`'s `leftFactorChoices` and

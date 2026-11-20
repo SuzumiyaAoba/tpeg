@@ -62,6 +62,28 @@ describe("VersionManager", () => {
   });
 
   describe("parseVersion", () => {
+    it.each([
+      "9007199254740993.0.0",
+      "0.9007199254740993.0",
+      "0.0.9007199254740993",
+      `${"9".repeat(400)}.0.0`,
+    ])(
+      "rejects a numeric component that cannot be represented exactly: %s",
+      (source) => {
+        expect(() => manager.parseVersion(source)).toThrow(VersionParseError);
+        expect(manager.checkCompatibility("test", "*", source)).toBe(false);
+      },
+    );
+
+    it("accepts the safe-integer boundary and arbitrarily large numeric prerelease identifiers", () => {
+      const version = manager.parseVersion(
+        "9007199254740991.9007199254740991.9007199254740991-alpha.9007199254740993",
+      );
+      expect(version.major).toBe(Number.MAX_SAFE_INTEGER);
+      expect(version.minor).toBe(Number.MAX_SAFE_INTEGER);
+      expect(version.patch).toBe(Number.MAX_SAFE_INTEGER);
+      expect(version.prerelease).toBe("alpha.9007199254740993");
+    });
     it("should parse valid semantic versions", () => {
       const version = manager.parseVersion("1.2.3");
       expect(version).toEqual({
@@ -400,6 +422,57 @@ describe("VersionManager", () => {
   });
 
   describe("satisfiesConstraint", () => {
+    it("checks and formats shared or cyclic comparator references once", () => {
+      const lower = manager.parseVersionConstraint(">=1.0.0");
+      const upper = manager.parseVersionConstraint("<2.0.0");
+      lower.additional = [upper, upper];
+      upper.additional = [lower];
+      expect(
+        manager.satisfiesConstraint(manager.parseVersion("1.5.0"), lower),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(manager.parseVersion("2.5.0"), lower),
+      ).toBe(false);
+      expect(manager.formatConstraint(lower)).toBe(">=1.0.0, <2.0.0");
+    });
+    it("enforces every comparator in nested additional constraints", () => {
+      const constraint = manager.parseVersionConstraint(">=1.0.0, <3.0.0");
+      constraint.additional?.push(
+        manager.parseVersionConstraint(">=1.5.0, <2.0.0"),
+      );
+      expect(
+        manager.satisfiesConstraint(manager.parseVersion("1.7.0"), constraint),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(manager.parseVersion("2.5.0"), constraint),
+      ).toBe(false);
+      const reparsed = manager.parseVersionConstraint(
+        manager.formatConstraint(constraint),
+      );
+      expect(
+        manager.satisfiesConstraint(manager.parseVersion("2.5.0"), reparsed),
+      ).toBe(false);
+    });
+
+    it("uses a nested prerelease comparator to admit its matching prerelease tuple", () => {
+      const constraint = manager.parseVersionConstraint(">=0.0.0");
+      constraint.additional = [
+        manager.parseVersionConstraint("<2.0.0, >=1.0.0-alpha"),
+      ];
+      expect(
+        manager.satisfiesConstraint(
+          manager.parseVersion("1.0.0-beta"),
+          constraint,
+        ),
+      ).toBe(true);
+      expect(
+        manager.satisfiesConstraint(
+          manager.parseVersion("1.1.0-beta"),
+          constraint,
+        ),
+      ).toBe(false);
+    });
+
     const version: SemanticVersion = { major: 1, minor: 2, patch: 3 };
 
     it("should handle exact match constraint", () => {
@@ -1256,6 +1329,34 @@ describe("VersionManager", () => {
 
       expect(manager.formatVersion(version)).toBe("1.2.3-alpha");
       expect(manager.formatConstraint(constraint)).toBe("^1.2.3-alpha");
+    });
+
+    it.each([
+      ["^0", "^0"],
+      ["^0.0", "^0.0"],
+      ["~1", "~1"],
+      ["=1", "=1"],
+      [">1.2", ">1.2"],
+      ["<=1.2", "<=1.2"],
+      [">=1.2, <2", ">=1.2.0, <2.0.0"],
+    ])("preserves matching behavior when formatting %s", (source, expected) => {
+      const constraint = manager.parseVersionConstraint(source);
+      const formatted = manager.formatConstraint(constraint);
+      expect(formatted).toBe(expected);
+      const reparsed = manager.parseVersionConstraint(formatted);
+      for (const candidate of [
+        "0.0.2",
+        "0.5.1",
+        "1.2.7",
+        "1.3.0",
+        "1.9.9",
+        "2.0.0",
+      ]) {
+        const version = manager.parseVersion(candidate);
+        expect(manager.satisfiesConstraint(version, reparsed)).toBe(
+          manager.satisfiesConstraint(version, constraint),
+        );
+      }
     });
 
     it("should clear all data", () => {

@@ -43,9 +43,8 @@ import { isValidOffset } from "./utils";
  * - `NaN` slipped through every one of those coercions and, worst of all,
  *   produced `next = NaN` -- which made `zeroOrMore`'s
  *   `result.next === currentPos` loop guard (`NaN === NaN` is false)
- *   loop forever. The guard is now `!(result.next > currentPos)`, so a
- *   `NaN` or backwards `next` is flagged as the same zero-progress
- *   violation instead.
+ *   loop forever. Repetition now rejects malformed or backwards `next`
+ *   before checking whether the valid position made progress.
  */
 describe("position contract: out-of-contract pos always fails", () => {
   const input = "aBcあ";
@@ -113,6 +112,32 @@ describe("position contract: out-of-contract pos always fails", () => {
 });
 
 describe("position contract: isValidOffset", () => {
+  it("rejects non-numeric values without throwing", () => {
+    for (const pos of [
+      Symbol("position"),
+      0n,
+      "0",
+      null,
+      undefined,
+      Object.create(null),
+      new Number(0),
+    ]) {
+      expect(isValidOffset(pos)).toBe(false);
+    }
+  });
+
+  it("does not invoke an object's numeric conversion", () => {
+    let conversions = 0;
+    const pos = {
+      [Symbol.toPrimitive]() {
+        conversions++;
+        return 0;
+      },
+    };
+    expect(isValidOffset(pos)).toBe(false);
+    expect(conversions).toBe(0);
+  });
+
   const valid = [0, 1, -0, 42, 2 ** 31, 2 ** 32 - 1];
   const invalid = [
     -1,
@@ -135,6 +160,23 @@ describe("position contract: isValidOffset", () => {
       expect(isValidOffset(pos)).toBe(false);
     });
   }
+});
+
+describe("position contract: non-numeric parser positions", () => {
+  const leaves: [string, Parser<unknown>][] = [
+    ["literal", literal("a")],
+    ["anyChar", anyChar()],
+    ["charClass", charClass(["a", "z"])],
+    ["regexFused", regexFused("a", "letter")],
+  ];
+  it.each(leaves)(
+    "%s rejects a Symbol position as a failure",
+    (_name, parser) => {
+      expect(
+        parser("abc", Symbol("position") as unknown as number).success,
+      ).toBe(false);
+    },
+  );
 });
 
 describe("position contract: repetition loops cannot hang on a bad next", () => {

@@ -1,3 +1,4 @@
+import { evaluateGeneratedModule } from "./generated-runtime";
 import { describe, expect, it } from "vite-plus/test";
 import { generateTypeScriptParser } from "./codegen";
 import { generateOptimizedTypeScriptParser } from "./codegen-optimized";
@@ -535,12 +536,7 @@ describe("Capture Integration Tests", () => {
       });
       expect(result.code).toContain("captureSequence(");
 
-      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-      const moduleFactory = new Function(
-        ...Object.keys(core),
-        `${body}\nreturn { pair };`,
-      );
-      const { pair } = moduleFactory(...Object.values(core));
+      const { pair } = evaluateGeneratedModule(result.code, core, ["pair"]);
 
       const result1 = pair("ab", createPositionAt(0));
       expect(result1.success).toBe(true);

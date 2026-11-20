@@ -13,6 +13,7 @@
  * test does compare `.val`.
  */
 
+import { evaluateGeneratedModule } from "./generated-runtime";
 import { describe, expect, it } from "vite-plus/test";
 import {
   applyAstOptimizations,
@@ -56,25 +57,23 @@ import type { Expression, GrammarDefinition } from "./types";
 
 const ORIGIN = 0;
 
-/** Compiles `grammar` to a runnable parser bound to `ruleName`, the same
- * `new Function`-based pattern `leftFactorChoices`'s differential test
- * below uses. Module-level (rather than redefined per test) since
- * `insertAutomaticCuts`'s tests need it in several places. */
+function choicePatternFor(grammar: GrammarDefinition, index: number) {
+  const pattern = grammar.rules[index]?.pattern;
+  expect(pattern?.type).toBe("Choice");
+  if (pattern?.type !== "Choice") {
+    throw new Error(`Expected a Choice pattern at rule ${index}`);
+  }
+  return pattern;
+}
+
+/** Compiles a rule through the shared evaluator for AST and cut regressions. */
 async function compileRuleFor(grammar: GrammarDefinition, ruleName: string) {
   const core = await import("@suzumiyaaoba/tpeg-core");
   const generated = generateTypeScriptParser(grammar, {
     includeImports: false,
     includeTypes: false,
   });
-  const body = generated.code.replace(/^export const (\w+)/gm, "const $1");
-  const ruleNames = [...generated.code.matchAll(/^export const (\w+)/gm)].map(
-    (m) => m[1] as string,
-  );
-  const factory = new Function(
-    ...Object.keys(core),
-    `${body}\nreturn { ${ruleNames.join(", ")} };`,
-  );
-  const built = factory(...Object.values(core)) as Record<
+  const built = evaluateGeneratedModule(generated.code, core) as Record<
     string,
     (
       input: string,
@@ -96,6 +95,57 @@ grammar Arith {
   number = [0-9]+
 }
 `;
+
+describe("surrogate boundaries in AST rewrites", () => {
+  it("keeps a lead-surrogate literal's prefix semantics when merging character choices", async () => {
+    const grammar = createGrammarDefinition(
+      "Surrogate",
+      [],
+      [
+        createRuleDefinition(
+          "start",
+          createChoice([
+            createStringLiteral("\ud83d", '"'),
+            createStringLiteral("x", '"'),
+          ]),
+        ),
+      ],
+    );
+    const original = await compileRuleFor(grammar, "start");
+    const merged = await compileRuleFor(
+      mergeCharacterClasses(grammar),
+      "start",
+    );
+    expect(original("😀", 0).success).toBe(true);
+    expect(merged("😀", 0)).toEqual(original("😀", 0));
+  });
+
+  it.each([createAnyChar(), createStringLiteral("😀", '"')])(
+    "does not remove a negative lead-surrogate assertion before %j",
+    async (target) => {
+      const grammar = createGrammarDefinition(
+        "Surrogate",
+        [],
+        [
+          createRuleDefinition(
+            "start",
+            createSequence([
+              createNegativeLookahead(createStringLiteral("\ud83d", '"')),
+              target,
+            ]),
+          ),
+        ],
+      );
+      const original = await compileRuleFor(grammar, "start");
+      const rewritten = await compileRuleFor(
+        degenerateNegativeLookaheads(grammar),
+        "start",
+      );
+      expect(original("😀", 0).success).toBe(false);
+      expect(rewritten("😀", 0).success).toBe(false);
+    },
+  );
+});
 
 describe("leftFactorChoices", () => {
   it("factors a Choice whose alternatives share an Identifier prefix", () => {
@@ -140,15 +190,7 @@ describe("leftFactorChoices", () => {
         includeImports: false,
         includeTypes: false,
       });
-      const body = generated.code.replace(/^export const (\w+)/gm, "const $1");
-      const ruleNames = [
-        ...generated.code.matchAll(/^export const (\w+)/gm),
-      ].map((m) => m[1] as string);
-      const factory = new Function(
-        ...Object.keys(core),
-        `${body}\nreturn { ${ruleNames.join(", ")} };`,
-      );
-      const built = factory(...Object.values(core)) as Record<
+      const built = evaluateGeneratedModule(generated.code, core) as Record<
         string,
         (
           input: string,
@@ -820,7 +862,7 @@ grammar NoCutSub {
 });
 
 /** Compiles `grammar`'s `ruleName` rule to a runnable parser via
- * `new Function`, the same pattern used throughout this file and
+ * generated-module evaluation, the same pattern used throughout this file and
  * `codegen-optimized.spec.ts`. */
 async function compileRuleForTest(
   grammar: GrammarDefinition,
@@ -831,15 +873,7 @@ async function compileRuleForTest(
     includeImports: false,
     includeTypes: false,
   });
-  const body = generated.code.replace(/^export const (\w+)/gm, "const $1");
-  const ruleNames = [...generated.code.matchAll(/^export const (\w+)/gm)].map(
-    (m) => m[1] as string,
-  );
-  const factory = new Function(
-    ...Object.keys(core),
-    `${body}\nreturn { ${ruleNames.join(", ")} };`,
-  );
-  const built = factory(...Object.values(core)) as Record<
+  const built = evaluateGeneratedModule(generated.code, core) as Record<
     string,
     (
       input: string,
@@ -1667,9 +1701,10 @@ describe("applyAstOptimizations", () => {
 
     expect(optimized.rules[0]?.pattern.type).toBe("Choice"); // left-factored
     expect(optimized.rules[1]?.pattern.type).toBe("CharacterClass"); // merged
-    const quotedStar = (
-      optimized.rules[2]?.pattern as Extract<Expression, { type: "Sequence" }>
-    ).elements[1];
+    const quotedPattern = optimized.rules[2]?.pattern;
+    expect(quotedPattern?.type).toBe("Sequence");
+    if (quotedPattern?.type !== "Sequence") return;
+    const quotedStar = quotedPattern.elements[1];
     expect(quotedStar?.type).toBe("Star");
     if (quotedStar?.type === "Star") {
       expect(quotedStar.expression.type).toBe("CharacterClass"); // degenerated
@@ -1903,9 +1938,7 @@ describe("insertAutomaticCuts", () => {
     const withCuts = insertAutomaticCuts(grammar);
     // Confirm the vacuous cut really was inserted, so this test is
     // actually exercising the case it claims to.
-    const stmtAlt2 = (
-      withCuts.rules[1]?.pattern as Extract<Expression, { type: "Choice" }>
-    ).alternatives[1];
+    const stmtAlt2 = choicePatternFor(withCuts, 1).alternatives[1];
     expect(stmtAlt2?.type).toBe("Sequence");
     if (stmtAlt2?.type === "Sequence") {
       expect(stmtAlt2.elements.map((e) => e.type)).toContain("Cut");
@@ -2296,8 +2329,7 @@ describe("insertAutomaticCuts", () => {
       // No cut anywhere: both alternatives come back byte-for-byte
       // unchanged from the input grammar.
       expect(pattern.alternatives).toEqual(
-        (grammar.rules[0]?.pattern as Extract<Expression, { type: "Choice" }>)
-          .alternatives,
+        choicePatternFor(grammar, 0).alternatives,
       );
     });
 
@@ -2415,10 +2447,7 @@ describe("insertAutomaticCuts", () => {
       // fourth alternative excluded, and with the Choice bailed out of
       // regrouping, there's no nested boundary to protect a partial
       // exclusion with.
-      expect(aAlt).toEqual(
-        (grammar.rules[0]?.pattern as Extract<Expression, { type: "Choice" }>)
-          .alternatives[0] as Expression,
-      );
+      expect(aAlt).toEqual(choicePatternFor(grammar, 0).alternatives[0]);
       expect(bAlt?.type).toBe("StringLiteral");
       expect(cAlt?.type).toBe("StringLiteral");
 
@@ -2644,8 +2673,7 @@ describe("insertAutomaticCuts", () => {
       // alternatives byte-for-byte unchanged.
       expect(pattern.alternatives.length).toBe(3);
       expect(pattern.alternatives[0]).toEqual(
-        (grammar.rules[0]?.pattern as Extract<Expression, { type: "Choice" }>)
-          .alternatives[0] as Expression,
+        choicePatternFor(grammar, 0).alternatives[0],
       );
       expect(pattern.alternatives[1]?.type).toBe("Identifier");
 
@@ -2723,8 +2751,7 @@ describe("insertAutomaticCuts", () => {
       // `Choice` with exactly 2 alternatives.
       expect(pattern.alternatives.length).toBe(2);
       expect(pattern.alternatives[0]).toEqual(
-        (grammar.rules[0]?.pattern as Extract<Expression, { type: "Choice" }>)
-          .alternatives[0] as Expression,
+        choicePatternFor(grammar, 0).alternatives[0],
       );
 
       const original = await compileRuleFor(grammar, "g");

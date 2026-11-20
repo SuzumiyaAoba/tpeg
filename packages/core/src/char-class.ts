@@ -1,9 +1,9 @@
 import { ASCII_CHARS } from "./char-tables";
-import { escapeControlCharsForDisplay } from "./escape";
+import { escapeControlCharsForDisplay, safeStringForDisplay } from "./escape";
 import type { Expectation } from "./failure";
 import { fail } from "./failure";
 import type { NonEmptyArray, NonEmptyString, Parser } from "./types";
-import { isValidOffset } from "./utils";
+import { getSingleCodePoint, isValidOffset } from "./utils";
 
 /**
  * Represents a character class specification - either a single character or a range
@@ -35,12 +35,6 @@ interface CompiledSpec {
   readonly end: number;
 }
 
-/** Counts CODE POINTS (not UTF-16 code units) via the string iteration
- * protocol, so an astral character (a surrogate pair) correctly counts as
- * exactly one, matching how `compileSpecs` itself decodes a spec via
- * `codePointAt`. */
-const codePointCount = (s: string): number => [...s].length;
-
 /**
  * Pre-compiles character class specifications into code-point ranges for
  * high performance.
@@ -67,22 +61,22 @@ const codePointCount = (s: string): number => [...s].length;
 const compileSpecs = (charOrRanges: readonly CharClassSpec[]): CompiledSpec[] =>
   charOrRanges.map((spec) => {
     if (typeof spec === "string") {
-      if (codePointCount(spec) !== 1) {
+      const code = getSingleCodePoint(spec);
+      if (code === undefined) {
         throw new Error(
           `Invalid character class spec: "${spec}" is not exactly one character (a multi-character string would silently match only its first character) -- pass a ["start", "end"] range if a sequence of characters was intended`,
         );
       }
-      const code = spec.codePointAt(0) ?? 0;
       return { start: code, end: code };
     }
     const [rangeStart, rangeEnd] = spec;
-    if (codePointCount(rangeStart) !== 1 || codePointCount(rangeEnd) !== 1) {
+    const startCode = getSingleCodePoint(rangeStart);
+    const endCode = getSingleCodePoint(rangeEnd);
+    if (startCode === undefined || endCode === undefined) {
       throw new Error(
         `Invalid character class range: ["${rangeStart}", "${rangeEnd}"] -- both bounds of a range must be exactly one character`,
       );
     }
-    const startCode = rangeStart.codePointAt(0) ?? 0;
-    const endCode = rangeEnd.codePointAt(0) ?? 0;
     if (startCode > endCode) {
       throw new Error(
         `Invalid character class range: ["${rangeStart}", "${rangeEnd}"] -- start (U+${startCode.toString(16).toUpperCase()}) is greater than end (U+${endCode.toString(16).toUpperCase()})`,
@@ -277,6 +271,7 @@ export const negatedCharClass = (
  * @param min - `0` for a `Star`-shaped run (always succeeds), `1` for a `Plus`-shaped run (fails on zero matches).
  * @param negated - `true` to run over the specs' complement (mirrors `negatedCharClass`). Defaults to `false`.
  * @param parserName - Optional name for error reporting and debugging.
+ * @throws {Error} If `min` is neither 0 nor 1.
  */
 export const charClassRun = (
   specs: NonEmptyArray<CharClassSpec>,
@@ -284,6 +279,11 @@ export const charClassRun = (
   negated = false,
   parserName = negated ? "negatedCharClassRun" : "charClassRun",
 ): Parser<string[]> => {
+  if (min !== 0 && min !== 1) {
+    throw new Error(
+      `Invalid character class run minimum (${safeStringForDisplay(min)}): expected 0 or 1`,
+    );
+  }
   const expected = `${negated ? "not one of: " : ""}${specs.map(classToString).join(", ")}`;
   const compiledSpecs = compileSpecs(specs);
   const asciiTable = buildAsciiTable(compiledSpecs);

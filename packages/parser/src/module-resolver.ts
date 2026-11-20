@@ -54,9 +54,11 @@ export interface ResolvedModule {
 export interface ModuleResolutionContext {
   /** Base directory for resolving relative paths */
   baseDir: string;
-  /** Module cache to avoid re-parsing */
+  /** Module cache to avoid re-parsing. Replaced by clearCache; active
+   * resolutions retain the previous map until they finish. */
   cache: Map<string, ResolvedModule>;
-  /** Currently resolving modules (for cycle detection) */
+  /** Currently resolving modules in this cache generation (for cycle
+   * detection). Replaced alongside the cache by clearCache. */
   resolving: Set<string>;
   /** File system interface */
   fileSystem: FileSystemInterface;
@@ -89,8 +91,8 @@ export interface FileSystemInterface {
 export class ModuleResolutionError extends Error {
   public readonly modulePath: string;
 
-  constructor(message: string, modulePath: string, _cause?: Error) {
-    super(message);
+  constructor(message: string, modulePath: string, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause });
     this.name = "ModuleResolutionError";
     this.modulePath = modulePath;
   }
@@ -138,46 +140,37 @@ export class ModuleResolver {
    * @returns Promise<ResolvedModule> The resolved module
    */
   async resolveModule(modulePath: string): Promise<ResolvedModule> {
-    // Serialize top-level calls sharing this context (see
-    // `ModuleResolutionContext.queue`): each runs its whole DFS alone, so
-    // `resolving` only ever holds a single resolution's stack. Later calls
-    // for already-resolved modules are still cache hits.
-    const previous = this.context.queue ?? Promise.resolve();
-    const run = previous.then(
-      () => this.resolveModuleInternal(modulePath),
-      () => this.resolveModuleInternal(modulePath),
-    );
-    this.context.queue = run.catch(() => undefined);
-    return run;
+    return this.enqueueResolution(modulePath, (module) => module);
   }
 
   private async resolveModuleInternal(
     modulePath: string,
+    context: ModuleResolutionContext,
   ): Promise<ResolvedModule> {
-    const normalizedPath = this.normalizePath(modulePath);
+    const normalizedPath = this.normalizePath(modulePath, context);
 
     // Check cache first
-    const cached = this.context.cache.get(normalizedPath);
+    const cached = context.cache.get(normalizedPath);
     if (cached?.resolved) {
       return cached;
     }
 
     // Check for circular dependency
-    if (this.context.resolving.has(normalizedPath)) {
-      const cycle = Array.from(this.context.resolving);
+    if (context.resolving.has(normalizedPath)) {
+      const cycle = Array.from(context.resolving);
       const cycleStart = cycle.indexOf(normalizedPath);
       throw new CircularDependencyError(cycle.slice(cycleStart));
     }
 
     // Mark as resolving
-    this.context.resolving.add(normalizedPath);
+    context.resolving.add(normalizedPath);
 
     try {
       // Load and parse the module
-      const content = await this.loadModule(normalizedPath);
+      const content = await this.loadModule(normalizedPath, context);
 
       // Extract dependencies
-      const dependencies = this.extractDependencies(content);
+      const dependencies = this.extractDependencies(content, context);
 
       // Create resolved module entry
       const resolvedModule: ResolvedModule = {
@@ -188,12 +181,9 @@ export class ModuleResolver {
         resolved: false,
       };
 
-      // Add to cache
-      this.context.cache.set(normalizedPath, resolvedModule);
-
       // Resolve dependencies recursively
       for (const depPath of dependencies) {
-        const resolvedDep = await this.resolveModuleInternal(depPath);
+        const resolvedDep = await this.resolveModuleInternal(depPath, context);
         resolvedModule.allDependencies.add(resolvedDep.filePath);
 
         // Add transitive dependencies
@@ -202,13 +192,16 @@ export class ModuleResolver {
         }
       }
 
-      // Mark as resolved
+      // Cache only complete modules. Missing dependencies and cycles must
+      // not leave unusable entries behind; successfully resolved children
+      // remain cached and can be reused after the problem is repaired.
       resolvedModule.resolved = true;
+      context.cache.set(normalizedPath, resolvedModule);
 
       return resolvedModule;
     } finally {
       // Remove from resolving set
-      this.context.resolving.delete(normalizedPath);
+      context.resolving.delete(normalizedPath);
     }
   }
 
@@ -232,23 +225,25 @@ export class ModuleResolver {
   }
 
   /**
-   * Get the dependency graph for a module
+   * Get the requested module's dependency graph, including its transitive
+   * dependencies. Returned arrays can be edited without changing the cache.
    *
    * @param modulePath - The module to analyze
    * @returns Promise<Map<string, string[]>> Dependency graph
    */
   async getDependencyGraph(modulePath: string): Promise<Map<string, string[]>> {
-    await this.resolveModule(modulePath);
-    const graph = new Map<string, string[]>();
-
-    // Build graph from cache
-    for (const [path, module] of this.context.cache) {
-      if (module.resolved) {
-        graph.set(path, module.dependencies);
+    return this.enqueueResolution(modulePath, (root, context) => {
+      const graph = new Map<string, string[]>([
+        [root.filePath, [...root.dependencies]],
+      ]);
+      for (const path of root.allDependencies) {
+        const module = context.cache.get(path);
+        if (module?.resolved) {
+          graph.set(path, [...module.dependencies]);
+        }
       }
-    }
-
-    return graph;
+      return graph;
+    });
   }
 
   /**
@@ -272,23 +267,51 @@ export class ModuleResolver {
   }
 
   /**
-   * Clear the module cache
+   * Clear the module cache. Calls already running finish with their own
+   * cache and cycle-detection state; subsequent calls reload modules.
    */
   clearCache(): void {
-    this.context.cache.clear();
-    this.context.resolving.clear();
+    this.context.cache = new Map();
+    this.context.resolving = new Set();
   }
 
   // ============================================================================
   // Private Methods
   // ============================================================================
 
+  /** Serialize resolutions sharing a context, including graph reads.
+   * Capture the maps when a queued job starts: clearCache can replace
+   * them during I/O without erasing an active DFS stack or letting old
+   * reads populate the new cache. The result callback uses those same
+   * maps, so an invalidation cannot truncate a dependency graph. */
+  private enqueueResolution<T>(
+    modulePath: string,
+    result: (module: ResolvedModule, context: ModuleResolutionContext) => T,
+  ): Promise<T> {
+    const owner = this.context;
+    const previous = owner.queue ?? Promise.resolve();
+    const resolve = async (): Promise<T> => {
+      const context = { ...owner };
+      const module = await this.resolveModuleInternal(modulePath, context);
+      return result(module, context);
+    };
+    const run = previous.then(resolve, resolve);
+    // The queue tracks completion only, avoiding a retained module or
+    // graph result after its cache has been cleared.
+    owner.queue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
   /**
    * Normalize module path
    */
   private normalizePath(
     modulePath: string,
-    baseDir = this.context.baseDir,
+    context: ModuleResolutionContext,
+    baseDir = context.baseDir,
   ): string {
     // An absolute path is still normalized: returned as-is, `/p/./b.tpeg`
     // and `/p/sub/../b.tpeg` became cache keys distinct from `/p/b.tpeg`,
@@ -298,16 +321,19 @@ export class ModuleResolver {
     }
 
     // Resolve relative paths
-    return this.context.fileSystem.resolve(baseDir, modulePath);
+    return context.fileSystem.resolve(baseDir, modulePath);
   }
 
   /**
    * Load and parse a module file
    */
-  private async loadModule(filePath: string): Promise<ModuleFile> {
+  private async loadModule(
+    filePath: string,
+    context: ModuleResolutionContext,
+  ): Promise<ModuleFile> {
     try {
       // Check if file exists
-      if (!(await this.context.fileSystem.exists(filePath))) {
+      if (!(await context.fileSystem.exists(filePath))) {
         throw new ModuleResolutionError(
           `Module file not found: ${filePath}`,
           filePath,
@@ -320,7 +346,7 @@ export class ModuleResolver {
       // character. Done here (not in FileSystemInterface.readFile, which
       // stays a faithful raw read) so custom file-system implementations
       // get the same treatment.
-      const rawContent = await this.context.fileSystem.readFile(filePath);
+      const rawContent = await context.fileSystem.readFile(filePath);
       const content =
         rawContent.charCodeAt(0) === 0xfeff ? rawContent.slice(1) : rawContent;
 
@@ -395,7 +421,7 @@ export class ModuleResolver {
       throw new ModuleResolutionError(
         `Failed to load module: ${filePath}`,
         filePath,
-        error as Error,
+        error,
       );
     }
   }
@@ -403,13 +429,17 @@ export class ModuleResolver {
   /**
    * Extract dependencies from module content
    */
-  private extractDependencies(moduleFile: ModuleFile): string[] {
+  private extractDependencies(
+    moduleFile: ModuleFile,
+    context: ModuleResolutionContext,
+  ): string[] {
     const dependencies: string[] = [];
     const importingDirectory = dirname(moduleFile.filePath);
 
     for (const importStmt of moduleFile.imports) {
       const dependency = this.normalizePath(
         importStmt.modulePath,
+        context,
         importingDirectory,
       );
       // The same file imported twice (e.g. under two aliases) is still

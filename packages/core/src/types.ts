@@ -179,9 +179,9 @@ export interface ParseError {
    * `quantified` (see repetition.ts) must not swallow the failure as "no
    * match" either -- both re-raise a `fatal` failure unchanged instead of
    * applying their normal backtracking/recovery behavior. Every combinator
-   * that rebuilds a failure via `{ ...childError, ... }` (rather than
-   * discarding it) preserves this flag for free, since it's just another
-   * enumerable property on `ParseError`.
+   * that rebuilds a failure must preserve this flag, including when it
+   * is inherited or non-enumerable. `cloneParseError` copies the standard
+   * diagnostic fields before a combinator changes them.
    */
   fatal?: boolean;
   /**

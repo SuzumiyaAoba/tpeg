@@ -9,7 +9,10 @@
  * instance reuse across multiple `generateGrammar` calls.
  */
 
+import { evaluateGeneratedModule } from "./generated-runtime";
 import { describe, expect, it } from "vite-plus/test";
+import { transformWithOxc } from "vite-plus";
+import { globalPerformanceMonitor } from "./performance-utils";
 import {
   OptimizedTPEGCodeGenerator,
   generateOptimizedTypeScriptParser,
@@ -68,6 +71,52 @@ function reentrantSharedRuleGrammar() {
     ],
   );
 }
+
+describe("optimized generation measurements", () => {
+  it.each(["duplicate rule", "reserved identifier"])(
+    "finishes its measurement when generation rejects a %s",
+    (failure) => {
+      globalPerformanceMonitor.clear();
+      const rules =
+        failure === "duplicate rule"
+          ? [
+              createRuleDefinition("word", createStringLiteral("a", '"')),
+              createRuleDefinition("word", createStringLiteral("b", '"')),
+            ]
+          : [createRuleDefinition("literal", createStringLiteral("a", '"'))];
+      const generator = new OptimizedTPEGCodeGenerator();
+      try {
+        expect(() =>
+          generator.generateGrammar(
+            createGrammarDefinition("Invalid", [], rules),
+          ),
+        ).toThrow();
+        expect(globalPerformanceMonitor.end("grammar-generation")).toBe(0);
+        expect(
+          globalPerformanceMonitor.getMetrics().get("grammar-generation")
+            ?.count,
+        ).toBe(1);
+
+        const result = generator.generateGrammar(
+          createGrammarDefinition(
+            "Valid",
+            [],
+            [createRuleDefinition("start", createStringLiteral("x", '"'))],
+          ),
+        );
+        expect(result.code).toContain('literal("x")');
+        expect(result.performance.generationTime).toBeGreaterThanOrEqual(0);
+        expect(
+          globalPerformanceMonitor.getMetrics().get("grammar-generation")
+            ?.count,
+        ).toBe(2);
+        expect(globalPerformanceMonitor.end("grammar-generation")).toBe(0);
+      } finally {
+        globalPerformanceMonitor.clear();
+      }
+    },
+  );
+});
 
 describe("OptimizedTPEGCodeGenerator structural correctness", () => {
   it("gives every rule its own name, even when several rules share the same memoization/type-annotation shape", () => {
@@ -230,16 +279,16 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
     expect(result.code).toContain('negatedCharClass(["0", "9"])');
     expect(result.code).toContain("anyChar()");
 
-    const body = result.code
-      .replace(/^import[^\n]*\n?/gm, "")
-      .replace(/^export const (\w+): Parser<[^>]*>/gm, "const $1");
-    const moduleFactory = new Function(
-      ...Object.keys(core),
-      `${body}\nreturn { letter, notDigit, anything };`,
+    const { code } = await transformWithOxc(
+      result.code,
+      "generated-character-classes.ts",
     );
-    const { letter, notDigit, anything } = moduleFactory(
-      ...Object.values(core),
-    );
+
+    const { letter, notDigit, anything } = evaluateGeneratedModule(code, core, [
+      "letter",
+      "notDigit",
+      "anything",
+    ]);
 
     const pos = 0;
     expect(letter("m", pos).success).toBe(true);
@@ -306,14 +355,11 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
       includeImports: true,
     });
 
-    const body = result.code
-      .replace(/^import[^\n]*\n?/gm, "")
-      .replace(/^export const (\w+): Parser<[^>]*>/gm, "const $1");
-    const moduleFactory = new Function(
-      ...Object.keys(core),
-      `${body}\nreturn { number };`,
+    const { code } = await transformWithOxc(
+      result.code,
+      "generated-transform.ts",
     );
-    const { number } = moduleFactory(...Object.values(core));
+    const { number } = evaluateGeneratedModule(code, core, ["number"]);
 
     const pos = 0;
     expect(number("123abc", pos)).toEqual({
@@ -360,14 +406,12 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
       optimize: true,
     });
 
-    const body = result.code
-      .replace(/^import[^\n]*\n?/gm, "")
-      .replace(/^export const (\w+): Parser<[^>]*>/gm, "const $1");
-    const moduleFactory = new Function(
-      ...Object.keys(core),
-      `${body}\nreturn { op };`,
+    const { code } = await transformWithOxc(
+      result.code,
+      "generated-operator.ts",
     );
-    const { op } = moduleFactory(...Object.values(core));
+
+    const { op } = evaluateGeneratedModule(code, core, ["op"]);
 
     const pos = 0;
     const parsed = op("==", pos);
@@ -480,12 +524,7 @@ describe("OptimizedTPEGCodeGenerator structural correctness", () => {
       'export const inner = untagCapture(captureSequence(commit(capture("x", literal("v")))));',
     );
 
-    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-    const factory = new Function(
-      ...Object.keys(core),
-      `${body}\nreturn { outer };`,
-    );
-    const built = factory(...Object.values(core));
+    const built = evaluateGeneratedModule(result.code, core, ["outer"]);
     const outer = built.outer as (
       input: string,
       pos: number,
@@ -697,15 +736,7 @@ describe("enablePredictiveDispatch", () => {
         enableMemoization: false,
         enablePredictiveDispatch,
       });
-      const ruleNames = [...result.code.matchAll(/^export const (\w+)/gm)].map(
-        (m) => m[1] as string,
-      );
-      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-      const factory = new Function(
-        ...Object.keys(core),
-        `${body}\nreturn { ${ruleNames.join(", ")} };`,
-      );
-      const built = factory(...Object.values(core)) as Record<
+      const built = evaluateGeneratedModule(result.code, core) as Record<
         string,
         (typeof core)["choice"]
       >;
@@ -760,12 +791,7 @@ describe("enablePredictiveDispatch", () => {
     });
     expect(result.code).toContain("predictiveChoice([");
 
-    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-    const factory = new Function(
-      ...Object.keys(core),
-      `${body}\nreturn { r };`,
-    );
-    const built = factory(...Object.values(core)) as {
+    const built = evaluateGeneratedModule(result.code, core) as {
       r: (
         input: string,
         pos: number,
@@ -823,13 +849,7 @@ describe("enablePredictiveDispatch", () => {
           }
         : { success: false as const, error: { message: "not a", pos } };
 
-    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-    const factory = new Function(
-      ...Object.keys(core),
-      "ext",
-      `${body}\nreturn { r };`,
-    );
-    const { r } = factory(...Object.values(core), ext) as {
+    const { r } = evaluateGeneratedModule(result.code, { ...core, ext }) as {
       r: (
         input: string,
         pos: number,
@@ -980,15 +1000,7 @@ describe("literalPrefixForExpression / predictiveChoice's literal-prefix trie sl
         enableMemoization: false,
         enablePredictiveDispatch,
       });
-      const ruleNames = [...result.code.matchAll(/^export const (\w+)/gm)].map(
-        (m) => m[1] as string,
-      );
-      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-      const factory = new Function(
-        ...Object.keys(core),
-        `${body}\nreturn { ${ruleNames.join(", ")} };`,
-      );
-      const built = factory(...Object.values(core)) as Record<
+      const built = evaluateGeneratedModule(result.code, core) as Record<
         string,
         (
           input: string,
@@ -1451,13 +1463,8 @@ describe("optimize master switch", () => {
       includeTypes: false,
       optimize: false,
     });
-    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
     const scope = { ...combinator, ...core };
-    const moduleFactory = new Function(
-      ...Object.keys(scope),
-      `${body}\nreturn { big };`,
-    );
-    const { big } = moduleFactory(...Object.values(scope));
+    const { big } = evaluateGeneratedModule(result.code, scope, ["big"]);
 
     // `big` = shared "x" / shared "y" / shared with shared = "a".
     const ax = big("ax", 0);
@@ -1527,7 +1534,7 @@ describe("includeMonitoring", () => {
     expect(result.code).toContain("report(): void");
     // start times are a stack per operation so same-name nested
     // measurements don't overwrite each other (#109).
-    expect(result.code).toContain("new Map<string, number[]>()");
+    expect(result.code).toContain("new globalThis.Map<string, number[]>()");
   });
 
   it("emits no type annotations under includeTypes: false so the output stays runnable JavaScript", () => {
@@ -1578,15 +1585,8 @@ describe("includeMonitoring", () => {
     expect(result.code).toContain('performanceMonitor.start("start")');
     expect(result.code).toContain('performanceMonitor.start("word")');
 
-    const body = result.code
-      .replace(/^export \{[^}]*\};?$/gm, "")
-      .replace(/^export const (\w+)/gm, "const $1");
     const scope = { ...combinator, ...core };
-    const factory = new Function(
-      ...Object.keys(scope),
-      `${body}\nreturn { start, performanceMonitor };`,
-    );
-    const built = factory(...Object.values(scope)) as {
+    const built = evaluateGeneratedModule(result.code, scope) as {
       start: (input: string, pos: number) => { success: boolean };
       performanceMonitor: {
         metrics: Map<string, { total: number; count: number }>;

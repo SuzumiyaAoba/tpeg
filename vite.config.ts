@@ -1,6 +1,7 @@
 import { defineConfig } from "vite-plus";
 
 const generatedIgnores = [
+  ".mdxr/**",
   "**/*.generated.ts",
   "**/*.generated.js",
   "**/*.generated.mjs",
@@ -61,6 +62,7 @@ export default defineConfig({
       5000 * Math.max(1, Number(process.env["TPEG_FUZZ_SCALE"]) || 1),
     setupFiles: ["./test/reset-failure-watermark.ts"],
     exclude: [
+      "**/.mdxr/**",
       "**/node_modules/**",
       "**/dist/**",
       "packages/combinator/benchmark.spec.ts",

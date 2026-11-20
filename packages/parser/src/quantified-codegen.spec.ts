@@ -4,6 +4,7 @@
  * Tests for quantified expression code generation functionality.
  */
 
+import { evaluateGeneratedModule } from "./generated-runtime";
 import { describe, expect, it } from "vite-plus/test";
 import { TPEGCodeGenerator, generateTypeScriptParser } from "./codegen";
 import {
@@ -242,12 +243,7 @@ describe("quantified expression code generation", () => {
         includeImports: false,
         includeTypes: false,
       });
-      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-      const moduleFactory = new Function(
-        ...Object.keys(core),
-        `${body}\nreturn { rule };`,
-      );
-      const { rule } = moduleFactory(...Object.values(core));
+      const { rule } = evaluateGeneratedModule(result.code, core, ["rule"]);
 
       // Nothing to match, but the repetition is greedy: it still runs all
       // the way to `max` = 3 (each iteration's zero-width `null` is a

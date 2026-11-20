@@ -45,13 +45,13 @@
  *   `packages/combinator/src/logic.ts`'s `commitAtTopLevel` already uses
  *   for its own, unrelated watermark). Reporting can only be "too far",
  *   never "too near" or wrong about success/failure.
- * - A nested/reentrant top-level parse (a different `input`) resets the
- *   watermark out from under an in-progress outer parse; when the outer
- *   parse resumes, its own next failure resets it back. The outer parse
- *   loses whatever expectations it had accumulated before the nesting --
- *   a quality regression in that one diagnostic, nothing else.
- * - Code compiled via `new Function(...)` (the pattern used throughout
- *   `packages/{cli,generator,parser}`'s specs and `packages/parser/bench/`)
+ * - A nested `parse()` snapshots the outer watermark and restores it
+ *   when the nested call finishes, including when it throws. The nested
+ *   failure is materialized before restoration, so both parses retain
+ *   their own diagnostics. Direct calls on another input still reset the
+ *   watermark; use `parse()` to isolate reentrant parsing.
+ * - Generated-code evaluation in `packages/{cli,generator,parser}`'s
+ *   specs and `packages/parser/bench/`
  *   binds one shared module instance of this file per process, so it is
  *   correct by construction there. A consumer that somehow bundles two
  *   separate copies of `tpeg-core` gets two independent watermarks --
@@ -61,7 +61,7 @@
 
 import type { ParseError, ParseFailure } from "./types";
 import { escapeControlCharsForDisplay } from "./escape";
-import { getCharAt, isValidOffset } from "./utils";
+import { cloneParseError, getCharAt, isValidOffset } from "./utils";
 
 /**
  * A leaf parser's static description of what it was looking for --
@@ -75,6 +75,10 @@ import { getCharAt, isValidOffset } from "./utils";
  */
 export interface Expectation {
   readonly label: string;
+  /** A concrete failure without explicit expectations. Its message is
+   * used for aggregation, while `label` identifies duplicate records.
+   * Control flags remain independent of the diagnostic watermark. */
+  readonly diagnostic?: ParseError;
   /**
    * Optional, mirrors the old per-call `parserName` argument (e.g.
    * `literal(str, "keyword parser")`) that many leaf parsers accept for
@@ -115,7 +119,10 @@ const expectationSeen = (
 ): boolean =>
   expected.some(
     (e) =>
-      e === exp || (e.label === exp.label && e.parserName === exp.parserName),
+      e === exp ||
+      (e.label === exp.label &&
+        e.parserName === exp.parserName &&
+        (e.diagnostic === undefined) === (exp.diagnostic === undefined)),
   );
 
 /**
@@ -170,14 +177,22 @@ export const fail = (
  */
 export const materializeParseError = (fatal: boolean): ParseError => {
   const pos = watermarkPos;
-  const labels = watermarkExpected.map((e) => e.label);
+  const labels: string[] = [];
+  let diagnostics: ParseError[] | undefined;
+  for (const expectation of watermarkExpected) {
+    if (expectation.diagnostic) {
+      (diagnostics ??= []).push(expectation.diagnostic);
+    } else {
+      labels.push(expectation.label);
+    }
+  }
   const expected: string | string[] | undefined =
     labels.length === 0 ? undefined : labels.length === 1 ? labels[0] : labels;
   const found =
     watermarkInput !== null
       ? getCharAt(watermarkInput, pos) || "end of input"
       : undefined;
-  const message =
+  const expectedMessage =
     expected !== undefined
       ? `Expected ${Array.isArray(expected) ? expected.join(" or ") : expected}${
           found !== undefined
@@ -185,6 +200,12 @@ export const materializeParseError = (fatal: boolean): ParseError => {
             : ""
         }`
       : "Parse failed";
+  const message = diagnostics
+    ? [
+        ...(expected !== undefined ? [expectedMessage] : []),
+        ...diagnostics.map((diagnostic) => diagnostic.message).filter(Boolean),
+      ].join(" or ") || "Parse failed"
+    : expectedMessage;
 
   // `parserName` is only attributable when every expectation tied at the
   // farthest position agrees on it -- e.g. a single leaf parser failing
@@ -194,19 +215,31 @@ export const materializeParseError = (fatal: boolean): ParseError => {
   // aggregated-choice case) have no single owner, so it's omitted rather
   // than arbitrarily picking one -- matching the spirit of "expected" also
   // being a merged list, not one candidate's alone, in that situation.
-  const parserNames = new Set(
-    watermarkExpected.map((e) => e.parserName).filter((n) => n !== undefined),
-  );
-  const parserName = parserNames.size === 1 ? [...parserNames][0] : undefined;
+  const candidateName = watermarkExpected[0]?.parserName;
+  const parserName = watermarkExpected.every(
+    (e) => e.parserName === candidateName,
+  )
+    ? candidateName
+    : undefined;
 
-  return {
+  // A unique custom diagnostic can retain its context and metadata.
+  // Tied independent custom failures have no single metadata owner.
+  const custom = diagnostics?.length === 1 ? diagnostics[0] : undefined;
+  const error: ParseError = {
+    ...(custom ? cloneParseError(custom) : {}),
     message,
     pos,
     ...(expected !== undefined ? { expected } : {}),
-    ...(found !== undefined ? { found } : {}),
+    ...(found !== undefined && custom?.found === undefined ? { found } : {}),
     ...(parserName !== undefined ? { parserName } : {}),
     ...(fatal ? { fatal: true } : {}),
   };
+  if (expected === undefined) delete error.expected;
+  if (parserName === undefined) delete error.parserName;
+  if (!fatal) delete error.fatal;
+  delete error.abort;
+  if (Array.isArray(error.context)) error.context = [...error.context];
+  return error;
 };
 
 const createFailureSingleton = (fatal: boolean): ParseFailure => {
@@ -278,11 +311,22 @@ export interface FailureWatermarkSnapshot {
   readonly expected: readonly Expectation[];
 }
 
-export const snapshotFailureWatermark = (): FailureWatermarkSnapshot => ({
-  input: watermarkInput,
-  pos: watermarkPos,
-  expected: watermarkExpected,
+const EMPTY_WATERMARK_SNAPSHOT: FailureWatermarkSnapshot = Object.freeze({
+  input: null,
+  pos: -1,
+  expected: Object.freeze([]),
 });
+
+export const snapshotFailureWatermark = (): FailureWatermarkSnapshot =>
+  watermarkInput === null &&
+  watermarkPos === -1 &&
+  watermarkExpected.length === 0
+    ? EMPTY_WATERMARK_SNAPSHOT
+    : {
+        input: watermarkInput,
+        pos: watermarkPos,
+        expected: watermarkExpected,
+      };
 
 export const restoreFailureWatermark = (
   snapshot: FailureWatermarkSnapshot,
@@ -295,7 +339,7 @@ export const restoreFailureWatermark = (
 /**
  * Re-applies a previously-captured watermark contribution -- `pos`/
  * `expected` read back from a {@link FailureWatermarkSnapshot} taken
- * right after some parser call finished -- using the exact same
+ * while collecting a parser's failures in isolation -- using the exact same
  * farther-wins/tie-unions/nearer-is-ignored rule {@link fail} applies for
  * a single `Expectation`. For `@suzumiyaaoba/tpeg-combinator`'s
  * `memoize`: a cache HIT returns a previously-computed `ParseResult`
@@ -314,20 +358,6 @@ export const restoreFailureWatermark = (
  * leaf failure at all) -- there is nothing to merge, and an empty list
  * must never be allowed to overwrite a real one the way a fresh
  * farther-position `fail()` legitimately would.
- *
- * ## Known imprecision (diagnostics-only, matches this module's own
- * documented lifecycle contract)
- *
- * The snapshot taken after a cache MISS reflects the watermark's state
- * as adjusted by whatever was already in it *at that particular call*.
- * If that call's own leaf failure was nearer than the watermark's
- * position at the time (so `fail()` left the watermark unchanged), that
- * nearer failure is invisible to this snapshot and can't be replayed on
- * a later hit even if the watermark has since moved to a position where
- * it WOULD be the new farthest. This can only make a later error message
- * less precise, never wrong about success/failure/stop-position -- the
- * same invariant this module's doc comment already establishes for the
- * watermark generally.
  */
 export const mergeFailureWatermark = (
   input: string,
@@ -414,7 +444,7 @@ export const renameWatermarkExpectation = (
   }
   if (last === -1) return;
   watermarkExpected = watermarkExpected.map((e, i) =>
-    i === last ? { label, parserName } : e,
+    i === last ? { ...e, parserName } : e,
   );
 };
 
@@ -441,12 +471,17 @@ export const renameWatermarkExpectation = (
  *
  * `@suzumiyaaoba/tpeg-combinator`'s `withDetailedError` pairs this with
  * {@link snapshotFailureWatermark} taken immediately before running its
- * wrapped parser -- see its source for the call pattern.
+ * wrapped parser -- see its source for the call pattern. Optional
+ * `details` also update custom diagnostics contributed by that call, so
+ * an enclosing choice does not discard the wrapper's found/context.
+ * Diagnostic objects and context arrays are copied before updating them
+ * to preserve earlier snapshots, including memoized contributions.
  */
 export const renameWatermarkExpectationsSince = (
   input: string,
   snapshot: FailureWatermarkSnapshot,
   parserName: string,
+  details?: Readonly<Pick<ParseError, "found" | "context">>,
 ): void => {
   if (input !== watermarkInput) return;
   const firstNew =
@@ -456,7 +491,18 @@ export const renameWatermarkExpectationsSince = (
         ? snapshot.expected.length
         : watermarkExpected.length;
   if (firstNew >= watermarkExpected.length) return;
-  watermarkExpected = watermarkExpected.map((e, i) =>
-    i >= firstNew ? { label: e.label, parserName } : e,
-  );
+  const found = details?.found;
+  const context = details?.context;
+  watermarkExpected = watermarkExpected.map((e, i) => {
+    if (i < firstNew) return e;
+    if (e.diagnostic && (found !== undefined || context !== undefined)) {
+      const diagnostic = cloneParseError(e.diagnostic);
+      if (found !== undefined) diagnostic.found = found;
+      if (context !== undefined) {
+        diagnostic.context = Array.isArray(context) ? [...context] : context;
+      }
+      return { ...e, parserName, diagnostic };
+    }
+    return { ...e, parserName };
+  });
 };

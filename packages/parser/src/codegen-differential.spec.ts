@@ -346,7 +346,7 @@ describe("codegen differential fuzzing (base generator vs. every optimization va
         } catch {
           // A construction-time rejection (e.g. `assertNoNullableRepetition`
           // firing on a randomly-generated nullable repetition) or a
-          // `new Function` compile error -- not a differential-fuzzing
+          // generated-module evaluation compile error -- not a differential-fuzzing
           // concern, since the base generator would have hit the same
           // rejection for the same grammar.
           skippedCount++;

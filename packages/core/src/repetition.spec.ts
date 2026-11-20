@@ -12,8 +12,8 @@ import {
   star,
   zeroOrMore,
 } from "./repetition";
-import type { Parser } from "./types";
-import { isFailure, isSuccess } from "./utils";
+import type { Parser, ParseSuccess } from "./types";
+import { createFailure, isFailure, isSuccess } from "./utils";
 
 // See `combinators.spec.ts`'s identical `beforeEach` -- the farthest-failure
 // watermark (`./failure.ts`) is module-global, keyed by input string VALUE.
@@ -32,6 +32,97 @@ beforeEach(() => {
  * enforce it locally.
  */
 const STRICT_PERF = process.env["TPEG_STRICT_PERF"] === "1";
+
+describe("child result positions", () => {
+  const wrappers: [string, (child: Parser<string>) => Parser<unknown>][] = [
+    ["optional", (child) => optional(child)],
+    ["zeroOrMore", (child) => zeroOrMore(child)],
+    ["oneOrMore", (child) => oneOrMore(child)],
+    ["required quantified", (child) => quantified(child, 1, 1)],
+    ["bounded optional quantified", (child) => quantified(child, 0, 1)],
+    ["unbounded quantified", (child) => quantified(child, 0)],
+  ];
+
+  describe.each(wrappers)("%s", (_name, wrap) => {
+    it("rejects non-numeric next positions without throwing or retrying the child", () => {
+      for (const next of [Symbol("next"), 0n, "1", Object.create(null)]) {
+        let calls = 0;
+        const child: Parser<string> = (_input, pos) => {
+          calls++;
+          return calls === 1
+            ? { success: true, current: pos, next: next as number, val: "a" }
+            : createFailure("done", pos);
+        };
+        expect(wrap(child)("abc", 0)).toMatchObject({
+          success: false,
+          error: { pos: 0, fatal: true },
+        });
+        expect(calls).toBe(1);
+      }
+    });
+
+    it.each([
+      ["fractional", 0.5],
+      ["infinite", Number.POSITIVE_INFINITY],
+      ["past input", 4],
+      ["NaN", Number.NaN],
+      ["negative", -1],
+    ])(
+      "rejects a child's %s next position before retrying it",
+      (_kind, next) => {
+        let calls = 0;
+        const child: Parser<string> = (_input, pos) => {
+          calls++;
+          return calls === 1
+            ? { success: true, current: pos, next: next as number, val: "a" }
+            : createFailure("done", pos);
+        };
+        const result = wrap(child)("abc", 0);
+        expect(result).toMatchObject({
+          success: false,
+          error: { pos: 0, fatal: true },
+        });
+        expect(calls).toBe(1);
+      },
+    );
+
+    it("uses one next getter value for validation and advancement", () => {
+      let calls = 0;
+      let reads = 0;
+      const child: Parser<string> = (_input, pos) => {
+        if (calls++ > 0) return createFailure("done", pos);
+        return {
+          success: true,
+          current: pos,
+          val: "a",
+          get next() {
+            return reads++ === 0 ? 1 : 0;
+          },
+        };
+      };
+      const result = wrap(child)("abc", 0);
+      expect(result).toMatchObject({ success: true, next: 1 });
+      expect(reads).toBe(1);
+    });
+
+    it("captures the position before reading a value that changes the child result", () => {
+      let calls = 0;
+      const success: ParseSuccess<string> = {
+        success: true,
+        current: 0,
+        next: 1,
+        get val() {
+          success.next = 0;
+          return "a";
+        },
+      };
+      const child: Parser<string> = (_input, pos) =>
+        calls++ === 0 ? success : createFailure("done", pos);
+      const result = wrap(child)("abc", 0);
+      expect(result).toMatchObject({ success: true, next: 1 });
+    });
+  });
+});
 
 describe("opt", () => {
   it("should parse with the given parser", () => {
@@ -686,6 +777,53 @@ describe("quantified", () => {
     expect(() =>
       quantified(lit("a"), 0, Number.POSITIVE_INFINITY),
     ).not.toThrow();
+  });
+
+  describe("invalid bound diagnostics", () => {
+    const invalidValues: [string, () => unknown][] = [
+      ["Symbol", () => Symbol("bound")],
+      ["object without a prototype", () => Object.create(null)],
+      [
+        "throwing conversion",
+        () => ({
+          [Symbol.toPrimitive]() {
+            throw new Error("conversion failed");
+          },
+        }),
+      ],
+    ];
+
+    it.each(invalidValues)(
+      "reports an invalid minimum for %s",
+      (_kind, createValue) => {
+        expect(() => quantified(lit("a"), createValue() as number)).toThrow(
+          "Invalid quantified range: minimum",
+        );
+      },
+    );
+
+    it.each(invalidValues)(
+      "reports an invalid maximum for %s",
+      (_kind, createValue) => {
+        expect(() => quantified(lit("a"), 0, createValue() as number)).toThrow(
+          "Invalid quantified range: maximum",
+        );
+      },
+    );
+
+    it("rejects a non-numeric maximum before invoking numeric conversion", () => {
+      const hints: string[] = [];
+      const maximum = {
+        [Symbol.toPrimitive](hint: string) {
+          hints.push(hint);
+          return 1;
+        },
+      };
+      expect(() =>
+        quantified(lit("a"), 0, maximum as unknown as number),
+      ).toThrow("Invalid quantified range: maximum");
+      expect(hints).toEqual(["string"]);
+    });
   });
 
   it("should detect infinite loops when the tail is genuinely unbounded (`max` omitted)", () => {

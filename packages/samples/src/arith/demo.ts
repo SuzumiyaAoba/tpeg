@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { safeStringForDisplay } from "@suzumiyaaoba/tpeg-core";
 import {
   astToString,
   calculate,
@@ -66,7 +67,7 @@ function calculateExpression(expr: string) {
       console.log("⚠ Calculation results differ");
     }
   } catch (error) {
-    console.error(`❌ Error: ${error}`);
+    console.error(`❌ Error: ${safeStringForDisplay(error)}`);
   }
 }
 
@@ -90,7 +91,7 @@ function showAST(expr: string) {
     console.log(astToString(ast));
     console.log(`\nResult: ${result}`);
   } catch (error) {
-    console.error(`❌ Error: ${error}`);
+    console.error(`❌ Error: ${safeStringForDisplay(error)}`);
   }
 }
 

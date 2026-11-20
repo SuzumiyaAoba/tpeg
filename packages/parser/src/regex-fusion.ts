@@ -118,7 +118,7 @@
  *   reconstruction yields `value` or `null` (matches `optional()`'s
  *   `T | null` shape).
  * - `Star`/`Plus`/`Quantified` capture their *entire* run in one group
- *   and reconstruct via `Array.from(capturedRun)` -- splitting the run
+ *   and reconstruct via `[...capturedRun]` -- splitting the run
  *   back into one array entry per code point. This is exactly correct
  *   when the repeated element is a single code point per iteration
  *   (`CharacterClass`, `AnyChar`, a 1-code-point `StringLiteral`), and
@@ -137,7 +137,7 @@
  * genuinely changes value shape and has no reconstruction step).
  */
 
-import { someExpression } from "@suzumiyaaoba/tpeg-core";
+import { getSingleCodePoint, someExpression } from "@suzumiyaaoba/tpeg-core";
 import {
   EMPTY_FIRST_SET,
   type FirstSet,
@@ -185,7 +185,7 @@ const STRUCTURALLY_DISQUALIFYING = new Set<Expression["type"]>([
 const isSimpleRepeatable = (expr: Expression): boolean => {
   if (expr.type === "CharacterClass" || expr.type === "AnyChar") return true;
   if (expr.type === "StringLiteral") {
-    return [...expr.value].length === 1;
+    return getSingleCodePoint(expr.value) !== undefined;
   }
   return false;
 };
@@ -197,6 +197,12 @@ const isSimpleRepeatable = (expr: Expression): boolean => {
 const isStructurallyFusable = (expr: Expression): boolean =>
   !someExpression(expr, (node) => {
     if (STRUCTURALLY_DISQUALIFYING.has(node.type)) return true;
+    if (node.type === "StringLiteral") {
+      const lastUnit = node.value.charCodeAt(node.value.length - 1);
+      // A literal can stop halfway through a surrogate pair. A Unicode
+      // regex cannot match that prefix while preserving the same offset.
+      if (lastUnit >= 0xd800 && lastUnit <= 0xdbff) return true;
+    }
     // A repetition is only fusable when what it repeats is a single
     // character-like leaf (`isSimpleRepeatable`) -- anything compound
     // would need backreference/value-shape reconstruction a regex can't
@@ -659,21 +665,19 @@ const codePointEscape = (cp: number): string => `\\u{${cp.toString(16)}}`;
 const charClassBracketExpr = (expr: CharacterClass): string => {
   const body = expr.ranges
     .map((r) => {
-      // `[...s].length` counts code points, matching compileSpecs'
-      // `codePointCount` exactly (an astral character is one).
-      if ([...r.start].length !== 1) {
+      const startCp = getSingleCodePoint(r.start);
+      if (startCp === undefined) {
         throw new Error(
           `Invalid character class range bound: "${r.start}" is not exactly one character`,
         );
       }
-      const startCp = r.start.codePointAt(0) as number;
       if (r.end === undefined) return codePointEscape(startCp);
-      if ([...r.end].length !== 1) {
+      const endCp = getSingleCodePoint(r.end);
+      if (endCp === undefined) {
         throw new Error(
           `Invalid character class range bound: "${r.end}" is not exactly one character`,
         );
       }
-      const endCp = r.end.codePointAt(0) as number;
       if (startCp > endCp) {
         throw new Error(
           `Invalid character class range: ["${r.start}", "${r.end}"] -- start (U+${startCp.toString(16).toUpperCase()}) is greater than end (U+${endCp.toString(16).toUpperCase()})`,
@@ -779,7 +783,7 @@ const emit = (expr: Expression, counter: GroupCounter): Emitted => {
       // case the `reduceRight` below would throw `Reduce of empty array
       // with no initial value` at codegen time.
       if (expr.alternatives.length === 0) {
-        return { pattern: "(?!)", valueExpr: "undefined" };
+        return { pattern: "(?!)", valueExpr: "void 0" };
       }
       const markerIndices: number[] = [];
       const altPatterns: string[] = [];
@@ -799,7 +803,7 @@ const emit = (expr: Expression, counter: GroupCounter): Emitted => {
       // defined at runtime.
       const valueExpr = altValueExprs.reduceRight(
         (elseBranch, altExpr, i) =>
-          `${groupRef(markerIndices[i] as number)} !== undefined ? ${altExpr} : ${elseBranch}`,
+          `${groupRef(markerIndices[i] as number)} !== void 0 ? ${altExpr} : ${elseBranch}`,
       );
       return { pattern: `(?:${altPatterns.join("|")})`, valueExpr };
     }
@@ -808,7 +812,7 @@ const emit = (expr: Expression, counter: GroupCounter): Emitted => {
       const inner = emit(expr.expression, counter);
       return {
         pattern: `(?:(${inner.pattern}))?`,
-        valueExpr: `${groupRef(markerIndex)} !== undefined ? ${inner.valueExpr} : null`,
+        valueExpr: `${groupRef(markerIndex)} !== void 0 ? ${inner.valueExpr} : null`,
       };
     }
     case "Star":
@@ -849,7 +853,10 @@ const emit = (expr: Expression, counter: GroupCounter): Emitted => {
       const ref = groupRef(groupIndex);
       return {
         pattern: `((?:${leafSource})${quantifier})`,
-        valueExpr: `${ref} === undefined ? [] : Array.from(${ref})`,
+        // Spread uses the string iterator without resolving a global
+        // Array binding, which may be a rule in the generated module.
+        // `undefined` is a legal rule name; use a scope-independent value.
+        valueExpr: `${ref} === void 0 ? [] : [...${ref}]`,
       };
     }
     default:

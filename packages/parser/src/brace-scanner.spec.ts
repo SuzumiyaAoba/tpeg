@@ -22,8 +22,180 @@
 
 import { describe, expect, test } from "vite-plus/test";
 import { parse } from "@suzumiyaaoba/tpeg-core";
-import { codeContainsIdentifier, scanBalancedBraces } from "./brace-scanner";
+import {
+  codeContainsIdentifier,
+  isJsIdentifierStart,
+  scanBalancedBraces,
+  scanRegexLiteral,
+} from "./brace-scanner";
 import { grammarDefinition } from "./grammar";
+import {
+  objectMethodModifierFixtures,
+  objectMethodReferenceFixtures,
+} from "../test-fixtures/object-methods.mjs";
+
+describe("JavaScript identifier spelling and property names", () => {
+  test.each([
+    ["return \\u0024\\u0024;", "$$"],
+    ["return v\\u0061lue;", "value"],
+    ["return \\u{76}alue;", "value"],
+    ['return e\\u0076al("value");', "eval"],
+    ["return \\u{1d49c}foo;", "𝒜foo"],
+    ["return π;", "π"],
+    ["return a\\u200cb;", "a\u200cb"],
+    ["return a\\u{200d}b;", "a\u200db"],
+  ])("detects the binding in %s", (code, name) => {
+    expect(codeContainsIdentifier(code, name)).toBe(true);
+  });
+
+  test.each(["πvalue", "𝒜value", "valueπ"])(
+    "does not find an ASCII suffix or prefix inside %s",
+    (word) => {
+      expect(codeContainsIdentifier(`return ${word};`, "value")).toBe(false);
+    },
+  );
+
+  test.each([
+    "return { value: 1 };",
+    "return { value /* comment */ : 1 };",
+    "return { value() { return 1; } };",
+    "return { get value() { return 1; } };",
+    "return { set value(input) { console.log(input); } };",
+    "return { async value() { return 1; } };",
+    "class Read { value() { return 1; } }",
+    "class Read { get value() { return 1; } }",
+    "class Read { static value = 1; }",
+    "class Read { value; }",
+    "class Read { #value() { return 1; } run() { return this.#value(); } }",
+    "class Read { key = 1\n value() { return 1; } }",
+    "class Read { key = 1 /*\n*/ value() { return 1; } }",
+  ])("does not treat a named property as a binding: %s", (code) => {
+    expect(codeContainsIdentifier(code, "value")).toBe(false);
+  });
+
+  test.each([
+    "return { value };",
+    "return { [value]: 1 };",
+    "return { key: [0, value] };",
+    "return { key: fn(0, value) };",
+    "class Read { static key = value; }",
+    "class Read { [value]() { return 1; } }",
+    "class Read extends factory({ key: value }) {}",
+    "return class {} / value / 2;",
+  ])("keeps real object property references: %s", (code) => {
+    expect(codeContainsIdentifier(code, "value")).toBe(true);
+  });
+
+  test.each([
+    'return { key: eval("value") };',
+    'return { key: fn(0, eval("value")) };',
+    'return { key: [0, eval("value")] };',
+  ])("keeps direct eval in an object value: %s", (code) => {
+    expect(codeContainsIdentifier(code, "eval")).toBe(true);
+  });
+
+  test.each([
+    "\\u{}",
+    "\\u{110000}",
+    "\\u{61",
+    "\\u00xz",
+    "\\u002d",
+    "\\u0030",
+  ])("rejects an invalid identifier start: %s", (code) => {
+    expect(isJsIdentifierStart(code, 0)).toBe(false);
+  });
+});
+
+describe("Object method modifiers", () => {
+  test.each(objectMethodModifierFixtures)("ignores $name", (fixture) => {
+    expect(
+      codeContainsIdentifier(
+        fixture.body.replaceAll("__VALUE__", "a").replaceAll("__TYPE__", ""),
+        fixture.label,
+      ),
+    ).toBe(false);
+  });
+  test.each(objectMethodReferenceFixtures)("preserves $name", (fixture) => {
+    const body = fixture.body
+      .replaceAll("__VALUE__", "a")
+      .replaceAll("__JOIN__", "")
+      .replaceAll("__TYPE__", "");
+    expect(codeContainsIdentifier(body, fixture.label)).toBe(true);
+  });
+});
+
+describe("Generator method keys and multiplication", () => {
+  test.each([
+    "return { *value() { yield 1; } };",
+    "return { async *value() { yield 1; } };",
+    "class Read { *value() { yield 1; } }",
+    "class Read { static *value() { yield 1; } }",
+    "class Read { async *value() { yield 1; } }",
+    "class Read { static async *value() { yield 1; } }",
+    "class Read { field = 1;\n *value() { yield 1; } }",
+    "return { *v\\u0061lue() { yield 1; } };",
+  ])("does not count a generator method key: %s", (code) => {
+    expect(codeContainsIdentifier(code, "value")).toBe(false);
+  });
+
+  test.each([
+    "return { *method() { yield value; } };",
+    "class Read { *method() { yield value; } }",
+    "return { *class() { value; yield 1; } };",
+    "class Read { *class() { value; yield 1; } }",
+    "return { *[value]() { yield 1; } };",
+    "class Read { *[value]() { yield 1; } }",
+    "return { key: async * value };",
+    "return { key: get * value };",
+    "return { key: set * value };",
+    "class Read { key = async * value; }",
+    "class Read { key = get * value; }",
+    "class Read { key = set * value; }",
+    "class Read { key = async\n * value; }",
+    "class Read { key = get\n * value; }",
+    "class Read { key = 1\n * value; }",
+  ])("preserves a real binding reference: %s", (code) => {
+    expect(codeContainsIdentifier(code, "value")).toBe(true);
+  });
+});
+
+describe("JavaScript line terminators", () => {
+  test.each(["\n", "\r", "\u2028", "\u2029"])(
+    "finds an identifier after a line comment ending with %j",
+    (newline) => {
+      expect(
+        codeContainsIdentifier(`// ignored${newline}return $$;`, "$$"),
+      ).toBe(true);
+    },
+  );
+
+  test.each(["\n", "\r", "\u2028", "\u2029"])(
+    "closes an action block after a line comment ending with %j",
+    (newline) => {
+      const body = ` // ignored${newline}return 1; `;
+      expect(scanBalancedBraces(`{${body}}`, 0)).toEqual({
+        success: true,
+        val: body,
+        current: 0,
+        next: body.length + 2,
+      });
+    },
+  );
+
+  test.each(["\n", "\r", "\u2028", "\u2029"])(
+    "rejects a line terminator in a regex literal: %j",
+    (newline) => {
+      expect(scanRegexLiteral(`/x${newline}/`, 0)).toBe(-1);
+    },
+  );
+
+  test.each(["\n", "\r", "\u2028", "\u2029"])(
+    "rejects an escaped line terminator in a regex literal: %j",
+    (newline) => {
+      expect(scanRegexLiteral(`/x\\${newline}/`, 0)).toBe(-1);
+    },
+  );
+});
 
 describe("codeContainsIdentifier: `$$` detection across the regex/division boundary", () => {
   test("finds `$$` used as a real operand after a call paren (division, not regex)", () => {

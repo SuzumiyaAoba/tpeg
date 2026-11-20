@@ -289,7 +289,7 @@ describe("TypeIntegrationEngine", () => {
       // undefined, not reject it -- the generic fallback used to emit
       // the opposite condition here.
       expect(typedGrammar.typeDefinitions).toContain(
-        "return value === undefined;",
+        "return value === void 0;",
       );
       expect(typedGrammar.typeDefinitions).not.toContain(
         "return value !== undefined;",
@@ -323,7 +323,7 @@ describe("TypeIntegrationEngine", () => {
 
       expect(typedGrammar.typeDefinitions).toContain("string[]");
       expect(typedGrammar.typeDefinitions).toContain(
-        'return Array.isArray(value) && value.every((el: unknown) => typeof el === "string");',
+        'return Array.isArray(value) && Array.prototype.findIndex.call(value, (el: unknown) => !(typeof el === "string")) === -1;',
       );
       expect(typedGrammar.typeDefinitions).not.toContain(
         'return typeof value === "string";',
@@ -350,7 +350,7 @@ describe("TypeIntegrationEngine", () => {
       const typedGrammar = engine.createTypedGrammar(grammar);
 
       expect(typedGrammar.typeDefinitions).toContain(
-        'return typeof value === "object" && value !== null;',
+        'return ((typeof value === "object" && value !== null) || typeof value === "function") && ("label" in value) && ((field: unknown) => typeof field === "string" && field === "value")((value as Record<string, unknown>)["label"]);',
       );
     });
 
@@ -428,10 +428,10 @@ describe("TypeIntegrationEngine", () => {
       const typedGrammar = engine.createTypedGrammar(grammar);
 
       expect(typedGrammar.typeDefinitions).toContain(
-        "export function isStartResult(value: unknown): value is StartResult {\n    return false;",
+        "export function isStartResult(_value: unknown): _value is StartResult {\n    return false;",
       );
       expect(typedGrammar.typeDefinitions).toContain(
-        'return (typeof value === "string" && value === "a") || (false);',
+        'return (typeof value === "string" && value === "a");',
       );
     });
 
@@ -461,7 +461,7 @@ describe("TypeIntegrationEngine", () => {
       const typedGrammar = engine.createTypedGrammar(grammar);
 
       expect(typedGrammar.typeDefinitions).toContain(
-        'return Array.isArray(value) && value.length === 2 && (typeof value[0] === "string" && value[0] === "a") && (typeof value[1] === "string" && value[1] === "b");',
+        'return Array.isArray(value) && value.length === 2 && ((field: unknown) => typeof field === "string" && field === "a")(value[0]) && ((field: unknown) => typeof field === "string" && field === "b")(value[1]);',
       );
     });
 
@@ -518,7 +518,7 @@ describe("TypeIntegrationEngine", () => {
       const typedGrammar = engine.createTypedGrammar(grammar);
 
       expect(typedGrammar.typeDefinitions).toContain(
-        'value.every((el: unknown) => Array.isArray(el) && el.length === 2 && (typeof el[0] === "string" && el[0] === "a") && (typeof el[1] === "string" && el[1] === "b"))',
+        'Array.prototype.findIndex.call(value, (el: unknown) => !(Array.isArray(el) && el.length === 2 && ((field: unknown) => typeof field === "string" && field === "a")(el[0]) && ((field: unknown) => typeof field === "string" && field === "b")(el[1]))) === -1',
       );
     });
 
@@ -852,6 +852,79 @@ describe("TypeIntegrationEngine", () => {
         "export namespace Outer.Inner {",
       );
     });
+
+    it("validates the namespace when emitting an interface for an existing typed grammar", () => {
+      const typedGrammar = engine.createTypedGrammar(
+        createGrammarDefinition(
+          "NsGrammar",
+          [],
+          [createRuleDefinition("start", createStringLiteral("x", '"'))],
+        ),
+      );
+      const nsEngine = new TypeIntegrationEngine({
+        typeNamespace: "Types.yield",
+      });
+      expect(() => nsEngine.generateParserInterface(typedGrammar)).toThrow(
+        /not a valid TypeScript namespace name/,
+      );
+    });
+
+    it.each([
+      "await",
+      "eval",
+      "arguments",
+      "Types.await",
+      "Types.eval",
+      "Types.arguments",
+      "Types.class",
+      "Types.default",
+      "Types.true",
+      "Types.const",
+      "Types.class.More",
+    ])(
+      "rejects %s as a runtime namespace when generating guards",
+      (typeNamespace) => {
+        const nsEngine = new TypeIntegrationEngine({
+          typeNamespace,
+          generateTypeGuards: true,
+        });
+        const grammar = createGrammarDefinition(
+          "NsGrammar",
+          [],
+          [createRuleDefinition("start", createStringLiteral("x", '"'))],
+        );
+        expect(() => nsEngine.createTypedGrammar(grammar)).toThrow(
+          /not a valid TypeScript namespace name/,
+        );
+      },
+    );
+
+    it.each([
+      "class",
+      "default",
+      "const",
+      "true",
+      "null",
+      "yield",
+      "interface",
+      "let",
+      "Types.yield",
+      "Types.interface",
+      "Types.let",
+    ])(
+      "rejects the reserved namespace name %s before generating invalid TypeScript",
+      (typeNamespace) => {
+        const nsEngine = new TypeIntegrationEngine({ typeNamespace });
+        const grammar = createGrammarDefinition(
+          "NsGrammar",
+          [],
+          [createRuleDefinition("start", createStringLiteral("x", '"'))],
+        );
+        expect(() => nsEngine.createTypedGrammar(grammar)).toThrow(
+          /not a valid TypeScript namespace name/,
+        );
+      },
+    );
 
     it("should reject a non-identifier grammar name in generateParserInterface", () => {
       const grammar: GrammarDefinition = createGrammarDefinition(

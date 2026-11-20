@@ -8,6 +8,7 @@ import {
   map,
   not,
   plus,
+  safeStringForDisplay,
   seq,
   star,
 } from "@suzumiyaaoba/tpeg-core";
@@ -107,7 +108,9 @@ export const Term: Parser<number> = map(
           return acc % factor;
         default: {
           const exhaustiveCheck: never = op;
-          throw new Error(`Unreachable: ${exhaustiveCheck}`);
+          throw new Error(
+            `Unreachable: ${safeStringForDisplay(exhaustiveCheck)}`,
+          );
         }
       }
     }, left);
@@ -134,7 +137,9 @@ export const Expr: Parser<number> = map(
           return acc - term;
         default: {
           const exhaustiveCheck: never = op;
-          throw new Error(`Unreachable: ${exhaustiveCheck}`);
+          throw new Error(
+            `Unreachable: ${safeStringForDisplay(exhaustiveCheck)}`,
+          );
         }
       }
     }, left);

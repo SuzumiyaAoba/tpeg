@@ -125,6 +125,20 @@ interface CodeGenOptions {
 }
 ```
 
+With `includeTypes: true`, actions and transforms include the annotations needed for strict TypeScript compilation; `includeTypes: false` emits plain JavaScript. Transform failures preserve their original message even if the captured value cannot be JSON-serialized. In that case, the diagnostic's `found` field is `<unserializable value>`.
+
+Generated actions and transforms preserve the child's match positions before reading its value or invoking user code. Reentering a custom parser that reuses a success object does not change the outer match's consumption. A transform reads its input value once and uses that same value for rejection diagnostics; object values are shared, not cloned. An action with no capture references and no bare `eval` reference does not read the child value. The snapshot bindings `__current` and `__next` are reserved for generated code, so choose another rule or external parser name, or use `namePrefix` for rules.
+
+Actions obtain the raw capture before entering the scope containing labels and authored declarations. A label or action-local declaration named `__result` can therefore be used without shadowing the parser result used to read the capture.
+
+A directly visible label is `undefined` when the matched value has no own enumerable field for that name. Such bindings read only own enumerable capture fields, excluding prototype properties and intrinsic fields such as a string or array’s `length`. `$$` retains the original value. Grouping parentheses are transparent at any depth. Labels guaranteed on every alternative retain the usual direct read; field getters are read only for referenced labels.
+
+An action containing a bare `eval` reference conservatively keeps `$$` and all directly visible labels, including when the evaluated source computes a label name at runtime. Typed output includes harmless reads so these bindings pass `noUnusedLocals`. Unicode escapes in identifier names are recognized. Strings, comments, regular expressions and unrelated object property names do not request capture bindings.
+
+Rule names such as `JSON` do not shadow the standard objects used by generated diagnostics. When a TypeScript transform is emitted, a rule whose declaration name is `globalThis` is rejected because diagnostics need the global object. Set `namePrefix` or rename the rule to avoid this collision. The parser package's optimized generator applies the same check when inline monitoring is enabled.
+
+`undefined` and `Infinity` are also valid rule names. Generated absence checks, including the parser package’s regex-fusion reconstruction and inline monitoring, do not resolve the `undefined` binding. A hand-built `Quantified` AST with `max: Infinity` uses the repetition combinator’s default unbounded maximum, so a rule named `Infinity` does not change its range. When JSON serialization returns no value, transform diagnostics omit `found`.
+
 #### `GeneratedCode`
 
 Result of code generation:
@@ -154,6 +168,10 @@ const analysis = analyzeGrammarPerformance(grammar);
 console.log(analysis.estimatedParseComplexity); // 'low' | 'medium' | 'high'
 console.log(analysis.optimizationSuggestions); // Array of suggestions
 ```
+
+`generationTime` measures each generation call independently, including overlapping calls on the same generator. Once measurement begins, failed generation attempts are also counted in `globalPerformanceMonitor` and their timers are finished before the error propagates.
+
+For asynchronous work, `PerformanceMonitor.startTimer(operation)` returns a completion function that records that call's duration. Call it in `finally`; repeated completion returns the same duration without adding another measurement. `clear()` cancels unfinished timers. `start(operation)` / `end(operation)` remain available for synchronous, nested measurements.
 
 ## Template Customization
 

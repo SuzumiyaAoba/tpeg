@@ -37,6 +37,49 @@ describe("TypeInferenceEngine", () => {
   });
 
   describe("Basic Type Inference", () => {
+    it.each([
+      [
+        "semantic action",
+        createActionExpression(
+          createStringLiteral("a", '"'),
+          "return undefined;",
+        ),
+      ],
+      ["missing rule", createIdentifier("missing")],
+      ["qualified rule", createQualifiedIdentifier("External", "missing")],
+      [
+        "positive lookahead",
+        createPositiveLookahead(createStringLiteral("a", '"')),
+      ],
+      [
+        "negative lookahead",
+        createNegativeLookahead(createStringLiteral("a", '"')),
+      ],
+      [
+        "nullable choice",
+        createChoice([
+          createStringLiteral("a", '"'),
+          createOptional(createStringLiteral("b", '"')),
+        ]),
+      ],
+      [
+        "unknown choice",
+        createChoice([
+          createStringLiteral("a", '"'),
+          createActionExpression(createStringLiteral("b", '"'), "return null;"),
+        ]),
+      ],
+      [
+        "void choice",
+        createChoice([
+          createStringLiteral("a", '"'),
+          createPositiveLookahead(createStringLiteral("b", '"')),
+        ]),
+      ],
+    ] as const)("reports nullability for %s", (_name, expression) => {
+      expect(engine.inferExpressionType(expression).nullable).toBe(true);
+    });
+
     it("should infer string literal types correctly", () => {
       const literal = createStringLiteral("hello", '"');
       const result = engine.inferExpressionType(literal);

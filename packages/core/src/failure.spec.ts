@@ -185,6 +185,23 @@ describe("materializeParseError", () => {
     expect(error.parserName).toBeUndefined();
   });
 
+  it.each([false, true])(
+    "omits parserName when a named expectation ties with an unnamed one (unnamed first: %s)",
+    (unnamedFirst) => {
+      const named = { label: "digit", parserName: "number" };
+      const unnamed = { label: "letter" };
+      fail("abc", 0, unnamedFirst ? unnamed : named);
+      fail("abc", 0, unnamedFirst ? named : unnamed);
+      expect(materializeParseError(false).parserName).toBeUndefined();
+    },
+  );
+
+  it("attributes multiple expectations belonging to the same parser", () => {
+    fail("abc", 0, { label: "digit", parserName: "number" });
+    fail("abc", 0, { label: "sign", parserName: "number" });
+    expect(materializeParseError(false).parserName).toBe("number");
+  });
+
   it("includes fatal: true only when asked to materialize a fatal failure", () => {
     fail("abc", 0, { label: "x" });
     expect(materializeParseError(true).fatal).toBe(true);
@@ -373,6 +390,63 @@ describe("renameWatermarkExpectation", () => {
 });
 
 describe("renameWatermarkExpectationsSince", () => {
+  it("updates a custom diagnostic's details without changing snapshots or the input array", () => {
+    const before = snapshotFailureWatermark();
+    fail("abc", 1, {
+      label: "custom",
+      diagnostic: {
+        message: "custom",
+        pos: 1,
+        context: ["original"],
+        found: "decoded",
+      },
+    });
+    const recorded = snapshotFailureWatermark();
+    const context = ["formatted"];
+    renameWatermarkExpectationsSince("abc", before, "Named", {
+      found: "b",
+      context,
+    });
+    context.push("changed");
+    expect(materializeParseError(false)).toMatchObject({
+      message: "custom",
+      pos: 1,
+      parserName: "Named",
+      found: "b",
+      context: ["formatted"],
+    });
+    expect(recorded.expected[0]?.diagnostic).toMatchObject({
+      found: "decoded",
+      context: ["original"],
+    });
+  });
+
+  it("updates details only on custom records contributed since the snapshot", () => {
+    fail("abc", 1, {
+      label: "old",
+      parserName: "Old",
+      diagnostic: { message: "old", pos: 1, context: "old context" },
+    });
+    const before = snapshotFailureWatermark();
+    fail("abc", 1, {
+      label: "new",
+      diagnostic: { message: "new", pos: 1, context: "new context" },
+    });
+    renameWatermarkExpectationsSince("abc", before, "New", {
+      found: "b",
+      context: "formatted",
+    });
+    const current = snapshotFailureWatermark();
+    expect(current.expected[0]).toMatchObject({
+      parserName: "Old",
+      diagnostic: { context: "old context" },
+    });
+    expect(current.expected[1]).toMatchObject({
+      parserName: "New",
+      diagnostic: { found: "b", context: "formatted" },
+    });
+  });
+
   // Pairs with `snapshotFailureWatermark` taken immediately before a
   // wrapped-parser call: retitles only the entries THAT call added, so
   // a `withDetailedError` rename can no longer touch expectations other

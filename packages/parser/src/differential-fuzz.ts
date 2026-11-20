@@ -21,6 +21,7 @@ import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { isFatalFailure } from "@suzumiyaaoba/tpeg-core";
 import { grammarDefinition } from "./grammar";
 import { findUnreachableAlternatives } from "./grammar-validation";
+import { evaluateGeneratedModule } from "./generated-runtime";
 
 // --- Deterministic PRNG (linear congruential generator) -----------------
 
@@ -41,6 +42,9 @@ export const pick = <T>(rng: () => number, items: readonly T[]): T =>
 // --- Random grammar generation --------------------------------------------
 
 export const LEAVES = [
+  // Nullable literals exercise EOF, lookahead and choice behavior. The
+  // harness filters grammars with unbounded nullable repetition as usual.
+  '""',
   '"a"',
   '"b"',
   '"ab"',
@@ -73,6 +77,14 @@ export const LEAVES = [
   '"é"',
   '"ø"',
   '"😀"',
+  // Lone surrogates expose literal prefixes that end inside an astral
+  // character, and subsequent parsers starting at that UTF-16 boundary.
+  '"\\uD83D"',
+  '"\\uDE00"',
+  '"a\\uD83D"',
+  "[\\uD83D]",
+  "[\\uDE00]",
+  "[^\\uD83D]",
   // Non-ASCII character-class RANGES (`[à-ÿ]`-shaped, not just a single
   // non-ASCII string literal above) -- until `character-class.ts`'s
   // `charClassChar` grew a non-ASCII alternative, the .tpeg grammar TEXT
@@ -443,6 +455,14 @@ export const FIXED_TEST_INPUTS = [
   "aé",
   "😀",
   "a😀b",
+  "\ud83d",
+  "\ude00",
+  "\ud83da",
+  "\ude00a",
+  "\ud83d\ud83d",
+  "😀a",
+  "😀😀",
+  "a😀",
   "à",
   // Hiragana / ø / astral-range-boundary inputs -- the `LEAVES` set
   // contains `[あ-ん]`, `[^あ-ん]`, `[a-zあ]`, `"ø"`, and `[😀-🙏]`, but
@@ -508,6 +528,8 @@ export const RANDOM_TEST_INPUTS: readonly string[] = (() => {
     ">",
     "é",
     "😀",
+    "\ud83d",
+    "\ude00",
   ] as const;
   const inputs: string[] = [];
   for (let i = 0; i < 20; i++) {
@@ -531,10 +553,9 @@ export const ALL_TEST_INPUTS: readonly string[] = [
 /** Compiles generated TypeScript source (no imports -- every variant this
  * is used for is generated with `includeImports: false`) into a callable
  * `start` parser, given the already-loaded `tpeg-core`/`tpeg-combinator`
- * namespaces as the function's scope. Mirrors the `new Function(...)`
- * pattern `cut-memoize.spec.ts` uses for the same reason: these are
- * genuinely generated modules, not hand-written parsers, so there's no
- * static import target to bind them to.
+ * namespaces as the function's scope. The shared evaluator handles real
+ * export statements and strict module semantics without rewriting action
+ * text or making unused helper names collide with rule declarations.
  *
  * `combinator` is spread FIRST, `core` SECOND (core wins on any shared
  * name) -- this mirrors exactly how generated code actually imports the
@@ -555,23 +576,8 @@ export const compileStart = (
   core: Record<string, unknown>,
   combinator: Record<string, unknown>,
 ): Parser<unknown> => {
-  const body = code
-    .replace(/^export const (\w+)/gm, "const $1")
-    // `export { b as start }` -- emitted when the `@start`-named entry
-    // rule isn't literally named `start` (see `codegen.ts`'s start-rule
-    // export handling). A bare `export { ... }` is a SyntaxError inside
-    // `new Function`, so spell the same alias as a plain const instead.
-    .replace(/^export \{ (\w+) as (\w+) \};$/gm, "const $2 = $1;")
-    // `export { performanceMonitor }` -- emitted by `includeMonitoring`
-    // codegen. The binding is already declared; only the `export` needs
-    // stripping.
-    .replace(/^export \{ (\w+) \};$/gm, "");
   const scope = { ...combinator, ...core };
-  const factory = new Function(
-    ...Object.keys(scope),
-    `${body}\nreturn { start };`,
-  );
-  return (factory(...Object.values(scope)) as { start: Parser<unknown> }).start;
+  return evaluateGeneratedModule(code, scope)["start"] as Parser<unknown>;
 };
 
 export type ResultKey = string;

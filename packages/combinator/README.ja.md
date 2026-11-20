@@ -171,13 +171,13 @@ const result = parse(parser)("1,2,3");
 
 #### `commaSeparated(value)`
 
-オプションの末尾カンマを持つカンマ区切り値をパースします。
+前後の空白を含むカンマ区切り値をパースします。末尾カンマは既定で拒否し、第2引数に `true` を指定すると許可します。先頭に空白があっても、禁止された末尾カンマを空リストとして受け入れません。
 
 ```typescript
 import { parse } from "@suzumiyaaoba/tpeg-core";
 import { commaSeparated, number } from "@suzumiyaaoba/tpeg-combinator";
 
-const parser = commaSeparated(number);
+const parser = commaSeparated(number, true);
 const result = parse(parser)("1, 2, 3,");
 // 結果: { success: true, val: [1, 2, 3] }
 ```
@@ -185,6 +185,8 @@ const result = parse(parser)("1, 2, 3,");
 ### エラーハンドリング
 
 #### `labeled(parser, message)`
+
+ラベル付きパーサーを選択肢として使う場合も、独自メッセージを診断の集約に含めます。より遠い位置での失敗がある場合は、その位置の診断を優先します。
 
 カスタムエラーメッセージを提供します。
 
@@ -198,6 +200,10 @@ const result = parse(parser)("world");
 ```
 
 #### `withDetailedError(parser, name)`
+
+元のメッセージ、位置、期待値、制御フラグは、継承された項目や非列挙プロパティでも保持します。位置のゲッターは一度だけ読み、返す位置と実際の文字を一致させます。`labeledWithContext` は診断ごとにコンテキスト配列をコピーするため、入力配列や別の診断を後から変更しても、既存の診断の内容は変わりません。
+
+名前付きラベルは、子が記録した期待値の帰属先もラベル名に揃えます。独自の診断が一つの場合、詳細ラッパーが追加した `found` と入力のコンテキストは、外側の選択肢を通過しても保持します。更新するのは今回の子の呼び出しが記録した項目だけで、先行する選択肢やキャッシュ内の診断は変更しません。
 
 入力抜粋を含む詳細なエラーレポートを作成します。
 
@@ -229,13 +235,21 @@ const result = parse(parser)("world");
 
 キャッシュサイズ制御を持つパーサーのメモ化版を作成します。
 
+`maxCacheSize` は非負整数または `Infinity` を受け入れます。省略時と `Infinity` は1回の解析内で無制限に保持し、`0` はキャッシュを無効にします。不正な値は構築時に `Error` とし、値を文字列化できない場合も検証メッセージを保持します。
+
+有限の容量では、訪れた最大の入力位置にかかわらず、保持する項目と管理用データを容量に応じて制限します。破棄は登録順で行い、既存の項目の取得や置き換えでは順序を変えません。最上位のカットは境界より前の位置を取り除き、残る項目の登録順を保持します。この制限はキャッシュの保存領域に適用し、入力文字列や解析値の大きさは制限しません。
+
 ```typescript
 import { literal, parse } from "@suzumiyaaoba/tpeg-core";
 import { memoize } from "@suzumiyaaoba/tpeg-combinator";
 
-const parser = memoize(literal("hello"), { cacheSize: 100 });
+const parser = memoize(literal("hello"), { maxCacheSize: 100 });
 const result = parse(parser)("hello");
 ```
+
+#### `commitAtTopLevel(parser)`
+
+カットを適用し、到達しなくなったメモ化位置を破棄するための境界を進めます。外側の構文がその位置より前へ戻らない場所で使用します。継承された項目や非列挙プロパティを含む子の診断と `abort` を保持し、具体的な失敗のエラーは一度だけ取得します。
 
 #### `recursive()`
 
@@ -256,6 +270,8 @@ const result = parse(expression)("((x))");
 #### `debug(parser, name, options)`
 
 デバッグのためにパースプロセスをログ出力します。
+
+`logResult: true` の場合、表示する値を一度だけ取得し、JSON 変換が失敗した場合や表現を返さない場合は安全な文字列表示を使います。値の getter や代替表示用のメッセージ取得が例外を投げた場合は `<unprintable value>` を表示します。ラッパーは子の結果をそのまま返します。結果のログを無効にすると値を取得せず、パーサーや `customLogger` 自身が投げる例外は呼び出し元へ伝えます。
 
 ```typescript
 import { literal, parse } from "@suzumiyaaoba/tpeg-core";

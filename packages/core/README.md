@@ -105,6 +105,10 @@ const greetingResult = greetingParser("Hello", 0);
 
 ### Advanced Examples
 
+`optional`, `zeroOrMore`, `oneOrMore`, and `quantified` read a successful child's `next` once before reading its value. They reject non-numeric, fractional, non-finite, backward, or out-of-input positions with a fatal failure at the child's call site. Positions are validated before comparison, without implicit numeric conversion. Finite quantified repetitions still allow zero-width matches; unbounded repetitions require progress.
+
+`quantified` validates its bounds at construction: `min` must be a non-negative safe integer, and `max` must be a safe integer at least `min`, omitted, or `Infinity`. Invalid bounds produce a grammar-authoring `Error` even when their values cannot be converted to text. `charClassRun(specs, min)` accepts only `0` or `1` and rejects other minimums at construction.
+
 `sequence`/`oneOrMore`/`zeroOrMore` return arrays, not joined strings — use `map` to fold multi-character matches back into a single string before capturing them.
 
 #### HTTP Request Parser with Captures
@@ -250,6 +254,18 @@ Traversals include action bodies but do not follow references into other rules.
 
 ## Error Handling
 
+`parse(parser, options)` accepts positive integer or `Infinity` limits for `maxInputLength` and `maxRecursionDepth`. Defaults apply to missing or undefined options; explicit null and other invalid values raise `RangeError` when constructing the parser. The public `withRecursionDepthLimit(limit, callback)` validates the same contract before invoking the callback. Input-length and recursion-depth failures both carry `fatal` and `abort`, so enclosing choices and lookahead cannot turn a resource-limit failure into a success.
+
+`ParseError` diagnostics can use class getters, inherited fields, or non-enumerable properties such as `Error.message`. Combinators that change cut flags retain these fields. Use `cloneParseError(error)` to obtain a writable shallow copy of the standard diagnostic fields and own enumerable metadata when adding diagnostics in a custom wrapper. It reads each copied getter once and retains `fatal` and `abort`.
+
+`choice`, `captureChoice`, and `predictiveChoice` also aggregate concrete failures that omit `expected` or provide an empty expectation array. The farthest failure wins; tied custom messages are combined without treating their text as expected input. A unique custom diagnostic retains its metadata and context. Diagnostic recording keeps source context arrays separate from materialized errors and follows the same rollback, nested parsing, and memoization behavior as leaf expectations.
+
+Custom wrappers can snapshot the failure watermark before calling a child parser, then use `renameWatermarkExpectationsSince(input, snapshot, name, details?)` to update only the records that call contributed. Optional `found` and `context` details are copied into custom diagnostics without changing earlier snapshots or memoized records.
+
+`formatParseError` keeps the failing character or end of input visible when shortening long source lines, and aligns the pointer with the displayed excerpt. Source control characters such as tabs and escape bytes are shown as visible escapes. `contextLines: 0` displays the error line without surrounding lines; `showPosition: false` hides the source excerpt. Empty input still displays an empty source line and its pointer.
+
+Formatting reads each diagnostic field and option once and normalizes diagnostic text before evaluating options. Custom message templates can use inherited getters; undefined or invalid templates retain the selected locale's defaults. Unknown placeholders remain literal. `reportParseError` reads the result's error once, retains that object if formatting fails, and reports a throwing error getter without reading it again.
+
 ```typescript
 import { sequence, literal, parse, offsetToPos } from "@suzumiyaaoba/tpeg-core";
 
@@ -286,6 +302,7 @@ if (result.success) {
 
 - `literal(str: string)` - Parse exact string
 - `charClass(...specs)` - Parse a character matching any of the given specs; each spec is either a single character or a `[start, end]` tuple
+- `charClassRun(specs, min, negated?, parserName?)` - Scan a maximal character-class run, with `min` equal to `0` for zero or more or `1` for one or more
 - `anyChar(parserName?)` - Parse any single character (the `any` export is a pre-built `anyChar("any")`)
 
 ### Combinators
@@ -298,6 +315,8 @@ if (result.success) {
 - `quantified(parser, min, max?)` - Parse specific number of repetitions
 - `map(parser, fn)` - Transform a parser's successful value
 
+`map` and `mapResult` preserve the child's consumed positions before invoking the mapper, including when it calls a parser that reuses its result object. `sequence` and `captureSequence` read each child's value once and retain its next position before reading that value. On rejection, `filter` reports the value it tested and the starting position captured before reading that value or running the predicate.
+
 ### Capture System
 
 - `capture(label, parser)` - Capture parser result with label
@@ -305,7 +324,7 @@ if (result.success) {
 - `captureChoice(...parsers)` - Choice preserving capture structure
 - `mergeCaptures(captures)` - Merge multiple captured objects
 - `isCapturedValue(value)` - Check if value is a captured object
-- `getCapturedValue(captured, label)` - Get value by label
+- `getCapturedValue(captured, label)` - Get value by an own label; returns `undefined` for missing labels and excludes inherited properties
 - `getCaptureLabels(captured)` - Get all labels from captured object
 
 ### Lookahead
@@ -317,7 +336,9 @@ if (result.success) {
 
 - `parse(parser)` - Curry a parser into `(input: string) => ParseResult<T>`, starting at offset 0
 - `createPos(offset?)` - Create a plain numeric offset (defaults to 0)
-- `offsetToPos(input, offset)` - Compute `{ offset, line, column }` for an offset, on demand
+- `offsetToPos(input, offset)` - Compute `{ offset, line, column }` for a finite, non-negative integer offset, on demand; invalid offsets throw `RangeError`. Offsets past the input are preserved, with the column bounded by the last line's length
+- `isValidOffset(value)` - Check whether a value is a non-negative integer below 2³², rejecting non-numeric values without coercion
+- `getCharAt(input, offset)` / `getCharAndLength(input, offset)` - Read a Unicode character; invalid or out-of-range offsets return `""` / `["", 0]`
 - `isFailure(result)` - Check if result is a failure
 - `isSuccess(result)` - Check if result is a success
 

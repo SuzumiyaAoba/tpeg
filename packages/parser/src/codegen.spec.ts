@@ -2,7 +2,9 @@
  * Tests for TPEG Code Generation System
  */
 
+import { evaluateGeneratedModule } from "./generated-runtime";
 import { describe, expect, test } from "vite-plus/test";
+import { transformWithOxc } from "vite-plus";
 import { TPEGCodeGenerator, generateTypeScriptParser } from "./codegen";
 import { generateOptimizedTypeScriptParser } from "./codegen-optimized";
 import {
@@ -259,15 +261,14 @@ describe("TPEG Code Generation", () => {
       // Evaluate the generated source directly against the real
       // @suzumiyaaoba/tpeg-core exports, exactly as the emitted `import`
       // statement expects, so a signature mismatch fails this test.
-      const body = result.code
-        .replace(/^import[^\n]*\n?/gm, "")
-        .replace(/^export const (\w+): Parser<[^>]*>/gm, "const $1");
-      const moduleFactory = new Function(
-        ...Object.keys(core),
-        `${body}\nreturn { letter, notDigit, anything };`,
+      const { code } = await transformWithOxc(
+        result.code,
+        "generated-character-classes.ts",
       );
-      const { letter, notDigit, anything } = moduleFactory(
-        ...Object.values(core),
+      const { letter, notDigit, anything } = evaluateGeneratedModule(
+        code,
+        core,
+        ["letter", "notDigit", "anything"],
       );
 
       const pos = 0;
@@ -848,14 +849,11 @@ describe("TPEG Code Generation", () => {
       const generator = new TPEGCodeGenerator();
       const result = generator.generateGrammar(grammar);
 
-      const body = result.code
-        .replace(/^import[^\n]*\n?/gm, "")
-        .replace(/^export const (\w+): Parser<[^>]*>/gm, "const $1");
-      const moduleFactory = new Function(
-        ...Object.keys(core),
-        `${body}\nreturn { number };`,
+      const { code } = await transformWithOxc(
+        result.code,
+        "generated-transform.ts",
       );
-      const { number } = moduleFactory(...Object.values(core));
+      const { number } = evaluateGeneratedModule(code, core, ["number"]);
 
       const pos = 0;
       expect(number("123abc", pos)).toEqual({
@@ -1119,17 +1117,10 @@ describe("TPEG Code Generation", () => {
         includeTypes: false,
       });
 
-      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-      const moduleFactory = new Function(
-        ...Object.keys(core),
-        ...Object.keys(combinator),
-        "tick",
-        `${body}\nreturn { counted };`,
-      );
-      const { counted } = moduleFactory(
-        ...Object.values(core),
-        ...Object.values(combinator),
-        tick,
+      const { counted } = evaluateGeneratedModule(
+        result.code,
+        { ...core, ...combinator, tick },
+        ["counted"],
       );
 
       const pos = 0;
@@ -1175,12 +1166,7 @@ describe("TPEG Code Generation", () => {
         includeTypes: false,
       });
 
-      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-      const moduleFactory = new Function(
-        ...Object.keys(core),
-        `${body}\nreturn { stmt };`,
-      );
-      const { stmt } = moduleFactory(...Object.values(core));
+      const { stmt } = evaluateGeneratedModule(result.code, core, ["stmt"]);
 
       const pos = 0;
       const matched = stmt("if", pos);
@@ -1237,12 +1223,7 @@ describe("TPEG Code Generation", () => {
           includeTypes: false,
         });
 
-        const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-        const moduleFactory = new Function(
-          ...Object.keys(core),
-          `${body}\nreturn { stmt };`,
-        );
-        const { stmt } = moduleFactory(...Object.values(core));
+        const { stmt } = evaluateGeneratedModule(result.code, core, ["stmt"]);
 
         const res = stmt("a", 0);
         expect(res.success).toBe(true);
@@ -1297,12 +1278,7 @@ describe("TPEG Code Generation", () => {
         includeTypes: false,
       });
 
-      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-      const moduleFactory = new Function(
-        ...Object.keys(core),
-        `${body}\nreturn { outer };`,
-      );
-      const { outer } = moduleFactory(...Object.values(core));
+      const { outer } = evaluateGeneratedModule(result.code, core, ["outer"]);
 
       const res = outer("ov", 0);
       expect(res.success).toBe(true);
@@ -1340,12 +1316,7 @@ describe("TPEG Code Generation", () => {
         includeTypes: false,
       });
 
-      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-      const moduleFactory = new Function(
-        ...Object.keys(core),
-        `${body}\nreturn { stmt };`,
-      );
-      const { stmt } = moduleFactory(...Object.values(core));
+      const { stmt } = evaluateGeneratedModule(result.code, core, ["stmt"]);
 
       const res = stmt("ab", 0);
       expect(res.success).toBe(true);

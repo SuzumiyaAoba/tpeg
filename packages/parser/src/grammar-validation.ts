@@ -1252,6 +1252,8 @@ const RESERVED_INTERNAL_RULE_NAMES: ReadonlySet<string> = new Set([
   "__result",
   "__transformed",
   "__val",
+  "__current",
+  "__next",
   "input",
   "pos",
 ]);
@@ -1300,6 +1302,9 @@ export interface GeneratedIdentifierCheckOptions {
    * depending on the combinator. Checked against the PREFIXED rule name,
    * matching what's actually emitted. */
   importedBindings: readonly string[];
+  /** True when generated infrastructure accesses standard objects through
+   * globalThis. Only then must a rule's emitted binding avoid that name. */
+  requiresGlobalThis?: boolean;
 }
 
 /**
@@ -1382,6 +1387,11 @@ export const validateGeneratedIdentifiers = (
         `Rule name "${rule.name}" generates to "${emittedName}", a name the code generator itself uses internally inside an action/transform-wrapped rule's body -- rename the rule${options.namePrefix ? "" : " (or pass a --name-prefix)"} to avoid a self-referential ReferenceError in the generated code.`,
       );
     }
+    if (options.requiresGlobalThis && emittedName === "globalThis") {
+      throw new Error(
+        `Rule name "${rule.name}" generates to "globalThis", which shadows the global object needed by generated transform diagnostics or monitoring -- rename the rule${options.namePrefix ? "" : " (or pass a --name-prefix)"}.`,
+      );
+    }
     if (importedBindings.has(emittedName)) {
       throw new Error(
         `Rule name "${rule.name}" generates to "${emittedName}", which collides with a runtime import this grammar's generated code also needs -- rename the rule${options.namePrefix ? "" : " (or pass a --name-prefix)"}.`,
@@ -1412,15 +1422,14 @@ export const validateGeneratedIdentifiers = (
       }
       // A label named `$$` IS a legal destructured binding name in
       // isolation (and `RESERVED_INTERNAL_RULE_NAMES` deliberately does
-      // not cover labels -- see above), but `wrapWithAction` emits the
-      // destructure in the SAME IIFE scope as its own
-      // `const $$ = __result.val;` -- so `const { $$ } = ($$ ?? {})`
-      // is a duplicate-`const` SyntaxError, not a legal shadow. Reachable
+      // not cover labels -- see above), but $$ denotes the action's
+      // aggregate capture value. `const { $$ } = ($$ ?? {})` would read
+      // its own uninitialized binding instead of that aggregate. Reachable
       // only from a hand-built AST (the grammar parser's identifier rule
       // can't produce a `$`).
       if (label === "$$") {
         throw new Error(
-          `Rule "${rule.name}" has a capture label named "$$", which collides with the \`const $$ = __result.val;\` binding wrapWithAction declares in the same scope as its \`const { ${label} } = ...\` destructure -- the emitted code fails to parse (duplicate lexical declaration). Rename the label.`,
+          `Rule "${rule.name}" has a capture label named "$$", which is reserved for the action's aggregate capture value -- its \`const { $$ } = ($$ ?? {})\` destructure would read an uninitialized binding. Rename the label.`,
         );
       }
     }

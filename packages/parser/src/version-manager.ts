@@ -104,17 +104,19 @@ export interface SemanticVersion {
 export interface VersionConstraint {
   operator: "=" | ">=" | "<=" | ">" | "<" | "^" | "~" | "*";
   version: SemanticVersion;
+  /** Additional constraints are conjoined with this comparator and may
+   * themselves contain compound constraints. Shared references are
+   * evaluated once. */
   additional?: VersionConstraint[];
   /**
    * How many components of the constraint's version string were explicitly
    * given: `"major"` for a bare `"1"`, `"minor"` for `"1.2"`, `"patch"` for
    * a fully-specified `"1.2.3"`. `parseVersion` defaults an omitted minor/
-   * patch to `0`, which loses exactly the information `~`/`^` matching
-   * needs: standard semver gives `~1` (major only) and `^0.0` (minor
-   * explicit, major/minor both zero) wider matching ranges than the
+   * patch to `0`, which loses information used by `=`, `>`, `<=`, `~`,
+   * and `^` matching. For example, standard semver gives `~1` (major only)
+   * and `^0.0` (minor explicit, major/minor both zero) wider matching ranges than the
    * fully-pinned `~1.0.0`/`^0.0.0` would -- see `satisfiesConstraint`'s
-   * `~`/`^` cases below for exactly where this makes a difference. Not
-   * meaningful for any other operator.
+   * cases below for exactly where this makes a difference.
    */
   precision?: "major" | "minor" | "patch";
 }
@@ -147,7 +149,9 @@ export class VersionManager {
   private versionCache = new Map<string, SemanticVersion>();
 
   /**
-   * Parses a semantic version.
+   * Parses a semantic version. Core components must fit JavaScript's
+   * safe integer range; prerelease identifiers remain strings and can
+   * contain arbitrarily large numeric identifiers.
    */
   parseVersion(versionString: string): SemanticVersion {
     const cached = this.versionCache.get(versionString);
@@ -168,6 +172,17 @@ export class VersionManager {
       ...(match[4] ? { prerelease: match[4] } : {}),
       ...(match[5] ? { build: match[5] } : {}),
     };
+
+    if (
+      !Number.isSafeInteger(version.major) ||
+      !Number.isSafeInteger(version.minor) ||
+      !Number.isSafeInteger(version.patch)
+    ) {
+      throw new VersionParseError(
+        versionString,
+        "Numeric version components exceed the safe integer range",
+      );
+    }
 
     this.versionCache.set(versionString, version);
     return version;
@@ -323,10 +338,7 @@ export class VersionManager {
     version: SemanticVersion,
     constraint: VersionConstraint,
   ): boolean {
-    // `additional` entries are always leaf comparators themselves (only
-    // `parseVersionConstraint`'s first part ever sets `.additional`), so
-    // this one level of flattening covers every comparator in the range.
-    const comparators = [constraint, ...(constraint.additional ?? [])];
+    const comparators = this.constraintComparators(constraint);
 
     if (
       version.prerelease !== undefined &&
@@ -631,23 +643,59 @@ export class VersionManager {
    * Formats a version constraint as a string.
    */
   formatConstraint(constraint: VersionConstraint): string {
-    const primary =
-      constraint.operator === "*"
-        ? "*"
-        : `${constraint.operator}${this.formatVersion(constraint.version)}`;
-    return constraint.additional?.length
-      ? [
-          primary,
-          ...constraint.additional.map((item) => this.formatConstraint(item)),
-        ].join(", ")
-      : primary;
+    return this.constraintComparators(constraint)
+      .map((item) => {
+        if (item.operator === "*") return "*";
+        // >= and < have the same meaning with omitted components
+        // zero-filled. Other operators need precision to retain their range.
+        const precision =
+          item.operator === ">=" || item.operator === "<"
+            ? undefined
+            : item.precision;
+        return `${item.operator}${this.formatVersionWithPrecision(item.version, precision)}`;
+      })
+      .join(", ");
+  }
+
+  /** Collect every comparator, including compound constraints assembled
+   * through the public recursive `additional` field. Identity tracking
+   * handles shared/cyclic references without repeating a comparator. */
+  private constraintComparators(root: VersionConstraint): VersionConstraint[] {
+    if (!root.additional?.length) return [root];
+    const comparators: VersionConstraint[] = [];
+    const pending = [root];
+    const seen = new Set<VersionConstraint>();
+    while (pending.length > 0) {
+      const constraint = pending.pop() as VersionConstraint;
+      if (seen.has(constraint)) continue;
+      seen.add(constraint);
+      comparators.push(constraint);
+      const additional = constraint.additional;
+      if (additional) {
+        for (let i = additional.length - 1; i >= 0; i--) {
+          pending.push(additional[i] as VersionConstraint);
+        }
+      }
+    }
+    return comparators;
   }
 
   /**
    * Formats a version as a string.
    */
   formatVersion(version: SemanticVersion): string {
-    let formatted = `${version.major}.${version.minor}.${version.patch}`;
+    return this.formatVersionWithPrecision(version);
+  }
+
+  private formatVersionWithPrecision(
+    version: SemanticVersion,
+    precision: "major" | "minor" | "patch" = "patch",
+  ): string {
+    let formatted = `${version.major}`;
+    if (precision !== "major") {
+      formatted += `.${version.minor}`;
+      if (precision !== "minor") formatted += `.${version.patch}`;
+    }
     if (version.prerelease) {
       formatted += `-${version.prerelease}`;
     }

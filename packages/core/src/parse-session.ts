@@ -13,19 +13,46 @@
  *
  * A direct `parser(input, pos)` call that bypasses `parse()` does not
  * start a session on its own; call {@link beginParseSession} first to get
- * the same fresh-cache guarantee. A nested `parse()` (e.g. from inside a
- * semantic action) also starts a session, which only costs the outer
- * parse its cached entries -- never correctness, since an evicted entry
- * is simply recomputed.
+ * the same fresh-cache guarantee. A nested `parse()` starts its own
+ * session and restores the outer session and diagnostics on return.
  */
 
+import {
+  resetFailureWatermark,
+  restoreFailureWatermark,
+  snapshotFailureWatermark,
+} from "./failure";
+
+let nextParseSession = 0;
 let parseSession = 0;
+let activeParseSessions = 0;
 
 /** Starts a new parse session, invalidating every session-scoped cache. */
 export const beginParseSession = (): number => {
-  parseSession++;
+  parseSession = ++nextParseSession;
   return parseSession;
 };
 
 /** The current parse session's id (see {@link beginParseSession}). */
 export const currentParseSession = (): number => parseSession;
+
+/** Runs a top-level parse with fresh caches and diagnostics. Nested calls
+ * restore the enclosing parse's state even if a semantic action throws.
+ * The callback must materialize any lazy failure before returning. */
+export const withParseSession = <R>(call: () => R): R => {
+  const previousSession = parseSession;
+  const previousWatermark =
+    activeParseSessions > 0 ? snapshotFailureWatermark() : undefined;
+  beginParseSession();
+  resetFailureWatermark();
+  activeParseSessions++;
+  try {
+    return call();
+  } finally {
+    activeParseSessions--;
+    if (previousWatermark) {
+      parseSession = previousSession;
+      restoreFailureWatermark(previousWatermark);
+    }
+  }
+};

@@ -516,6 +516,21 @@ export const firstSetOfExpression = (
 ): FirstSet => {
   switch (expr.type) {
     case "StringLiteral":
+      if (expr.value.length === 1) {
+        const lead = expr.value.charCodeAt(0);
+        if (lead >= 0xd800 && lead <= 0xdbff) {
+          // literal(lead) can consume the first unit of any pair with
+          // this lead, so its FIRST set includes the full astral range.
+          const astralStart = 0x10000 + (lead - 0xd800) * 0x400;
+          return {
+            set: [
+              { lo: lead, hi: lead },
+              { lo: astralStart, hi: astralStart + 0x3ff },
+            ],
+            unknown: false,
+          };
+        }
+      }
       // `singleCharFirstSet(expr.value)`, NOT `expr.value[0]`: `fromChar`
       // (via `singleCharFirstSet`) calls `codePointAt(0)` on the string
       // it's given, which decodes a leading surrogate pair into its one

@@ -115,7 +115,7 @@ export interface FormatErrorOptions {
   readonly showPosition?: boolean;
 
   /**
-   * Whether to colorize output using ANSI escape codes (default: true).
+   * Whether to colorize output using ANSI escape codes (default: stdout TTY).
    *
    * Should be disabled for environments that don't support color output
    * or when writing to files.
@@ -241,7 +241,7 @@ const clampValue = (
 ): number => {
   // `Math.min`/`Math.max` propagate NaN, so a NaN `value` would sail
   // through unchanged and poison downstream math (e.g. a NaN
-  // `maxLineLength` makes `truncateLine` append "..." to every line,
+  // `maxLineLength` makes `formatSourceLine` append "..." to every line,
   // since `width > NaN` is always false). Normalize NaN to `min`;
   // +/-Infinity still clamp correctly to max/min.
   const normalized = Number.isNaN(value)
@@ -274,7 +274,13 @@ const validateLocale = (locale: unknown): SupportedLocale => {
     return locale;
   }
 
-  console.warn(`Invalid locale '${locale}', falling back to 'en'`);
+  if (typeof locale === "string") {
+    console.warn(`Invalid locale '${locale}', falling back to 'en'`);
+  } else {
+    // Invalid options must not prevent the original diagnostic from being
+    // formatted. Symbols and objects need not support string conversion.
+    console.warn("Invalid locale, falling back to 'en'");
+  }
   return "en";
 };
 
@@ -302,7 +308,7 @@ const validateAndNormalizeOptions = (
     contextLines = 2,
     highlightErrors = true,
     showPosition = true,
-    colorize = true,
+    colorize,
     locale = "en",
     messages = {},
     maxLineLength = 120,
@@ -324,16 +330,31 @@ const validateAndNormalizeOptions = (
   );
   const validatedLocale = validateLocale(locale);
 
-  // Merge messages with type safety - use default messages by default
+  // Read each supported override once, including inherited getters.
+  // Undefined or malformed templates retain the selected locale's defaults.
   const baseMessages =
     validatedLocale === "ja" ? DEFAULT_MESSAGES_JA : DEFAULT_MESSAGES_EN;
-  const mergedMessages: I18nMessages = { ...baseMessages, ...messages };
+  const mergedMessages = { ...baseMessages };
+  for (const key of Object.keys(baseMessages) as (keyof I18nMessages)[]) {
+    const template = messages?.[key];
+    if (typeof template === "string") mergedMessages[key] = template;
+  }
+
+  const effectiveColorize =
+    typeof colorize === "boolean"
+      ? colorize
+      : (() => {
+          const g = globalThis as unknown as {
+            process?: { stdout?: { isTTY?: boolean } };
+          };
+          return Boolean(g.process?.stdout?.isTTY);
+        })();
 
   return {
     contextLines: normalizedContextLines,
     highlightErrors: Boolean(highlightErrors),
     showPosition: Boolean(showPosition),
-    colorize: Boolean(colorize),
+    colorize: effectiveColorize,
     locale: validatedLocale,
     messages: mergedMessages,
     maxLineLength: normalizedMaxLineLength,
@@ -375,6 +396,7 @@ const formatMessage = (
 
   try {
     return template.replace(/\{(\w+)\}/g, (match, key) => {
+      if (!Object.prototype.hasOwnProperty.call(params, key)) return match;
       const value = params[key];
       return value !== undefined ? String(value) : match;
     });
@@ -470,41 +492,6 @@ const normalizeExpected = (
 };
 
 /**
- * Type guard to validate parse error object structure.
- *
- * Ensures the error object has the required position information
- * with proper types and valid values.
- *
- * @param error - The error object to validate
- * @returns True if the error is a valid ParseError, false otherwise
- *
- * @example
- * ```typescript
- * if (validateParseError(someError)) {
- *   // someError is now typed as ParseError
- *   console.log(`Error at offset ${someError.pos}`);
- * }
- * ```
- */
-const validateParseError = (error: unknown): error is ParseError => {
-  if (!error || typeof error !== "object") {
-    return false;
-  }
-
-  const err = error as ParseError;
-  // Same offset contract the parsers themselves enforce
-  // (`isValidOffset`, `./utils.ts`): a fractional, `NaN`, infinite, or
-  // >=2^32 `pos` cannot point into any input, but `typeof`/`>= 0` alone
-  // used to let it through -- `offsetToPos` would then report a
-  // misaligned line/column (fractional) or a line past the input's end
-  // (`Infinity`), silently degrading the diagnostic this function exists
-  // to produce. An offset past `input.length` stays accepted here:
-  // `offsetToPos` deliberately tolerates it (bounded column walk, see
-  // its own doc comment) for errors recorded against a different input.
-  return isValidOffset(err.pos);
-};
-
-/**
  * Calculates the visual width of a string, handling multi-byte characters.
  *
  * Provides accurate width calculation for proper alignment in terminal output,
@@ -566,46 +553,70 @@ const getStringWidth = (str: string | undefined): number => {
 };
 
 /**
- * Truncates a line if it exceeds the maximum length with proper width calculation.
- *
- * Handles multi-byte characters correctly to ensure proper truncation at the
- * visual boundary rather than byte boundary.
- *
- * @param line - The line to potentially truncate
- * @param maxLength - Maximum allowed visual width
- * @returns Original line or truncated line with ellipsis
- *
- * @example
- * ```typescript
- * truncateLine("This is a very long line", 10); // Returns "This is..."
- * truncateLine("短い行", 10); // Returns "短い行" (no truncation needed)
- * ```
+ * Renders a source line with visible control characters and a bounded
+ * visual width. An error line keeps its focus in view, including EOF;
+ * surrounding lines show their beginning. Each source code point is one
+ * chunk, so truncation cannot split a surrogate pair or a displayed escape.
+ * Only the bounded excerpt is retained, even when the source line is huge.
+ * `column` is measured in the displayed text, after escaping and truncation.
  */
-const truncateLine = (line: string, maxLength: number): string => {
-  if (!line || typeof line !== "string") {
-    return "";
+const formatSourceLine = (
+  line: string,
+  maxLength: number,
+  errorColumn?: number,
+): { text: string; column: number } => {
+  let totalWidth = 0;
+  let column = 0;
+  let characterIndex = 0;
+  let text = "";
+  for (const char of line) {
+    const chunk = escapeControlCharsForDisplay(char);
+    const width = getStringWidth(chunk);
+    totalWidth += width;
+    if (characterIndex < (errorColumn ?? 0)) column += width;
+    if (totalWidth <= maxLength) text += chunk;
+    characterIndex++;
   }
 
-  if (getStringWidth(line) <= maxLength) {
-    return line;
+  if (totalWidth <= maxLength) {
+    return { text, column };
   }
 
   const ellipsis = "...";
-  const targetLength = maxLength - ellipsis.length;
-
-  let truncated = "";
-  let width = 0;
-
+  // Reserve both indicators for a focused window. The minimum supported
+  // maxLength is 40, comfortably wider than any individual rendered chunk.
+  const budget =
+    maxLength - ellipsis.length * (errorColumn === undefined ? 1 : 2);
+  const desiredStart =
+    errorColumn === undefined
+      ? 0
+      : Math.max(
+          0,
+          Math.min(column - Math.floor(budget / 2), totalWidth - budget),
+        );
+  let skippedWidth = 0;
+  let excerptWidth = 0;
+  let suffix = "";
+  text = "";
   for (const char of line) {
-    const charWidth = getStringWidth(char);
-    if (width + charWidth > targetLength) {
+    const chunk = escapeControlCharsForDisplay(char);
+    const width = getStringWidth(chunk);
+    if (skippedWidth < desiredStart) {
+      skippedWidth += width;
+      continue;
+    }
+    if (excerptWidth + width > budget) {
+      suffix = ellipsis;
       break;
     }
-    truncated += char;
-    width += charWidth;
+    text += chunk;
+    excerptWidth += width;
   }
-
-  return truncated + ellipsis;
+  const prefix = skippedWidth > 0 ? ellipsis : "";
+  return {
+    text: prefix + text + suffix,
+    column: prefix.length + column - skippedWidth,
+  };
 };
 
 /**
@@ -648,14 +659,34 @@ export const formatParseError = (
   input: string,
   options: FormatErrorOptions = {},
 ): string => {
-  // Enhanced input validation
-  if (!validateParseError(error)) {
+  if (!error || typeof error !== "object") {
+    throw new Error("Invalid error object provided");
+  }
+  // Validate and display the same offset, even when it is a getter.
+  // Valid offsets beyond this input remain supported by offsetToPos.
+  const pos = error.pos;
+  if (!isValidOffset(pos)) {
     throw new Error("Invalid error object provided");
   }
 
   if (typeof input !== "string") {
     throw new Error("Input must be a string");
   }
+
+  // Normalize diagnostics before option getters can mutate the source
+  // error or its arrays. Each visible field is read once.
+  const { message, expected, found, parserName, context } = error;
+  const normalizedContext = normalizeContext(context);
+  const normalizedParserName = safeStringTrim(parserName);
+  const normalizedExpected = normalizeExpected(expected);
+  const normalizedMessage = safeStringTrim(message);
+  // Whitespace and control characters remain visible in the found value.
+  const normalizedFound =
+    typeof found === "string" && found.length > 0
+      ? found.trim().length > 0
+        ? escapeControlCharsForDisplay(found)
+        : `"${escapeControlCharsForDisplay(found)}"`
+      : undefined;
 
   const normalizedOptions = validateAndNormalizeOptions(options);
   const {
@@ -665,21 +696,10 @@ export const formatParseError = (
     messages,
     maxLineLength,
     showLineNumbers,
+    colorize,
   } = normalizedOptions;
 
-  // Auto-detect colorize if not explicitly provided (TTY-aware)
-  const effectiveColorize =
-    typeof options.colorize === "boolean"
-      ? options.colorize
-      : (() => {
-          const g = globalThis as unknown as {
-            process?: { stdout?: { isTTY?: boolean } };
-          };
-          return Boolean(g.process?.stdout?.isTTY);
-        })();
-
-  const color = createColorHelper(effectiveColorize);
-  const { pos, message, expected, found, parserName, context } = error;
+  const color = createColorHelper(colorize);
   const { line, column } = offsetToPos(input, pos);
 
   const parts: string[] = [];
@@ -697,7 +717,6 @@ export const formatParseError = (
   );
 
   // Context information
-  const normalizedContext = normalizeContext(context);
   if (normalizedContext) {
     parts.push(
       color.blue(
@@ -707,7 +726,6 @@ export const formatParseError = (
   }
 
   // Parser name
-  const normalizedParserName = safeStringTrim(parserName);
   if (normalizedParserName) {
     parts.push(
       color.blue(
@@ -717,7 +735,6 @@ export const formatParseError = (
   }
 
   // Expected value information
-  const normalizedExpected = normalizeExpected(expected);
   if (normalizedExpected) {
     parts.push(
       color.green(
@@ -726,17 +743,6 @@ export const formatParseError = (
     );
   }
 
-  // Found value. NOT trimmed away: a whitespace or control character is
-  // exactly the kind of unexpected input a reader most needs pointed out,
-  // yet `safeStringTrim` dropped the whole line for a found " ", "\t" or
-  // "\r". Control characters are escaped for display, and a found value
-  // that is still blank after that (a space) is quoted to stay visible.
-  const normalizedFound =
-    typeof found === "string" && found.length > 0
-      ? found.trim().length > 0
-        ? escapeControlCharsForDisplay(found)
-        : `"${escapeControlCharsForDisplay(found)}"`
-      : undefined;
   if (normalizedFound) {
     parts.push(
       color.red(formatMessage(messages.found, { found: normalizedFound })),
@@ -744,13 +750,12 @@ export const formatParseError = (
   }
 
   // Error message
-  const normalizedMessage = safeStringTrim(message);
   if (normalizedMessage) {
     parts.push(formatMessage(messages.error, { message: normalizedMessage }));
   }
 
   // Add source context
-  if (showPosition && input.length > 0 && contextLines > 0) {
+  if (showPosition) {
     try {
       const sourceContext = formatSourceContext(
         input,
@@ -838,7 +843,11 @@ const formatSourceContext = (
   for (let i = startLine; i <= endLine; i++) {
     const isErrorLine = i === errorLine;
     const lineContent = lines[i - 1] || ""; // lines are 0-indexed
-    const truncatedContent = truncateLine(lineContent, maxLineLength);
+    const sourceLine = formatSourceLine(
+      lineContent,
+      maxLineLength,
+      isErrorLine ? errorColumn : undefined,
+    );
 
     let formattedLine = "";
 
@@ -853,34 +862,15 @@ const formatSourceContext = (
 
     // Add line content
     formattedLine += isErrorLine
-      ? color.bold(truncatedContent)
-      : truncatedContent;
+      ? color.bold(sourceLine.text)
+      : sourceLine.text;
     contextParts.push(formattedLine);
 
     // Error position pointer with better column calculation
     if (isErrorLine && highlightErrors && errorColumn >= 0) {
       const linePrefix = showLineNumbers ? maxLineNumberWidth + 3 : 0; // " | " = 3 chars
 
-      // `errorColumn` is a code-point count (`offsetToPos`), while
-      // `String#slice` takes a UTF-16 code-unit offset. Convert the former
-      // to the latter before measuring visual width so an astral character
-      // before the error does not move the pointer one cell to the left.
-      let beforeColumnOffset = 0;
-      let beforeColumnCount = 0;
-      while (
-        beforeColumnOffset < lineContent.length &&
-        beforeColumnCount < errorColumn
-      ) {
-        const codePoint = lineContent.codePointAt(beforeColumnOffset);
-        beforeColumnOffset +=
-          codePoint !== undefined && codePoint > 0xffff ? 2 : 1;
-        beforeColumnCount++;
-      }
-      const beforeColumn = lineContent.slice(0, beforeColumnOffset);
-      const visualColumn = getStringWidth(beforeColumn);
-
-      const pointerOffset =
-        linePrefix + Math.min(visualColumn, getStringWidth(truncatedContent));
+      const pointerOffset = linePrefix + sourceLine.column;
       const pointer =
         " ".repeat(Math.max(0, pointerOffset)) + color.bold(color.red("^"));
       contextParts.push(pointer);
@@ -976,12 +966,19 @@ export const reportParseError = <T>(
   }
 
   if (isFailure(result)) {
+    let originalError: ParseError;
     try {
-      const errorMessage = formatParseError(result.error, input, options);
+      originalError = result.error;
+    } catch (error) {
+      console.error("Failed to read parse error:", error);
+      return;
+    }
+    try {
+      const errorMessage = formatParseError(originalError, input, options);
       console.error(errorMessage);
     } catch (error) {
       console.error("Failed to format parse error:", error);
-      console.error("Original error:", result.error);
+      console.error("Original error:", originalError);
     }
   }
 };

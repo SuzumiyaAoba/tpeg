@@ -1,29 +1,34 @@
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { anyChar, capture, captureSequence, charClassRun, choice, ignore, lazy, literal, map, notPredicate, optional, sequence, span, untagCapture, zeroOrMore } from "@suzumiyaaoba/tpeg-core";
 
-export const top: Parser<any> = untagCapture(map(sequence(ignore(optional(lazy(() => ws))), (input, pos) => {
+export const top: Parser<any> = untagCapture(map(sequence(ignore(optional(lazy(() => ws))), (input: string, pos: number): ReturnType<Parser<any>> => {
   const __base = (captureSequence(ignore(optional(lazy(() => ws))), capture("e", lazy(() => expression)), ignore(optional(lazy(() => ws))), notPredicate(anyChar()), ignore(optional(lazy(() => ws)))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
+  const { current: __current, next: __next } = __result;
   const __val = (() => {
     const $$: any = __result.val;
+    return (() => {
     const { e } = ($$ ?? {});
  return e; 
+    })();
   })();
   return {
     success: true,
     val: __val,
-    current: __result.current,
-    next: __result.next,
+    current: __current,
+    next: __next,
   };
 }, ignore(optional(lazy(() => ws)))), ([v]) => v));
 
-export const expression: Parser<any> = untagCapture(map(sequence(ignore(optional(lazy(() => ws))), (input, pos) => {
+export const expression: Parser<any> = untagCapture(map(sequence(ignore(optional(lazy(() => ws))), (input: string, pos: number): ReturnType<Parser<any>> => {
   const __base = (captureSequence(ignore(optional(lazy(() => ws))), capture("left", lazy(() => term)), ignore(optional(lazy(() => ws))), capture("rest", zeroOrMore(captureSequence(ignore(optional(lazy(() => ws))), capture("op", lazy(() => add_op)), ignore(optional(lazy(() => ws))), capture("right", lazy(() => term)), ignore(optional(lazy(() => ws)))))), ignore(optional(lazy(() => ws)))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
+  const { current: __current, next: __next } = __result;
   const __val = (() => {
     const $$: any = __result.val;
+    return (() => {
     const { left, rest } = ($$ ?? {});
 
     let node = left;
@@ -32,21 +37,24 @@ export const expression: Parser<any> = untagCapture(map(sequence(ignore(optional
     }
     return node;
   
+    })();
   })();
   return {
     success: true,
     val: __val,
-    current: __result.current,
-    next: __result.next,
+    current: __current,
+    next: __next,
   };
 }, ignore(optional(lazy(() => ws)))), ([v]) => v));
 
-export const term: Parser<any> = untagCapture(map(sequence(ignore(optional(lazy(() => ws))), (input, pos) => {
+export const term: Parser<any> = untagCapture(map(sequence(ignore(optional(lazy(() => ws))), (input: string, pos: number): ReturnType<Parser<any>> => {
   const __base = (captureSequence(ignore(optional(lazy(() => ws))), capture("left", lazy(() => factor)), ignore(optional(lazy(() => ws))), capture("rest", zeroOrMore(captureSequence(ignore(optional(lazy(() => ws))), capture("op", lazy(() => mul_op)), ignore(optional(lazy(() => ws))), capture("right", lazy(() => factor)), ignore(optional(lazy(() => ws)))))), ignore(optional(lazy(() => ws)))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
+  const { current: __current, next: __next } = __result;
   const __val = (() => {
     const $$: any = __result.val;
+    return (() => {
     const { left, rest } = ($$ ?? {});
 
     let node = left;
@@ -55,67 +63,77 @@ export const term: Parser<any> = untagCapture(map(sequence(ignore(optional(lazy(
     }
     return node;
   
+    })();
   })();
   return {
     success: true,
     val: __val,
-    current: __result.current,
-    next: __result.next,
+    current: __current,
+    next: __next,
   };
 }, ignore(optional(lazy(() => ws)))), ([v]) => v));
 
-export const factor: Parser<any> = untagCapture(map(sequence(ignore(optional(lazy(() => ws))), choice((input, pos) => {
+export const factor: Parser<any> = untagCapture(map(sequence(ignore(optional(lazy(() => ws))), choice((input: string, pos: number): ReturnType<Parser<any>> => {
   const __base = (captureSequence(ignore(optional(lazy(() => ws))), literal("("), ignore(optional(lazy(() => ws))), capture("e", expression), ignore(optional(lazy(() => ws))), literal(")"), ignore(optional(lazy(() => ws)))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
+  const { current: __current, next: __next } = __result;
   const __val = (() => {
     const $$: any = __result.val;
+    return (() => {
     const { e } = ($$ ?? {});
 
         return { type: "group", expression: e };
       
+    })();
   })();
   return {
     success: true,
     val: __val,
-    current: __result.current,
-    next: __result.next,
+    current: __current,
+    next: __next,
   };
-}, (input, pos) => {
+}, (input: string, pos: number): ReturnType<Parser<any>> => {
   const __base = (captureSequence(ignore(optional(lazy(() => ws))), capture("sign", lazy(() => add_op)), ignore(optional(lazy(() => ws))), capture("operand", lazy(() => number_literal)), ignore(optional(lazy(() => ws)))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
+  const { current: __current, next: __next } = __result;
   const __val = (() => {
     const $$: any = __result.val;
+    return (() => {
     const { sign, operand } = ($$ ?? {});
 
         return { type: "unaryOp", operator: sign, operand };
       
+    })();
   })();
   return {
     success: true,
     val: __val,
-    current: __result.current,
-    next: __result.next,
+    current: __current,
+    next: __next,
   };
 }, lazy(() => number_literal)), ignore(optional(lazy(() => ws)))), ([v]) => v));
 
-export const number_literal: Parser<any> = untagCapture((input, pos) => {
+export const number_literal: Parser<any> = untagCapture((input: string, pos: number): ReturnType<Parser<any>> => {
   const __base = (capture("text", span(sequence(charClassRun([["0", "9"]], 1), optional(sequence(literal("."), charClassRun([["0", "9"]], 1)))))));
   const __result = __base(input, pos);
   if (!__result.success) return __result;
+  const { current: __current, next: __next } = __result;
   const __val = (() => {
     const $$: any = __result.val;
+    return (() => {
     const { text } = ($$ ?? {});
 
     return { type: "number", value: Number(text) };
   
+    })();
   })();
   return {
     success: true,
     val: __val,
-    current: __result.current,
-    next: __result.next,
+    current: __current,
+    next: __next,
   };
 });
 

@@ -9,7 +9,12 @@ import {
 } from "./failure";
 import type { Parser } from "./types";
 import type { ParseSuccess } from "./types";
-import { createFailure, isFailure, isValidOffset } from "./utils";
+import {
+  cloneParseError,
+  createFailure,
+  isFailure,
+  isValidOffset,
+} from "./utils";
 
 /**
  * Pre-allocated success result base object for memory optimization.
@@ -152,7 +157,9 @@ export const andPredicate =
         // `abort` (resource-limit -- see `ParseError.abort` in types.ts)
         // is not a cut scoped to this probe: re-raise it unchanged.
         if (result.error.abort === true) return result;
-        return { success: false, error: { ...result.error, fatal: false } };
+        const error = cloneParseError(result.error);
+        error.fatal = false;
+        return { success: false, error };
       }
       return result;
     }

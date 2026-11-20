@@ -17,7 +17,12 @@ import {
   snapshotFailureWatermark,
 } from "./failure";
 import type { ParseResult, Parser } from "./types";
-import { createFailure, isFailure, isValidOffset } from "./utils";
+import {
+  cloneParseError,
+  createFailure,
+  isFailure,
+  isValidOffset,
+} from "./utils";
 
 /**
  * Shared ordered-choice trial loop: tries `parsers[i](input, pos)` in
@@ -63,51 +68,64 @@ export const tryOrderedCandidates = <T>(
       return result;
     }
 
-    if (isFatalFailure(result)) {
+    // Singleton failures need no error materialization. A concrete
+    // failure may expose an error getter: snapshot it once for control
+    // flags and diagnostic forwarding.
+    if (result === FAIL) continue;
+    if (result === FAIL_FATAL) return FAIL;
+    const childError = result.error;
+    if (childError.fatal === true) {
       // An `abort` failure (resource-limit hit -- see `ParseError.abort`
       // in types.ts) is not a cut: re-raise it unchanged so it aborts
       // the whole parse rather than just this choice.
-      if (result !== FAIL_FATAL && result.error.abort === true) {
+      if (childError.abort === true) {
         return result;
       }
       // Absorb the cut here (this choice's own boundary), not forwarded
       // to whatever encloses it -- see `commit`'s doc comment.
-      if (result === FAIL_FATAL) return FAIL;
+      const error = cloneParseError(childError);
+      error.fatal = false;
       return {
         success: false,
-        error: { ...result.error, fatal: false },
+        error,
       } as const;
     }
-    if (result !== FAIL) {
-      // A CONCRETE (non-singleton) failure -- a hand-written parser that
-      // still builds its own `ParseError` via the public `createFailure`
-      // (`./utils.ts`) instead of `fail` (`./failure.ts`), or this
-      // function's own "Parser at index N is undefined" a few lines up
-      // from a nested call. Its `.error` is already a plain object (no
-      // getter to trigger), so reading it here is free -- forward its
-      // expectation(s) into the shared watermark so it still participates
-      // in farthest-failure diagnostics instead of being silently
-      // dropped now that this function no longer builds its own
-      // aggregate. Singleton failures (`FAIL`) skip this entirely: they
-      // already recorded themselves at their point of origin.
-      const {
-        expected,
-        pos: errorPos,
-        parserName: errorParserName,
-      } = result.error;
-      const labels = Array.isArray(expected)
-        ? expected
-        : expected !== undefined
-          ? [expected]
-          : [];
-      for (const label of labels) {
-        fail(input, errorPos, {
-          label,
-          ...(errorParserName !== undefined
-            ? { parserName: errorParserName }
-            : {}),
-        });
-      }
+    // A CONCRETE (non-singleton) failure -- a hand-written parser that
+    // still builds its own `ParseError` via the public `createFailure`
+    // (`./utils.ts`) instead of `fail` (`./failure.ts`), or this
+    // function's own "Parser at index N is undefined" a few lines up
+    // from a nested call. Copy its fields once before forwarding:
+    // position/expectation getters must agree with the recorded payload.
+    // Singleton failures (`FAIL`) skip this entirely because they already
+    // recorded themselves at their point of origin.
+    const diagnostic = cloneParseError(childError);
+    const { expected, pos: errorPos, parserName: errorParserName } = diagnostic;
+    const labels = Array.isArray(expected)
+      ? expected
+      : expected !== undefined
+        ? [expected]
+        : [];
+    for (const label of labels) {
+      fail(input, errorPos, {
+        label,
+        ...(errorParserName !== undefined
+          ? { parserName: errorParserName }
+          : {}),
+      });
+    }
+    if (labels.length === 0) {
+      // An absent/empty expectation list still carries a real failure
+      // position and message. Record it without inventing an expected
+      // value, preserving a snapshot for later materialization/replay.
+      if (Array.isArray(diagnostic.context))
+        diagnostic.context = [...diagnostic.context];
+      fail(input, errorPos, {
+        label: diagnostic.message,
+        ...(errorParserName !== undefined
+          ? { parserName: errorParserName }
+          : {}),
+        diagnostic,
+      });
     }
     // Every candidate's own failure -- whether recorded here (concrete) or
     // already recorded at its point of origin (singleton `FAIL`) -- has
@@ -199,10 +217,12 @@ export const sequence = <P extends Parser<unknown>[]>(
       // `ignore(...)` results consume input but contribute no value --
       // the `IGNORED` sentinel (`./ignored.ts`) is filtered here so an
       // ignored element takes no slot in the result tuple.
-      if (parserResult.val !== IGNORED) {
-        result.push(parserResult.val);
+      const next = parserResult.next;
+      const value = parserResult.val;
+      if (value !== IGNORED) {
+        result.push(value);
       }
-      currentPos = parserResult.next;
+      currentPos = next;
     }
 
     return {
@@ -270,14 +290,14 @@ export const commit =
       // `./failure.ts`) -- swap it for the other singleton, `FAIL_FATAL`,
       // with zero allocation. `result === FAIL_FATAL` is already fatal
       // (idempotent, e.g. `commit` applied twice); anything else is a
-      // hand-built, non-singleton failure that still needs the spread
-      // fallback to set `fatal` on its own `error` object.
+      // hand-built, non-singleton failure that needs a diagnostic copy
+      // before setting `fatal`.
       if (result === FAIL) return FAIL_FATAL;
       if (result === FAIL_FATAL) return result;
-      return {
-        ...result,
-        error: { ...result.error, fatal: true },
-      };
+      const failure = { ...result };
+      failure.error = cloneParseError(failure.error);
+      failure.error.fatal = true;
+      return failure;
     }
     return result;
   };

@@ -11,6 +11,8 @@
  * and `packages/core/src/boundary.ts` (`wordBoundary`/`nonWordBoundary`).
  */
 
+import { evaluateGeneratedModule } from "./generated-runtime";
+import { transformWithOxc } from "vite-plus";
 import { describe, expect, it } from "vite-plus/test";
 import type {
   GrammarDefinition,
@@ -60,9 +62,7 @@ const ruleByName = (
 
 /**
  * Evaluates a generated module against the real tpeg-core/tpeg-combinator
- * exports, exactly like `codegen.spec.ts`/`skip-desugar.spec.ts`'s runtime
- * tests: `import` statements and `export const` declarations are rewritten
- * into plain `const`s inside a `new Function` scope.
+ * exports through the common module evaluator, after transpiling TypeScript.
  */
 const runGenerated = async <N extends string>(
   code: string,
@@ -71,23 +71,11 @@ const runGenerated = async <N extends string>(
   const core = await import("@suzumiyaaoba/tpeg-core");
   const combinator = await import("@suzumiyaaoba/tpeg-combinator");
   const scope = { ...combinator, ...core };
-  const body = code
-    .replace(/^import[^\n]*\n?/gm, "")
-    .replace(/^export const (\w+)(: Parser<[^>]*>)?/gm, "const $1");
-  const moduleFactory = new Function(
-    ...Object.keys(scope),
-    `${body}\nreturn { ${ruleNames.join(", ")} };`,
+  const { code: javascript } = await transformWithOxc(
+    code,
+    "generated-span.ts",
   );
-  const mod = moduleFactory(...Object.values(scope)) as Record<string, unknown>;
-  const out = {} as Record<N, Parser<unknown>>;
-  for (const name of ruleNames) {
-    const parser = mod[name];
-    if (typeof parser !== "function") {
-      throw new Error(`generated module did not produce rule "${name}"`);
-    }
-    out[name] = parser as Parser<unknown>;
-  }
-  return out;
+  return evaluateGeneratedModule(javascript, scope, ruleNames);
 };
 
 describe("@expr span parsing", () => {

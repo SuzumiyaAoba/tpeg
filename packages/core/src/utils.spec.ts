@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
+import fc from "fast-check";
 import { anyChar, literal } from "./basic";
 import { escapeStringLiteral } from "./escape";
+import { choice, sequence } from "./combinators";
+import type { ParseResult } from "./types";
 import {
   advancePos,
   createFailure,
@@ -8,6 +11,7 @@ import {
   extractValue,
   getCharAndLength,
   getCharAt,
+  getSingleCodePoint,
   isEmptyArray,
   isFailure,
   isNewline,
@@ -63,6 +67,92 @@ describe("Utils", () => {
   });
 
   describe("Character utilities", () => {
+    describe("character reader offsets", () => {
+      const readers: [
+        string,
+        (input: string, offset: number) => unknown,
+        unknown,
+      ][] = [
+        ["getCharAt", getCharAt, ""],
+        ["getCharAndLength", getCharAndLength, ["", 0]],
+      ];
+
+      it.each(readers)(
+        "%s returns its empty result for fractional and NaN offsets",
+        (_name, read, empty) => {
+          for (const offset of [Number.NaN, 0.5, 1.5]) {
+            expect(read("a🌍b", offset)).toEqual(empty);
+          }
+        },
+      );
+
+      it.each(readers)(
+        "%s does not coerce non-numeric offsets into character indexes",
+        (_name, read, empty) => {
+          let conversions = 0;
+          const coercible = {
+            [Symbol.toPrimitive]() {
+              conversions++;
+              return 0;
+            },
+          };
+          for (const offset of [
+            Symbol("offset"),
+            0n,
+            "0",
+            null,
+            undefined,
+            Object.create(null),
+            new Number(0),
+            coercible,
+          ]) {
+            expect(read("abc", offset as number)).toEqual(empty);
+          }
+          expect(conversions).toBe(0);
+        },
+      );
+    });
+
+    describe("getSingleCodePoint", () => {
+      it("handles Unicode boundaries, lone surrogates, and multi-character strings", () => {
+        const cases: readonly (readonly [string, number | undefined])[] = [
+          ["", undefined],
+          ["\0", 0],
+          ["a", 0x61],
+          ["\uffff", 0xffff],
+          ["\ud800", 0xd800],
+          ["\udfff", 0xdfff],
+          ["\ud800\udc00", 0x10000],
+          ["\udbff\udfff", 0x10ffff],
+          ["ab", undefined],
+          ["a\u0301", undefined],
+          ["\ud800a", undefined],
+          ["\udc00\ud800", undefined],
+          ["😀a", undefined],
+        ];
+        for (const [input, expected] of cases) {
+          expect(getSingleCodePoint(input)).toBe(expected);
+        }
+      });
+
+      it("agrees with JavaScript string iteration for arbitrary UTF-16 code units", () => {
+        const utf16 = fc
+          .array(fc.integer({ min: 0, max: 0xffff }), { maxLength: 5 })
+          .map((units) => String.fromCharCode(...units));
+        fc.assert(
+          fc.property(utf16, (input) => {
+            const characters = Array.from(input);
+            const expected =
+              characters.length === 1
+                ? characters[0]?.codePointAt(0)
+                : undefined;
+            expect(getSingleCodePoint(input)).toBe(expected);
+          }),
+          { seed: 0x513c0de, numRuns: 1000 },
+        );
+      });
+    });
+
     describe("getCharAndLength", () => {
       it("should handle ASCII characters", () => {
         expect(getCharAndLength("Hello", 0)).toEqual(["H", 1]);
@@ -333,6 +423,89 @@ describe("Utils", () => {
 
   describe("Parse utilities", () => {
     describe("parse", () => {
+      describe("nested parses", () => {
+        it("materializes each failure before restoring multiple enclosing parses", () => {
+          let middle: ParseResult<string> | undefined;
+          const outer = parse((input: string, pos: number) => {
+            const pending = literal("outer")(input, pos);
+            middle = parse((nestedInput: string, nestedPos: number) => {
+              const nestedPending = literal("middle")(nestedInput, nestedPos);
+              parse(literal("deepest"))("deepest");
+              return nestedPending;
+            })("?");
+            return pending;
+          })("!");
+          expect(outer.success).toBe(false);
+          expect(middle?.success).toBe(false);
+          if (!outer.success && middle && !middle.success) {
+            expect(outer.error.expected).toBe('"outer"');
+            expect(outer.error.found).toBe("!");
+            expect(middle.error.expected).toBe('"middle"');
+            expect(middle.error.found).toBe("?");
+          }
+        });
+
+        it("preserves the outer parse's farthest failure", () => {
+          const parser = choice(
+            literal("abcd"),
+            (input: string, pos: number) => {
+              parse(literal("inner"))("other");
+              return literal("x")(input, pos);
+            },
+          );
+          const result = parse(parser)("abc!");
+          expect(result.success).toBe(false);
+          if (!result.success) {
+            expect(result.error.pos).toBe(3);
+            expect(result.error.expected).toBe('"abcd"');
+            expect(result.error.found).toBe("!");
+          }
+        });
+
+        it("keeps failures on the same input separate", () => {
+          const result = parse((input: string, pos: number) => {
+            parse(sequence(literal("abc"), literal("inner")))(input);
+            return literal("outer")(input, pos);
+          })("abc!");
+          expect(result.success).toBe(false);
+          if (!result.success) {
+            expect(result.error.pos).toBe(0);
+            expect(result.error.expected).toBe('"outer"');
+          }
+        });
+
+        it("restores a pending failure after a successful nested parse", () => {
+          const result = parse((input: string, pos: number) => {
+            const pending = literal("outer")(input, pos);
+            parse(literal("inner"))("inner");
+            return pending;
+          })("!");
+          expect(result.success).toBe(false);
+          if (!result.success) {
+            expect(result.error.pos).toBe(0);
+            expect(result.error.expected).toBe('"outer"');
+          }
+        });
+
+        it("restores diagnostics when a nested parser throws", () => {
+          const result = parse((input: string, pos: number) => {
+            const pending = literal("outer")(input, pos);
+            expect(() =>
+              parse((nestedInput: string, nestedPos: number) => {
+                literal("inner")(nestedInput, nestedPos);
+                throw new Error("nested action failed");
+              })("!"),
+            ).toThrow("nested action failed");
+            return pending;
+          })("?");
+          expect(result.success).toBe(false);
+          if (!result.success) {
+            expect(result.error.expected).toBe('"outer"');
+            expect(result.error.found).toBe("?");
+          }
+        });
+      });
+
       it("should create a parse function", () => {
         const parseFn = parse(anyChar());
         expect(typeof parseFn).toBe("function");
@@ -431,6 +604,42 @@ describe("Utils", () => {
   });
 
   describe("offsetToPos", () => {
+    it.each([
+      -1,
+      -0.5,
+      0.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ])("rejects an invalid numeric offset of %s", (offset) => {
+      expect(() => offsetToPos("abc\nxyz", offset)).toThrow(RangeError);
+    });
+
+    it("rejects non-numeric offsets without invoking primitive conversion", () => {
+      let conversions = 0;
+      const coercible = {
+        [Symbol.toPrimitive]() {
+          conversions++;
+          return 1;
+        },
+      };
+      for (const offset of [
+        Symbol("offset"),
+        0n,
+        "0",
+        null,
+        undefined,
+        Object.create(null),
+        new Number(0),
+        coercible,
+      ]) {
+        expect(() => offsetToPos("abc\nxyz", offset as number)).toThrow(
+          RangeError,
+        );
+      }
+      expect(conversions).toBe(0);
+    });
+
     it("returns line 1, column 0 at the very start of a single-line input", () => {
       expect(offsetToPos("abc", 0)).toEqual({ offset: 0, line: 1, column: 0 });
     });

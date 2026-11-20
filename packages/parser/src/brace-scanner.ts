@@ -65,17 +65,64 @@ export const skipStringLiteral = (
   return i;
 };
 
-/** Advances past a `// ...` line comment starting at `start`. See {@link skipStringLiteral}. */
+const isJsLineTerminator = (ch: string | undefined): boolean =>
+  ch === "\n" || ch === "\r" || ch === "\u2028" || ch === "\u2029";
+
+/** Advances to the line terminator after a `// ...` comment. See {@link skipStringLiteral}. */
 export const skipLineComment = (input: string, start: number): number => {
-  const newlineIndex = input.indexOf("\n", start);
-  return newlineIndex === -1 ? input.length : newlineIndex;
+  let end = start + 2;
+  while (end < input.length && !isJsLineTerminator(input[end])) end++;
+  return Math.min(end, input.length);
 };
 
 /** Identifier-start characters in the JavaScript source embedded in action/transform bodies. */
-export const JS_IDENTIFIER_START = /[a-zA-Z_$]/;
+export const JS_IDENTIFIER_START = /[$_\p{ID_Start}]/u;
 
 /** Identifier-continuation characters in embedded JavaScript source. */
-export const JS_IDENTIFIER_CONT = /[a-zA-Z0-9_$]/;
+export const JS_IDENTIFIER_CONT = /[$\u200c\u200d\p{ID_Continue}]/u;
+
+const sourceCodePoint = (input: string, pos: number): string => {
+  const point = input.codePointAt(pos);
+  return point === undefined ? "" : String.fromCodePoint(point);
+};
+
+/** Decode a source identifier escape without consuming unrelated source. */
+const readJsUnicodeEscape = (
+  input: string,
+  pos: number,
+): { char: string; end: number } | undefined => {
+  if (input[pos] !== "\\" || input[pos + 1] !== "u") return undefined;
+  const braced = input[pos + 2] === "{";
+  let end = pos + (braced ? 3 : 2);
+  let digits = 0;
+  let point = 0;
+  while (
+    end < input.length &&
+    (braced || digits < 4) &&
+    /^[0-9a-f]$/i.test(input[end] ?? "")
+  ) {
+    point = point * 16 + Number.parseInt(input[end]!, 16);
+    if (point > 0x10ffff) return undefined;
+    end++;
+    digits++;
+  }
+  if (
+    digits === 0 ||
+    (!braced && digits !== 4) ||
+    (braced && input[end] !== "}")
+  ) {
+    return undefined;
+  }
+  return { char: String.fromCodePoint(point), end: end + (braced ? 1 : 0) };
+};
+
+/** Test a source identifier start, including escaped and astral characters. */
+export const isJsIdentifierStart = (input: string, pos: number): boolean =>
+  JS_IDENTIFIER_START.test(
+    input[pos] === "\\"
+      ? (readJsUnicodeEscape(input, pos)?.char ?? "")
+      : sourceCodePoint(input, pos),
+  );
 
 /**
  * Keywords after which a value -- and therefore a regex literal -- can
@@ -149,19 +196,36 @@ const BLOCK_KEYWORDS: ReadonlySet<string> = new Set([
  *
  * Still an approximation (JavaScript's real regex/division ambiguity needs
  * a full parse), but it removes the previously-documented wrong cases.
- * ASI is deliberately not modeled: `f()\n/re/` is scanned as division even
- * though a real parser inserts a `;` and treats `/re/` as a regex.
+ * Automatic semicolon insertion is deliberately not modeled.
  */
 export const createJsExprTracker = (startInStatementPosition = false) => {
   let exprExpected = true;
+  let lineBreakSinceToken = false;
   /** Per open `(`: true iff it was a control-statement paren. */
   const parenStack: boolean[] = [];
-  /** Per open `{` INSIDE a JS context: true iff it opened an object literal. */
-  const braceStack: boolean[] = [];
+  /** Brace kind and the parenthesis/bracket depths at which it opened. */
+  const braceStack: {
+    isObject: boolean;
+    isClass: boolean;
+    isClassExpression: boolean;
+    parenDepth: number;
+    bracketDepth: number;
+  }[] = [];
+  const pendingClasses: {
+    braceDepth: number;
+    parenDepth: number;
+    bracketDepth: number;
+    isExpression: boolean;
+  }[] = [];
+  let bracketDepth = 0;
   /** Last identifier/keyword token text (for keyword checks on `(`/`{`). */
   let prevWord: string | null = null;
   /** Whether `prevWord` was preceded by `.` -- `x.if (y)` is a call, not `if`. */
   let prevWordIsProp = false;
+  /** Whether the previous word is a modifier at a property key. */
+  let prevWordIsKeyModifier = false;
+  /** A `*` at a property key starts a generator method, not multiplication. */
+  let generatorKeyPosition = false;
   /** Last punctuation character seen (`.`, `;`, ...), for context checks. */
   let prevPunct: string | null = null;
   /** Category of the last significant token. Seeding `"{"` models "just
@@ -175,7 +239,35 @@ export const createJsExprTracker = (startInStatementPosition = false) => {
   let prevTok: "word" | "(" | ")" | "{" | "}" | "punct" | "operand" | "none" =
     startInStatementPosition ? "{" : "none";
 
+  const keyPosition = (
+    kind: "object" | "class",
+    allowLineBreak = true,
+  ): boolean => {
+    const frame = braceStack.at(-1);
+    return (
+      (kind === "object" ? frame?.isObject : frame?.isClass) === true &&
+      frame?.parenDepth === parenStack.length &&
+      frame?.bracketDepth === bracketDepth &&
+      (prevTok === "{" ||
+        (prevTok === "punct" && prevPunct === ",") ||
+        (prevTok === "punct" && prevPunct === "*" && generatorKeyPosition) ||
+        (kind === "class" &&
+          (prevTok === "}" ||
+            (prevTok === "punct" && prevPunct === ";") ||
+            (allowLineBreak && lineBreakSinceToken && !exprExpected))) ||
+        (prevTok === "word" &&
+          prevWordIsKeyModifier &&
+          (prevWord === "get" ||
+            prevWord === "set" ||
+            prevWord === "async" ||
+            (kind === "class" && prevWord === "static"))))
+    );
+  };
+
   return {
+    noteLineBreak(): void {
+      lineBreakSinceToken = true;
+    },
     /** Whether a `/` at this point could open a regex literal. */
     get exprExpected(): boolean {
       return exprExpected;
@@ -186,12 +278,42 @@ export const createJsExprTracker = (startInStatementPosition = false) => {
      * the same condition `word()` records as `prevWordIsProp`. Read it
      * BEFORE calling `word()` for the token being classified. */
     get propertyPosition(): boolean {
-      return prevTok === "punct" && prevPunct === ".";
+      return prevTok === "punct" && (prevPunct === "." || prevPunct === "#");
+    },
+    /** A named property or method may follow here; shorthand properties
+     * still reference bindings and are distinguished by their next token. */
+    get objectKeyPosition(): boolean {
+      return keyPosition("object");
+    },
+    get classKeyPosition(): boolean {
+      return keyPosition("class");
     },
     /** Record an identifier or keyword token `w`. */
     word(w: string): void {
+      const isKeyModifier =
+        (w === "get" || w === "set" || w === "async" || w === "static") &&
+        (keyPosition("object") || keyPosition("class"));
+      prevWordIsProp =
+        prevTok === "punct" && (prevPunct === "." || prevPunct === "#");
+      if (
+        w === "class" &&
+        !prevWordIsProp &&
+        !keyPosition("object") &&
+        !keyPosition("class")
+      ) {
+        pendingClasses.push({
+          braceDepth: braceStack.length,
+          parenDepth: parenStack.length,
+          bracketDepth,
+          isExpression:
+            exprExpected &&
+            prevTok !== "{" &&
+            !(prevTok === "punct" && prevPunct === ";"),
+        });
+      }
+      prevWordIsKeyModifier = isKeyModifier;
       prevWord = w;
-      prevWordIsProp = prevTok === "punct" && prevPunct === ".";
+      lineBreakSinceToken = false;
       prevTok = "word";
       prevPunct = null;
       // A keyword in property position (`x.in`, `x.return`, `x.case`)
@@ -205,6 +327,7 @@ export const createJsExprTracker = (startInStatementPosition = false) => {
     },
     /** Record a token that ends an operand: number, string, regex, `]`, `++`/`--`. */
     operand(): void {
+      lineBreakSinceToken = false;
       prevTok = "operand";
       prevWord = null;
       prevPunct = null;
@@ -212,6 +335,7 @@ export const createJsExprTracker = (startInStatementPosition = false) => {
     },
     /** Record an opening `(`. */
     openParen(): void {
+      lineBreakSinceToken = false;
       parenStack.push(
         prevTok === "word" &&
           !prevWordIsProp &&
@@ -225,6 +349,7 @@ export const createJsExprTracker = (startInStatementPosition = false) => {
     },
     /** Record a closing `)`. */
     closeParen(): void {
+      lineBreakSinceToken = false;
       // A statement paren's `)` is followed by a statement -- a value (and
       // so a regex) is expected next; a call/grouping `)` ends an operand.
       exprExpected = parenStack.pop() === true;
@@ -232,12 +357,37 @@ export const createJsExprTracker = (startInStatementPosition = false) => {
       prevWord = null;
       prevPunct = null;
     },
+    openBracket(): void {
+      lineBreakSinceToken = false;
+      bracketDepth++;
+      prevTok = "punct";
+      prevPunct = "[";
+      prevWord = null;
+      exprExpected = true;
+    },
+    closeBracket(): void {
+      lineBreakSinceToken = false;
+      bracketDepth--;
+      prevTok = "operand";
+      prevWord = null;
+      prevPunct = null;
+      exprExpected = false;
+    },
     /** Record an opening `{` -- call only in a JavaScript context. */
     openBrace(): void {
+      lineBreakSinceToken = false;
+      const pending = pendingClasses.at(-1);
+      const isClass =
+        pending !== undefined &&
+        pending.braceDepth === braceStack.length &&
+        pending.parenDepth === parenStack.length &&
+        pending.bracketDepth === bracketDepth;
+      if (isClass) pendingClasses.pop();
       // Object literal iff a value is expected here AND the `{` doesn't
       // follow a statement boundary (`;`, `{`, `}`, a statement paren's
       // `)`, or a block keyword like `else`/`try`).
       const isObject =
+        !isClass &&
         exprExpected &&
         prevTok !== "{" &&
         prevTok !== "}" &&
@@ -248,7 +398,13 @@ export const createJsExprTracker = (startInStatementPosition = false) => {
           prevWord !== null &&
           BLOCK_KEYWORDS.has(prevWord)
         );
-      braceStack.push(isObject);
+      braceStack.push({
+        isObject,
+        isClass,
+        isClassExpression: isClass && pending?.isExpression === true,
+        parenDepth: parenStack.length,
+        bracketDepth,
+      });
       prevTok = "{";
       prevWord = null;
       prevPunct = null;
@@ -256,10 +412,12 @@ export const createJsExprTracker = (startInStatementPosition = false) => {
     },
     /** Record a closing `}` -- returns true iff it closed an object literal. */
     closeBrace(): boolean {
-      const isObject = braceStack.pop() ?? false;
+      lineBreakSinceToken = false;
+      const frame = braceStack.pop();
+      const isObject = frame?.isObject ?? false;
       // A block's `}` ends a statement (regex may follow); an object
       // literal's `}` ends an operand (division follows).
-      exprExpected = !isObject;
+      exprExpected = !(isObject || frame?.isClassExpression);
       prevTok = "}";
       prevWord = null;
       prevPunct = null;
@@ -267,6 +425,12 @@ export const createJsExprTracker = (startInStatementPosition = false) => {
     },
     /** Record any other punctuator -- none can end an operand. */
     punct(c: string): void {
+      // A newline before `*` can continue a class field's initializer.
+      // Only an explicit key boundary or a key modifier starts a generator.
+      generatorKeyPosition =
+        c === "*" &&
+        (keyPosition("object", false) || keyPosition("class", false));
+      lineBreakSinceToken = false;
       prevTok = "punct";
       prevPunct = c;
       prevWord = null;
@@ -280,7 +444,7 @@ export const createJsExprTracker = (startInStatementPosition = false) => {
 export type JsExprTracker = ReturnType<typeof createJsExprTracker>;
 
 const isJsWhitespace = (ch: string | undefined): boolean =>
-  ch === " " || ch === "\t" || ch === "\n" || ch === "\r";
+  ch !== undefined && /\s/u.test(ch);
 
 /**
  * Handles a `/` inside scanned JavaScript source: where `tracker` says a
@@ -315,8 +479,8 @@ export const advanceJsSlash = (
 
 /**
  * Extracts the identifier-ish word starting at `pos` (the caller has
- * already checked `JS_IDENTIFIER_START`), returning the word text and
- * the offset just past it. Exposed separately from `advanceJsToken` for
+ * already checked `isJsIdentifierStart`), returning its decoded name and
+ * the source offset just past it. Exposed separately from `advanceJsToken` for
  * `codeContainsIdentifier`, which needs the word itself, not just its
  * tracker effect.
  */
@@ -324,11 +488,18 @@ export const scanJsWord = (
   input: string,
   pos: number,
 ): { word: string; end: number } => {
-  let end = pos + 1;
-  while (end < input.length && JS_IDENTIFIER_CONT.test(input[end] ?? "")) {
-    end++;
+  let end = pos;
+  let word = "";
+  while (end < input.length) {
+    const escape =
+      input[end] === "\\" ? readJsUnicodeEscape(input, end) : undefined;
+    const char = escape?.char ?? sourceCodePoint(input, end);
+    const valid = end === pos ? JS_IDENTIFIER_START : JS_IDENTIFIER_CONT;
+    if (!valid.test(char)) break;
+    word += char;
+    end = escape?.end ?? end + char.length;
   }
-  return { word: input.slice(pos, end), end };
+  return { word, end };
 };
 
 /**
@@ -349,7 +520,7 @@ export const advanceJsToken = (
   tracker: JsExprTracker,
 ): number => {
   const ch = input[pos];
-  if (JS_IDENTIFIER_START.test(ch ?? "")) {
+  if (isJsIdentifierStart(input, pos)) {
     const { word, end } = scanJsWord(input, pos);
     tracker.word(word);
     return end;
@@ -368,8 +539,10 @@ export const advanceJsToken = (
     tracker.openParen();
   } else if (ch === ")") {
     tracker.closeParen();
+  } else if (ch === "[") {
+    tracker.openBracket();
   } else if (ch === "]") {
-    tracker.operand();
+    tracker.closeBracket();
   } else if ((ch === "+" || ch === "-") && input[pos + 1] === ch) {
     // Postfix `++`/`--` ends an operand.
     tracker.operand();
@@ -380,6 +553,8 @@ export const advanceJsToken = (
     // identifier after it was misclassified as a property name.
     tracker.punct("...");
     return pos + 3;
+  } else if (isJsLineTerminator(ch)) {
+    tracker.noteLineBreak();
   } else if (ch !== undefined && !isJsWhitespace(ch)) {
     // Any other punctuator cannot end an operand, so a value is expected.
     tracker.punct(ch);
@@ -402,10 +577,11 @@ export const scanRegexLiteral = (input: string, start: number): number => {
   while (i < input.length) {
     const ch = input[i];
     if (ch === "\\") {
+      if (isJsLineTerminator(input[i + 1])) return -1;
       i += 2;
       continue;
     }
-    if (ch === "\n" || ch === "\r") {
+    if (isJsLineTerminator(ch)) {
       return -1;
     }
     if (inClass) {
@@ -435,9 +611,17 @@ export const scanRegexLiteral = (input: string, start: number): number => {
 };
 
 /** Advances past a `/* ... *\/` block comment starting at `start`. See {@link skipStringLiteral}. */
-export const skipBlockComment = (input: string, start: number): number => {
+export const skipBlockComment = (
+  input: string,
+  start: number,
+  tracker?: JsExprTracker,
+): number => {
   const endIndex = input.indexOf("*/", start + 2);
-  return endIndex === -1 ? input.length : endIndex + 2;
+  const end = endIndex === -1 ? input.length : endIndex + 2;
+  if (tracker && /[\r\n\u2028\u2029]/.test(input.slice(start + 2, end))) {
+    tracker.noteLineBreak();
+  }
+  return end;
 };
 
 /**
@@ -534,7 +718,7 @@ const scanJsToBlockClose = (
       continue;
     }
     if (ch === "/" && input[i + 1] === "*") {
-      i = skipBlockComment(input, i);
+      i = skipBlockComment(input, i, tracker);
       continue;
     }
     if (ch === "/") {
@@ -632,7 +816,9 @@ const scanTemplateForIdentifier = (
  * (`{ } /re/` scans the `/` as a regex) -- and `false` for a single
  * expression, where a leading `{` is an object literal (`{a:1} / x / 2`
  * divides twice). `scanTemplateForIdentifier` passes `false` when it
- * recurses into `` ${ ... } `` bodies.
+ * recurses into `` ${ ... } `` bodies. Identifier escapes are decoded and
+ * Unicode characters are consumed as part of the whole name. Named object
+ * keys and class members are skipped; shorthand and computed keys still count.
  */
 export const codeContainsIdentifier = (
   code: string,
@@ -661,14 +847,14 @@ export const codeContainsIdentifier = (
       continue;
     }
     if (ch === "/" && code[i + 1] === "*") {
-      i = skipBlockComment(code, i);
+      i = skipBlockComment(code, i, tracker);
       continue;
     }
     if (ch === "/") {
       i = advanceJsSlash(code, i, tracker);
       continue;
     }
-    if (JS_IDENTIFIER_START.test(ch ?? "")) {
+    if (isJsIdentifierStart(code, i)) {
       const { word, end } = scanJsWord(code, i);
       // `x.<word>`/`x?.<word>` is member access on some other value --
       // the identifier never reads the `const $$`/`const { <word> }`
@@ -676,7 +862,19 @@ export const codeContainsIdentifier = (
       // it emitted a binding nothing used (`noUnusedLocals` failure on a
       // saved generated file). `$$.<word>` keeps working the same way:
       // `$$` itself is still counted (it's the object, not the member).
-      if (word === name && !tracker.propertyPosition) return true;
+      if (
+        word === name &&
+        !tracker.propertyPosition &&
+        !tracker.classKeyPosition
+      ) {
+        const nextPos = tracker.objectKeyPosition
+          ? nextJsSignificantPosition(code, end)
+          : undefined;
+        const next = nextPos === undefined ? undefined : code[nextPos];
+        const modifier =
+          nextPos !== undefined && isObjectMethodModifier(word, code, nextPos);
+        if (next !== ":" && next !== "(" && !modifier) return true;
+      }
       tracker.word(word);
       i = end;
       continue;
@@ -684,6 +882,41 @@ export const codeContainsIdentifier = (
     i = advanceJsToken(code, i, tracker);
   }
   return false;
+};
+
+const nextJsSignificantPosition = (code: string, start: number): number => {
+  let i = start;
+  while (i < code.length) {
+    if (isJsWhitespace(code[i])) {
+      i++;
+    } else if (code[i] === "/" && code[i + 1] === "/") {
+      i = skipLineComment(code, i);
+    } else if (code[i] === "/" && code[i + 1] === "*") {
+      i = skipBlockComment(code, i);
+    } else {
+      break;
+    }
+  }
+  return i;
+};
+
+/** Object member modifiers precede a property name; shorthand keys do not. */
+const isObjectMethodModifier = (
+  word: string,
+  code: string,
+  nextPos: number,
+): boolean => {
+  if (word !== "get" && word !== "set" && word !== "async") return false;
+  const next = code[nextPos];
+  const digit = next === "." ? code[nextPos + 1] : next;
+  return (
+    next === "[" ||
+    next === '"' ||
+    next === "'" ||
+    (word === "async" && next === "*") ||
+    (digit !== undefined && digit >= "0" && digit <= "9") ||
+    isJsIdentifierStart(code, nextPos)
+  );
 };
 
 /**

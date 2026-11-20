@@ -1,4 +1,5 @@
 import type { ParseResult } from "./types";
+import { safeStringForDisplay } from "./escape";
 
 /**
  * Enforced parser resource limits.
@@ -64,15 +65,18 @@ export const validateLimitOption = (name: string, value: number): void => {
     (!Number.isInteger(value) || value < 1)
   ) {
     throw new RangeError(
-      `Invalid ${name}: ${value} -- must be a positive integer or Infinity`,
+      `Invalid ${name}: ${safeStringForDisplay(value)} -- must be a positive integer or Infinity`,
     );
   }
 };
 
 /** Runs `call` with the recursion-depth budget set to `limit`, restoring
  * the previous budget afterwards (also when `call` throws), so a nested
- * `parse()` with its own limit cannot leak it into the outer parse. */
+ * `parse()` with its own limit cannot leak it into the outer parse.
+ * @throws {RangeError} If the limit is not a positive integer or Infinity.
+ */
 export const withRecursionDepthLimit = <R>(limit: number, call: () => R): R => {
+  validateLimitOption("maxRecursionDepth", limit);
   const previous = maxRecursionDepth;
   maxRecursionDepth = limit;
   try {
@@ -94,7 +98,7 @@ export const withRecursionDepthLimit = <R>(limit: number, call: () => R): R => {
  * through every combinator, so the limit always surfaces to the caller.
  *
  * The failure object is built inline rather than via `createFailure` so
- * this module stays dependency-free (`utils.ts` imports this file for
+ * this module stays independent of `utils.ts` (which imports this file for
  * `parse()`'s input-length check -- a reverse edge would be circular).
  */
 export const guardedParserCall = <T>(

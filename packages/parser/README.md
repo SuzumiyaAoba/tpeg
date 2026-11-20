@@ -205,6 +205,33 @@ Run tests with:
 bun run test
 ```
 
+The `compileStart` differential-testing helper, `evaluateGeneratedModule`, and
+the benchmark harness execute generated JavaScript with module-level `this`, `arguments`, and
+`new.target` behavior. They load the packaged `runtime/native-evaluator.mjs`
+without bundling it, so keep that file alongside `dist` when copying the package.
+These helpers require a runtime with synchronous ESM `require()` enabled, such
+as Node.js 20.19+ or 22.12+, or Bun. Node.js documents this capability in its
+[module-loading reference](https://nodejs.org/download/release/v20.19.0/docs/api/modules.html#loading-ecmascript-modules-using-require).
+Parsing grammars and generating source code do not load this evaluator. The
+helper accepts the JavaScript emitted by these generators. Named, unaliased
+imports from `tpeg-core` and `tpeg-combinator` use the supplied helper bindings;
+each imported name must be an own property of the supplied scope. Other imports
+and `import.meta` are unsupported. Transpile TypeScript before evaluation.
+Supplied helper values are captured by name at construction time and exposed
+through constant bindings. Reassigning a helper throws, including through
+direct `eval`; properties of referenced objects remain mutable. Helper getters
+run before binding setup, and generated initializers run after temporary
+evaluation data has been restored.
+
+`evaluateGeneratedModule(code, scope)` returns the module's exported values.
+An optional third argument selects parser rules, checks each export is a
+function, and retains the literal names in its return type:
+
+```typescript
+const { start } = evaluateGeneratedModule(generated.code, helpers, ["start"]);
+const result = start("input", 0);
+```
+
 ## Dependencies
 
 - `@suzumiyaaoba/tpeg-core`: Core parsing functionality and types

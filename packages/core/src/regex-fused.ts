@@ -34,6 +34,38 @@ export interface FusedMatch {
   readonly groups: readonly (string | undefined)[];
 }
 
+/** Unicode regexes may rewind from a trailing surrogate to its leading
+ * surrogate. Generated PEG patterns can instead match the remaining
+ * suffix, because they do not inspect text before the current position. */
+const execAt = (
+  re: RegExp,
+  input: string,
+  pos: number,
+  allowSurrogateSplit: boolean,
+): RegExpExecArray | null => {
+  if (allowSurrogateSplit && pos > 0) {
+    const current = input.charCodeAt(pos);
+    const previous = input.charCodeAt(pos - 1);
+    if (
+      current >= 0xdc00 &&
+      current <= 0xdfff &&
+      previous >= 0xd800 &&
+      previous <= 0xdbff
+    ) {
+      re.lastIndex = 0;
+      const match = re.exec(input.slice(pos));
+      if (match !== null) {
+        match.index += pos;
+        match.input = input;
+      }
+      return match;
+    }
+  }
+  re.lastIndex = pos;
+  const match = re.exec(input);
+  return match !== null && match.index === pos ? match : null;
+};
+
 /**
  * Builds a `Parser<FusedMatch>` from `source`, a regex source string
  * (no delimiters/flags) meant to match starting exactly at the current
@@ -44,10 +76,16 @@ export interface FusedMatch {
  *
  * `description` is used only for the failure message (`Expected
  * <description>`) -- it has no effect on matching.
+ *
+ * `allowSurrogateSplit` lets generated PEG patterns start between a
+ * surrogate pair by matching the suffix at that boundary. Enable it only
+ * for patterns without anchors or lookbehind; by default the regex sees
+ * the full input and a match must start at exactly `pos`.
  */
 export const regexFused = (
   source: string,
   description: string,
+  allowSurrogateSplit = false,
 ): Parser<FusedMatch> => {
   const re = new RegExp(source, "yu");
   // One `Expectation` per `regexFused(...)` call (construction time), not
@@ -68,8 +106,7 @@ export const regexFused = (
     if (!isValidOffset(pos) || pos > input.length) {
       return fail(input, pos, expectation);
     }
-    re.lastIndex = pos;
-    const m = re.exec(input);
+    const m = execAt(re, input, pos, allowSurrogateSplit);
     if (m === null) {
       return fail(input, pos, expectation);
     }
@@ -101,11 +138,13 @@ export const regexFused = (
  * `f` written against `m.groups`/`m.text` translated to `m[i+1]`/`m[0]` --
  * codegen is responsible for emitting `f` in the right indexing (see
  * `regex-fusion.ts`'s `emit`, whose `valueExpr` this backs).
+ * `allowSurrogateSplit` has the same meaning as in `regexFused`.
  */
 export const regexFusedMap = <T>(
   source: string,
   description: string,
   f: (m: RegExpExecArray) => T,
+  allowSurrogateSplit = false,
 ): Parser<T> => {
   const re = new RegExp(source, "yu");
   const expectation: Expectation = {
@@ -119,16 +158,18 @@ export const regexFusedMap = <T>(
     if (!isValidOffset(pos) || pos > input.length) {
       return fail(input, pos, expectation);
     }
-    re.lastIndex = pos;
-    const m = re.exec(input);
+    const m = execAt(re, input, pos, allowSurrogateSplit);
     if (m === null) {
       return fail(input, pos, expectation);
     }
+    // The callback receives a mutable array, so capture the consumed
+    // length before it can change the whole-match entry.
+    const next = advancePos(m[0], pos);
     return {
       success: true,
       val: f(m),
       current: pos,
-      next: advancePos(m[0], pos),
+      next,
     };
   };
 };

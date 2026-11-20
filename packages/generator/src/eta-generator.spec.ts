@@ -2,7 +2,13 @@
  * Tests for Eta Template Engine Based Code Generator
  */
 
-import { describe, expect, it } from "vite-plus/test";
+import { evaluateGeneratedModule } from "@suzumiyaaoba/tpeg-parser";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vite-plus/test";
+import { transformWithOxc } from "vite-plus";
+import { globalPerformanceMonitor } from "./performance-utils";
 import {
   EtaTPEGCodeGenerator,
   generateEtaTypeScriptParser,
@@ -45,6 +51,143 @@ function createGrammarDefinition(
     ...(transforms !== undefined ? { transforms } : {}),
   };
 }
+
+describe("Eta generation measurements", () => {
+  it("finishes its measurement after identifier validation fails", async () => {
+    globalPerformanceMonitor.clear();
+    const generator = new EtaTPEGCodeGenerator();
+    try {
+      await expect(
+        generator.generateGrammar(
+          createGrammarDefinition(
+            "Invalid",
+            [],
+            [createRuleDefinition("literal", createStringLiteral("a"))],
+          ),
+        ),
+      ).rejects.toThrow(/literal/);
+      expect(globalPerformanceMonitor.end("eta-grammar-generation")).toBe(0);
+      expect(
+        globalPerformanceMonitor.getMetrics().get("eta-grammar-generation")
+          ?.count,
+      ).toBe(1);
+      const generated = await generator.generateGrammar(
+        createGrammarDefinition(
+          "Valid",
+          [],
+          [createRuleDefinition("start", createStringLiteral("x"))],
+        ),
+      );
+      expect(generated.code).toContain('literal("x")');
+      expect(
+        globalPerformanceMonitor.getMetrics().get("eta-grammar-generation")
+          ?.count,
+      ).toBe(2);
+      expect(globalPerformanceMonitor.end("eta-grammar-generation")).toBe(0);
+    } finally {
+      globalPerformanceMonitor.clear();
+    }
+  });
+
+  it("finishes its measurement when a template cannot be loaded", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "tpeg-missing-template-"));
+    globalPerformanceMonitor.clear();
+    try {
+      const generator = new EtaTPEGCodeGenerator({
+        language: "typescript",
+        templatesDir: directory,
+      });
+      await expect(
+        generator.generateGrammar(
+          createGrammarDefinition(
+            "Test",
+            [],
+            [createRuleDefinition("start", createStringLiteral("a"))],
+          ),
+        ),
+      ).rejects.toThrow(/template/i);
+      expect(globalPerformanceMonitor.end("eta-grammar-generation")).toBe(0);
+      expect(
+        globalPerformanceMonitor.getMetrics().get("eta-grammar-generation")
+          ?.count,
+      ).toBe(1);
+    } finally {
+      globalPerformanceMonitor.clear();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it.each([false, true])(
+    "keeps overlapping generation timings with out-of-order completion (first rejects: %s)",
+    async (firstRejects) => {
+      const directory = await mkdtemp(
+        join(tmpdir(), "tpeg-concurrent-template-"),
+      );
+      let now = 0;
+      const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+      const first = Promise.withResolvers<void>();
+      const second = Promise.withResolvers<void>();
+      const entered: string[] = [];
+      vi.stubGlobal("__tpegGenerationGate", (name: string) => {
+        entered.push(name);
+        return name === "first" ? first.promise : second.promise;
+      });
+      globalPerformanceMonitor.clear();
+      try {
+        await mkdir(join(directory, "base"));
+        await writeFile(
+          join(directory, "base/parser-file.eta"),
+          "<% await globalThis.__tpegGenerationGate(it.rules[0].name); %><%~ it.rules[0].implementation %>",
+        );
+        const generator = new EtaTPEGCodeGenerator({
+          language: "typescript",
+          optimize: false,
+          templatesDir: directory,
+        });
+        const generate = (name: string) =>
+          generator.generateGrammar(
+            createGrammarDefinition(
+              name,
+              [],
+              [createRuleDefinition(name, createStringLiteral(name))],
+            ),
+          );
+        const firstResult = generate("first");
+        const failure = new Error("first render failed");
+        const firstOutcome = firstRejects
+          ? expect(firstResult).rejects.toBe(failure)
+          : firstResult;
+        now = 10;
+        const secondResult = generate("second");
+        expect(entered).toEqual(["first", "second"]);
+        now = 30;
+        if (firstRejects) {
+          first.reject(failure);
+          await firstOutcome;
+        } else {
+          first.resolve();
+          const result = await firstResult;
+          expect(result.code).toContain('literal("first")');
+          expect(result.performance.generationTime).toBe(30);
+        }
+        now = 50;
+        second.resolve();
+        const result = await secondResult;
+        expect(result.code).toContain('literal("second")');
+        expect(result.performance.generationTime).toBe(40);
+        expect(
+          globalPerformanceMonitor.getMetrics().get("eta-grammar-generation"),
+        ).toEqual({ count: 2, totalTime: 70, averageTime: 35 });
+        expect(globalPerformanceMonitor.end("eta-grammar-generation")).toBe(0);
+      } finally {
+        clock.mockRestore();
+        vi.unstubAllGlobals();
+        globalPerformanceMonitor.clear();
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+});
 
 function createRuleDefinition(
   name: string,
@@ -261,15 +404,15 @@ describe("EtaTPEGCodeGenerator", () => {
         includeTypes: true,
       });
 
-      const body = result.code
-        .replace(/import\s*(?:type\s*)?\{[^}]*\}\s*from\s*"[^"]*";/g, "")
-        .replace(/^export const (\w+): Parser<[^>]*>/gm, "const $1");
-      const moduleFactory = new Function(
-        ...Object.keys(core),
-        `${body}\nreturn { letter, notDigit, anything };`,
+      const { code } = await transformWithOxc(
+        result.code,
+        "generated-character-classes.ts",
       );
-      const { letter, notDigit, anything } = moduleFactory(
-        ...Object.values(core),
+
+      const { letter, notDigit, anything } = evaluateGeneratedModule(
+        code,
+        core,
+        ["letter", "notDigit", "anything"],
       );
 
       const pos = 0;
@@ -389,15 +532,11 @@ describe("EtaTPEGCodeGenerator", () => {
         includeImports: false,
       });
 
-      const body = result.code.replace(
-        /^export const (\w+): Parser<[^>]*>/gm,
-        "const $1",
+      const { code } = await transformWithOxc(
+        result.code,
+        "generated-transform.ts",
       );
-      const moduleFactory = new Function(
-        ...Object.keys(core),
-        `${body}\nreturn { number };`,
-      );
-      const { number } = moduleFactory(...Object.values(core));
+      const { number } = evaluateGeneratedModule(code, core, ["number"]);
 
       const pos = 0;
       expect(number("123abc", pos)).toEqual({
@@ -483,12 +622,7 @@ describe("EtaTPEGCodeGenerator", () => {
         includeTypes: false,
         includeImports: false,
       });
-      const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-      const moduleFactory = new Function(
-        ...Object.keys(core),
-        `${body}\nreturn { pair };`,
-      );
-      const { pair } = moduleFactory(...Object.values(core));
+      const { pair } = evaluateGeneratedModule(result.code, core, ["pair"]);
 
       const parsed = pair("k=v", 0);
       expect(parsed.success).toBe(true);
@@ -1540,13 +1674,8 @@ describe("EtaTPEGCodeGenerator: @memoize annotation (regression)", () => {
       includeTypes: false,
       optimize: true,
     });
-    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
     const scope = { ...combinator, ...core };
-    const moduleFactory = new Function(
-      ...Object.keys(scope),
-      `${body}\nreturn { start };`,
-    );
-    const { start } = moduleFactory(...Object.values(scope)) as {
+    const { start } = evaluateGeneratedModule(result.code, scope) as {
       start: import("@suzumiyaaoba/tpeg-core").Parser<unknown>;
     };
     const ok = start("a", 0);
@@ -1608,29 +1737,7 @@ describe("EtaTPEGCodeGenerator: @skip automatic whitespace", () => {
     const core = await import("@suzumiyaaoba/tpeg-core");
     const combinator = await import("@suzumiyaaoba/tpeg-combinator");
     const scope = { ...combinator, ...core };
-    const body = code
-      .replace(/^import[^\n]*\n?/gm, "")
-      .replace(/^export const (\w+)(: Parser<[^>]*>)?/gm, "const $1");
-    const moduleFactory = new Function(
-      ...Object.keys(scope),
-      `${body}\nreturn { ${ruleNames.join(", ")} };`,
-    );
-    const mod = moduleFactory(...Object.values(scope)) as Record<
-      string,
-      unknown
-    >;
-    const out = {} as Record<
-      N,
-      import("@suzumiyaaoba/tpeg-core").Parser<unknown>
-    >;
-    for (const name of ruleNames) {
-      const parser = mod[name];
-      if (typeof parser !== "function") {
-        throw new Error(`generated module did not produce rule "${name}"`);
-      }
-      out[name] = parser as import("@suzumiyaaoba/tpeg-core").Parser<unknown>;
-    }
-    return out;
+    return evaluateGeneratedModule(code, scope, ruleNames);
   };
 
   for (const optimize of [false, true]) {
@@ -1738,29 +1845,7 @@ describe("EtaTPEGCodeGenerator: @expr span and \\b boundary", () => {
     const core = await import("@suzumiyaaoba/tpeg-core");
     const combinator = await import("@suzumiyaaoba/tpeg-combinator");
     const scope = { ...combinator, ...core };
-    const body = code
-      .replace(/^import[^\n]*\n?/gm, "")
-      .replace(/^export const (\w+)(: Parser<[^>]*>)?/gm, "const $1");
-    const moduleFactory = new Function(
-      ...Object.keys(scope),
-      `${body}\nreturn { ${ruleNames.join(", ")} };`,
-    );
-    const mod = moduleFactory(...Object.values(scope)) as Record<
-      string,
-      unknown
-    >;
-    const out = {} as Record<
-      N,
-      import("@suzumiyaaoba/tpeg-core").Parser<unknown>
-    >;
-    for (const name of ruleNames) {
-      const parser = mod[name];
-      if (typeof parser !== "function") {
-        throw new Error(`generated module did not produce rule "${name}"`);
-      }
-      out[name] = parser as import("@suzumiyaaoba/tpeg-core").Parser<unknown>;
-    }
-    return out;
+    return evaluateGeneratedModule(code, scope, ruleNames);
   };
 
   const wordGrammar = () =>

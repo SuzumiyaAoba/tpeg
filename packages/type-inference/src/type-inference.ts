@@ -28,6 +28,13 @@ import {
   escapeStringLiteral,
   unwrapToLabeledExpression,
 } from "@suzumiyaaoba/tpeg-core";
+import { mappedBaseType } from "./type-mappings";
+import {
+  expressionCacheKey,
+  expressionCacheSnapshot,
+  expressionSnapshotUnchanged,
+} from "./type-cache-key";
+import type { ExpressionCacheSnapshot } from "./type-cache-key";
 import type {
   ActionExpression,
   AnyChar,
@@ -74,7 +81,7 @@ export interface InferredType {
   /** For baseType "union": the inferred type of each alternative, used to build a type guard */
   unionMembers?: InferredType[];
   /** For an isArray `T[]` type: the inferred element type, used to build
-   * an element-checking type guard (`value.every(...)`) instead of a bare
+   * an element-checking type guard instead of a bare
    * `Array.isArray(value)` that would accept any array regardless of
    * contents. */
   arrayElement?: InferredType;
@@ -86,6 +93,13 @@ export interface InferredType {
    * produced by `optional(...)`, retained for hand-built types): each
    * variant's member list, in order. */
   tupleVariants?: InferredType[][];
+  /** Capture properties and their inferred value types, used to
+   * validate labeled objects recursively instead of accepting any object. */
+  objectProperties?: ReadonlyMap<string, InferredType>;
+  /** Object properties that may be absent; other recorded properties are required. */
+  optionalObjectProperties?: ReadonlySet<string>;
+  /** Original inferred type before a custom mapping replaced its type string. */
+  mappedFrom?: InferredType;
 }
 
 /**
@@ -100,6 +114,17 @@ const NULL_INFERRED_TYPE: InferredType = {
   baseType: "null",
   imports: [],
 };
+
+const UNKNOWN_INFERRED_TYPE: InferredType = {
+  typeString: "unknown",
+  nullable: true,
+  isArray: false,
+  baseType: "unknown",
+  imports: [],
+};
+const OBJECT_PROTOTYPE_FIELDS = new Set(
+  Object.getOwnPropertyNames(Object.prototype),
+);
 
 /**
  * Context for type inference operation
@@ -128,6 +153,51 @@ export interface TypeInferenceContext {
   cacheMisses: number;
 }
 
+/** Internal bookkeeping belongs to the same run as rules and type results. */
+interface InferenceRunContext extends TypeInferenceContext {
+  /** Extra recursive calls required by cached expressions; missing means zero. */
+  cachedDepths: Map<string, number>;
+  /** Largest relative depth reached by each active uncached inference. */
+  requiredDepths: number[];
+  cachedDependencies: Map<string, InferenceDependency>;
+  dependencyFrames: InferenceDependency[];
+  /** Same-level capture tags, kept separate from public structural type metadata. */
+  captureVariants: WeakMap<InferredType, readonly CaptureVariant[]>;
+}
+
+type CaptureFields = ReadonlyMap<string, InferredType>;
+interface CaptureVariant {
+  fields: CaptureFields;
+  /** Arbitrary tagged fields may accompany the explicitly known fields. */
+  unknownFields: boolean;
+}
+const NO_CAPTURE_FIELDS: readonly CaptureVariant[] = [
+  { fields: new Map(), unknownFields: false },
+];
+const UNKNOWN_CAPTURE_FIELDS: readonly CaptureVariant[] = [
+  { fields: new Map(), unknownFields: true },
+];
+const MAX_CAPTURE_VARIANTS = 256;
+
+/** Mapping and rule lookups used by one inference, including its children. */
+interface InferenceDependency {
+  /** Absent when this analysis never queried a value's type mapping. */
+  source: string | undefined;
+  replacement: string | undefined;
+  hasMappings: boolean;
+  hasRules: boolean;
+  cacheable: boolean;
+  /** Rule existence used only to determine whether its boundary strips tags. */
+  captureRules?: { name: string; exists: boolean }[];
+  rule?: {
+    name: string;
+    exists: boolean;
+    pattern: Expression | undefined;
+    snapshot: ExpressionCacheSnapshot | undefined;
+  };
+  children?: InferenceDependency[];
+}
+
 /**
  * Options for type inference configuration
  *
@@ -141,7 +211,7 @@ export interface TypeInferenceOptions {
   inferUnionTypes: boolean;
   /** Whether to infer object types for sequence operators */
   inferObjectTypes: boolean;
-  /** Custom type mappings for specific patterns (e.g., "number" -> "MyNumberType") */
+  /** Replacements keyed by exact inferred type strings (e.g., "number" -> "MyNumberType") */
   customTypeMappings: Map<string, string>;
   /** Whether to generate JSDoc comments for inferred types */
   generateDocumentation: boolean;
@@ -253,13 +323,18 @@ const normalizeCycleKey = (cycle: readonly string[]): string => {
  * `TypeInferenceError` and plain-`Error` branches so both produce the
  * exact same shape/documentation.
  */
-const circularDependencyPlaceholder = (ruleName: string): InferredType => ({
+const circularDependencyPlaceholder = (
+  ruleName: string,
+  generateDocumentation: boolean,
+): InferredType => ({
   typeString: "unknown",
-  nullable: false,
+  nullable: true,
   isArray: false,
   baseType: "unknown",
   imports: [],
-  documentation: `Circular dependency detected in rule ${ruleName}`,
+  documentation: generateDocumentation
+    ? `Circular dependency detected in rule ${ruleName}`
+    : undefined,
 });
 
 /** Whole-string JavaScript identifier shape -- the condition under which
@@ -298,8 +373,8 @@ const labelPropertyKey = (label: string): string =>
  */
 export class TypeInferenceEngine {
   private readonly options: TypeInferenceOptions;
-  private context: TypeInferenceContext;
-  private startTime = 0;
+  private context: InferenceRunContext;
+  private activeGrammarRuns = 0;
 
   /**
    * Creates a new TypeInferenceEngine with the specified options
@@ -308,16 +383,15 @@ export class TypeInferenceEngine {
    */
   constructor(options: Partial<TypeInferenceOptions> = {}) {
     this.options = { ...DEFAULT_TYPE_INFERENCE_OPTIONS, ...options };
-    this.context = {
-      rules: new Map(),
-      ruleStack: [],
-      typeCache: new Map(),
-      verbose: this.options.generateDocumentation,
-      maxRecursionDepth: this.options.maxRecursionDepth,
-      currentDepth: 0,
-      cacheHits: 0,
-      cacheMisses: 0,
-    };
+    if (
+      !Number.isSafeInteger(this.options.maxRecursionDepth) ||
+      this.options.maxRecursionDepth < 0
+    ) {
+      throw new TypeInferenceError(
+        "maxRecursionDepth must be a non-negative safe integer",
+      );
+    }
+    this.context = this.createContext();
   }
 
   /**
@@ -347,49 +421,50 @@ export class TypeInferenceEngine {
    * ```
    */
   inferGrammarTypes(grammar: GrammarDefinition): GrammarTypeInference {
-    this.startTime = performance.now();
+    const previousContext = this.context;
+    const nested =
+      this.activeGrammarRuns > 0 || previousContext.currentDepth > 0;
+    this.activeGrammarRuns++;
+    try {
+      const startTime = performance.now();
+      if (nested) this.context = this.createContext();
+      else this.resetContext();
 
-    // Initialize context with grammar rules
-    this.resetContext();
+      for (const rule of grammar.rules) {
+        this.context.rules.set(rule.name, rule);
+      }
 
-    for (const rule of grammar.rules) {
-      this.context.rules.set(rule.name, rule);
+      const result: GrammarTypeInference = {
+        ruleTypes: new Map(),
+        imports: [],
+        circularDependencies: [],
+        warnings: [],
+        stats: {
+          typesInferred: 0,
+          cacheHits: 0,
+          cacheMisses: 0,
+          inferenceTime: 0,
+        },
+      };
+
+      // Each rule starts with a fresh ruleStack. Normalize rotations so a
+      // cycle is recorded once rather than once per participating rule.
+      const seenCycles = new Set<string>();
+      for (const rule of grammar.rules) {
+        this.inferRuleType(rule, result, seenCycles);
+      }
+
+      result.imports = Array.from(new Set(result.imports));
+      result.stats.cacheHits = this.context.cacheHits;
+      result.stats.cacheMisses = this.context.cacheMisses;
+      result.stats.inferenceTime = performance.now() - startTime;
+      return result;
+    } finally {
+      this.activeGrammarRuns--;
+      // Standalone runs remain available to later expression inference.
+      // A reentrant run must resume its caller's rules, caches, and depth.
+      if (nested) this.context = previousContext;
     }
-
-    const result: GrammarTypeInference = {
-      ruleTypes: new Map(),
-      imports: [],
-      circularDependencies: [],
-      warnings: [],
-      stats: {
-        typesInferred: 0,
-        cacheHits: 0,
-        cacheMisses: 0,
-        inferenceTime: 0,
-      },
-    };
-
-    // Tracks which distinct circular dependencies have already been
-    // recorded, keyed by `normalizeCycleKey` -- each rule's type is
-    // inferred starting from its own fresh `ruleStack`, so a single
-    // cycle spanning N rules is independently rediscovered once per
-    // participating rule (as a different rotation of the same rule-name
-    // sequence). Without this, `result.circularDependencies`/`.warnings`
-    // would carry N near-identical entries for one real cycle.
-    const seenCycles = new Set<string>();
-
-    // Infer types for each rule
-    for (const rule of grammar.rules) {
-      this.inferRuleType(rule, result, seenCycles);
-    }
-
-    // Deduplicate imports and calculate final stats
-    result.imports = Array.from(new Set(result.imports));
-    result.stats.cacheHits = this.context.cacheHits;
-    result.stats.cacheMisses = this.context.cacheMisses;
-    result.stats.inferenceTime = performance.now() - this.startTime;
-
-    return result;
   }
 
   /**
@@ -414,6 +489,9 @@ export class TypeInferenceEngine {
       result.imports.push(...inferredType.imports);
     } catch (error) {
       this.handleRuleInferenceError(rule, error, result, seenCycles);
+    } finally {
+      this.context.currentRule = undefined;
+      this.context.ruleStack.length = 0;
     }
   }
 
@@ -456,18 +534,23 @@ export class TypeInferenceEngine {
         // Use a placeholder type for circular dependencies
         result.ruleTypes.set(
           rule.name,
-          circularDependencyPlaceholder(rule.name),
+          circularDependencyPlaceholder(
+            rule.name,
+            this.options.generateDocumentation,
+          ),
         );
       } else {
         result.warnings.push(error.message);
         // For other errors, use a more specific error type
         result.ruleTypes.set(rule.name, {
           typeString: "unknown",
-          nullable: false,
+          nullable: true,
           isArray: false,
           baseType: "unknown",
           imports: [],
-          documentation: `Type inference failed: ${error.message}`,
+          documentation: this.options.generateDocumentation
+            ? `Type inference failed: ${error.message}`
+            : undefined,
         });
       }
       return;
@@ -487,7 +570,13 @@ export class TypeInferenceEngine {
         result.warnings.push(error.message);
       }
       // Use a placeholder type for circular dependencies
-      result.ruleTypes.set(rule.name, circularDependencyPlaceholder(rule.name));
+      result.ruleTypes.set(
+        rule.name,
+        circularDependencyPlaceholder(
+          rule.name,
+          this.options.generateDocumentation,
+        ),
+      );
       return;
     }
     throw error;
@@ -505,6 +594,13 @@ export class TypeInferenceEngine {
    * @throws {TypeInferenceError} When inference fails or recursion limit is exceeded
    */
   inferExpressionType(expression: Expression): InferredType {
+    return this.inferExpression(expression, false);
+  }
+
+  private inferExpression(
+    expression: Expression,
+    captureOnly: boolean,
+  ): InferredType {
     // Check recursion depth
     if (this.context.currentDepth > this.context.maxRecursionDepth) {
       throw new TypeInferenceError(
@@ -514,14 +610,38 @@ export class TypeInferenceEngine {
       );
     }
 
-    const cacheKey = this.getExpressionCacheKey(expression);
+    const expressionKey = this.options.enableCaching
+      ? expressionCacheKey(
+          expression,
+          this.context.maxRecursionDepth - this.context.currentDepth,
+          this.options,
+        )
+      : undefined;
+    // The same AST can contribute a value or only a capture tag. Results and
+    // dependencies differ, so those two analyses must never share an entry.
+    const cacheKey =
+      expressionKey !== undefined && captureOnly
+        ? `capture:${expressionKey}`
+        : expressionKey;
 
     // Check cache first if enabled
-    if (this.options.enableCaching && this.context.typeCache.has(cacheKey)) {
+    let hadCachedType = false;
+    if (cacheKey !== undefined) {
       const cached = this.context.typeCache.get(cacheKey);
       if (cached) {
-        this.context.cacheHits++;
-        return cached;
+        hadCachedType = true;
+        const requiredDepth = this.context.cachedDepths.get(cacheKey) ?? 0;
+        const mappings = this.context.cachedDependencies.get(cacheKey);
+        if (
+          requiredDepth <=
+            this.context.maxRecursionDepth - this.context.currentDepth &&
+          this.dependenciesUnchanged(mappings)
+        ) {
+          this.context.cacheHits++;
+          this.recordRequiredDepth(requiredDepth);
+          this.recordDependency(mappings!);
+          return cached;
+        }
       }
     }
     if (this.options.enableCaching) {
@@ -529,22 +649,156 @@ export class TypeInferenceEngine {
     }
 
     this.context.currentDepth++;
+    if (this.options.enableCaching) this.context.requiredDepths.push(0);
+    const dependency: InferenceDependency | undefined = this.options
+      .enableCaching
+      ? {
+          source: undefined,
+          replacement: undefined,
+          hasMappings: false,
+          hasRules: false,
+          cacheable: cacheKey !== undefined,
+        }
+      : undefined;
+    if (dependency) this.context.dependencyFrames.push(dependency);
+    let succeeded = false;
 
     try {
       // Apply custom type mappings if available
-      const inferredType = this.applyCustomTypeMappings(
-        this.inferExpressionTypeUncached(expression),
-      );
-
-      // Cache the result if enabled
-      if (this.options.enableCaching) {
-        this.context.typeCache.set(cacheKey, inferredType);
+      const originalType = captureOnly
+        ? this.inferCaptureTypeUncached(expression)
+        : this.inferExpressionTypeUncached(expression);
+      const inferredType = captureOnly
+        ? originalType
+        : this.applyCustomTypeMappings(originalType, dependency);
+      if (originalType !== inferredType) {
+        const captures = this.context.captureVariants.get(originalType);
+        if (captures) this.context.captureVariants.set(inferredType, captures);
       }
 
+      // Cache the result if enabled
+      if (cacheKey !== undefined && dependency!.cacheable) {
+        this.context.typeCache.set(cacheKey, inferredType);
+        this.context.cachedDependencies.set(cacheKey, dependency!);
+        const requiredDepth =
+          this.context.requiredDepths[this.context.requiredDepths.length - 1]!;
+        // Leaf results need no depth entry or extra lookup on a cache miss.
+        if (requiredDepth > 0)
+          this.context.cachedDepths.set(cacheKey, requiredDepth);
+        else if (hadCachedType) this.context.cachedDepths.delete(cacheKey);
+      }
+
+      succeeded = true;
       return inferredType;
     } finally {
       this.context.currentDepth--;
+      if (this.options.enableCaching) {
+        this.context.dependencyFrames.pop();
+        if (succeeded) this.recordDependency(dependency!);
+        this.recordRequiredDepth(this.context.requiredDepths.pop()!);
+      }
     }
+  }
+
+  /** Include a child's full cost even when its result came from the cache. */
+  private recordRequiredDepth(childDepth: number): void {
+    const depths = this.context.requiredDepths;
+    const parent = depths.length - 1;
+    if (parent >= 0) {
+      depths[parent] = Math.max(depths[parent]!, childDepth + 1);
+    }
+  }
+
+  private recordDependency(child: InferenceDependency): void {
+    const frames = this.context.dependencyFrames;
+    const parent = frames[frames.length - 1];
+    if (parent) {
+      (parent.children ??= []).push(child);
+      parent.hasMappings ||= child.hasMappings;
+      parent.hasRules ||= child.hasRules;
+      parent.cacheable &&= child.cacheable;
+    }
+  }
+
+  /** Validate only lookups that contributed to this result. */
+  private dependenciesUnchanged(
+    dependency: InferenceDependency | undefined,
+  ): boolean {
+    if (!dependency) return false;
+    const mappings = this.options.customTypeMappings;
+    const emptyMappings = mappings.size === 0;
+    if (emptyMappings && dependency.hasMappings) return false;
+    if (emptyMappings && !dependency.hasRules) return true;
+    const activeRules =
+      this.options.detectCircularDependencies && dependency.hasRules
+        ? new Set(this.context.ruleStack)
+        : undefined;
+    const pending = [dependency];
+    const visited = new Set<InferenceDependency>();
+    while (pending.length > 0) {
+      const current = pending.pop()!;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      if (emptyMappings && !current.hasRules) continue;
+      if (
+        !emptyMappings &&
+        current.source !== undefined &&
+        mappings.get(current.source) !== current.replacement
+      )
+        return false;
+      if (current.rule) {
+        if (activeRules?.has(current.rule.name)) return false;
+        const rule = this.context.rules.get(current.rule.name);
+        if ((rule !== undefined) !== current.rule.exists) return false;
+        if (rule) {
+          const pattern = Object.getOwnPropertyDescriptor(rule, "pattern");
+          if (
+            !pattern ||
+            !("value" in pattern) ||
+            pattern.value !== current.rule.pattern ||
+            !current.rule.snapshot ||
+            !expressionSnapshotUnchanged(current.rule.snapshot)
+          )
+            return false;
+        }
+      }
+      if (current.captureRules)
+        for (const lookup of current.captureRules)
+          if (
+            (this.context.rules.get(lookup.name) !== undefined) !==
+            lookup.exists
+          )
+            return false;
+      if (current.children)
+        for (const child of current.children) pending.push(child);
+    }
+    return true;
+  }
+
+  private recordRuleDependency(
+    name: string,
+    rule: RuleDefinition | undefined,
+  ): void {
+    const frames = this.context.dependencyFrames;
+    const frame = frames[frames.length - 1];
+    if (!frame?.cacheable) return;
+    const descriptor = rule
+      ? Object.getOwnPropertyDescriptor(rule, "pattern")
+      : undefined;
+    const pattern =
+      descriptor && "value" in descriptor
+        ? (descriptor.value as Expression)
+        : undefined;
+    const snapshot = pattern
+      ? expressionCacheSnapshot(
+          pattern,
+          this.context.maxRecursionDepth,
+          this.options,
+        )
+      : undefined;
+    frame.rule = { name, exists: rule !== undefined, pattern, snapshot };
+    frame.hasRules = true;
+    if (rule && snapshot === undefined) frame.cacheable = false;
   }
 
   /**
@@ -587,7 +841,7 @@ export class TypeInferenceEngine {
         // the result type.
         return {
           typeString: "void",
-          nullable: false,
+          nullable: true,
           isArray: false,
           baseType: "void",
           imports: [],
@@ -602,7 +856,7 @@ export class TypeInferenceEngine {
         // the result type.
         return {
           typeString: "void",
-          nullable: false,
+          nullable: true,
           isArray: false,
           baseType: "void",
           imports: [],
@@ -631,7 +885,7 @@ export class TypeInferenceEngine {
         // but is never itself the produced value.
         return {
           typeString: "void",
-          nullable: false,
+          nullable: true,
           isArray: false,
           baseType: "void",
           imports: [],
@@ -666,11 +920,13 @@ export class TypeInferenceEngine {
             : "unknown";
         return {
           typeString: "unknown",
-          nullable: false,
+          nullable: true,
           isArray: false,
           baseType: "unknown",
           imports: [],
-          documentation: `Unknown expression type: ${unknownType}`,
+          documentation: this.options.generateDocumentation
+            ? `Unknown expression type: ${unknownType}`
+            : undefined,
         };
       }
     }
@@ -683,7 +939,8 @@ export class TypeInferenceEngine {
    * @returns Inferred type for string literal
    */
   private inferStringLiteralType(expression: StringLiteral): InferredType {
-    const escapedValue = escapeStringLiteral(expression.value);
+    const value = expression.value;
+    const escapedValue = escapeStringLiteral(value);
     const result: InferredType = {
       typeString: `"${escapedValue}"`,
       nullable: false,
@@ -693,7 +950,7 @@ export class TypeInferenceEngine {
     };
 
     if (this.options.generateDocumentation) {
-      result.documentation = `String literal: "${expression.value}"`;
+      result.documentation = `String literal: "${value}"`;
     }
 
     return result;
@@ -768,17 +1025,21 @@ export class TypeInferenceEngine {
 
     // Look up rule definition
     const rule = this.context.rules.get(ruleName);
+    this.recordRuleDependency(ruleName, rule);
     if (!rule) {
-      return {
-        typeString: "unknown",
-        nullable: false,
-        isArray: false,
-        baseType: "unknown",
-        imports: [],
-        documentation: this.options.generateDocumentation
-          ? `Unknown rule reference: ${ruleName}`
-          : undefined,
-      };
+      return this.withCaptureVariants(
+        {
+          typeString: "unknown",
+          nullable: true,
+          isArray: false,
+          baseType: "unknown",
+          imports: [],
+          documentation: this.options.generateDocumentation
+            ? `Unknown rule reference: ${ruleName}`
+            : undefined,
+        },
+        UNKNOWN_CAPTURE_FIELDS,
+      );
     }
 
     // Recursively infer type for referenced rule. The `pop()` MUST happen
@@ -842,19 +1103,11 @@ export class TypeInferenceEngine {
    * 2. If ANY remaining element is directly (or through a transparent
    *    `Group`) a `LabeledExpression`, codegen emits `captureSequence(...)`
    *    instead of `sequence(...)`, which merges captured fields into a
-   *    single object rather than a positional tuple -- see `mergeCaptures`
-   *    in packages/core/src/capture.ts. Only elements that are themselves
-   *    directly labeled contribute a field here (matching
-   *    `collectTopLevelLabels`, codegen.ts); every unlabeled element is
-   *    dropped, exactly like `mergeCaptures` drops every untagged entry.
-   *    Simplification, not modeled: an unlabeled element that is itself a
-   *    `Choice` whose winning alternative happens to be its own raw
-   *    `capture(...)` also merges its field in at runtime (`choice`
-   *    forwards whichever alternative's value it matched, tag and all --
-   *    see `CAPTURE_TAG`'s doc comment, capture.ts). That shape is
-   *    under-inferred here (the field is silently absent from the
-   *    inferred type) rather than over-claimed, which is the safer
-   *    direction to be wrong in.
+   *    single object rather than a positional tuple. Choices, optionals,
+   *    groups, and a bare singleton sequence can forward capture tags too.
+   *    Merge successful capture variants in order: later fields overwrite
+   *    earlier ones. Rule boundaries, arrays, and nested merged objects do
+   *    not forward a same-level tag.
    * 3. Otherwise, with no direct label anywhere, a single surviving
    *    element (after the Cut is dropped) is returned BARE -- not
    *    wrapped in a 1-tuple -- exactly like `generateSequence`'s
@@ -888,43 +1141,46 @@ export class TypeInferenceEngine {
       (element: Expression) =>
         element.type !== "Cut" && element.type !== "Skip",
     );
-    const labeledElements = nonCutElements
-      .map((element: Expression) => unwrapToLabeledExpression(element))
-      .filter((element): element is LabeledExpression => element !== undefined);
-
-    if (labeledElements.length > 0) {
-      // A repeated label (e.g. `a:"x" a:"y"`) isn't rejected by
-      // `validateGrammar` -- and at runtime, `mergeCaptures`
-      // (packages/core/src/capture.ts) is `Object.assign` over the
-      // elements in order, so the LAST occurrence's value wins. A `Map`
-      // keyed by label reproduces that (a later `.set` for the same key
-      // overwrites the earlier field's type), which also avoids emitting
-      // a duplicate-property object type literal (a `tsc` error) when
-      // this typeString is written out verbatim by
-      // `type-integration.ts`'s `export type ... = ...;`.
-      const fieldsByLabel = new Map<string, InferredType>();
-      for (const labeled of labeledElements) {
-        fieldsByLabel.set(
-          labeled.label,
-          this.inferExpressionType(labeled.expression),
-        );
+    const labeledElements = nonCutElements.map((element) =>
+      unwrapToLabeledExpression(element),
+    );
+    if (labeledElements.some((element) => element !== undefined)) {
+      const contributions: (readonly CaptureVariant[])[] = [];
+      for (let index = 0; index < nonCutElements.length; index++) {
+        const labeled = labeledElements[index];
+        if (labeled) {
+          // Direct labels retain their inner type, even if a mapping replaces
+          // the standalone capture object's type. Group labels are transparent.
+          const label = labeled.label;
+          contributions.push([
+            {
+              fields: new Map([
+                [label, this.inferExpressionType(labeled.expression)],
+              ]),
+              unknownFields: false,
+            },
+          ]);
+          continue;
+        }
+        const element = nonCutElements[index]!;
+        // Actions and external parsers may return arbitrary tagged fields.
+        // Registered rule boundaries, arrays and merged sequences strip tags.
+        if (
+          [
+            "Group",
+            "Choice",
+            "Optional",
+            "Sequence",
+            "ActionExpression",
+            "Identifier",
+            "QualifiedIdentifier",
+          ].includes(element.type)
+        ) {
+          const variants = this.captureContribution(element);
+          if (variants) contributions.push(variants);
+        }
       }
-      const fields = Array.from(fieldsByLabel, ([key, type]) => ({
-        key,
-        type,
-      }));
-      const allImports = fields.flatMap((f) => f.type.imports);
-
-      return {
-        typeString: `{ ${fields.map((f) => `${labelPropertyKey(f.key)}: ${f.type.typeString}`).join(", ")} }`,
-        nullable: false,
-        isArray: false,
-        baseType: "object",
-        imports: Array.from(new Set(allImports)),
-        documentation: this.options.generateDocumentation
-          ? "Sequence with labeled elements merged into an object"
-          : undefined,
-      };
+      return this.mergeCaptureTypes(contributions);
     }
 
     const elementTypes = nonCutElements.map((element: Expression) =>
@@ -950,6 +1206,257 @@ export class TypeInferenceEngine {
         : undefined,
       tupleMembers: elementTypes,
     };
+  }
+
+  private withCaptureVariants(
+    type: InferredType,
+    variants: readonly CaptureVariant[] | undefined,
+  ): InferredType {
+    if (variants) this.context.captureVariants.set(type, variants);
+    return type;
+  }
+
+  private captureContribution(
+    expression: Expression,
+  ): readonly CaptureVariant[] | undefined {
+    return this.context.captureVariants.get(
+      this.inferExpression(expression, true),
+    );
+  }
+
+  /** Analyze tags without inferring discarded values or traversing local rules. */
+  private inferCaptureTypeUncached(expression: Expression): InferredType {
+    const result = (variants?: readonly CaptureVariant[]) =>
+      this.withCaptureVariants(
+        {
+          typeString: "unknown",
+          nullable: true,
+          isArray: false,
+          baseType: "unknown",
+          imports: [],
+        },
+        variants,
+      );
+    if (
+      expression.type === "ActionExpression" ||
+      expression.type === "QualifiedIdentifier"
+    )
+      return result(UNKNOWN_CAPTURE_FIELDS);
+    if (expression.type === "Identifier") {
+      const name = expression.name;
+      const exists = this.context.rules.get(name) !== undefined;
+      const frames = this.context.dependencyFrames;
+      const frame = frames[frames.length - 1];
+      if (frame?.cacheable) {
+        frame.hasRules = true;
+        (frame.captureRules ??= []).push({ name, exists });
+      }
+      // A local rule strips tags regardless of its value. Its pattern, depth
+      // and cycles do not contribute to these fields and must not be read.
+      return result(exists ? undefined : UNKNOWN_CAPTURE_FIELDS);
+    }
+    switch (expression.type) {
+      case "LabeledExpression":
+        return result([
+          {
+            fields: new Map([
+              [
+                expression.label,
+                this.inferExpressionType(expression.expression),
+              ],
+            ]),
+            unknownFields: false,
+          },
+        ]);
+      case "Group":
+        return this.inferExpression(expression.expression, true);
+      case "Optional": {
+        const inner = this.captureContribution(expression.expression);
+        return result(inner ? [...inner, ...NO_CAPTURE_FIELDS] : undefined);
+      }
+      case "Choice": {
+        const alternatives = expression.alternatives.map((alternative) =>
+          this.captureContribution(alternative),
+        );
+        return result(
+          alternatives.some((variants) => variants !== undefined)
+            ? alternatives.flatMap((variants) => variants ?? NO_CAPTURE_FIELDS)
+            : undefined,
+        );
+      }
+      case "Sequence": {
+        const elements = expression.elements.filter(
+          (element) => element.type !== "Cut" && element.type !== "Skip",
+        );
+        // Only a bare singleton forwards its child's tag. A labeled sequence
+        // creates an untagged merged object; multiple values create a tuple.
+        if (elements.length === 1 && !unwrapToLabeledExpression(elements[0]!))
+          return this.inferExpression(elements[0]!, true);
+        return result();
+      }
+      default:
+        return result();
+    }
+  }
+
+  private captureObjectType(
+    fields: CaptureFields,
+    optional?: ReadonlySet<string>,
+    unknownFields = false,
+  ): InferredType {
+    const result: InferredType = {
+      typeString: `{ ${unknownFields ? "[key: string]: unknown; " : ""}${Array.from(fields, ([name, type]) => `${labelPropertyKey(name)}${optional?.has(name) ? "?" : ""}: ${type.typeString}`).join(", ")} }`,
+      nullable: false,
+      isArray: false,
+      baseType: "object",
+      objectProperties: fields,
+      imports: Array.from(
+        new Set(Array.from(fields.values()).flatMap((type) => type.imports)),
+      ),
+      documentation: this.options.generateDocumentation
+        ? "Sequence with labeled elements merged into an object"
+        : undefined,
+    };
+    if (optional?.size) result.optionalObjectProperties = optional;
+    return result;
+  }
+
+  private captureUnionType(types: readonly InferredType[]): InferredType {
+    const members = new Map<string, InferredType>();
+    for (const type of types) {
+      for (const member of type.baseType === "union" && type.unionMembers
+        ? type.unionMembers
+        : [type])
+        members.set(member.typeString, member);
+    }
+    const unique = Array.from(members.values());
+    if (unique.length === 1) return unique[0]!;
+    return {
+      typeString: unique.map((type) => type.typeString).join(" | "),
+      baseType: "union",
+      nullable: unique.some((type) => type.nullable),
+      isArray: false,
+      imports: Array.from(new Set(unique.flatMap((type) => type.imports))),
+      unionMembers: unique,
+      documentation: this.options.generateDocumentation
+        ? "Sequence with conditional captures merged into an object"
+        : undefined,
+    };
+  }
+
+  /** Keep correlated variants, then widen fields if combinations grow too large. */
+  private mergeCaptureTypes(
+    contributions: readonly (readonly CaptureVariant[])[],
+  ): InferredType {
+    if (contributions.every((variants) => variants.length === 1)) {
+      const fields = new Map<string, InferredType>();
+      let unknownFields = false;
+      for (const [variant] of contributions) {
+        if (variant!.unknownFields) {
+          for (const name of fields.keys())
+            fields.set(name, UNKNOWN_INFERRED_TYPE);
+          unknownFields = true;
+        }
+        for (const [name, type] of variant!.fields) fields.set(name, type);
+      }
+      return this.captureObjectType(fields, undefined, unknownFields);
+    }
+    let variants: CaptureVariant[] | undefined = [...NO_CAPTURE_FIELDS];
+    let unknownFields = false;
+    const summary = new Map<
+      string,
+      { type: InferredType; required: boolean }
+    >();
+    for (const incoming of contributions) {
+      const incomingUnknown = incoming.some((variant) => variant.unknownFields);
+      if (incomingUnknown) {
+        for (const field of summary.values())
+          field.type = UNKNOWN_INFERRED_TYPE;
+      }
+      const fields = new Map<
+        string,
+        { types: InferredType[]; count: number }
+      >();
+      for (const variant of incoming) {
+        for (const [name, type] of variant.fields) {
+          const field = fields.get(name);
+          if (field) {
+            field.types.push(type);
+            field.count++;
+          } else fields.set(name, { types: [type], count: 1 });
+        }
+      }
+      for (const [name, field] of fields) {
+        const required = field.count === incoming.length;
+        const previous = summary.get(name);
+        const arbitraryValue =
+          (!required && unknownFields) ||
+          incoming.some(
+            (variant) => variant.unknownFields && !variant.fields.has(name),
+          );
+        summary.set(name, {
+          type: this.captureUnionType([
+            ...(previous && !required ? [previous.type] : []),
+            ...field.types,
+            ...(arbitraryValue ? [UNKNOWN_INFERRED_TYPE] : []),
+          ]),
+          required: required || previous?.required === true,
+        });
+      }
+      unknownFields ||= incomingUnknown;
+      if (!variants) continue;
+      const merged = new Map<string, CaptureVariant>();
+      combinations: for (const previous of variants) {
+        for (const next of incoming) {
+          const fields = new Map(previous.fields);
+          if (next.unknownFields)
+            for (const name of fields.keys())
+              fields.set(name, UNKNOWN_INFERRED_TYPE);
+          for (const [name, type] of next.fields) fields.set(name, type);
+          const result: CaptureVariant = {
+            fields,
+            unknownFields: previous.unknownFields || next.unknownFields,
+          };
+          const key = JSON.stringify([
+            result.unknownFields,
+            Array.from(fields, ([name, type]) => [name, type.typeString]).sort(
+              ([a], [b]) => a!.localeCompare(b!),
+            ),
+          ]);
+          merged.set(key, result);
+          if (merged.size > MAX_CAPTURE_VARIANTS) {
+            variants = undefined;
+            break combinations;
+          }
+        }
+      }
+      if (variants) variants = Array.from(merged.values());
+    }
+    if (variants)
+      return this.captureUnionType(
+        variants.map((variant) =>
+          this.captureObjectType(
+            variant.fields,
+            undefined,
+            variant.unknownFields,
+          ),
+        ),
+      );
+    const fields = new Map<string, InferredType>();
+    const optional = new Set<string>();
+    for (const [name, field] of summary) {
+      // An absent own capture can still expose an inherited prototype
+      // property. A precise optional value type would reject valid plain
+      // parser results (and misdescribe reads of constructor/__proto__).
+      fields.set(
+        name,
+        !field.required && OBJECT_PROTOTYPE_FIELDS.has(name)
+          ? this.captureUnionType([field.type, UNKNOWN_INFERRED_TYPE])
+          : field.type,
+      );
+      if (!field.required) optional.add(name);
+    }
+    return this.captureObjectType(fields, optional, unknownFields);
   }
 
   /**
@@ -990,22 +1497,57 @@ export class TypeInferenceEngine {
     }
 
     if (!this.options.inferUnionTypes) {
-      return {
-        typeString: "string",
-        nullable: false,
-        isArray: false,
-        baseType: "string",
-        imports: [],
-        documentation: this.options.generateDocumentation
-          ? "Choice between alternatives"
-          : undefined,
-      };
+      const variants = this.options.inferObjectTypes
+        ? expression.alternatives.map((alternative) => {
+            if (
+              ![
+                "LabeledExpression",
+                "Group",
+                "Choice",
+                "Optional",
+                "Sequence",
+                "ActionExpression",
+                "Identifier",
+                "QualifiedIdentifier",
+              ].includes(alternative.type)
+            )
+              return NO_CAPTURE_FIELDS;
+            return this.captureContribution(alternative) ?? NO_CAPTURE_FIELDS;
+          })
+        : [];
+      const captures = variants.some((choices) =>
+        choices.some(
+          (variant) => variant.fields.size > 0 || variant.unknownFields,
+        ),
+      )
+        ? variants.flat()
+        : undefined;
+      return this.withCaptureVariants(
+        {
+          typeString: "string",
+          nullable: false,
+          isArray: false,
+          baseType: "string",
+          imports: [],
+          documentation: this.options.generateDocumentation
+            ? "Choice between alternatives"
+            : undefined,
+        },
+        captures,
+      );
     }
 
     const alternativeTypes = expression.alternatives.map((alt: Expression) =>
       this.inferExpressionType(alt),
     );
 
+    const captures = alternativeTypes.some((type) =>
+      this.context.captureVariants.has(type),
+    )
+      ? alternativeTypes.flatMap(
+          (type) => this.context.captureVariants.get(type) ?? NO_CAPTURE_FIELDS,
+        )
+      : undefined;
     const typeStrings = alternativeTypes.map((t) => {
       // Add parentheses for complex types in unions
       const needsParens =
@@ -1015,17 +1557,20 @@ export class TypeInferenceEngine {
     });
     const allImports = alternativeTypes.flatMap((t) => t.imports);
 
-    return {
-      typeString: typeStrings.join(" | "),
-      nullable: false,
-      isArray: false,
-      baseType: "union",
-      imports: Array.from(new Set(allImports)),
-      documentation: this.options.generateDocumentation
-        ? "Union of alternative expressions"
-        : undefined,
-      unionMembers: alternativeTypes,
-    };
+    return this.withCaptureVariants(
+      {
+        typeString: typeStrings.join(" | "),
+        nullable: alternativeTypes.some((type) => type.nullable),
+        isArray: false,
+        baseType: "union",
+        imports: Array.from(new Set(allImports)),
+        documentation: this.options.generateDocumentation
+          ? "Union of alternative expressions"
+          : undefined,
+        unionMembers: alternativeTypes,
+      },
+      captures,
+    );
   }
 
   /**
@@ -1093,17 +1638,25 @@ export class TypeInferenceEngine {
   private inferOptionalType(expression: Optional): InferredType {
     const innerType = this.inferExpressionType(expression.expression);
 
-    return {
-      typeString: `${innerType.typeString} | null`,
-      nullable: true,
-      isArray: false,
-      baseType: "union",
-      imports: innerType.imports,
-      documentation: this.options.generateDocumentation
-        ? "Optional expression"
+    return this.withCaptureVariants(
+      {
+        typeString: `${innerType.typeString} | null`,
+        nullable: true,
+        isArray: false,
+        baseType: "union",
+        imports: innerType.imports,
+        documentation: this.options.generateDocumentation
+          ? "Optional expression"
+          : undefined,
+        unionMembers: [innerType, NULL_INFERRED_TYPE],
+      },
+      this.context.captureVariants.has(innerType)
+        ? [
+            ...this.context.captureVariants.get(innerType)!,
+            ...NO_CAPTURE_FIELDS,
+          ]
         : undefined,
-      unionMembers: [innerType, NULL_INFERRED_TYPE],
-    };
+    );
   }
 
   /**
@@ -1116,7 +1669,7 @@ export class TypeInferenceEngine {
    * (`inferOptionalType`, just above), this never produces a bare
    * `undefined` result either -- neither PEG repetition operator does;
    * see `inferOptionalType`'s own doc comment for `optional()`'s actual
-   * `[T] | []` shape.
+   * `T | null` shape.
    *
    * @param expression - Quantified expression
    * @returns Inferred type for quantified expression
@@ -1182,7 +1735,7 @@ export class TypeInferenceEngine {
     // Lookaheads don't consume input and don't contribute to the result
     return {
       typeString: "void",
-      nullable: false,
+      nullable: true,
       isArray: false,
       baseType: "void",
       imports: [],
@@ -1212,17 +1765,22 @@ export class TypeInferenceEngine {
     expression: LabeledExpression,
   ): InferredType {
     const innerType = this.inferExpressionType(expression.expression);
+    const label = expression.label;
 
-    return {
-      typeString: `{ ${labelPropertyKey(expression.label)}: ${innerType.typeString} }`,
-      nullable: false,
-      isArray: false,
-      baseType: "object",
-      imports: innerType.imports,
-      documentation: this.options.generateDocumentation
-        ? `Labeled expression: ${expression.label}`
-        : undefined,
-    };
+    return this.withCaptureVariants(
+      {
+        typeString: `{ ${labelPropertyKey(label)}: ${innerType.typeString} }`,
+        nullable: false,
+        isArray: false,
+        baseType: "object",
+        objectProperties: new Map([[label, innerType]]),
+        imports: innerType.imports,
+        documentation: this.options.generateDocumentation
+          ? `Labeled expression: ${label}`
+          : undefined,
+      },
+      [{ fields: new Map([[label, innerType]]), unknownFields: false }],
+    );
   }
 
   /**
@@ -1242,16 +1800,19 @@ export class TypeInferenceEngine {
   private inferActionExpressionType(
     _expression: ActionExpression,
   ): InferredType {
-    return {
-      typeString: "unknown",
-      nullable: false,
-      isArray: false,
-      baseType: "unknown",
-      imports: [],
-      documentation: this.options.generateDocumentation
-        ? "Semantic action result (return type not statically inferable from the action's code)"
-        : undefined,
-    };
+    return this.withCaptureVariants(
+      {
+        typeString: "unknown",
+        nullable: true,
+        isArray: false,
+        baseType: "unknown",
+        imports: [],
+        documentation: this.options.generateDocumentation
+          ? "Semantic action result (return type not statically inferable from the action's code)"
+          : undefined,
+      },
+      UNKNOWN_CAPTURE_FIELDS,
+    );
   }
 
   /**
@@ -1269,16 +1830,19 @@ export class TypeInferenceEngine {
   private inferQualifiedIdentifierType(
     expression: QualifiedIdentifier,
   ): InferredType {
-    return {
-      typeString: "unknown",
-      nullable: false,
-      isArray: false,
-      baseType: "unknown",
-      imports: [],
-      documentation: this.options.generateDocumentation
-        ? `Unknown rule reference: ${expression.module}.${expression.name}`
-        : undefined,
-    };
+    return this.withCaptureVariants(
+      {
+        typeString: "unknown",
+        nullable: true,
+        isArray: false,
+        baseType: "unknown",
+        imports: [],
+        documentation: this.options.generateDocumentation
+          ? `Unknown rule reference: ${expression.module}.${expression.name}`
+          : undefined,
+      },
+      UNKNOWN_CAPTURE_FIELDS,
+    );
   }
 
   /**
@@ -1287,50 +1851,84 @@ export class TypeInferenceEngine {
    * @param inferredType - The inferred type to modify
    * @returns Modified type with custom mappings applied
    */
-  private applyCustomTypeMappings(inferredType: InferredType): InferredType {
+  private applyCustomTypeMappings(
+    inferredType: InferredType,
+    dependency?: InferenceDependency,
+  ): InferredType {
     const customType = this.options.customTypeMappings.get(
       inferredType.typeString,
     );
+    if (dependency) {
+      dependency.source = inferredType.typeString;
+      dependency.replacement = customType;
+      dependency.hasMappings ||= customType !== undefined;
+    }
     if (customType) {
+      if (customType.trim() === inferredType.typeString.trim()) {
+        return inferredType;
+      }
+      const baseType = mappedBaseType(customType);
+      if (baseType) {
+        // A replacement is a complete type, not an element type modifier.
+        // The original tuple, union, array and capture metadata no longer
+        // describes its runtime shape.
+        return {
+          typeString: customType,
+          baseType,
+          nullable: ["unknown", "any", "void", "undefined", "null"].includes(
+            baseType,
+          ),
+          isArray: false,
+          imports: inferredType.imports,
+          documentation: inferredType.documentation,
+          mappedFrom: inferredType,
+        };
+      }
       return {
         ...inferredType,
         typeString: customType,
         baseType: customType,
+        mappedFrom: inferredType,
       };
     }
     return inferredType;
   }
 
   /**
-   * Reset the inference context for a new grammar
+   * Create independent state for a new grammar or the initial expression run.
    */
-  private resetContext(): void {
-    this.context.rules.clear();
-    this.context.typeCache.clear();
-    this.context.ruleStack = [];
-    this.context.currentRule = undefined as string | undefined;
-    this.context.currentDepth = 0;
-    this.context.cacheHits = 0;
-    this.context.cacheMisses = 0;
+  private createContext(): InferenceRunContext {
+    return {
+      rules: new Map(),
+      ruleStack: [],
+      typeCache: new Map(),
+      verbose: this.options.generateDocumentation,
+      maxRecursionDepth: this.options.maxRecursionDepth,
+      currentDepth: 0,
+      cacheHits: 0,
+      cacheMisses: 0,
+      cachedDepths: new Map(),
+      requiredDepths: [],
+      cachedDependencies: new Map(),
+      dependencyFrames: [],
+      captureVariants: new WeakMap(),
+    };
   }
 
-  /**
-   * Generate a unique cache key for an expression
-   *
-   * Creates a deterministic string representation of the expression
-   * for caching purposes, excluding documentation to avoid cache misses.
-   *
-   * @param expression - The expression to generate a key for
-   * @returns Unique cache key string
-   */
-  private getExpressionCacheKey(expression: Expression): string {
-    // Generate a unique key for caching based on expression structure
-    return JSON.stringify(expression, (key, value) => {
-      // Exclude documentation and other non-structural properties from cache key
-      if (key === "documentation") {
-        return undefined;
-      }
-      return value;
-    });
+  /** Reuse idle state; no active inference can observe these cleared maps. */
+  private resetContext(): void {
+    const context = this.context;
+    context.rules.clear();
+    context.typeCache.clear();
+    context.cachedDepths.clear();
+    context.requiredDepths.length = 0;
+    context.cachedDependencies.clear();
+    context.dependencyFrames.length = 0;
+    context.captureVariants = new WeakMap();
+    context.ruleStack.length = 0;
+    context.currentRule = undefined;
+    context.currentDepth = 0;
+    context.cacheHits = 0;
+    context.cacheMisses = 0;
   }
 }

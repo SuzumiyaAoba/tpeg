@@ -11,11 +11,9 @@
  *
  * Design notes:
  * - `compileRule` parses a grammar, generates code with `includeImports:
- *   false`, and `eval`s the resulting `export const name = ...`
- *   declarations via `new Function`, binding every tpeg-core/
- *   tpeg-combinator export as a parameter name -- the same pattern already
- *   used in `codegen-optimized.spec.ts` for compiling generated code
- *   in-process.
+ *   false`, and executes the resulting declarations through the shared
+ *   strict evaluator. Instrumented helpers are bound outside the generated
+ *   declarations, so unused helper names may also be rule names.
  * - `literal`/`charClass`/`negatedCharClass`/`anyChar` are wrapped so the
  *   *parser they return* increments a shared counter on every invocation
  *   (not on construction -- the factories are called once per rule, but
@@ -41,6 +39,7 @@ import { generateTypeScriptParser } from "../src/codegen";
 import { generateOptimizedTypeScriptParser } from "../src/codegen-optimized";
 import { analyzeFirstSets } from "../src/first-sets";
 import { grammarDefinition } from "../src/grammar";
+import { evaluateGeneratedModule } from "../src/generated-runtime";
 import { MIN_FUSION_WEIGHT } from "../src/regex-fusion";
 
 const ORIGIN_POS = 0;
@@ -382,14 +381,7 @@ export function compileRule(
   const collapsedInvocations: LeafInvocationCounter = { count: 0 };
   const memoProbe = options.probeMemo ? createMemoProbe() : null;
 
-  // Only pull `memoize` out of tpeg-combinator (the one combinator-package
-  // export the codegen ever references, per `codegen-optimized.ts`'s
-  // import list) rather than spreading the whole package: tpeg-combinator
-  // exports names like `number`/`string` (parser-building helpers) that
-  // collide with common TPEG *grammar rule names*, which would otherwise
-  // turn into "Cannot declare a const variable twice" SyntaxErrors when
-  // `new Function` tries to bind both a same-named parameter and a
-  // generated `const <ruleName> = ...` in the same scope.
+  // Supply the emitted combinator helpers and instrumented core factories.
   const scope: Record<string, unknown> = {
     ...tpegCore,
     memoize: memoProbe ? memoProbe.memoize : tpegCombinator.memoize,
@@ -406,23 +398,7 @@ export function compileRule(
     charClassRun: countingFactory(tpegCore.charClassRun, collapsedInvocations),
   };
 
-  // `export const rule = ...` -> `const rule = ...`; the surrounding
-  // Function body then returns every rule so the caller can pick one out.
-  // Re-export lines (`export { x as start };` from `@start`,
-  // `export { performanceMonitor };` from monitoring) are dropped
-  // outright: `export` is a SyntaxError inside `new Function`, and the
-  // alias adds nothing a caller can't reach via the real rule name.
-  const body = generated.code
-    .replace(/^export const (\w+)/gm, "const $1")
-    .replace(/^export \{[^}]*\};?\s*$/gm, "");
-  const ruleNames = [...generated.code.matchAll(/^export const (\w+)/gm)].map(
-    (m) => m[1],
-  );
-  const factory = new Function(
-    ...Object.keys(scope),
-    `${body}\nreturn { ${ruleNames.join(", ")} };`,
-  );
-  const built = factory(...Object.values(scope)) as Record<
+  const built = evaluateGeneratedModule(generated.code, scope) as Record<
     string,
     Parser<unknown>
   >;
@@ -430,7 +406,7 @@ export function compileRule(
   const parser = built[ruleName];
   if (!parser) {
     throw new Error(
-      `rule "${ruleName}" not found in generated code (available: ${ruleNames.join(", ")})`,
+      `rule "${ruleName}" not found in generated code (available: ${Object.keys(built).join(", ")})`,
     );
   }
 

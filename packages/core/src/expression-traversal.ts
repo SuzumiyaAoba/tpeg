@@ -68,11 +68,27 @@ export const forEachExpression = (
   expr: Expression,
   fn: (node: Expression) => void,
 ): void => {
-  fn(expr);
-  for (const child of childExpressions(expr)) {
-    forEachExpression(child, fn);
-  }
+  visitExpression(expr, fn, 0);
 };
+
+// Bound recursive calls independently of the tree's depth. The ordinary
+// small-tree path avoids allocating explicit frames and ancestor sets.
+const RECURSIVE_WALK_DEPTH = 64;
+
+function visitExpression(
+  expr: Expression,
+  fn: (node: Expression) => void,
+  depth: number,
+): void {
+  fn(expr);
+  if (depth === RECURSIVE_WALK_DEPTH) {
+    for (const child of walkDescendants(expr, false)) fn(child);
+  } else {
+    for (const child of childExpressions(expr)) {
+      visitExpression(child, fn, depth + 1);
+    }
+  }
+}
 
 /**
  * `true` iff `predicate` holds for `expr` or any descendant expression,
@@ -84,19 +100,117 @@ export const someExpression = (
   expr: Expression,
   predicate: (node: Expression) => boolean,
 ): boolean => {
-  const stack = [expr];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current) break;
-    if (predicate(current)) return true;
-    const children = childExpressions(current);
-    for (let i = children.length - 1; i >= 0; i--) {
-      const child = children[i];
-      if (child) stack.push(child);
+  return findExpression(expr, predicate, 0);
+};
+
+function findExpression(
+  expr: Expression,
+  predicate: (node: Expression) => boolean,
+  depth: number,
+): boolean {
+  if (predicate(expr)) return true;
+  if (depth === RECURSIVE_WALK_DEPTH) {
+    for (const child of walkDescendants(expr, true)) {
+      if (predicate(child)) return true;
+    }
+  } else {
+    const children = childExpressions(expr);
+    const length = children.length;
+    for (let index = 0; index < length; index++) {
+      if (
+        index in children &&
+        findExpression(children[index]!, predicate, depth + 1)
+      ) {
+        return true;
+      }
     }
   }
   return false;
-};
+}
+
+/**
+ * Resume each parent's child list after the child's subtree, preserving
+ * preorder and lazy indexed reads. `some` snapshots lengths and skips
+ * holes, matching Array.some; `forEach` follows the current length.
+ * Track only ancestors so a shared subtree is visited at each occurrence.
+ */
+function* walkDescendants(
+  root: Expression,
+  snapshotLength: boolean,
+): Generator<Expression> {
+  const children = childExpressions(root);
+  if (snapshotLength && children.length === 0) return;
+  const ancestors = new Set<Expression>([root]);
+  const makeFrame = (node: Expression, children: readonly Expression[]) => ({
+    node,
+    children,
+    index: 0,
+    limit: children.length,
+    iterator: snapshotLength ? undefined : children[Symbol.iterator](),
+  });
+  const frames = [makeFrame(root, children)];
+  let failed = false;
+  try {
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1]!;
+      let child: Expression;
+      if (frame.iterator) {
+        let step: IteratorResult<Expression>;
+        try {
+          step = frame.iterator.next();
+        } catch (error) {
+          // for-of does not close the iterator whose next() itself failed.
+          frames.pop();
+          throw error;
+        }
+        if (!step.done) child = step.value;
+        else {
+          ancestors.delete(frame.node);
+          frames.pop();
+          continue;
+        }
+      } else if (frame.index < frame.limit) {
+        const index = frame.index++;
+        if (!(index in frame.children)) continue;
+        child = frame.children[index]!;
+      } else {
+        ancestors.delete(frame.node);
+        frames.pop();
+        continue;
+      }
+      if (ancestors.has(child)) {
+        throw new TypeError(
+          "Cyclic expression AST encountered during traversal",
+        );
+      }
+      yield child;
+      const descendants = childExpressions(child);
+      if (!snapshotLength || descendants.length > 0) {
+        ancestors.add(child);
+        frames.push(makeFrame(child, descendants));
+      }
+    }
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    // Match nested for-of cleanup when a callback or descendant throws.
+    let closingFailed = false;
+    let closingError: unknown;
+    for (let index = frames.length - 1; index >= 0; index--) {
+      try {
+        frames[index]!.iterator?.return?.();
+      } catch (error) {
+        if (!closingFailed) closingError = error;
+        closingFailed = true;
+      }
+    }
+    // IteratorClose propagates cleanup failures on early return. The failed
+    // flag preserves any original error from the traversal itself.
+    // eslint-disable-next-line no-unsafe-finally
+    if (closingFailed && !failed) throw closingError;
+  }
+}
 
 /**
  * Returns `expr` with `fn` applied to each direct child, rebuilding the
@@ -176,11 +290,18 @@ export const mapChildExpressions = (
 export const unwrapToLabeledExpression = (
   expr: Expression,
 ): LabeledExpression | undefined => {
-  if (expr.type === "LabeledExpression") {
-    return expr;
+  if (expr.type !== "Group") {
+    return expr.type === "LabeledExpression" ? expr : undefined;
   }
-  if (expr.type === "Group") {
-    return unwrapToLabeledExpression(expr.expression);
+  const ancestors = new Set<Expression>();
+  while (expr.type === "Group") {
+    if (ancestors.has(expr)) {
+      throw new TypeError(
+        "Cyclic expression AST encountered while unwrapping groups",
+      );
+    }
+    ancestors.add(expr);
+    expr = expr.expression;
   }
-  return undefined;
+  return expr.type === "LabeledExpression" ? expr : undefined;
 };

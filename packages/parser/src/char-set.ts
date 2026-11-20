@@ -1,3 +1,4 @@
+import { getSingleCodePoint } from "@suzumiyaaoba/tpeg-core";
 import type { CharRange } from "./types";
 
 /**
@@ -130,8 +131,8 @@ export const charRangesToSet = (ranges: readonly CharRange[]): CharSet => {
  * otherwise. An astral character is one code point across two UTF-16 code
  * units, so length is compared against the code point's own unit width. */
 const codePointOfSingleCharBound = (bound: string): number => {
-  const cp = bound.codePointAt(0);
-  if (cp === undefined || bound.length !== (cp > 0xffff ? 2 : 1)) {
+  const cp = getSingleCodePoint(bound);
+  if (cp === undefined) {
     throw new Error(
       `Invalid character class range bound: "${bound}" is not exactly one character`,
     );

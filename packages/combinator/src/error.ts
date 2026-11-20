@@ -1,5 +1,6 @@
 import type { ParseFailure, Parser } from "@suzumiyaaoba/tpeg-core";
 import {
+  cloneParseError,
   getCharAt,
   renameWatermarkExpectationsSince,
   snapshotFailureWatermark,
@@ -31,20 +32,14 @@ export const withDetailedError = <T>(
 
     if (!result.success) {
       const failure = result as ParseFailure;
-      const enhancedError = { ...failure.error };
+      // FAIL's getter materializes a new error on each access. Use one
+      // snapshot so position, expected text and found refer to one error.
+      const error = failure.error;
+      const enhancedError = cloneParseError(error);
       enhancedError.parserName = parserName;
 
-      const failurePos = failure.error.pos ?? pos;
+      const failurePos = enhancedError.pos ?? pos;
 
-      // Keep the shared farthest-failure watermark in sync with this
-      // rename -- see `renameWatermarkExpectationsSince`'s doc comment
-      // (`tpeg-core`'s `failure.ts`) for why: without this, a `choice`
-      // this parser is one alternative of re-forwards the RENAMED
-      // failure as a SECOND, differently-named expectation for the same
-      // label once this rename turns `result` from the `FAIL` singleton
-      // into a plain object, doubling the resulting error message and
-      // dropping `parserName` from it entirely.
-      renameWatermarkExpectationsSince(input, watermarkBefore, parserName);
       // `getCharAt`, not `input[failurePos]`: the latter indexes by raw
       // UTF-16 code unit, so a failure positioned on an astral character
       // (e.g. an emoji) would return a lone, unpaired surrogate instead of
@@ -63,10 +58,21 @@ export const withDetailedError = <T>(
       }
 
       if (!enhancedError.message) {
-        enhancedError.message = `${parserName}: Expected ${
-          enhancedError.expected || "valid input"
-        } but found '${found}'`;
+        const expected = Array.isArray(enhancedError.expected)
+          ? enhancedError.expected.join(" or ")
+          : enhancedError.expected;
+        enhancedError.message = `${parserName}: Expected ${expected || "valid input"} but found '${found}'`;
       }
+
+      // Update only this call's records after adding details. An outer
+      // choice de-duplicates the returned failure against these records,
+      // so they must carry the decorated found/context as well as its name.
+      renameWatermarkExpectationsSince(input, watermarkBefore, parserName, {
+        found,
+        ...(enhancedError.context !== undefined && {
+          context: enhancedError.context,
+        }),
+      });
 
       return {
         success: false,
@@ -92,27 +98,44 @@ export const withDetailedError = <T>(
 export const named = <T>(parser: Parser<T>, parserName?: string): Parser<T> =>
   parserName ? withDetailedError(parser, parserName) : parser;
 
-/** Relabel a failure without replacing resource-limit diagnostics or losing a cut. */
-const relabelFailure = (
-  failure: ParseFailure,
-  pos: number,
-  message: string,
-  parserName?: string,
-  context?: string[],
-): ParseFailure => {
-  const error = failure.error;
-  if (error.abort === true) return failure;
-  return {
-    success: false,
-    error: {
-      message,
-      pos,
-      ...(context !== undefined && { context }),
-      ...(parserName && { parserName }),
-      ...(error.fatal && { fatal: true }),
-    },
+/** Apply the same label to a failure and the expectations recorded for this call. */
+const withLabel =
+  <T>(
+    parser: Parser<T>,
+    message: string,
+    parserName?: string,
+    context?: string | string[],
+  ): Parser<T> =>
+  (input, pos) => {
+    const watermarkBefore = parserName ? snapshotFailureWatermark() : undefined;
+    const result = parser(input, pos);
+    if (result.success) return result;
+
+    const error = result.error;
+    if (error.abort === true) return result;
+    if (parserName && watermarkBefore) {
+      renameWatermarkExpectationsSince(input, watermarkBefore, parserName);
+    }
+    const contextArray =
+      context === undefined
+        ? undefined
+        : Array.isArray(context)
+          ? [...context]
+          : [context];
+    return {
+      success: false,
+      error: {
+        message:
+          contextArray === undefined
+            ? message
+            : `${message} (in context: ${contextArray.join(" > ")})`,
+        pos,
+        ...(contextArray !== undefined && { context: contextArray }),
+        ...(parserName && { parserName }),
+        ...(error.fatal && { fatal: true }),
+      },
+    };
   };
-};
 
 /**
  * Creates a labeled parser with custom error message.
@@ -125,19 +148,11 @@ const relabelFailure = (
  * @param parserName Optional name for error reporting and debugging
  * @returns Parser<T> Labeled parser with custom error message
  */
-export const labeled =
-  <T>(
-    parser: Parser<T>,
-    errorMessage: string,
-    parserName?: string,
-  ): Parser<T> =>
-  (input: string, pos: number) => {
-    const result = parser(input, pos);
-    if (!result.success) {
-      return relabelFailure(result, pos, errorMessage, parserName);
-    }
-    return result;
-  };
+export const labeled = <T>(
+  parser: Parser<T>,
+  errorMessage: string,
+  parserName?: string,
+): Parser<T> => withLabel(parser, errorMessage, parserName);
 
 /**
  * Creates a labeled parser with custom error message and hierarchical context.
@@ -152,19 +167,9 @@ export const labeled =
  * @param parserName Optional name for error reporting and debugging
  * @returns Parser<T> Labeled parser with hierarchical context information
  */
-export const labeledWithContext =
-  <T>(
-    parser: Parser<T>,
-    errorMessage: string,
-    context: string | string[],
-    parserName?: string,
-  ): Parser<T> =>
-  (input: string, pos: number) => {
-    const result = parser(input, pos);
-    if (!result.success) {
-      const contextArray = Array.isArray(context) ? context : [context];
-      const fullMessage = `${errorMessage} (in context: ${contextArray.join(" > ")})`;
-      return relabelFailure(result, pos, fullMessage, parserName, contextArray);
-    }
-    return result;
-  };
+export const labeledWithContext = <T>(
+  parser: Parser<T>,
+  errorMessage: string,
+  context: string | string[],
+  parserName?: string,
+): Parser<T> => withLabel(parser, errorMessage, parserName, context);

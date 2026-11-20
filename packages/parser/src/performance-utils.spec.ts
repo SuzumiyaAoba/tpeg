@@ -9,7 +9,14 @@
  * rule dependency graph, which is what `analyzeGrammarPerformance` builds.
  */
 
-import { describe, expect, it } from "vite-plus/test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 import {
   analyzeExpressionComplexity,
   analyzeGrammarPerformance,
@@ -337,5 +344,80 @@ describe("PerformanceMonitor", () => {
   it("returns 0 for `end` with no matching `start`", () => {
     const monitor = new PerformanceMonitor();
     expect(monitor.end("never-started")).toBe(0);
+  });
+});
+
+describe("PerformanceMonitor independent timers", () => {
+  let now = 0;
+  beforeEach(() => {
+    now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("measures overlapping calls even when the first finishes first", () => {
+    const monitor = new PerformanceMonitor();
+    const first = monitor.startTimer("op");
+    now = 10;
+    const second = monitor.startTimer("op");
+    now = 30;
+    expect(first()).toBe(30);
+    now = 50;
+    expect(second()).toBe(40);
+    expect(monitor.getMetrics().get("op")).toEqual({
+      count: 2,
+      totalTime: 70,
+      averageTime: 35,
+    });
+    expect(monitor.end("op")).toBe(0);
+  });
+
+  it("records a timer only once when completed again", () => {
+    const monitor = new PerformanceMonitor();
+    const finish = monitor.startTimer("op");
+    now = 20;
+    expect(finish()).toBe(20);
+    now = 50;
+    expect(finish()).toBe(20);
+    expect(monitor.getMetrics().get("op")?.count).toBe(1);
+  });
+
+  it("keeps an independent timer separate from nested start/end pairs", () => {
+    const monitor = new PerformanceMonitor();
+    monitor.start("op");
+    now = 10;
+    const finish = monitor.startTimer("op");
+    now = 20;
+    monitor.start("op");
+    now = 30;
+    expect(finish()).toBe(20);
+    expect(monitor.end("op")).toBe(10);
+    now = 50;
+    expect(monitor.end("op")).toBe(50);
+    expect(monitor.getMetrics().get("op")).toEqual({
+      count: 3,
+      totalTime: 80,
+      averageTime: 80 / 3,
+    });
+  });
+
+  it("cancels unfinished timers on clear without corrupting new measurements", () => {
+    const monitor = new PerformanceMonitor();
+    const old = monitor.startTimer("op");
+    monitor.start("op");
+    now = 10;
+    monitor.clear();
+    const current = monitor.startTimer("op");
+    now = 30;
+    expect(old()).toBe(0);
+    expect(current()).toBe(20);
+    now = 50;
+    expect(old()).toBe(0);
+    expect(monitor.end("op")).toBe(0);
+    expect(monitor.getMetrics().get("op")).toEqual({
+      count: 1,
+      totalTime: 20,
+      averageTime: 20,
+    });
   });
 });

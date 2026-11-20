@@ -248,6 +248,7 @@ export class PerformanceMonitor {
   // halved (#109).
   private startTimes = new Map<string, number[]>();
   private metrics = new Map<string, { totalTime: number; count: number }>();
+  private timerEpoch = {};
 
   start(operation: string): void {
     const stack = this.startTimes.get(operation);
@@ -256,6 +257,28 @@ export class PerformanceMonitor {
     } else {
       this.startTimes.set(operation, [performance.now()]);
     }
+  }
+
+  /**
+   * Start an independent measurement and return its completion function.
+   * Unlike start/end pairs, these timers may complete in any order. Calling
+   * the completion function again returns the same duration without recording
+   * another call. clear() cancels unfinished timers.
+   */
+  startTimer(operation: string): () => number {
+    const startTime = performance.now();
+    const epoch = this.timerEpoch;
+    let duration: number | undefined;
+    return () => {
+      if (duration !== undefined) return duration;
+      if (this.timerEpoch !== epoch) {
+        duration = 0;
+        return duration;
+      }
+      duration = performance.now() - startTime;
+      this.recordDuration(operation, duration);
+      return duration;
+    };
   }
 
   end(operation: string): number {
@@ -271,13 +294,16 @@ export class PerformanceMonitor {
     const endTime = performance.now();
     const duration = endTime - startTime;
 
+    this.recordDuration(operation, duration);
+    return duration;
+  }
+
+  private recordDuration(operation: string, duration: number): void {
     const existing = this.metrics.get(operation) || { totalTime: 0, count: 0 };
     this.metrics.set(operation, {
       totalTime: existing.totalTime + duration,
       count: existing.count + 1,
     });
-
-    return duration;
   }
 
   getMetrics(): Map<
@@ -297,6 +323,7 @@ export class PerformanceMonitor {
   clear(): void {
     this.startTimes.clear();
     this.metrics.clear();
+    this.timerEpoch = {};
   }
 
   report(): string {

@@ -26,25 +26,9 @@
 import { describe, expect, test } from "vite-plus/test";
 import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import { generateTypeScriptParser } from "./codegen";
+import { compileStart } from "./differential-fuzz";
+import { evaluateGeneratedModule } from "./generated-runtime";
 import { grammarDefinition } from "./grammar";
-
-/** Mirrors `codegen-differential.spec.ts`'s `compileStart` -- generated
- * code (no imports, `includeImports: false`) has no static import
- * target, so it's compiled via `new Function` against the already-
- * loaded `tpeg-core`/`tpeg-combinator` namespaces. */
-const compileStart = (
-  code: string,
-  core: Record<string, unknown>,
-  combinator: Record<string, unknown>,
-): Parser<unknown> => {
-  const body = code.replace(/^export const (\w+)/gm, "const $1");
-  const scope = { ...combinator, ...core };
-  const factory = new Function(
-    ...Object.keys(scope),
-    `${body}\nreturn { start };`,
-  );
-  return (factory(...Object.values(scope)) as { start: Parser<unknown> }).start;
-};
 
 interface TableRow {
   /** The table's "Grammar Pattern" column, as a rule body. */
@@ -276,13 +260,8 @@ describe("rule-boundary capture-tag hygiene (regression: a single-label rule lea
     }).code;
     expect(code).toContain("untagCapture(capture(");
 
-    const body = code.replace(/^export const (\w+)/gm, "const $1");
     const scope = { ...combinator, ...core };
-    const factory = new Function(
-      ...Object.keys(scope),
-      `${body}\nreturn { outer };`,
-    );
-    const { outer } = factory(...Object.values(scope)) as {
+    const { outer } = evaluateGeneratedModule(code, scope) as {
       outer: Parser<unknown>;
     };
 
@@ -317,13 +296,8 @@ describe("rule-boundary capture-tag hygiene (regression: a single-label rule lea
       includeTypes: false,
     }).code;
 
-    const body = code.replace(/^export const (\w+)/gm, "const $1");
     const scope = { ...combinator, ...core };
-    const factory = new Function(
-      ...Object.keys(scope),
-      `${body}\nreturn { outer };`,
-    );
-    const { outer } = factory(...Object.values(scope)) as {
+    const { outer } = evaluateGeneratedModule(code, scope) as {
       outer: Parser<unknown>;
     };
 

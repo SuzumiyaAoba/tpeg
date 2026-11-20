@@ -46,6 +46,7 @@ import {
   collectUsedCombinators,
   isRuleReferencedAnywhere,
   collectTopLevelLabels,
+  collectRequiredTopLevelLabels,
   filterReferencedLabels,
   wrapWithAction,
   generateStringLiteralCode,
@@ -257,14 +258,15 @@ export class TPEGCodeGenerator {
       startRuleIsSafeForCommitAtTopLevel,
     );
     imports.push(...importLines);
+    const transformsByRuleName = collectTransformFunctions(desugared);
     validateGeneratedIdentifiers(desugared, {
       namePrefix: this.options.namePrefix,
       importedBindings,
+      requiresGlobalThis: transformsByRuleName.size > 0,
     });
 
     // Generate parser for each rule, applying a matching TypeScript
     // transform function (if the grammar declares one) to the rule's result
-    const transformsByRuleName = collectTransformFunctions(desugared);
     desugared.rules.forEach((rule, index) => {
       this.currentRuleIndex = index;
       const ruleCode = this.generateRule(
@@ -425,7 +427,12 @@ export class TPEGCodeGenerator {
       parserCode = wrapWithMemoize(parserCode, memoizeAnnotation);
     }
     if (transformFn) {
-      parserCode = wrapWithTransform(rule.name, parserCode, transformFn);
+      parserCode = wrapWithTransform(
+        rule.name,
+        parserCode,
+        transformFn,
+        this.options.includeTypes,
+      );
     }
     const name = this.options.namePrefix + rule.name;
 
@@ -506,7 +513,11 @@ export class TPEGCodeGenerator {
   }
 
   private generateStringLiteral(expr: StringLiteral): string {
-    return generateStringLiteralCode(expr.value);
+    return generateStringLiteralCode(
+      expr.value,
+      undefined,
+      this.options.includeTypes,
+    );
   }
 
   private generateCharacterClass(expr: CharacterClass): string {
@@ -677,7 +688,13 @@ export class TPEGCodeGenerator {
       expr.code,
       collectTopLevelLabels(expr.expression),
     );
-    return wrapWithAction(inner, expr.code, labels, this.options.includeTypes);
+    return wrapWithAction(
+      inner,
+      expr.code,
+      labels,
+      this.options.includeTypes,
+      labels.length > 0 ? collectRequiredTopLevelLabels(expr.expression) : [],
+    );
   }
 
   /**

@@ -70,28 +70,13 @@
  */
 
 import { describe, expect, test } from "vite-plus/test";
-import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import fc from "fast-check";
 import { generateTypeScriptParser } from "./codegen";
+import { compileStart } from "./differential-fuzz";
 import { grammarDefinition } from "./grammar";
 
 const FUZZ_SCALE = Math.max(1, Number(process.env["TPEG_FUZZ_SCALE"]) || 1);
 const FC_PARAMS = { seed: 20260819, numRuns: 200 * FUZZ_SCALE };
-
-/** Mirrors `capture-structure-table.spec.ts`'s `compileStart`. */
-const compileStart = (
-  code: string,
-  core: Record<string, unknown>,
-  combinator: Record<string, unknown>,
-): Parser<unknown> => {
-  const body = code.replace(/^export const (\w+)/gm, "const $1");
-  const scope = { ...combinator, ...core };
-  const factory = new Function(
-    ...Object.keys(scope),
-    `${body}\nreturn { start };`,
-  );
-  return (factory(...Object.values(scope)) as { start: Parser<unknown> }).start;
-};
 
 /** `helper`'s own fixed shape: a `captureSequence`-driving rule with two
  * labels, always matched by the fixed witness "pq". Every generated

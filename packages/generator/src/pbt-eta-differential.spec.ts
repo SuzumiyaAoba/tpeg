@@ -18,7 +18,7 @@
  * (grammar, input) pair instead of only ever being found at whichever of
  * the 54 fixed strings happens to trigger it.
  *
- * Grammar compilation (parsing, generating, `new Function`) is genuinely
+ * Grammar compilation (parsing, generating, generated-module evaluation) is genuinely
  * expensive and is not itself what this file adds coverage for, so it
  * happens ONCE per grammar, outside `fc.assert` -- `fc.constantFrom` over
  * the resulting compiled entries is what lets a single `fc.property` fuzz
@@ -156,7 +156,7 @@ describe("Eta generator differential fuzzing (fast-check input side, vs. tpeg-pa
           }
           entries.push({ source, base, variants });
         } catch {
-          // A construction-time rejection or `new Function` compile error --
+          // A construction-time rejection or generated-module evaluation compile error --
           // not a fast-check concern, exactly as in `eta-differential.spec.ts`.
           skippedCount++;
         }

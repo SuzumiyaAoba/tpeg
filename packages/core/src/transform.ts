@@ -4,6 +4,8 @@ import {
   snapshotFailureWatermark,
 } from "./failure";
 import type { ParseError, ParseFailure, ParseSuccess, Parser } from "./types";
+import { safeStringForDisplay } from "./escape";
+import { cloneParseError } from "./utils";
 
 /**
  * Parser that applies a transformation function to the parse result value.
@@ -26,11 +28,14 @@ export const map =
     const result = parser(input, pos);
 
     if (result.success) {
+      // Value getters and callbacks may reenter a parser that reuses its
+      // success object. Preserve this match's consumption first.
+      const { current, next } = result;
       return {
         success: true,
         val: f(result.val),
-        current: result.current,
-        next: result.next,
+        current,
+        next,
       };
     }
 
@@ -39,6 +44,8 @@ export const map =
 
 /**
  * Parser that transforms the entire ParseSuccess object on success.
+ * The mapper's return value replaces val; the consumed positions are
+ * captured before the callback so its mutations cannot change them.
  *
  * @template T Type of the input parse result value
  * @template U Type of the output value
@@ -58,11 +65,12 @@ export const mapResult =
     const result = parser(input, pos);
 
     if (result.success) {
+      const { current, next } = result;
       return {
         success: true,
         val: f(result),
-        current: result.current,
-        next: result.next,
+        current,
+        next,
       };
     }
 
@@ -71,6 +79,8 @@ export const mapResult =
 
 /**
  * Parser that transforms the error message on failure.
+ * Original fatal and abort flags are retained: diagnostic mapping must
+ * not turn a committed failure or resource-limit abort into backtracking.
  *
  * @template T Type of the parse result value
  * @param parser Target parser
@@ -92,10 +102,25 @@ export const mapError =
       return result;
     }
 
-    return {
-      success: false,
-      error: f(result.error),
-    };
+    const error = result.error;
+    // Snapshot before calling f: a mapper can mutate its argument as
+    // well as return a new diagnostic that omits the control flags.
+    const fatal = error.fatal === true;
+    const abort = error.abort === true;
+    const mapped = f(error);
+    if (
+      (!fatal || mapped.fatal === true) &&
+      (!abort || mapped.abort === true)
+    ) {
+      return { success: false, error: mapped };
+    }
+
+    // Retain the mapper's diagnostics and added control flags even when
+    // they live on a prototype or getter, then restore the original flags.
+    const repaired = cloneParseError(mapped);
+    if (fatal) repaired.fatal = true;
+    if (abort) repaired.abort = true;
+    return { success: false, error: repaired };
   };
 
 /**
@@ -124,11 +149,12 @@ export const span =
     const result = parser(input, pos);
 
     if (result.success) {
+      const { current, next } = result;
       return {
         success: true,
-        val: input.slice(result.current, result.next),
-        current: result.current,
-        next: result.next,
+        val: input.slice(current, next),
+        current,
+        next,
       };
     }
 
@@ -172,7 +198,11 @@ export const filter =
     const result = parser(input, pos);
 
     if (result.success) {
-      if (predicate(result.val)) {
+      // Diagnose the value actually tested, even if its getter or the
+      // predicate changes the child's result object.
+      const current = result.current;
+      const value = result.val;
+      if (predicate(value)) {
         return result;
       }
 
@@ -184,17 +214,17 @@ export const filter =
       // swallowed failure (e.g. inside `optional`) would otherwise leave
       // no trace of the predicate that was actually tried.
       restoreFailureWatermark(snapshot);
-      fail(input, result.current, {
+      fail(input, current, {
         label: "value satisfying predicate",
         parserName,
       });
 
       const error: ParseError = {
         message: errorMessage,
-        pos: result.current,
+        pos: current,
         parserName,
         expected: "value satisfying predicate",
-        found: String(result.val),
+        found: safeStringForDisplay(value),
       };
 
       return {

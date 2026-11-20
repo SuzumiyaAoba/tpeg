@@ -12,6 +12,7 @@
  * nodes directly is clearer.
  */
 
+import { evaluateGeneratedModule } from "./generated-runtime";
 import { describe, expect, it } from "vite-plus/test";
 import { parse } from "@suzumiyaaoba/tpeg-core";
 import type {
@@ -82,14 +83,8 @@ const ruleByName = (
 
 /**
  * Evaluates a generated module against the real tpeg-core/tpeg-combinator
- * exports, exactly like `codegen.spec.ts`'s runtime tests: `import`
- * statements and `export const` declarations are rewritten into plain
- * `const`s inside a `new Function` scope. Returns a `Record` keyed by
- * the literal `ruleNames` (a generic mapped type, so `mod.start` is a
- * concrete `Parser`, not `Parser | undefined` the way a
- * `Record<string, _>` index lookup is under
- * `noUncheckedIndexedAccess`) -- verifying each name produced a
- * function along the way.
+ * exports through the common module evaluator. Selecting literal rule
+ * names verifies that each export is a function and preserves their types.
  */
 const runGenerated = async <N extends string>(
   code: string,
@@ -98,23 +93,7 @@ const runGenerated = async <N extends string>(
   const core = await import("@suzumiyaaoba/tpeg-core");
   const combinator = await import("@suzumiyaaoba/tpeg-combinator");
   const scope = { ...combinator, ...core };
-  const body = code
-    .replace(/^import[^\n]*\n?/gm, "")
-    .replace(/^export const (\w+)(: Parser<[^>]*>)?/gm, "const $1");
-  const moduleFactory = new Function(
-    ...Object.keys(scope),
-    `${body}\nreturn { ${ruleNames.join(", ")} };`,
-  );
-  const mod = moduleFactory(...Object.values(scope)) as Record<string, unknown>;
-  const out = {} as Record<N, Parser<unknown>>;
-  for (const name of ruleNames) {
-    const parser = mod[name];
-    if (typeof parser !== "function") {
-      throw new Error(`generated module did not produce rule "${name}"`);
-    }
-    out[name] = parser as Parser<unknown>;
-  }
-  return out;
+  return evaluateGeneratedModule(code, scope, ruleNames);
 };
 
 describe("resolveSkipRuleName", () => {

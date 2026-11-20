@@ -9,10 +9,11 @@ import {
   getCapturedValue,
   isCapturedValue,
   mergeCaptures,
+  untagCapture,
 } from "./capture";
 import { choice, commit, sequence } from "./combinators";
 import { resetFailureWatermark } from "./failure";
-import type { Parser } from "./types";
+import type { ParseSuccess, Parser } from "./types";
 
 // See `combinators.spec.ts`'s identical `beforeEach` -- the farthest-failure
 // watermark (`./failure.ts`) is module-global, keyed by input string VALUE.
@@ -20,7 +21,114 @@ beforeEach(() => {
   resetFailureWatermark();
 });
 
+describe("capture result getters", () => {
+  it("captureSequence reads a value once before moving to the next element", () => {
+    let valueReads = 0;
+    const child: ParseSuccess<string> = {
+      success: true,
+      current: 0,
+      next: 1,
+      get val() {
+        child.next = 0;
+        return valueReads++ === 0 ? "a" : "wrong";
+      },
+    };
+    expect(captureSequence(() => child, literal("b"))("ab", 0)).toEqual({
+      success: true,
+      val: ["a", "b"],
+      current: 0,
+      next: 2,
+    });
+    expect(valueReads).toBe(1);
+  });
+
+  it("captureSequence classifies and merges the value obtained on the first read", () => {
+    const captured = capture("key", literal("a"))("a", 0);
+    if (!captured.success) throw new Error("expected a captured value");
+    let valueReads = 0;
+    const child: Parser<unknown> = () => ({
+      success: true,
+      current: 0,
+      next: 1,
+      get val() {
+        return valueReads++ === 0 ? captured.val : "wrong";
+      },
+    });
+    expect(captureSequence(child)("a", 0)).toEqual({
+      success: true,
+      val: { key: "a" },
+      current: 0,
+      next: 1,
+    });
+    expect(valueReads).toBe(1);
+  });
+
+  it("untagCapture copies the tagged value obtained on the first read", () => {
+    const captured = capture("key", literal("a"))("a", 0);
+    if (!captured.success) throw new Error("expected a captured value");
+    let valueReads = 0;
+    const child: Parser<CapturedValue> = () => ({
+      success: true,
+      current: 0,
+      next: 1,
+      get val() {
+        return valueReads++ === 0 ? captured.val : { wrong: true };
+      },
+    });
+    const result = untagCapture(child)("a", 0);
+    expect(result).toEqual({
+      success: true,
+      val: { key: "a" },
+      current: 0,
+      next: 1,
+    });
+    expect(valueReads).toBe(1);
+    expect(captureSequence(() => result)("a", 0)).toMatchObject({
+      success: true,
+      val: [{ key: "a" }],
+    });
+  });
+
+  it("untagCapture keeps consumption when copying a captured field invokes a getter", () => {
+    const captured = capture("key", literal("a"))("xa", 1);
+    if (!captured.success) throw new Error("expected a captured value");
+    Object.defineProperty(captured.val, "key", {
+      enumerable: true,
+      get() {
+        captured.current = 0;
+        captured.next = 0;
+        return "a";
+      },
+    });
+    expect(untagCapture(() => captured)("xa", 1)).toEqual({
+      success: true,
+      val: { key: "a" },
+      current: 1,
+      next: 2,
+    });
+  });
+});
+
 describe("capture", () => {
+  it("keeps the consumed positions when reading a labeled value changes the child", () => {
+    const child: ParseSuccess<string> = {
+      success: true,
+      current: 1,
+      next: 2,
+      get val() {
+        child.current = 0;
+        child.next = 0;
+        return "a";
+      },
+    };
+    expect(capture("key", () => child)("xa", 1)).toEqual({
+      success: true,
+      val: { key: "a" },
+      current: 1,
+      next: 2,
+    });
+  });
+
   const pos = 0;
 
   describe("basic capture functionality", () => {
@@ -401,6 +509,51 @@ describe("capture", () => {
       expect(getCapturedValue<number>(captured, "count")).toBe(42);
       expect(getCapturedValue<boolean>(captured, "active")).toBe(true);
       expect(getCapturedValue<string>(captured, "missing")).toBeUndefined();
+    });
+
+    it.each(["constructor", "toString", "__proto__"])(
+      "getCapturedValue excludes the uncaptured prototype property %s",
+      (label) => {
+        const result = capture("name", literal("hello"))("hello", 0);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(getCapturedValue(result.val, label)).toBeUndefined();
+        }
+      },
+    );
+
+    it("getCapturedValue does not evaluate inherited accessors", () => {
+      let reads = 0;
+      const captured: CapturedValue = { name: "hello" };
+      Object.setPrototypeOf(captured, {
+        get missing() {
+          reads++;
+          return "not captured";
+        },
+      });
+      expect(getCapturedValue(captured, "missing")).toBeUndefined();
+      expect(reads).toBe(0);
+      expect(getCapturedValue(captured, "name")).toBe("hello");
+    });
+
+    it("getCapturedValue retrieves explicit prototype-named labels", () => {
+      const result = captureSequence(
+        capture("__proto__", literal("a")),
+        capture("constructor", literal("b")),
+        capture("hasOwnProperty", literal("c")),
+      )("abc", 0);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(getCapturedValue(result.val as CapturedValue, "__proto__")).toBe(
+          "a",
+        );
+        expect(
+          getCapturedValue(result.val as CapturedValue, "constructor"),
+        ).toBe("b");
+        expect(
+          getCapturedValue(result.val as CapturedValue, "hasOwnProperty"),
+        ).toBe("c");
+      }
     });
   });
 

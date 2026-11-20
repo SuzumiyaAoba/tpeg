@@ -20,6 +20,16 @@ const NAMED_CONTROL_CHAR_ESCAPES: Record<string, string> = {
   "\0": "\\x00",
 };
 
+/** Converts a value for diagnostics without allowing a missing or
+ * throwing primitive conversion to replace the original parse outcome. */
+export const safeStringForDisplay = (value: unknown): string => {
+  try {
+    return String(value);
+  } catch {
+    return "<unprintable value>";
+  }
+};
+
 /**
  * Escapes a string literal's value for embedding in generated TypeScript
  * source (as the argument to `literal("...")`, or as a string-literal TYPE
@@ -75,7 +85,7 @@ export const escapeStringLiteral = (value: string): string => {
 
 /**
  * Escapes only the characters that would corrupt a human-readable
- * diagnostic -- C0 control characters, DEL, and the U+2028/U+2029 line
+ * diagnostic -- C0/C1 control characters, DEL, and the U+2028/U+2029 line
  * separators -- leaving everything else (including quotes and
  * backslashes) as-is. Used for parse-error labels and the `found` text
  * in error messages: a literal like `"\n"` or an input character like
@@ -91,7 +101,12 @@ export const escapeControlCharsForDisplay = (text: string): string => {
       continue;
     }
     const code = char.codePointAt(0) ?? 0;
-    if (code < 0x20 || code === 0x7f || code === 0x2028 || code === 0x2029) {
+    if (
+      code < 0x20 ||
+      (code >= 0x7f && code <= 0x9f) ||
+      code === 0x2028 ||
+      code === 0x2029
+    ) {
       result +=
         code > 0xff
           ? `\\u${code.toString(16).padStart(4, "0")}`

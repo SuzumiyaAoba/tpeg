@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
+import { transformWithOxc } from "vite-plus";
+import { evaluateGeneratedModule } from "@suzumiyaaoba/tpeg-parser";
 import {
   existsSync,
   mkdtempSync,
@@ -205,6 +207,57 @@ describe("tpeg CLI", () => {
     expect(stderr).not.toContain("\r");
   });
 
+  it.each([
+    "read failure",
+    "parse failure",
+    "trailing content",
+    "write failure",
+    "write success",
+  ])(
+    "escapes control characters in file paths and filesystem diagnostics: %s",
+    (mode) => {
+      const inputPath = join(dir, "input\r\x1b.tpeg");
+      const outputPath = join(dir, "output\r\x1b.ts");
+      if (mode !== "read failure") {
+        const source =
+          mode === "parse failure"
+            ? "invalid grammar"
+            : mode === "trailing content"
+              ? `${SIMPLE_GRAMMAR}\ngarbage`
+              : SIMPLE_GRAMMAR;
+        writeFileSync(inputPath, source, "utf8");
+      }
+      const args = [inputPath];
+      if (mode === "write failure")
+        args.push("-o", join(dir, "missing", "output\r\x1b.ts"));
+      if (mode === "write success") args.push("-o", outputPath);
+      const { exitCode, stderr } = captureOutput(() => run(args));
+      expect(exitCode).toBe(mode === "write success" ? 0 : 1);
+      expect(stderr).toContain("\\r\\x1b");
+      expect(stderr).not.toContain("\r");
+      expect(stderr).not.toContain("\x1b");
+      if (mode === "write success")
+        expect(readFileSync(outputPath, "utf8")).toContain(
+          "export const number",
+        );
+    },
+  );
+
+  it("escapes control characters in the import note while preserving generated code", () => {
+    const inputPath = join(dir, "grammar.tpeg");
+    writeFileSync(
+      inputPath,
+      `import "dep\\r\\x1b.tpeg"\n${SIMPLE_GRAMMAR}`,
+      "utf8",
+    );
+    const { exitCode, stdout, stderr } = captureOutput(() => run([inputPath]));
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("export const number");
+    expect(stderr).toContain("dep\\r\\x1b.tpeg");
+    expect(stderr).not.toContain("\r");
+    expect(stderr).not.toContain("\x1b");
+  });
+
   it("warns on stderr (not stdout) about an unresolved QualifiedIdentifier reference, but still exits 0", () => {
     // A `QualifiedIdentifier` (`module.rule`) is an intentional escape
     // hatch for binding a hand-written parser from another module -- not
@@ -256,6 +309,18 @@ describe("tpeg CLI", () => {
     const { exitCode, stderr } = captureOutput(() => run([inputPath]));
     expect(exitCode).toBe(1);
     expect(stderr).toContain("failed to parse");
+  });
+
+  it("reports the actual location of trailing content after whitespace and comments", () => {
+    const inputPath = join(dir, "grammar.tpeg");
+    writeFileSync(
+      inputPath,
+      'grammar T { r = "x" }\n\n// comment\n/* block\ncomment */\n  unexpected',
+      "utf8",
+    );
+    const { exitCode, stderr } = captureOutput(() => run([inputPath]));
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("line 6, column 3");
   });
 
   it("accepts trailing whitespace and a trailing comment after the last block", () => {
@@ -533,15 +598,11 @@ grammar Cuttable {
     );
     expect(exitCode).toBe(0);
 
-    const code = readFileSync(outputPath, "utf8");
-    const body = code
-      .replace(/^import[^\n]*\n?/gm, "")
-      .replace(/^export const (\w+): Parser<[^>]*>/gm, "const $1");
-    const moduleFactory = new Function(
-      ...Object.keys(core),
-      `${body}\nreturn { number };`,
+    const { code } = await transformWithOxc(
+      readFileSync(outputPath, "utf8"),
+      "generated-transform.ts",
     );
-    const { number } = moduleFactory(...Object.values(core));
+    const { number } = evaluateGeneratedModule(code, core, ["number"]);
 
     const pos = 0;
     expect(number("42", pos)).toMatchObject({ success: true, val: 42 });

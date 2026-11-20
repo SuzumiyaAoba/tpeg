@@ -1322,6 +1322,24 @@ describe("validateGeneratedIdentifiers: reserved words and import collisions", (
     }
   });
 
+  it.each(["__current", "__next"])(
+    "rejects rule and external parser names that shadow the %s snapshot binding",
+    (name) => {
+      for (const [source, namePrefix] of [
+        [`${name} = "a"`, ""],
+        [`${name.slice(2)} = "a"`, "__"],
+        [`start = ${name} { return $$; }`, ""],
+      ] as const) {
+        expect(() =>
+          validateGeneratedIdentifiers(grammarFromSource(source), {
+            namePrefix,
+            importedBindings: [],
+          }),
+        ).toThrow(/code generator itself (uses internally|declares)/);
+      }
+    },
+  );
+
   it("rejects a capture label that is a reserved word, even when the enclosing action never references it by name", () => {
     const grammar = grammarFromSource('start = new:"a" { return $$; }');
     expect(() =>
@@ -1347,7 +1365,14 @@ describe("validateGeneratedIdentifiers: reserved words and import collisions", (
     // apply to labels: `const { __base } = $$` sits inside the inner
     // `(() => { ... })()` scope, legally shadowing the wrapper's
     // `const __base` rather than colliding with it.
-    for (const name of ["__base", "__result", "__transformed", "__val"]) {
+    for (const name of [
+      "__base",
+      "__result",
+      "__transformed",
+      "__val",
+      "__current",
+      "__next",
+    ]) {
       const grammar = grammarFromSource(
         `start = ${name}:"a" { return ${name}; }`,
       );
@@ -1765,12 +1790,11 @@ describe("validateGeneratedIdentifiers: emitted-name shape and external referenc
     );
   });
 
-  it('rejects a capture label named "$$" -- collides with wrapWithAction\'s own `const $$` in the same scope (duplicate lexical declaration)', () => {
+  it('rejects a capture label named "$$" -- reserved for the action\'s aggregate capture value', () => {
     // `$$` IS identifier-shaped (JS_IDENTIFIER_FULL admits `$`), so it
-    // passes the shape/reserved-word checks -- but `wrapWithAction` emits
-    // `const $$ = __result.val;` and `const { $$ } = ($$ ?? {});` in the
-    // SAME IIFE scope: a duplicate `const $$`, a SyntaxError in the
-    // generated file. Reachable only from a hand-built AST (the grammar
+    // passes the shape/reserved-word checks -- but `const { $$ } =
+    // ($$ ?? {})` reads the label's own uninitialized binding, shadowing
+    // the aggregate value. Reachable only from a hand-built AST (the grammar
     // parser's identifier rule can't produce a `$`).
     const grammar = createGrammarDefinition(
       "G",

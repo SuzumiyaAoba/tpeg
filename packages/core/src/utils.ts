@@ -1,5 +1,4 @@
-import { resetFailureWatermark } from "./failure";
-import { beginParseSession } from "./parse-session";
+import { withParseSession } from "./parse-session";
 import {
   PARSER_LIMITS,
   type ParseLimitOptions,
@@ -83,7 +82,7 @@ export const isNonEmptyArray = <T>(
  *
  * @param input - The input string to read from
  * @param offset - The position in the string to start reading (0-based)
- * @returns A tuple containing [character, length in code units]. Returns ["", 0] if out of range
+ * @returns A tuple containing [character, length in code units]. Returns ["", 0] for an invalid or out-of-range offset
  *
  * @example
  * ```typescript
@@ -98,7 +97,7 @@ export const getCharAndLength = (
   input: string,
   offset: number,
 ): [string, number] => {
-  if (offset < 0 || offset >= input.length) {
+  if (!isValidOffset(offset) || offset >= input.length) {
     return ["", 0];
   }
 
@@ -108,6 +107,17 @@ export const getCharAndLength = (
   return [char, char.length];
 };
 
+/** Returns a string's sole Unicode code point, or undefined for an empty
+ * or multi-code-point string. Lone surrogates count as one code point,
+ * matching JavaScript string iteration. Checks at most two UTF-16 units
+ * without iterating or allocating an array. */
+export const getSingleCodePoint = (input: string): number | undefined => {
+  if (input.length === 1) return input.charCodeAt(0);
+  if (input.length !== 2) return undefined;
+  const code = input.codePointAt(0) as number;
+  return code > 0xffff ? code : undefined;
+};
+
 /**
  * Gets a single character from the input string at the given offset,
  * without allocating the `[char, length]` tuple that {@link getCharAndLength}
@@ -115,7 +125,7 @@ export const getCharAndLength = (
  *
  * @param input - The input string to read from
  * @param offset - The position in the string to start reading (0-based)
- * @returns The character at `offset` (may be a surrogate pair), or "" if out of range
+ * @returns The character at `offset` (may be a surrogate pair), or "" for an invalid or out-of-range offset
  *
  * @example
  * ```typescript
@@ -127,7 +137,7 @@ export const getCharAndLength = (
  * ```
  */
 export const getCharAt = (input: string, offset: number): string => {
-  if (offset < 0 || offset >= input.length) {
+  if (!isValidOffset(offset) || offset >= input.length) {
     return "";
   }
 
@@ -173,7 +183,9 @@ export const nextPos = (char: string, pos: number): number => pos + char.length;
  * `result.next === currentPos` loop guard (`NaN === NaN` is false) and
  * looped forever (`./repetition.ts`).
  *
- * `pos >>> 0 === pos` says all of that in one compare: `ToUint32` is the
+ * Non-numbers are rejected before the bitwise check, without invoking
+ * primitive conversion or throwing on values such as Symbol and BigInt.
+ * For numbers, `pos >>> 0 === pos` says all of that in one compare: `ToUint32` is the
  * identity exactly on the uint32 values -- negatives fold to huge
  * (unequal) numbers, fractions/`NaN`/`Infinity` collapse to 0 or truncate
  * (never equal), and anything >= 2³² wraps. `-0` passes, indexing
@@ -182,7 +194,8 @@ export const nextPos = (char: string, pos: number): number => pos + char.length;
  * "is there a character here", which is why the two tests stay separate
  * at the leaf sites rather than collapsing into one helper.
  */
-export const isValidOffset = (pos: number): boolean => pos >>> 0 === pos;
+export const isValidOffset = (pos: unknown): boolean =>
+  typeof pos === "number" && pos >>> 0 === pos;
 
 /**
  * Creates a failure result with detailed error information.
@@ -305,10 +318,10 @@ export const parse = <T>(
   parser: Parser<T>,
   options: ParseLimitOptions = {},
 ): ((input: string) => ParseResult<T>) => {
-  const maxInputLength =
-    options.maxInputLength ?? PARSER_LIMITS.MAX_INPUT_LENGTH;
-  const maxRecursionDepth =
-    options.maxRecursionDepth ?? PARSER_LIMITS.MAX_RECURSION_DEPTH;
+  const {
+    maxInputLength = PARSER_LIMITS.MAX_INPUT_LENGTH,
+    maxRecursionDepth = PARSER_LIMITS.MAX_RECURSION_DEPTH,
+  } = options;
   validateLimitOption("maxInputLength", maxInputLength);
   validateLimitOption("maxRecursionDepth", maxRecursionDepth);
   return (input: string): ParseResult<T> => {
@@ -324,53 +337,23 @@ export const parse = <T>(
           message: `Input length ${input.length} exceeds the maximum of ${maxInputLength}`,
           pos: 0,
           fatal: true,
+          abort: true,
         },
       };
     }
 
-    // Start this top-level parse with a clean farthest-failure watermark
-    // (see `./failure.ts`) rather than relying on `fail`'s own
-    // `input !== watermarkInput` identity check -- a direct `Parser<T>`
-    // call that bypasses `parse()` still gets that check as a fallback,
-    // but a caller going through `parse()` gets a guaranteed-fresh start
-    // even if this exact `input` string (by value) was already used by an
-    // unrelated previous parse.
-    resetFailureWatermark();
-    // Likewise start a fresh parse session, so session-scoped caches
-    // (`memoize`) never hand this parse a previous parse's results for
-    // the same input text -- see `./parse-session.ts`.
-    beginParseSession();
-    const result = withRecursionDepthLimit(maxRecursionDepth, () =>
-      parser(input, 0),
-    );
-    if (result.success) return result;
+    return withParseSession(() => {
+      const result = withRecursionDepthLimit(maxRecursionDepth, () =>
+        parser(input, 0),
+      );
+      if (result.success) return result;
 
-    // A failing `result` here is very likely `FAIL`/`FAIL_FATAL`
-    // (`./failure.ts`) -- the same frozen singleton every failing leaf
-    // parser in the whole process returns, whose `.error` is a GETTER
-    // that re-materializes from the module-global watermark on every
-    // read. Returning that singleton across this function's boundary
-    // would hand the caller something that looks like an ordinary value
-    // but silently changes contents (or, after any LATER successful
-    // parse anywhere in the process resets the watermark, becomes an
-    // invalid `{ message: "Parse failed", pos: -1 }` that even this
-    // package's OWN `formatParseError`/`formatParseResult` throw on) --
-    // observable any time a caller holds onto a failed `ParseResult` past
-    // the next parse it (or anything else sharing this module) performs
-    // (a batch/collect-then-report loop, a test helper, `Promise.all`
-    // over several documents). Reading `.error` here, once, at the
-    // natural point this top-level parse is already concluding, snapshots
-    // whatever the watermark holds RIGHT NOW into a plain, already-
-    // materialized value baked into a genuinely fresh result object --
-    // exactly once per call to `parse()`, not once per discarded
-    // backtracking attempt, so the packrat-friendly zero-allocation
-    // control-flow path `fail()`/`FAIL` exists for is untouched.
-    //
-    // Safe for a non-singleton failure too (a hand-written parser, or a
-    // `createFailure` (`./utils.ts`) result): `.error` on those is
-    // already a plain, already-computed value -- re-reading it and
-    // copying it into a new object is a no-op for correctness there.
-    return { success: false, error: result.error };
+      // FAIL/FAIL_FATAL expose a lazy error derived from the current
+      // watermark. Materialize it before the session restores an outer
+      // parse's diagnostics, and before a later parse resets them. This
+      // allocates once per completed parse, keeping backtracking cheap.
+      return { success: false, error: result.error };
+    });
   };
 };
 
@@ -586,6 +569,10 @@ const getLineStartOffsets = (input: string): Uint32Array => {
  * length) walk. Both costs are fine here specifically because this
  * function runs only on demand (once per formatted error, or once per
  * `withPosition` call), never once per character consumed.
+ * Offsets past the input remain unchanged in the returned object, with
+ * the column bounded by the last line's length.
+ *
+ * @throws {RangeError} If `offset` is not a finite, non-negative integer number.
  *
  * @example
  * ```typescript
@@ -594,6 +581,9 @@ const getLineStartOffsets = (input: string): Uint32Array => {
  * ```
  */
 export const offsetToPos = (input: string, offset: number): Pos => {
+  if (typeof offset !== "number" || !Number.isInteger(offset) || offset < 0) {
+    throw new RangeError("Offset must be a finite non-negative integer");
+  }
   const lineStartOffsets = getLineStartOffsets(input);
 
   let lo = 0;

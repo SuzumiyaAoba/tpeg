@@ -4,6 +4,7 @@
  * compile it with the real code generator, and run the generated parser.
  */
 
+import { evaluateGeneratedModule } from "./generated-runtime";
 import { describe, expect, test } from "vite-plus/test";
 import { type Parser } from "@suzumiyaaoba/tpeg-core";
 import { promoteGlobalCuts } from "./ast-optimize";
@@ -29,12 +30,7 @@ describe("`~` cut operator, parsed from grammar text", () => {
       includeImports: false,
       includeTypes: false,
     });
-    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-    const moduleFactory = new Function(
-      ...Object.keys(core),
-      `${body}\nreturn { stmt };`,
-    );
-    const { stmt } = moduleFactory(...Object.values(core));
+    const { stmt } = evaluateGeneratedModule(result.code, core, ["stmt"]);
 
     const pos = 0;
     expect(stmt("if", pos).success).toBe(true);
@@ -69,17 +65,10 @@ describe("commitAtTopLevel (Phase 3: cut-driven memo table truncation), parsed f
       'import { commitAtTopLevel } from "@suzumiyaaoba/tpeg-combinator";',
     );
 
-    const body = result.code
-      .replace(/^import .+$/gm, "")
-      .replace(/^export const (\w+)/gm, "const $1");
-    const moduleFactory = new Function(
-      ...Object.keys(core),
-      ...Object.keys(combinator),
-      `${body}\nreturn { program };`,
-    );
-    const { program } = moduleFactory(
-      ...Object.values(core),
-      ...Object.values(combinator),
+    const { program } = evaluateGeneratedModule(
+      result.code,
+      { ...core, ...combinator },
+      ["program"],
     );
 
     const pos = 0;
@@ -158,13 +147,11 @@ describe("commitAtTopLevel (Phase 3: cut-driven memo table truncation), parsed f
       return wrapped;
     };
 
-    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
     const scope = { ...core, ...combinator, literal: countingLiteral };
-    const moduleFactory = new Function(
-      ...Object.keys(scope),
-      `${body}\nreturn { program, shared };`,
-    );
-    const { program, shared } = moduleFactory(...Object.values(scope));
+    const { program, shared } = evaluateGeneratedModule(result.code, scope, [
+      "program",
+      "shared",
+    ]);
 
     const pos = 0;
     // "axaxHB": header matches 2 reps of "a x" (offsets 0 and 2, each
@@ -390,13 +377,11 @@ describe("promoteGlobalCuts (cut promotion beyond the start rule's own top-level
       return wrapped;
     };
 
-    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
     const scope = { ...core, ...combinator, literal: countingLiteral };
-    const moduleFactory = new Function(
-      ...Object.keys(scope),
-      `${body}\nreturn { start, shared };`,
-    );
-    const { start, shared } = moduleFactory(...Object.values(scope));
+    const { start, shared } = evaluateGeneratedModule(result.code, scope, [
+      "start",
+      "shared",
+    ]);
 
     const pos = 0;
     // "axaxHB": header matches 2 reps of "a x" (offsets 0 and 2, each
@@ -495,13 +480,10 @@ describe("predictiveChoice must not skip an alternative that can commit without 
     expect(optResult.code).toContain("predictiveChoice(");
 
     const compile = (code: string, name: string) => {
-      const body = code.replace(/^export const (\w+)/gm, "const $1");
       const scope = { ...core, ...combinator };
-      const factory = new Function(
-        ...Object.keys(scope),
-        `${body}\nreturn { ${name} };`,
-      );
-      return factory(...Object.values(scope))[name] as Parser<unknown>;
+      return evaluateGeneratedModule(code, scope, [name])[
+        name
+      ] as Parser<unknown>;
     };
     const base = compile(baseResult.code, "start");
     const opt = compile(optResult.code, "start");
@@ -537,13 +519,8 @@ describe("predictiveChoice must not skip an alternative that can commit without 
     });
     expect(optResult.code).toContain("predictiveChoice(");
 
-    const body = optResult.code.replace(/^export const (\w+)/gm, "const $1");
     const scope = { ...core, ...combinator };
-    const factory = new Function(
-      ...Object.keys(scope),
-      `${body}\nreturn { start };`,
-    );
-    const { start } = factory(...Object.values(scope)) as {
+    const { start } = evaluateGeneratedModule(optResult.code, scope) as {
       start: Parser<unknown>;
     };
 
@@ -579,15 +556,10 @@ describe("`@memoize` annotation, parsed from grammar text", () => {
     expect(result.code).toContain("memoize(");
     expect(result.code).toContain("maxCacheSize: 4");
 
-    const body = result.code.replace(/^export const (\w+)/gm, "const $1");
-    const moduleFactory = new Function(
-      ...Object.keys(core),
-      ...Object.keys(combinator),
-      `${body}\nreturn { digits };`,
-    );
-    const { digits } = moduleFactory(
-      ...Object.values(core),
-      ...Object.values(combinator),
+    const { digits } = evaluateGeneratedModule(
+      result.code,
+      { ...core, ...combinator },
+      ["digits"],
     );
 
     const pos = 0;

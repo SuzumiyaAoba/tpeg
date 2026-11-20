@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { safeStringForDisplay } from "@suzumiyaaoba/tpeg-core";
 import { astToString, calculate, examples, parseToAST } from "./calculator";
 
 /**
@@ -60,7 +61,9 @@ function printExamples() {
         const result = calculate(expr);
         console.log(`  ${expr.padEnd(20)} => ${result}`);
       } catch (error) {
-        console.log(`  ${expr.padEnd(20)} => Error: ${error}`);
+        console.log(
+          `  ${expr.padEnd(20)} => Error: ${safeStringForDisplay(error)}`,
+        );
       }
     }
   }
@@ -106,7 +109,7 @@ function handleCommand(input: string) {
       console.log(astToString(ast));
       console.log(`Result: ${result}`);
     } catch (error) {
-      console.error(`Error: ${error}`);
+      console.error(`Error: ${safeStringForDisplay(error)}`);
     }
     return false;
   }
@@ -116,7 +119,7 @@ function handleCommand(input: string) {
     const result = calculate(trimmed);
     console.log(`=> ${result}`);
   } catch (error) {
-    console.error(`Error: ${error}`);
+    console.error(`Error: ${safeStringForDisplay(error)}`);
   }
 
   return false;

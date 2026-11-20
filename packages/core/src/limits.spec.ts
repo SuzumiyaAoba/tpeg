@@ -8,11 +8,102 @@ import {
   sequence,
   zeroOrMore,
 } from "./index";
-import { PARSER_LIMITS } from "./limits";
+import {
+  PARSER_LIMITS,
+  guardedParserCall,
+  withRecursionDepthLimit,
+} from "./limits";
+import type { ParseLimitOptions } from "./limits";
 import type { Parser } from "./types";
 
 describe("PARSER_LIMITS", () => {
+  describe("public limit validation", () => {
+    it.each([0, -1, Number.NaN, 1.5])(
+      "rejects a direct recursion limit of %s before calling the callback",
+      (limit) => {
+        let calls = 0;
+        expect(() =>
+          withRecursionDepthLimit(limit, () => {
+            calls++;
+          }),
+        ).toThrow(RangeError);
+        expect(calls).toBe(0);
+      },
+    );
+
+    it.each(["maxInputLength", "maxRecursionDepth"] as const)(
+      "rejects explicit null for %s rather than silently using the default",
+      (name) => {
+        expect(() =>
+          parse(literal("a"), { [name]: null } as unknown as ParseLimitOptions),
+        ).toThrow(RangeError);
+      },
+    );
+
+    it.each([
+      ["symbol", Symbol("limit")],
+      ["object without a prototype", Object.create(null) as object],
+      [
+        "throwing primitive conversion",
+        {
+          [Symbol.toPrimitive]() {
+            throw new Error("must not replace validation");
+          },
+        },
+      ],
+    ])(
+      "reports an invalid %s limit as RangeError even if its conversion fails",
+      (_kind, limit) => {
+        expect(() =>
+          parse(literal("a"), {
+            maxInputLength: limit,
+          } as unknown as ParseLimitOptions),
+        ).toThrow(RangeError);
+      },
+    );
+
+    it("retains an enclosing recursion limit when a nested invalid limit is rejected", () => {
+      withRecursionDepthLimit(1, () => {
+        expect(() =>
+          withRecursionDepthLimit(Number.NaN, () => undefined),
+        ).toThrow(RangeError);
+        const result = guardedParserCall(
+          () => guardedParserCall(() => literal("a")("a", 0), 0),
+          0,
+        );
+        expect(result).toMatchObject({
+          success: false,
+          error: { abort: true },
+        });
+      });
+      expect(parse(literal("a"))("a").success).toBe(true);
+    });
+  });
+
   describe("input length limit", () => {
+    const limited = parse(literal("ab"), { maxInputLength: 1 });
+    const limitedChild: Parser<string> = (input) => limited(input);
+
+    it("marks an input-length limit failure as an abort", () => {
+      expect(limited("ab")).toMatchObject({
+        success: false,
+        error: { fatal: true, abort: true },
+      });
+    });
+
+    it("keeps an input-length limit failure from becoming a negative-lookahead success", () => {
+      expect(parse(not(limitedChild))("ab")).toMatchObject({
+        success: false,
+        error: { abort: true },
+      });
+    });
+
+    it("keeps an input-length limit failure from backtracking through nested choices", () => {
+      expect(
+        parse(choice(choice(limitedChild), literal("ab")))("ab"),
+      ).toMatchObject({ success: false, error: { abort: true } });
+    });
+
     it("accepts input at the maximum length", () => {
       const input = "a".repeat(PARSER_LIMITS.MAX_INPUT_LENGTH);
       const result = parse(literal(input))(input);

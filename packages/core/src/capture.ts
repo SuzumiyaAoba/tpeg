@@ -77,6 +77,7 @@ export const capture = <T, L extends string>(
       return result;
     }
 
+    const { current, next } = result;
     const capturedValue = { [label]: result.val } as { [K in L]: T };
     Object.defineProperty(capturedValue, CAPTURE_TAG, {
       value: true,
@@ -86,8 +87,8 @@ export const capture = <T, L extends string>(
     return {
       success: true as const,
       val: capturedValue,
-      current: result.current,
-      next: result.next,
+      current,
+      next,
     };
   };
 };
@@ -208,16 +209,18 @@ export const captureSequence = <P extends Parser<unknown>[]>(
       // `ignore(...)` results consume input but contribute no value
       // (see `IGNORED`'s doc comment); skipping the push also keeps them
       // out of the `hasCaptures` check and the merge below.
-      if (result.val !== IGNORED) {
-        results.push(result.val);
+      const next = result.next;
+      const value = result.val;
+      if (value !== IGNORED) {
+        results.push(value);
       }
-      currentPos = result.next;
+      currentPos = next;
 
       // Only a `capture(...)`-tagged result makes this a genuine capture
       // -- see `CAPTURE_TAG`'s doc comment for why an incidentally
       // object-shaped but untagged result (e.g. an unlabeled reference to
       // another rule that uses labels internally) must NOT flip this.
-      if (isCaptureTagged(result.val)) {
+      if (isCaptureTagged(value)) {
         hasCaptures = true;
       }
     }
@@ -311,12 +314,15 @@ export const captureChoice = <T extends unknown[]>(
 export const untagCapture = <T>(parser: Parser<T>): Parser<T> => {
   return (input: string, pos: number) => {
     const result = parser(input, pos);
-    if (!result.success || !isCaptureTagged(result.val)) return result;
+    if (!result.success) return result;
+    const { current, next } = result;
+    const value = result.val;
+    if (!isCaptureTagged(value)) return result;
     return {
       success: true as const,
-      val: { ...(result.val as CapturedValue) } as T,
-      current: result.current,
-      next: result.next,
+      val: { ...value } as T,
+      current,
+      next,
     };
   };
 };
@@ -342,7 +348,7 @@ export const getCaptureLabels = (value: CapturedValue): string[] => {
 };
 
 /**
- * Gets a captured value by label.
+ * Gets a captured value by its own label, excluding inherited properties.
  *
  * @param value The captured value object
  * @param label The label to retrieve
@@ -352,5 +358,7 @@ export const getCapturedValue = <T>(
   value: CapturedValue,
   label: string,
 ): T | undefined => {
-  return value[label] as T | undefined;
+  return Object.prototype.hasOwnProperty.call(value, label)
+    ? (value[label] as T | undefined)
+    : undefined;
 };

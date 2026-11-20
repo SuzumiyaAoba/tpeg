@@ -66,6 +66,7 @@ export {
   generateLabeledExpressionCode,
   generateChoiceCode,
   collectTopLevelLabels,
+  collectRequiredTopLevelLabels,
   filterReferencedLabels,
   collectTransformFunctions,
   wrapWithAction,
@@ -175,6 +176,10 @@ export {
   keyWithValue,
   type ResultKey,
 } from "./differential-fuzz";
+
+// Shared execution for generated JavaScript in differential tests and
+// benchmark harnesses, including the Eta generator's runtime tests.
+export { evaluateGeneratedModule } from "./generated-runtime";
 
 // Export AST rewrite passes (left-factoring, character-class merging,
 // negative-lookahead degeneration, automatic cut insertion). None of

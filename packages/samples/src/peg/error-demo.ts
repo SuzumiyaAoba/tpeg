@@ -3,55 +3,12 @@ import type { ParseResult } from "@suzumiyaaoba/tpeg-core";
 import {
   charClass,
   choice,
+  formatParseError,
   lit,
-  offsetToPos,
   oneOrMore,
   parse,
   seq,
 } from "@suzumiyaaoba/tpeg-core";
-
-// Define a custom ParseError interface
-interface DemoParseError {
-  message: string;
-  pos: number;
-  expected?: string | string[];
-  found?: string;
-  parserName?: string;
-  context?: string | string[];
-}
-
-// formatParseError functions from core package
-// Normally these would be available directly from the core package
-// but this is just for demo purposes - assume they're imported
-const formatParseError = (error: DemoParseError, input: string): string => {
-  const expected = error.expected || "unknown";
-  const found = error.found || "unknown";
-  const parserName = error.parserName || "unknown";
-  let contextStr = "unknown";
-
-  if (error.context) {
-    if (Array.isArray(error.context)) {
-      contextStr = error.context.join(" > ");
-    } else {
-      contextStr = error.context;
-    }
-  }
-
-  const { line, column } = offsetToPos(input, error.pos);
-
-  return `
-Error at line ${line}, column ${column + 1}:
-Message: ${error.message}
-Expected: ${expected}
-Found: ${found}
-Parser: ${parserName}
-Context: ${contextStr}
-
-Source:
-${input.split("\n")[line - 1] || ""}
-${" ".repeat(column)}^
-`;
-};
 
 /**
  * Define a simple arithmetic expression parser
@@ -81,9 +38,7 @@ function displayParseResult<T>(result: ParseResult<T>, input: string): void {
     console.log("Remaining input:", input.substring(result.next));
   } else {
     console.log("Parsing failed...");
-    console.log(
-      formatParseError(result.error as unknown as DemoParseError, input),
-    );
+    console.log(formatParseError(result.error, input, { colorize: false }));
   }
 }
 

@@ -54,6 +54,35 @@ const setHasChar = (set: CharSet | null, c: string): boolean =>
   set !== null && contains(set, c.codePointAt(0) as number);
 
 describe("computeFirstSets", () => {
+  it.each([0xd800, 0xd83d, 0xdbff])(
+    "includes astral characters sharing a lead-surrogate literal's prefix (%i)",
+    (lead) => {
+      const grammar = createGrammarDefinition(
+        "T",
+        [],
+        [
+          createRuleDefinition(
+            "r",
+            createStringLiteral(String.fromCharCode(lead), '"'),
+          ),
+        ],
+      );
+      const fs = computeFirstSets(grammar).get("r");
+      const start = 0x10000 + (lead - 0xd800) * 0x400;
+      expect(fs?.unknown).toBe(false);
+      expect(fs?.set).toEqual([
+        { lo: lead, hi: lead },
+        { lo: start, hi: start + 0x3ff },
+      ]);
+      expect(hasChar(fs, String.fromCodePoint(start))).toBe(true);
+      expect(hasChar(fs, String.fromCodePoint(start + 0x3ff))).toBe(true);
+      expect(hasChar(fs, String.fromCodePoint(start - 1))).toBe(false);
+      if (start + 0x400 <= 0x10ffff) {
+        expect(hasChar(fs, String.fromCodePoint(start + 0x400))).toBe(false);
+      }
+    },
+  );
+
   it("computes a single-character FIRST set for a StringLiteral rule", () => {
     const grammar = createGrammarDefinition(
       "T",

@@ -1,15 +1,77 @@
 import { describe, expect, it } from "vite-plus/test";
 import { parse } from "@suzumiyaaoba/tpeg-core";
 import {
+  anyChar,
   choice,
   commit,
+  guardedParserCall,
   literal,
   map,
   optional,
+  type Parser,
+  type ParseSuccess,
 } from "@suzumiyaaoba/tpeg-core";
 import { commaSeparated, commaSeparated1, sepBy, sepBy1 } from "./list";
 
 describe("list combinators", () => {
+  it.each(["sepBy", "sepBy1", "commaSeparated", "commaSeparated1"])(
+    "%s advances past each item before invoking its value getter",
+    (kind) => {
+      let valueReads = 0;
+      const character = anyChar();
+      const value: Parser<string> = (input, pos) => {
+        const matched = character(input, pos);
+        if (!matched.success) return matched;
+        const child: ParseSuccess<string> = {
+          success: true,
+          current: pos,
+          next: matched.next,
+          get val() {
+            valueReads++;
+            child.next = pos;
+            return matched.val;
+          },
+        };
+        return child;
+      };
+      const parser =
+        kind === "sepBy"
+          ? sepBy(value, literal(","))
+          : kind === "sepBy1"
+            ? sepBy1(value, literal(","))
+            : kind === "commaSeparated"
+              ? commaSeparated(value)
+              : commaSeparated1(value);
+      expect(parse(parser)("a,b,c")).toMatchObject({
+        success: true,
+        val: ["a", "b", "c"],
+        next: 5,
+      });
+      expect(valueReads).toBe(3);
+    },
+  );
+
+  it.each(["sepBy", "commaSeparated"])(
+    "%s keeps the first value when a child parser reuses its success object",
+    (kind) => {
+      const reused = { success: true as const, val: "", current: 0, next: 0 };
+      const character = anyChar();
+      const value: Parser<string> = (input, pos) => {
+        const result = character(input, pos);
+        if (!result.success) return result;
+        Object.assign(reused, result);
+        return reused;
+      };
+      const parser =
+        kind === "sepBy" ? sepBy(value, literal(",")) : commaSeparated(value);
+      expect(parse(parser)("a,b,c")).toMatchObject({
+        success: true,
+        val: ["a", "b", "c"],
+        next: 5,
+      });
+    },
+  );
+
   describe("sepBy", () => {
     it("should parse multiple items", () => {
       const parser = sepBy(literal("a"), literal(","));
@@ -99,6 +161,98 @@ describe("list combinators", () => {
   });
 
   describe("commaSeparated", () => {
+    it.each([" ", "\t", "\r\n"])(
+      "rejects forbidden trailing commas after leading whitespace %j",
+      (prefix) => {
+        const parser = commaSeparated(literal("a"));
+        expect(parse(parser)(`${prefix}a, a, `).success).toBe(false);
+      },
+    );
+
+    it.each([" ", "\t", "\r\n"])(
+      "rejects an unmatched element after a comma with leading whitespace %j",
+      (prefix) => {
+        const parser = commaSeparated(literal("a"));
+        expect(parse(parser)(`${prefix}a, ?`).success).toBe(false);
+      },
+    );
+
+    it("rejects a malformed list at a nonzero offset instead of discarding its first value", () => {
+      const result = commaSeparated(literal("a"))("x a,", 1);
+      expect(result.success).toBe(false);
+    });
+
+    it("tries an absent first value only once", () => {
+      let calls = 0;
+      const value: Parser<string> = (input, pos) => {
+        calls++;
+        return literal("a")(input, pos);
+      };
+      const result = parse(commaSeparated(value))("b");
+      expect(result).toMatchObject({
+        success: true,
+        val: [],
+        current: 0,
+        next: 0,
+      });
+      expect(calls).toBe(1);
+    });
+
+    it("keeps the error and name from the malformed nonempty list", () => {
+      const result = parse(commaSeparated(literal("a"), false, "values"))(
+        " a,",
+      );
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.parserName).toBe("values");
+        expect(result.error.pos).toBeGreaterThan(1);
+      }
+    });
+
+    it("accepts a leading whitespace list with an allowed trailing comma", () => {
+      const input = " \ta, a, \r\n";
+      const result = parse(commaSeparated(literal("a"), true))(input);
+      expect(result).toMatchObject({
+        success: true,
+        val: ["a", "a"],
+        current: 0,
+        next: input.length,
+      });
+    });
+
+    it("keeps an empty list at its original position even after probing whitespace", () => {
+      const result = commaSeparated(literal("a"))("x \t?", 1);
+      expect(result).toMatchObject({
+        success: true,
+        val: [],
+        current: 1,
+        next: 1,
+      });
+    });
+
+    it.each([true, false])(
+      "propagates resource-limit aborts (first value: %s)",
+      (firstAborts) => {
+        const limited: Parser<string> = (input, pos) =>
+          guardedParserCall(
+            () => guardedParserCall(() => literal("a")(input, pos), pos),
+            pos,
+          );
+        const value: Parser<string> = (input, pos) =>
+          !firstAborts && pos === 1
+            ? literal("a")(input, pos)
+            : limited(input, pos);
+        const result = parse(commaSeparated(value), { maxRecursionDepth: 1 })(
+          " a,a",
+        );
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.abort).toBe(true);
+          expect(result.error.pos).toBe(firstAborts ? 1 : 3);
+        }
+      },
+    );
+
     it("should parse comma separated values", () => {
       const parser = commaSeparated(literal("a"));
       const result = parse(parser)("a, a, a");

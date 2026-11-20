@@ -171,13 +171,13 @@ const result = parse(parser)("1,2,3");
 
 #### `commaSeparated(value)`
 
-Parses comma-separated values with optional trailing comma.
+Parses comma-separated values with surrounding whitespace. A trailing comma is rejected by default; pass `true` as the second argument to allow it. Leading whitespace does not turn a rejected trailing comma into an empty-list match.
 
 ```typescript
 import { parse } from "@suzumiyaaoba/tpeg-core";
 import { commaSeparated, number } from "@suzumiyaaoba/tpeg-combinator";
 
-const parser = commaSeparated(number);
+const parser = commaSeparated(number, true);
 const result = parse(parser)("1, 2, 3,");
 // Result: { success: true, val: [1, 2, 3] }
 ```
@@ -185,6 +185,8 @@ const result = parse(parser)("1, 2, 3,");
 ### Error Handling
 
 #### `labeled(parser, message)`
+
+The custom message also participates in diagnostics when the labeled parser is an alternative of a choice. Failures at a farther position still take precedence.
 
 Provides custom error messages.
 
@@ -198,6 +200,10 @@ const result = parse(parser)("world");
 ```
 
 #### `withDetailedError(parser, name)`
+
+Retains the original message, position, expectations, and control flags even when they are inherited or non-enumerable. Position getters are read once so the returned position and found character agree. `labeledWithContext` copies its context array for each diagnostic; later changes to the input array or another diagnostic do not change an existing diagnostic.
+
+Named labels also attribute their child expectations to the label. Detailed wrappers retain the `found` character and input context of a unique custom diagnostic through enclosing choices. These updates apply only to records contributed by the wrapped call and preserve earlier alternatives and cached diagnostics.
 
 Creates detailed error reports with input excerpts.
 
@@ -229,13 +235,21 @@ const result = parse(parser)("world");
 
 Creates a memoized version of a parser with cache size control.
 
+`maxCacheSize` accepts a non-negative integer or `Infinity`; omitted values and `Infinity` keep the cache unbounded within one parse. Set it to `0` to disable caching. Invalid values produce an `Error` at construction, including values that cannot be converted to text.
+
+Finite capacities bound the number of stored entries and their bookkeeping, independently of the highest input offset visited. Eviction follows insertion order; reading or replacing an existing entry preserves its age. A top-level cut removes positions before its boundary while retaining the order of the remaining entries. This bounds cache storage, not the input string or the size of parsed values.
+
 ```typescript
 import { literal, parse } from "@suzumiyaaoba/tpeg-core";
 import { memoize } from "@suzumiyaaoba/tpeg-combinator";
 
-const parser = memoize(literal("hello"), { cacheSize: 100 });
+const parser = memoize(literal("hello"), { maxCacheSize: 100 });
 const result = parse(parser)("hello");
 ```
+
+#### `commitAtTopLevel(parser)`
+
+Applies a cut and advances the watermark used to discard unreachable memoized positions. Use it only where no enclosing construct can backtrack before that position. It retains the child's diagnostic fields and `abort` flag, including inherited and non-enumerable fields, and reads a concrete failure's error once.
 
 #### `recursive()`
 
@@ -256,6 +270,8 @@ const result = parse(expression)("((x))");
 #### `debug(parser, name, options)`
 
 Logs parsing process for debugging.
+
+With `logResult: true`, the logged payload is read once and displayed as JSON, falling back to a safe string when JSON conversion fails or produces no representation. Payload getters and fallback messages that throw are displayed as `<unprintable value>`. The wrapper returns the child's original result. Disabled result logging does not read the payload; exceptions from the parser or `customLogger` still propagate.
 
 ```typescript
 import { literal, parse } from "@suzumiyaaoba/tpeg-core";

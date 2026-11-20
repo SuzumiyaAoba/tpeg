@@ -27,7 +27,9 @@ import {
   createChoice,
   createCut,
   createGrammarDefinition,
+  createGroup,
   createIdentifier,
+  createLabeledExpression,
   createNegativeLookahead,
   createOptional,
   createPlus,
@@ -98,7 +100,7 @@ describe("TypeInferenceEngine invariants (fast-check), generalized from type-inf
     );
   });
 
-  it("the typeCache is transparent: enableCaching true vs. false infer the identical typeString/baseType/isArray for the same tree", () => {
+  it("the typeCache is transparent: enableCaching true vs. false infer identical types for the same tree", () => {
     fc.assert(
       fc.property(tree, (expr) => {
         const cached = new TypeInferenceEngine({
@@ -107,10 +109,87 @@ describe("TypeInferenceEngine invariants (fast-check), generalized from type-inf
         const uncached = new TypeInferenceEngine({
           enableCaching: false,
         }).inferExpressionType(expr);
-        expect(cached.typeString).toBe(uncached.typeString);
-        expect(cached.baseType).toBe(uncached.baseType);
-        expect(cached.isArray).toBe(uncached.isArray);
+        expect(cached).toEqual(uncached);
       }),
+      FC_PARAMS,
+    );
+  });
+
+  it("cached and uncached grammars agree across rule orders, references, options, and depth limits", () => {
+    const ruleArb = fc.record({
+      target: fc.nat({ max: 20 }),
+      otherTarget: fc.nat({ max: 20 }),
+      kind: fc.constantFrom(
+        "reference",
+        "group",
+        "star",
+        "choice",
+        "capture",
+        "sequence",
+      ),
+      order: fc.integer(),
+    });
+    fc.assert(
+      fc.property(
+        fc.array(ruleArb, { minLength: 1, maxLength: 12 }),
+        fc.integer({ min: 0, max: 8 }),
+        fc.record({
+          inferArrayTypes: fc.boolean(),
+          inferUnionTypes: fc.boolean(),
+          inferObjectTypes: fc.boolean(),
+          generateDocumentation: fc.boolean(),
+        }),
+        (definitions, maxRecursionDepth, options) => {
+          const rules = definitions.map((definition, index) => {
+            // References only point backward in the definition list, so this
+            // property isolates depth handling from actual circular grammars.
+            const ref = (target: number): Expression =>
+              index === 0
+                ? createStringLiteral("a", '"')
+                : createIdentifier(`r${target % index}`);
+            const inner = ref(definition.target);
+            let pattern: Expression;
+            switch (definition.kind) {
+              case "group":
+                pattern = createGroup(inner);
+                break;
+              case "star":
+                pattern = createStar(inner);
+                break;
+              case "choice":
+                pattern = createChoice([inner, ref(definition.otherTarget)]);
+                break;
+              case "capture":
+                pattern = createLabeledExpression("value", inner);
+                break;
+              case "sequence":
+                pattern = createSequence([inner, ref(definition.otherTarget)]);
+                break;
+              default:
+                pattern = inner;
+            }
+            return {
+              order: definition.order,
+              rule: createRuleDefinition(`r${index}`, pattern),
+            };
+          });
+          rules.sort((a, b) => a.order - b.order);
+          const grammar = createGrammarDefinition(
+            "G",
+            [],
+            rules.map((entry) => entry.rule),
+          );
+          const infer = (enableCaching: boolean) => {
+            const { stats: _stats, ...result } = new TypeInferenceEngine({
+              ...options,
+              maxRecursionDepth,
+              enableCaching,
+            }).inferGrammarTypes(grammar);
+            return result;
+          };
+          expect(infer(true)).toEqual(infer(false));
+        },
+      ),
       FC_PARAMS,
     );
   });

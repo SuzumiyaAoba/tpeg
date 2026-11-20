@@ -9,6 +9,7 @@ import {
   not,
   oneOrMore,
   parse,
+  safeStringForDisplay,
   seq,
   star,
 } from "@suzumiyaaoba/tpeg-core";
@@ -241,7 +242,9 @@ export function evaluate(node: ExpressionNode): number {
           return left % right;
         default: {
           const exhaustiveCheck: never = operator;
-          throw new Error(`Unreachable: ${exhaustiveCheck}`);
+          throw new Error(
+            `Unreachable: ${safeStringForDisplay(exhaustiveCheck)}`,
+          );
         }
       }
     }
@@ -257,7 +260,9 @@ export function evaluate(node: ExpressionNode): number {
           return -operand;
         default: {
           const exhaustiveCheck: never = operator;
-          throw new Error(`Unreachable: ${exhaustiveCheck}`);
+          throw new Error(
+            `Unreachable: ${safeStringForDisplay(exhaustiveCheck)}`,
+          );
         }
       }
     }
@@ -425,7 +430,9 @@ export const DirectTerm: Parser<number> = map(
           if (right === 0) throw new Error("Modulo by zero");
           return left % right;
         default:
-          throw new Error(`Unknown operator: ${operator}`);
+          throw new Error(
+            `Unknown operator: ${safeStringForDisplay(operator)}`,
+          );
       }
     }, first);
   },
@@ -450,7 +457,9 @@ export const DirectExpression: Parser<number> = map(
         case "-":
           return left - right;
         default:
-          throw new Error(`Unknown operator: ${operator}`);
+          throw new Error(
+            `Unknown operator: ${safeStringForDisplay(operator)}`,
+          );
       }
     }, first);
   },
@@ -604,7 +613,7 @@ export function runExamples() {
         console.log(astToString(ast, 2));
         console.log();
       } catch (error) {
-        console.log(`${expr} -> Error: ${error}`);
+        console.log(`${expr} -> Error: ${safeStringForDisplay(error)}`);
       }
     }
     console.log();

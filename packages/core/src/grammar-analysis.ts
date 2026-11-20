@@ -136,33 +136,39 @@ const labelOf = (expr: Expression): string | undefined =>
  * it's a `Sequence` - each of its immediate elements that is one, or - if
  * it's a `Choice` - the union of whatever's visible on each alternative
  * (only one alternative ever actually runs, so `captureChoice`/`choice`
- * pass its own captured object through unchanged; a caller destructuring
- * the union just gets `undefined` for whichever labels the OTHER
- * alternatives would have bound - see `docs/peg-grammar.md`'s "Capture
+ * pass its own captured object through unchanged; absent labels are read
+ * as `undefined` by the action wrapper - see `docs/peg-grammar.md`'s "Capture
  * Inference" section, `choice = a:first / b:second -> captures: {a?: T1,
  * b?: T2}"). This mirrors the runtime merge performed by
  * `captureSequence`/`mergeCaptures` (`@suzumiyaaoba/tpeg-core`'s
  * `capture.ts`), which merges each direct child's captured object into one
- * - so the label set computed here always matches the keys actually
- * present on the merged value at runtime.
+ * - so these names describe the directly visible captures. Fields nested
+ * under repetition are accessed through $$ instead of bare variables.
  *
  * `Group` is unwrapped before either check (it's transparent at codegen
  * time - see `labelOf`), so a parenthesized `(a:"x" b:"y")` or
  * `(a:"x" / b:"y")` is recognized exactly like its unparenthesized form.
  */
-export const collectTopLevelLabels = (expr: Expression): string[] => {
-  const unwrapped = expr.type === "Group" ? expr.expression : expr;
+const collectActionLabels = (
+  expr: Expression,
+  requiredOnly: boolean,
+): string[] => {
+  let unwrapped = expr;
+  if (unwrapped.type === "Group") {
+    const groups = new Set<Expression>();
+    while (unwrapped.type === "Group") {
+      if (groups.has(unwrapped)) {
+        throw new TypeError(
+          "Cyclic expression AST encountered while unwrapping groups",
+        );
+      }
+      groups.add(unwrapped);
+      unwrapped = unwrapped.expression;
+    }
+  }
   if (unwrapped.type === "Sequence") {
-    // Deduplicated via a `Set`, same as the `Choice` branch below --
-    // two elements of one `Sequence` reusing the same label name (e.g.
-    // `a:"x" a:"y"`) merge into a SINGLE `a` key at runtime
-    // (`mergeCaptures`'s `Object.assign`, last write wins), so a caller
-    // destructuring `$$` only ever sees one `a` binding to declare. This
-    // function's own doc comment promises the label set returned here
-    // "always matches the keys actually present on the merged value at
-    // runtime" -- without dedup, `wrapWithAction` (below) emitted
-    // `const { a, a } = $$;`, a duplicate-binding `SyntaxError` in the
-    // generated file, for every rule whose action reused a label name.
+    // Repeated direct labels merge into one own field, with the last value
+    // winning. Declare each visible name once, including grouped labels.
     return [
       ...new Set(
         unwrapped.elements
@@ -173,11 +179,28 @@ export const collectTopLevelLabels = (expr: Expression): string[] => {
   }
   if (unwrapped.type === "Choice") {
     const seen = new Set<string>();
-    for (const alt of unwrapped.alternatives) {
-      for (const label of collectTopLevelLabels(alt)) seen.add(label);
+    for (let index = 0; index < unwrapped.alternatives.length; index++) {
+      const alt = unwrapped.alternatives[index]!;
+      const labels = collectActionLabels(alt, requiredOnly);
+      if (!requiredOnly || index === 0) {
+        for (const label of labels) seen.add(label);
+      } else {
+        const required = new Set(labels);
+        for (const label of seen) {
+          if (!required.has(label)) seen.delete(label);
+        }
+      }
     }
     return [...seen];
   }
   const single = labelOf(unwrapped);
   return single !== undefined ? [single] : [];
 };
+
+/** Names visible to an action, including labels absent on some alternatives. */
+export const collectTopLevelLabels = (expr: Expression): string[] =>
+  collectActionLabels(expr, false);
+
+/** Labels present as own fields on every successful alternative. */
+export const collectRequiredTopLevelLabels = (expr: Expression): string[] =>
+  collectActionLabels(expr, true);

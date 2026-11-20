@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 import {
   DuplicateImportAliasError,
+  DuplicateRuleDefinitionError,
   ExportResolutionError,
   NamespaceConflictError,
   NamespaceManager,
@@ -116,6 +117,210 @@ describe("NamespaceManager", () => {
   });
 
   describe("registerModule", () => {
+    it("clears path bindings before a namespace is reused by a different file", () => {
+      manager.registerModule(
+        createModuleFile(
+          "/proj/a.tpeg",
+          [createGrammar("A", [createRule("original")])],
+          [],
+          { type: "ModuleInfo", namespace: "shared" },
+        ),
+      );
+      manager.clear();
+      manager.registerModule(
+        createModuleFile(
+          "/proj/b.tpeg",
+          [createGrammar("B", [createRule("replacement")])],
+          [],
+          { type: "ModuleInfo", namespace: "shared" },
+        ),
+      );
+      manager.registerModule(
+        createModuleFile(
+          "/proj/main.tpeg",
+          [createGrammar("Main", [])],
+          [{ type: "ImportStatement", modulePath: "./a.tpeg", alias: "a" }],
+        ),
+      );
+      expect(() =>
+        manager.resolveQualifiedName(
+          createQualifiedId("a", "replacement"),
+          "main",
+        ),
+      ).toThrow(/not registered/);
+      expect(manager.resolveLocalRule("replacement", "shared").rule.name).toBe(
+        "replacement",
+      );
+    });
+
+    it("refreshes the same normalized file path instead of treating it as a name collision", () => {
+      manager.registerModule(
+        createModuleFile("/proj/utils.tpeg", [
+          createGrammar("Before", [createRule("before")]),
+        ]),
+      );
+      manager.registerModule(
+        createModuleFile("/proj/sub/../utils.tpeg", [
+          createGrammar("After", [createRule("after")]),
+        ]),
+      );
+      expect(manager.getRegisteredModules()).toEqual(["utils"]);
+      expect(manager.resolveLocalRule("after", "utils").rule.name).toBe(
+        "after",
+      );
+      expect(() => manager.resolveLocalRule("before", "utils")).toThrow(
+        QualifiedNameResolutionError,
+      );
+    });
+
+    it("removes a file's old namespace when it is registered under a new one", () => {
+      manager.registerModule(
+        createModuleFile(
+          "/proj/utils.tpeg",
+          [createGrammar("Before", [createRule("before")])],
+          [],
+          { type: "ModuleInfo", namespace: "old" },
+        ),
+      );
+      const updatedRule = createRule("after");
+      manager.registerModule(
+        createModuleFile(
+          "/proj/./utils.tpeg",
+          [createGrammar("After", [updatedRule])],
+          [],
+          { type: "ModuleInfo", namespace: "new" },
+        ),
+      );
+      manager.registerModule(
+        createModuleFile(
+          "/proj/main.tpeg",
+          [createGrammar("Main", [])],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "./utils.tpeg",
+              alias: "utils",
+            },
+          ],
+        ),
+      );
+      expect(manager.getRegisteredModules().sort()).toEqual(["main", "new"]);
+      expect(manager.getScope("old")).toBeUndefined();
+      expect(
+        manager.resolveQualifiedName(
+          createQualifiedId("utils", "after"),
+          "main",
+        ).rule,
+      ).toBe(updatedRule);
+      expect(() => manager.resolveLocalRule("before", "old")).toThrow(
+        QualifiedNameResolutionError,
+      );
+    });
+
+    it("preserves the old namespace when a renamed registration fails validation", () => {
+      const rule = createRule("original");
+      manager.registerModule(
+        createModuleFile(
+          "/proj/utils.tpeg",
+          [createGrammar("Before", [rule])],
+          [],
+          { type: "ModuleInfo", namespace: "old" },
+        ),
+      );
+      manager.registerModule(
+        createModuleFile(
+          "/proj/main.tpeg",
+          [createGrammar("Main", [])],
+          [
+            {
+              type: "ImportStatement",
+              modulePath: "./utils.tpeg",
+              alias: "utils",
+            },
+          ],
+        ),
+      );
+      const broken = createModuleFile(
+        "/proj/utils.tpeg",
+        [
+          createModularGrammar("After", [createRule("after")], {
+            type: "ExportDeclaration",
+            rules: ["ghost"],
+          }),
+        ],
+        [],
+        { type: "ModuleInfo", namespace: "new" },
+      );
+      expect(() => manager.registerModule(broken)).toThrow(
+        ExportResolutionError,
+      );
+      expect(manager.getRegisteredModules().sort()).toEqual(["main", "old"]);
+      expect(manager.resolveLocalRule("original", "old").rule).toBe(rule);
+      expect(
+        manager.resolveQualifiedName(
+          createQualifiedId("utils", "original"),
+          "main",
+        ).rule,
+      ).toBe(rule);
+    });
+
+    it("does not remove an old namespace when the new name belongs to another file", () => {
+      const original = createRule("original");
+      manager.registerModule(
+        createModuleFile("/proj/a.tpeg", [createGrammar("A", [original])], [], {
+          type: "ModuleInfo",
+          namespace: "old",
+        }),
+      );
+      manager.registerModule(
+        createModuleFile(
+          "/proj/b.tpeg",
+          [createGrammar("B", [createRule("other")])],
+          [],
+          { type: "ModuleInfo", namespace: "taken" },
+        ),
+      );
+      expect(() =>
+        manager.registerModule(
+          createModuleFile(
+            "/proj/a.tpeg",
+            [createGrammar("Updated", [createRule("updated")])],
+            [],
+            { type: "ModuleInfo", namespace: "taken" },
+          ),
+        ),
+      ).toThrow(/ambiguous/);
+      expect(manager.resolveLocalRule("original", "old").rule).toBe(original);
+      expect(manager.getRegisteredModules().sort()).toEqual(["old", "taken"]);
+    });
+
+    it.each(["same grammar", "sibling grammars"])(
+      "rejects duplicate rule names in %s without replacing a valid registration",
+      (where) => {
+        const original = createRule("original");
+        manager.registerModule(
+          createModuleFile("test.tpeg", [
+            createGrammar("Original", [original]),
+          ]),
+        );
+        const first = createRule("duplicate");
+        const second = createRule("duplicate");
+        const grammars =
+          where === "same grammar"
+            ? [createGrammar("G", [first, second])]
+            : [createGrammar("G1", [first]), createGrammar("G2", [second])];
+        expect(() =>
+          manager.registerModule(createModuleFile("test.tpeg", grammars)),
+        ).toThrow(DuplicateRuleDefinitionError);
+        expect(manager.resolveLocalRule("original", "test").rule).toBe(
+          original,
+        );
+        expect(() => manager.resolveLocalRule("duplicate", "test")).toThrow(
+          QualifiedNameResolutionError,
+        );
+      },
+    );
+
     it("should register a simple module", () => {
       const rule1 = createRule("rule1");
       const rule2 = createRule("rule2");

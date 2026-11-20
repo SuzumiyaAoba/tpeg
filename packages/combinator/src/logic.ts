@@ -1,19 +1,21 @@
 import type {
   Expectation,
+  FailureWatermarkSnapshot,
   ParseResult,
   Parser,
   Pos,
 } from "@suzumiyaaoba/tpeg-core";
 import {
-  FAIL,
-  FAIL_FATAL,
+  commit,
   createFailure,
   currentParseSession,
   guardedParserCall,
-  isFailure,
   isValidOffset,
   mergeFailureWatermark,
   offsetToPos,
+  resetFailureWatermark,
+  restoreFailureWatermark,
+  safeStringForDisplay,
   snapshotFailureWatermark,
 } from "@suzumiyaaoba/tpeg-core";
 import { named } from "./error";
@@ -79,9 +81,9 @@ let watermarkSession = -1;
  * already final at that point regardless of whether `parser` goes on to
  * succeed or fail.
  */
-export const commitAtTopLevel =
-  <T>(parser: Parser<T>): Parser<T> =>
-  (input: string, pos: number) => {
+export const commitAtTopLevel = <T>(parser: Parser<T>): Parser<T> => {
+  const committed = commit(parser);
+  return (input: string, pos: number) => {
     const session = currentParseSession();
     if (input !== watermarkInput || session !== watermarkSession) {
       watermarkInput = input;
@@ -98,19 +100,11 @@ export const commitAtTopLevel =
       watermarkOffset = pos;
     }
 
-    const result = parser(input, pos);
-    if (isFailure(result)) {
-      // See `commit` (`@suzumiyaaoba/tpeg-core`) for why the singleton
-      // swap is checked first: the common case is zero-allocation.
-      if (result === FAIL) return FAIL_FATAL;
-      if (result === FAIL_FATAL) return result;
-      return {
-        ...result,
-        error: { ...result.error, fatal: true },
-      };
-    }
-    return result;
+    // Delegate cut handling to core so inherited diagnostics, abort and
+    // error getters follow exactly the same contract as an ordinary cut.
+    return committed(input, pos);
   };
+};
 
 /**
  * Packrat memoization: caches a rule's parse result per (input, position),
@@ -182,9 +176,9 @@ export const commitAtTopLevel =
  * something new to discard. A cache nobody calls again before the parse
  * ends simply never gets swept, which is fine: nothing reads it either.
  *
- * ## Storage: a dense, offset-based window, not a hash map
+ * ## Storage: an offset window or a bounded table
  *
- * The key is always `pos`, a small non-negative integer, so a
+ * With no finite capacity, the key is always `pos`, a small non-negative integer, so a
  * plain array indexed by `offset - base` (`base` being the oldest offset
  * still live, i.e. what pruning has not yet discarded) is a direct
  * packrat *matrix* row -- no hashing, no boxed key objects -- while still
@@ -194,6 +188,14 @@ export const commitAtTopLevel =
  * input's total length. `undefined` (a genuine array hole, not a stored
  * value) means "not cached"; a stored {@link MemoEntry} never legitimately
  * contains `undefined` itself.
+ *
+ * A finite capacity uses a map and a circular insertion-order queue,
+ * or one direct slot when the capacity is 1.
+ * Evicted offsets leave no array slots spanning the input, so storage and
+ * bookkeeping grow with retained entries rather than the highest offset.
+ * Hits and replacements keep the original insertion age; only new keys
+ * enter the queue. Both an omitted capacity and Infinity use the offset
+ * window without maintaining an eviction queue.
  *
  * ## Farthest-failure watermark: replaying what a cache hit skips
  *
@@ -205,24 +207,91 @@ export const commitAtTopLevel =
  * contribution (its farthest internal failure, or its own outright
  * failure) would silently disappear from `error.pos`/`.expected` the
  * moment a second call at the same offset hits the cache. Each entry
- * therefore also stores a snapshot of the watermark taken right after the
- * MISS that produced it, and every later HIT re-applies that snapshot via
+ * therefore also stores the wrapped parser's own watermark contribution,
+ * collected in isolation from earlier failures. Every later HIT replays it via
  * `mergeFailureWatermark` before returning the cached result -- for a
  * cached success as much as a cached failure, since a memoized rule can
  * still contain the parse's overall farthest failure internally even
- * where the rule itself went on to succeed via a later alternative. This
- * is deliberately approximate, not exact, in one narrow way documented on
- * `mergeFailureWatermark` itself (`packages/core/src/failure.ts`): safe
- * per that module's own "diagnostics-only, never correctness-affecting"
- * contract.
+ * where the rule itself went on to succeed via a later alternative. Isolating
+ * the contribution matters when a surrounding negative lookahead discards
+ * earlier failures: the cache must retain this rule's own nearer failure and
+ * must not resurrect a different alternative's discarded farther failure.
  */
+// Successful rules often record no failures. Share this immutable empty
+// contribution instead of allocating an array for every cached position.
+const EMPTY_MEMO_EXPECTATIONS: readonly Expectation[] = Object.freeze([]);
+
 interface MemoEntry<T> {
   readonly result: ParseResult<T>;
-  /** Watermark position right after the MISS call that produced `result`
-   * (`snapshotFailureWatermark().pos`) -- `-1` if `parser` never called
+  /** Farthest failure contributed by the MISS that produced `result`
+   * -- `-1` if `parser` never called
    * `fail()` at all (nothing to replay on a later hit). */
   readonly watermarkPos: number;
   readonly watermarkExpected: readonly Expectation[];
+}
+
+/** Capacity 1 needs neither a lookup table nor eviction bookkeeping. */
+class SingleMemoCache<T> {
+  private pos = -1;
+  private entry: MemoEntry<T> | undefined;
+
+  get(pos: number): MemoEntry<T> | undefined {
+    return pos === this.pos ? this.entry : undefined;
+  }
+
+  set(pos: number, entry: MemoEntry<T>): void {
+    this.pos = pos;
+    this.entry = entry;
+  }
+
+  prune(before: number): void {
+    if (this.pos < before) {
+      this.pos = -1;
+      this.entry = undefined;
+    }
+  }
+}
+
+/** A finite cache keeps one queue slot per retained key. The circular
+ * queue avoids shifting the entire capacity on each FIFO eviction. */
+class BoundedMemoCache<T> {
+  private readonly entries = new Map<number, MemoEntry<T>>();
+  private order: number[] = [];
+  private head = 0;
+  private readonly capacity: number;
+
+  constructor(capacity: number) {
+    this.capacity = capacity;
+  }
+
+  get(pos: number): MemoEntry<T> | undefined {
+    return this.entries.get(pos);
+  }
+
+  set(pos: number, entry: MemoEntry<T>): void {
+    if (!this.entries.has(pos)) {
+      if (this.entries.size >= this.capacity) {
+        const oldest = this.order[this.head] as number;
+        this.entries.delete(oldest);
+        this.order[this.head] = pos;
+        this.head = (this.head + 1) % this.order.length;
+      } else {
+        this.order.push(pos);
+      }
+    }
+    this.entries.set(pos, entry);
+  }
+
+  prune(before: number): void {
+    const retained: number[] = [];
+    for (let i = 0; i < this.order.length; i++) {
+      const pos = this.order[(this.head + i) % this.order.length] as number;
+      if (pos < before) this.entries.delete(pos);
+      else retained.push(pos);
+    }
+    this.order = retained;
+    this.head = 0;
+  }
 }
 
 export const memoize = <T>(
@@ -242,7 +311,7 @@ export const memoize = <T>(
     (!Number.isInteger(maxCacheSize) || maxCacheSize < 0)
   ) {
     throw new Error(
-      `Invalid memoize cache size: maxCacheSize (${maxCacheSize}) must be a non-negative integer or Infinity`,
+      `Invalid memoize cache size: maxCacheSize (${safeStringForDisplay(maxCacheSize)}) must be a non-negative integer or Infinity`,
     );
   }
 
@@ -252,6 +321,8 @@ export const memoize = <T>(
   // eviction path's unavoidable one-entry overshoot at size zero.
   if (maxCacheSize === 0) return named(parser, parserName);
 
+  const capacity = maxCacheSize ?? Number.POSITIVE_INFINITY;
+
   let cachedInput: string | null = null;
   // The parse session the cache was built in (see
   // `@suzumiyaaoba/tpeg-core`'s parse-session.ts): keying on the input
@@ -259,12 +330,13 @@ export const memoize = <T>(
   // text, skipping its semantic actions and handing out the same value
   // objects -- a caller mutating one parse's result corrupted the next.
   let cachedSession = -1;
-  let cache: (MemoEntry<T> | undefined)[] | null = null;
-  // Offset that cache[0] corresponds to; entries before this are pruned.
+  let cache:
+    | (MemoEntry<T> | undefined)[]
+    | BoundedMemoCache<T>
+    | SingleMemoCache<T>
+    | null = null;
+  // Lower bound for retained offsets, and origin of the unbounded array.
   let base = 0;
-  // Offsets currently cached, oldest first -- only maintained when
-  // maxCacheSize is set, purely to know which entry to evict.
-  let insertionOrder: number[] | null = null;
 
   const memoizedParser: Parser<T> = (input: string, pos: number) => {
     // Same out-of-contract-`pos` guard every leaf parser already applies
@@ -285,9 +357,13 @@ export const memoize = <T>(
       // this is a new parse. Start a fresh table rather than retaining
       // the previous input's entries.
       cachedInput = input;
-      cache = [];
+      cache =
+        capacity === 1
+          ? new SingleMemoCache<T>()
+          : Number.isFinite(capacity)
+            ? new BoundedMemoCache<T>(capacity)
+            : [];
       base = 0;
-      insertionOrder = maxCacheSize !== undefined ? [] : null;
     }
 
     if (
@@ -295,19 +371,14 @@ export const memoize = <T>(
       watermarkSession === session &&
       watermarkOffset > base
     ) {
-      const shiftBy = watermarkOffset - base;
-      cache.splice(0, shiftBy);
-      if (insertionOrder) {
-        insertionOrder = insertionOrder.filter(
-          (offset) => offset >= watermarkOffset,
-        );
-      }
+      if (Array.isArray(cache)) cache.splice(0, watermarkOffset - base);
+      else cache.prune(watermarkOffset);
       base = watermarkOffset;
     }
 
     const index = pos - base;
     if (index >= 0) {
-      const cached = cache[index];
+      const cached = Array.isArray(cache) ? cache[index] : cache.get(pos);
       if (cached) {
         // See "Farthest-failure watermark" above: replay what this hit
         // skips re-running.
@@ -320,8 +391,36 @@ export const memoize = <T>(
       }
     }
 
-    const result = parser(input, pos);
-    const watermark = snapshotFailureWatermark();
+    const activeCache = cache;
+    const watermarkBefore = snapshotFailureWatermark();
+    let result: ParseResult<T>;
+    let watermark: FailureWatermarkSnapshot;
+    if (watermarkBefore.expected.length === 0) {
+      result = parser(input, pos);
+      watermark = snapshotFailureWatermark();
+    } else {
+      resetFailureWatermark();
+      try {
+        result = parser(input, pos);
+        watermark = snapshotFailureWatermark();
+      } finally {
+        restoreFailureWatermark(watermarkBefore);
+      }
+      if (watermark.input === input) {
+        mergeFailureWatermark(input, watermark.pos, watermark.expected);
+      }
+    }
+
+    // A semantic action can invoke this same memoized parser on another
+    // input or in a nested parse(), replacing the cache while this call
+    // is still running. Its result belongs only to the original cache.
+    if (
+      cache !== activeCache ||
+      cachedInput !== input ||
+      cachedSession !== session
+    ) {
+      return result;
+    }
 
     // Recomputed relative to the CURRENT `base`, not the pre-call `index`
     // above: if `parser` recursively re-enters this same memoized rule (a
@@ -336,22 +435,16 @@ export const memoize = <T>(
     // doesn't belong to.
     const writeIndex = pos - base;
     if (writeIndex >= 0) {
-      if (
-        maxCacheSize !== undefined &&
-        insertionOrder &&
-        insertionOrder.length >= maxCacheSize
-      ) {
-        const oldest = insertionOrder.shift();
-        if (oldest !== undefined) {
-          cache[oldest - base] = undefined;
-        }
-      }
-      cache[writeIndex] = {
+      const entry: MemoEntry<T> = {
         result,
         watermarkPos: watermark.input === input ? watermark.pos : -1,
-        watermarkExpected: watermark.input === input ? watermark.expected : [],
+        watermarkExpected:
+          watermark.input === input
+            ? watermark.expected
+            : EMPTY_MEMO_EXPECTATIONS,
       };
-      insertionOrder?.push(pos);
+      if (Array.isArray(cache)) cache[writeIndex] = entry;
+      else cache.set(pos, entry);
     }
 
     return result;
@@ -406,11 +499,12 @@ export const withPosition = <T>(
     const result = parser(input, pos);
 
     if (result.success) {
+      const { current, next } = result;
       return {
         success: true,
         val: { value: result.val, position: offsetToPos(input, pos) },
-        current: result.current,
-        next: result.next,
+        current,
+        next,
       } as const;
     }
 

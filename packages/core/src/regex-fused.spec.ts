@@ -2,6 +2,30 @@ import { describe, expect, it } from "vite-plus/test";
 import { regexFused, regexFusedMap } from "./regex-fused";
 
 describe("regexFused", () => {
+  it("does not let a Unicode regex rewind before the requested UTF-16 offset", () => {
+    expect(regexFused(".", "character")("😀", 1).success).toBe(false);
+    expect(regexFusedMap(".", "character", (m) => m[0])("😀", 1).success).toBe(
+      false,
+    );
+  });
+
+  it("matches the remaining code units when surrogate splitting is explicitly enabled", () => {
+    const result = regexFused("(.)", "character", true)("😀x", 1);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val.text).toBe("\ude00");
+      expect(result.val.groups).toEqual(["\ude00"]);
+      expect(result.current).toBe(1);
+      expect(result.next).toBe(2);
+    }
+  });
+
+  it("keeps full-input anchors and lookbehind for the default matching mode", () => {
+    expect(regexFused("^x", "start")("😀x", 2).success).toBe(false);
+    expect(regexFused("(?<=😀)x", "following emoji")("😀x", 2).success).toBe(
+      true,
+    );
+  });
   it("matches at the given position and returns text + groups", () => {
     const parser = regexFused("([0-9]+)", "digits");
     const result = parser("abc123def", 3);
@@ -101,6 +125,37 @@ describe("regexFused", () => {
 });
 
 describe("regexFusedMap", () => {
+  it("keeps the consumed offset when the value mapper changes the raw match array", () => {
+    const parser = regexFusedMap("(a)", "a", (m) => {
+      m[0] = "changed";
+      return m[1];
+    });
+    const result = parser("ab", 0);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toBe("a");
+      expect(result.next).toBe(1);
+    }
+  });
+  it("preserves the original match index and input when splitting a surrogate pair", () => {
+    const input = "😀x";
+    const result = regexFusedMap(
+      "(.)",
+      "character",
+      (m) => ({ text: m[0], group: m[1], index: m.index, input: m.input }),
+      true,
+    )(input, 1);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.val).toEqual({
+        text: "\ude00",
+        group: "\ude00",
+        index: 1,
+        input,
+      });
+      expect(result.next).toBe(2);
+    }
+  });
   it("matches identically to regexFused, modulo the value shape f produces", () => {
     const raw = regexFused("([0-9]+)", "digits");
     const mapped = regexFusedMap("([0-9]+)", "digits", (m) => Number(m[1]));

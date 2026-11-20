@@ -148,7 +148,7 @@ describe("Eta generator differential fuzzing (vs. tpeg-parser's base generator)"
         } catch {
           // A construction-time rejection (e.g. `assertNoNullableRepetition`
           // via `validateGrammarForEtaGenerator`, or a left-recursive/
-          // duplicate-name rule) or a `new Function` compile error -- not a
+          // duplicate-name rule) or a generated-module evaluation compile error -- not a
           // differential-fuzzing concern, since the base generator would
           // have hit an equivalent rejection for the same grammar.
           skippedCount++;
@@ -238,7 +238,7 @@ describe("Eta generator: pinned regressions (found by manual PEG-semantics audit
     );
     // The bug threw a TDZ ReferenceError the moment the generated module's
     // top-level `const` initializers ran (i.e. inside `compileStart`
-    // itself via `new Function(...)`), not merely on first parser
+    // itself via the module evaluator), not merely on first parser
     // invocation -- so reaching the assertions below at all is already
     // most of this test.
     const start = await run(code, core, combinator);

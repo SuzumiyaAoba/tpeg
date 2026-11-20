@@ -52,6 +52,31 @@ class MockFileSystem implements FileSystemInterface {
   }
 }
 
+/** Pause one read after capturing its contents, so tests can invalidate
+ * the cache deterministically while a resolution is still in flight. */
+function pauseRead(fileSystem: MockFileSystem, targetPath: string) {
+  let started!: () => void;
+  let resume!: () => void;
+  const readStarted = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const readResumed = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  const readFile = fileSystem.readFile.bind(fileSystem);
+  let pending = true;
+  fileSystem.readFile = async (path) => {
+    const contents = await readFile(path);
+    if (pending && path === targetPath) {
+      pending = false;
+      started();
+      await readResumed;
+    }
+    return contents;
+  };
+  return { readStarted, resume };
+}
+
 // ============================================================================
 // Test Data
 // ============================================================================
@@ -399,6 +424,38 @@ describe("Module Resolution Engine", () => {
       );
     });
 
+    it("discards an unresolved parent while keeping successfully resolved dependencies for a retry", async () => {
+      mockFs.addFile(
+        "/test/main.tpeg",
+        'import "utils.tpeg"\nimport "missing.tpeg"\ngrammar Main { r = "x" }',
+      );
+      mockFs.addFile("/test/utils.tpeg", UTILS_MODULE);
+      await expect(resolver.resolveModule("main.tpeg")).rejects.toBeInstanceOf(
+        ModuleResolutionError,
+      );
+      expect([...resolver.context.cache.keys()]).toEqual(["/test/utils.tpeg"]);
+      const utils = resolver.context.cache.get("/test/utils.tpeg");
+
+      mockFs.addFile("/test/missing.tpeg", 'grammar Repaired { r = "m" }');
+      const result = await resolver.resolveModule("main.tpeg");
+      expect(result.resolved).toBe(true);
+      expect(result.dependencies).toEqual([
+        "/test/utils.tpeg",
+        "/test/missing.tpeg",
+      ]);
+      expect(resolver.context.cache.get("/test/utils.tpeg")).toBe(utils);
+    });
+
+    it("does not retain partially resolved cache entries after a cycle fails", async () => {
+      mockFs.addFile("/test/circular-a.tpeg", CIRCULAR_A);
+      mockFs.addFile("/test/circular-b.tpeg", CIRCULAR_B);
+      await expect(
+        resolver.resolveModule("circular-a.tpeg"),
+      ).rejects.toBeInstanceOf(CircularDependencyError);
+      expect(resolver.context.cache.size).toBe(0);
+      expect(resolver.context.resolving.size).toBe(0);
+    });
+
     it("should reject a module file with unconsumed trailing content", async () => {
       // `tpegModuleFile` is a prefix parser: without a full-consumption
       // check, `grammar G { ... }\nGARBAGE` loads "successfully" with the
@@ -576,6 +633,99 @@ grammar Bad { !!! }`,
       expect(graph.get("/test/operators.tpeg")).toEqual([]);
     });
 
+    it("limits a dependency graph to the requested module and its transitive dependencies", async () => {
+      mockFs.addFile("/test/base.tpeg", BASE_MODULE);
+      mockFs.addFile("/test/utils.tpeg", UTILS_MODULE);
+      mockFs.addFile("/test/unrelated.tpeg", 'grammar Unrelated { r = "u" }');
+      await resolver.resolveModule("unrelated.tpeg");
+
+      const graph = await resolver.getDependencyGraph("base.tpeg");
+
+      expect([...graph.keys()].sort()).toEqual([
+        "/test/base.tpeg",
+        "/test/utils.tpeg",
+      ]);
+      expect(graph.get("/test/base.tpeg")).toEqual(["/test/utils.tpeg"]);
+    });
+
+    it("does not let changes to a returned graph mutate cached dependencies", async () => {
+      mockFs.addFile("/test/base.tpeg", BASE_MODULE);
+      mockFs.addFile("/test/utils.tpeg", UTILS_MODULE);
+      const graph = await resolver.getDependencyGraph("base.tpeg");
+      graph.get("/test/base.tpeg")?.push("/test/phantom.tpeg");
+
+      const module = await resolver.resolveModule("base.tpeg");
+      expect(module.dependencies).toEqual(["/test/utils.tpeg"]);
+      const again = await resolver.getDependencyGraph("base.tpeg");
+      expect(again.get("/test/base.tpeg")).toEqual(["/test/utils.tpeg"]);
+    });
+
+    it.each(["before", "after"])(
+      "reloads a call queued %s invalidation without caching the in-flight read",
+      async (queuedAt) => {
+        mockFs.addFile("/test/main.tpeg", 'grammar Before { r = "a" }');
+        const { readStarted, resume } = pauseRead(mockFs, "/test/main.tpeg");
+        const before = resolver.resolveModule("main.tpeg");
+        await readStarted;
+        const queuedBefore =
+          queuedAt === "before"
+            ? resolver.resolveModule("main.tpeg")
+            : undefined;
+        resolver.clearCache();
+        mockFs.addFile("/test/main.tpeg", 'grammar After { r = "b" }');
+        const after = queuedBefore ?? resolver.resolveModule("main.tpeg");
+        resume();
+
+        const [oldModule, freshModule] = await Promise.all([before, after]);
+        expect(oldModule.content.grammars[0]?.name).toBe("Before");
+        expect(freshModule.content.grammars[0]?.name).toBe("After");
+        expect(await resolver.resolveModule("main.tpeg")).toBe(freshModule);
+        expect(resolver.context.resolving.size).toBe(0);
+      },
+    );
+
+    it("returns a complete dependency graph when the cache is invalidated during a dependency read", async () => {
+      mockFs.addFile("/test/base.tpeg", BASE_MODULE);
+      mockFs.addFile("/test/utils.tpeg", UTILS_MODULE);
+      const { readStarted, resume } = pauseRead(mockFs, "/test/utils.tpeg");
+      const pendingGraph = resolver.getDependencyGraph("base.tpeg");
+      await readStarted;
+      resolver.clearCache();
+      resume();
+
+      const graph = await pendingGraph;
+      expect([...graph.keys()].sort()).toEqual([
+        "/test/base.tpeg",
+        "/test/utils.tpeg",
+      ]);
+      expect(graph.get("/test/base.tpeg")).toEqual(["/test/utils.tpeg"]);
+      expect(graph.get("/test/utils.tpeg")).toEqual([]);
+      expect(resolver.context.cache.size).toBe(0);
+      expect(resolver.context.resolving.size).toBe(0);
+    });
+
+    it("retains cycle detection through cache invalidation without leaving failed entries in the new cache", async () => {
+      mockFs.addFile("/test/circular-a.tpeg", CIRCULAR_A);
+      mockFs.addFile("/test/circular-b.tpeg", CIRCULAR_B);
+      const { readStarted, resume } = pauseRead(
+        mockFs,
+        "/test/circular-b.tpeg",
+      );
+      const pending = resolver.resolveModule("circular-a.tpeg");
+      const rejection = expect(pending).rejects.toBeInstanceOf(
+        CircularDependencyError,
+      );
+      await readStarted;
+      resolver.clearCache();
+      resume();
+      await rejection;
+
+      expect(resolver.context.cache.size).toBe(0);
+      expect(resolver.context.resolving.size).toBe(0);
+      mockFs.addFile("/test/utils.tpeg", UTILS_MODULE);
+      expect((await resolver.resolveModule("utils.tpeg")).resolved).toBe(true);
+    });
+
     it("should check for circular dependencies", async () => {
       mockFs.addFile("/test/utils.tpeg", UTILS_MODULE);
       mockFs.addFile("/test/circular-a.tpeg", CIRCULAR_A);
@@ -611,6 +761,29 @@ grammar Bad { !!! }`,
   });
 
   describe("Error Classes", () => {
+    it("preserves the cause of a module resolution error", () => {
+      const cause = new Error("permission denied");
+      const error = new ModuleResolutionError(
+        "could not load",
+        "test.tpeg",
+        cause,
+      );
+      expect(error.cause).toBe(cause);
+    });
+
+    it("preserves the original file-system error when loading fails", async () => {
+      mockFs.addFile("/test/utils.tpeg", UTILS_MODULE);
+      const cause = new Error("read failed");
+      mockFs.readFile = async () => {
+        throw cause;
+      };
+      await expect(resolver.resolveModule("utils.tpeg")).rejects.toMatchObject({
+        name: "ModuleResolutionError",
+        modulePath: "/test/utils.tpeg",
+        cause,
+      });
+    });
+
     it("should create ModuleResolutionError", () => {
       const error = new ModuleResolutionError("Test error", "test.tpeg");
       expect(error.message).toBe("Test error");
