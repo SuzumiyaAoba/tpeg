@@ -137,7 +137,12 @@
  * genuinely changes value shape and has no reconstruction step).
  */
 
-import { getSingleCodePoint, someExpression } from "@suzumiyaaoba/tpeg-core";
+import {
+  compileCharRange,
+  getSingleCodePoint,
+  quantifiedRangeError,
+  someExpression,
+} from "@suzumiyaaoba/tpeg-core";
 import {
   EMPTY_FIRST_SET,
   type FirstSet,
@@ -226,13 +231,7 @@ const isStructurallyFusable = (expr: Expression): boolean =>
       // construction-time error the base generator produces.
       if (
         node.type === "Quantified" &&
-        !(
-          Number.isSafeInteger(node.min) &&
-          node.min >= 0 &&
-          (node.max === undefined ||
-            node.max === Number.POSITIVE_INFINITY ||
-            (Number.isSafeInteger(node.max) && node.max >= node.min))
-        )
+        quantifiedRangeError(node.min, node.max)
       ) {
         return true;
       }
@@ -652,38 +651,14 @@ const escapeRegexLiteral = (s: string): string =>
  * `] ^ - \` a raw range endpoint might happen to be. */
 const codePointEscape = (cp: number): string => `\\u{${cp.toString(16)}}`;
 
-/** Renders a `CharacterClass`'s ranges as a `[...]`/`[^...]` bracket
- * expression body (no enclosing capturing group). Validates each range
- * endpoint the same way `@suzumiyaaoba/tpeg-core`'s `compileSpecs`
- * (`char-class.ts`) does for the UNFUSED path -- this module bypasses
- * that runtime validation entirely, so without the same checks here a
- * hand-built `CharacterClass` with a multi-code-point endpoint (`["ab",
- * "z"]`) would silently truncate to its first code point (`a-z`) instead
- * of throwing the way `charClass("ab")` does, and a backwards range
- * would surface as an opaque `RegExp` "Range out of order" SyntaxError
- * instead of the clear message below. */
+/** Render class members as code-point escapes for a Unicode regular expression. */
 const charClassBracketExpr = (expr: CharacterClass): string => {
   const body = expr.ranges
-    .map((r) => {
-      const startCp = getSingleCodePoint(r.start);
-      if (startCp === undefined) {
-        throw new Error(
-          `Invalid character class range bound: "${r.start}" is not exactly one character`,
-        );
-      }
-      if (r.end === undefined) return codePointEscape(startCp);
-      const endCp = getSingleCodePoint(r.end);
-      if (endCp === undefined) {
-        throw new Error(
-          `Invalid character class range bound: "${r.end}" is not exactly one character`,
-        );
-      }
-      if (startCp > endCp) {
-        throw new Error(
-          `Invalid character class range: ["${r.start}", "${r.end}"] -- start (U+${startCp.toString(16).toUpperCase()}) is greater than end (U+${endCp.toString(16).toUpperCase()})`,
-        );
-      }
-      return `${codePointEscape(startCp)}-${codePointEscape(endCp)}`;
+    .map(({ start, end }) => {
+      const { lo, hi } = compileCharRange(start, end);
+      return end === undefined
+        ? codePointEscape(lo)
+        : `${codePointEscape(lo)}-${codePointEscape(hi)}`;
     })
     .join("");
   return `[${expr.negated ? "^" : ""}${body}]`;
@@ -821,26 +796,8 @@ const emit = (expr: Expression, counter: GroupCounter): Emitted => {
       const groupIndex = counter.next++;
       const leafSource = simpleLeafSource(expr.expression);
       if (expr.type === "Quantified") {
-        // Same contract `quantified` (`packages/core/src/repetition.ts`)
-        // validates at construction -- mirrored here, not just enforced
-        // via `isStructurallyFusable`, because `emitFusedExpression` is
-        // itself an exported entry point a caller can feed a hand-built
-        // (never parser-validated) AST. Verbatim emission is never safe:
-        // `{5,2}` is a `SyntaxError` at RegExp construction, while
-        // `{-1,}`/`{2.5,}` aren't quantifier syntax at all and would
-        // silently match LITERAL text under Annex B.
-        const { min, max } = expr;
-        if (
-          !Number.isSafeInteger(min) ||
-          min < 0 ||
-          (max !== undefined &&
-            (max < min ||
-              (max !== Number.POSITIVE_INFINITY && !Number.isSafeInteger(max))))
-        ) {
-          throw new Error(
-            `Invalid quantified range: minimum (${min}) must be a non-negative safe integer and maximum (${max}) must be a safe integer not less than minimum, or Infinity`,
-          );
-        }
+        const error = quantifiedRangeError(expr.min, expr.max);
+        if (error) throw new Error(error);
       }
       const quantifier =
         expr.type === "Star"

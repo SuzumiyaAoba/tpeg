@@ -3,10 +3,11 @@ export {
   collectRequiredTopLevelLabels,
 } from "@suzumiyaaoba/tpeg-core";
 import {
+  analyzeSequenceValues,
   childExpressions,
   escapeStringLiteral,
+  selectTransformSets,
   someExpression,
-  unwrapToLabeledExpression,
 } from "@suzumiyaaoba/tpeg-core";
 import { codeContainsIdentifier } from "./brace-scanner";
 import {
@@ -33,12 +34,6 @@ import type {
 const identity = (s: string): string => s;
 
 /**
- * Target language transform functions are matched against when a grammar
- * carries multiple `transforms ... @language { ... }` blocks.
- */
-const CODEGEN_TARGET_LANGUAGE = "typescript";
-
-/**
  * Builds a rule-name -> TransformFunction lookup for the TypeScript-targeted
  * transform set on a grammar. If more than one TypeScript transform set is
  * present, the first one (in declaration order) wins.
@@ -46,20 +41,9 @@ const CODEGEN_TARGET_LANGUAGE = "typescript";
 export const collectTransformFunctions = (
   grammar: GrammarDefinition,
 ): Map<string, TransformFunction> => {
-  const byName = new Map<string, TransformFunction>();
-  const transformSet = grammar.transforms?.find(
-    (t) => t.transformSet.targetLanguage === CODEGEN_TARGET_LANGUAGE,
-  )?.transformSet;
-
-  if (!transformSet) {
-    return byName;
-  }
-
-  for (const fn of transformSet.functions) {
-    byName.set(fn.name, fn);
-  }
-
-  return byName;
+  const functions =
+    selectTransformSets(grammar).get("typescript")?.functions ?? [];
+  return new Map(functions.map((fn) => [fn.name, fn]));
 };
 
 export { findMemoizeAnnotation } from "./grammar-validation";
@@ -287,18 +271,9 @@ function sequenceShape(expr: Sequence): {
   combinator: "sequence" | "captureSequence" | null;
   unwrapSingleValue: boolean;
 } {
-  let valueCount = 0;
-  let hasSkip = false;
-  for (const element of expr.elements) {
-    if (element.type === "Cut") continue;
-    if (element.type === "Skip") {
-      hasSkip = true;
-    } else if (unwrapToLabeledExpression(element)) {
-      return { combinator: "captureSequence", unwrapSingleValue: false };
-    } else {
-      valueCount++;
-    }
-  }
+  const { hasLabels, valueCount, hasSkip } = analyzeSequenceValues(expr);
+  if (hasLabels)
+    return { combinator: "captureSequence", unwrapSingleValue: false };
   // A skip consumes input and contributes no value. A sole visible value
   // stays scalar even when a surrounding sequence must run the skips.
   return {

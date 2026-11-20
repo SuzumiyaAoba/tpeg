@@ -19,17 +19,9 @@ import { parseExample } from "./parse-example";
 
 console.log("📁 TPEG Parser File-Based Demo\n");
 
-// Helper function to read file contents
-const readExampleFile = (filename: string): string => {
-  const examplesDir = join(import.meta.dir, "..", "examples");
-  const filePath = join(examplesDir, filename);
-  try {
-    return readFileSync(filePath, "utf-8");
-  } catch (error) {
-    console.error(`❌ Failed to read ${filename}:`, error);
-    return "";
-  }
-};
+const examplesDir = join(import.meta.dir, "..", "examples");
+const readExampleFile = (filename: string): string =>
+  readFileSync(join(examplesDir, filename), "utf8");
 
 // Helper function to parse sample inputs from text file
 const parseInputs = (content: string): string[] => {
@@ -44,7 +36,6 @@ const demoGrammarFile = (filename: string) => {
   console.log(`=== Grammar File: ${filename} ===`);
 
   const grammarContent = readExampleFile(filename);
-  if (!grammarContent) return;
 
   console.log("📄 Grammar Content:");
   console.log(grammarContent);
@@ -52,31 +43,30 @@ const demoGrammarFile = (filename: string) => {
 
   const result = parseGrammarFile(filename, grammarContent);
 
-  if (result.success) {
-    const [grammar] = result.val.grammars;
-    console.log(`✅ Successfully parsed grammar: ${grammar.name}`);
-    console.log(`   📊 Annotations: ${grammar.annotations.length}`);
-    console.log(`   📋 Rules: ${grammar.rules.length}`);
+  if (!result.success) {
+    throw new Error(
+      `${filename}:${result.line}:${result.column} ${result.error.message}`,
+    );
+  }
+  const [grammar] = result.val.grammars;
+  console.log(`✅ Successfully parsed grammar: ${grammar.name}`);
+  console.log(`   📊 Annotations: ${grammar.annotations.length}`);
+  console.log(`   📋 Rules: ${grammar.rules.length}`);
 
-    // Show annotations
-    if (grammar.annotations.length > 0) {
-      console.log("   📝 Annotations:");
-      for (const annotation of grammar.annotations) {
-        console.log(`      @${annotation.key}: "${annotation.value}"`);
-      }
+  // Show annotations
+  if (grammar.annotations.length > 0) {
+    console.log("   📝 Annotations:");
+    for (const annotation of grammar.annotations) {
+      console.log(`      @${annotation.key}: "${annotation.value}"`);
     }
+  }
 
-    // Show rules
-    if (grammar.rules.length > 0) {
-      console.log("   📋 Rules:");
-      for (const rule of grammar.rules) {
-        console.log(`      ${rule.name} = [${rule.pattern.type}]`);
-      }
+  // Show rules
+  if (grammar.rules.length > 0) {
+    console.log("   📋 Rules:");
+    for (const rule of grammar.rules) {
+      console.log(`      ${rule.name} = [${rule.pattern.type}]`);
     }
-  } else {
-    console.log("❌ Failed to parse grammar");
-    console.log(`   Error: ${result.error.message}`);
-    console.log(`   Position: line ${result.line}, column ${result.column}`);
   }
 
   console.log();
@@ -89,7 +79,6 @@ const demoBasicSyntaxFile = (filename: string) => {
   console.log(`=== Basic Syntax from File: ${filename} ===`);
 
   const content = readExampleFile(filename);
-  if (!content) return;
 
   const inputs = parseInputs(content);
   const parsers = [
@@ -125,24 +114,19 @@ const demoBasicSyntaxFile = (filename: string) => {
 };
 
 // Helper function to parse structured input file sections
-const parseStructuredInputs = (content: string): Record<string, string[]> => {
-  const sections: Record<string, string[]> = {};
-  let currentSection: string | undefined;
+const parseStructuredInputs = (content: string): Map<string, string[]> => {
+  const sections = new Map<string, string[]>();
+  let inputs: string[] | undefined;
 
   for (const line of content.split("\n")) {
     const trimmed = line.trim();
-
     if (trimmed.startsWith("## ")) {
-      currentSection = trimmed.substring(3);
-      sections[currentSection] = [];
-    } else if (trimmed && !trimmed.startsWith("#") && currentSection) {
-      const sectionArray = sections[currentSection];
-      if (sectionArray) {
-        sectionArray.push(trimmed);
-      }
+      inputs = [];
+      sections.set(trimmed.slice(3), inputs);
+    } else if (trimmed && !trimmed.startsWith("#")) {
+      inputs?.push(trimmed);
     }
   }
-
   return sections;
 };
 
@@ -151,11 +135,10 @@ const demoStructuredInputFile = (filename: string) => {
   console.log(`=== Structured Input Demo: ${filename} ===`);
 
   const content = readExampleFile(filename);
-  if (!content) return;
 
   const sections = parseStructuredInputs(content);
 
-  for (const [sectionName, inputs] of Object.entries(sections)) {
+  for (const [sectionName, inputs] of sections) {
     console.log(`📋 ${sectionName}:`);
 
     for (const input of inputs.slice(0, 3)) {

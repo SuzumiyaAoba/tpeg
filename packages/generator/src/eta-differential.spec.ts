@@ -65,6 +65,7 @@ import {
   genGrammarSource,
   generateTypeScriptParser,
   grammarDefinition,
+  prepareGrammarForGeneration,
   keyWithValue,
   makeRng,
 } from "@suzumiyaaoba/tpeg-parser";
@@ -121,18 +122,24 @@ describe("Eta generator differential fuzzing (vs. tpeg-parser's base generator)"
           continue;
         }
 
-        let base: Parser<unknown>;
-        const variantParsers: [EtaVariantSpec, Parser<unknown>][] = [];
         try {
-          base = compileStart(
-            generateTypeScriptParser(parsed.val, {
-              includeImports: false,
-              includeTypes: false,
-            }).code,
-            core,
-            combinator,
-          );
-          for (const variant of ETA_VARIANTS) {
+          prepareGrammarForGeneration(parsed.val);
+        } catch {
+          skippedCount++;
+          continue;
+        }
+
+        const base = compileStart(
+          generateTypeScriptParser(parsed.val, {
+            includeImports: false,
+            includeTypes: false,
+          }).code,
+          core,
+          combinator,
+        );
+        const variantParsers: [EtaVariantSpec, Parser<unknown>][] = [];
+        for (const variant of ETA_VARIANTS) {
+          try {
             const generator = new EtaTPEGCodeGenerator({
               language: "typescript",
               includeImports: false,
@@ -144,25 +151,16 @@ describe("Eta generator differential fuzzing (vs. tpeg-parser's base generator)"
               variant,
               compileStart(code, core, combinator),
             ]);
+          } catch (cause) {
+            throw new Error(
+              `${variant.name} failed to generate or load for seed ${SEED}:\n${source}`,
+              { cause },
+            );
           }
-        } catch {
-          // A construction-time rejection (e.g. `assertNoNullableRepetition`
-          // via `prepareGrammarForGeneration`, or a left-recursive/
-          // duplicate-name rule) or a generated-module evaluation compile error -- not a
-          // differential-fuzzing concern, since the base generator would
-          // have hit an equivalent rejection for the same grammar.
-          skippedCount++;
-          continue;
         }
-
         testedCount++;
         for (const input of ALL_TEST_INPUTS) {
-          let baseResult: ReturnType<Parser<unknown>>;
-          try {
-            baseResult = base(input, 0);
-          } catch {
-            continue;
-          }
+          const baseResult = base(input, 0);
           const baseKey = keyWithValue(baseResult);
 
           for (const [variant, parser] of variantParsers) {

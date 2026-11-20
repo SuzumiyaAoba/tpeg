@@ -1,5 +1,8 @@
 import {
-  forEachExpression,
+  analyzeSequenceValues,
+  compileCharRange,
+  quantifiedRangeError,
+  type RuleDefinition,
   type Expression,
   type GrammarDefinition,
 } from "@suzumiyaaoba/tpeg-core";
@@ -7,7 +10,6 @@ import {
   findMemoizeAnnotation,
   memoizeCapacity,
   prepareGrammarForGeneration,
-  collectTopLevelLabels,
   resolveStartRule,
 } from "@suzumiyaaoba/tpeg-parser";
 
@@ -28,48 +30,11 @@ export interface PortableGrammar {
   start: string;
 }
 
-export function portableGrammar(grammar: GrammarDefinition): PortableGrammar {
-  const { grammar: normalized } = prepareGrammarForGeneration(grammar);
-  const names = new Set(grammar.rules.map((rule) => rule.name));
-  for (const rule of grammar.rules) {
-    forEachExpression(rule.pattern, (expr) => {
-      if (
-        expr.type === "Quantified" &&
-        (!Number.isSafeInteger(expr.min) ||
-          expr.min < 0 ||
-          (expr.max !== undefined &&
-            expr.max !== Infinity &&
-            (!Number.isSafeInteger(expr.max) || expr.max < expr.min)))
-      )
-        throw new Error(`Invalid quantified repetition in rule "${rule.name}"`);
-      if (
-        expr.type === "CharacterClass" &&
-        expr.ranges.some(
-          (range) =>
-            Array.from(range.start).length !== 1 ||
-            Array.from(range.end ?? range.start).length !== 1 ||
-            range.start.codePointAt(0)! >
-              (range.end ?? range.start).codePointAt(0)!,
-        )
-      )
-        throw new Error(`Invalid character range in rule "${rule.name}"`);
-      if (
-        expr.type === "QualifiedIdentifier" ||
-        (expr.type === "Identifier" && !names.has(expr.name))
-      ) {
-        throw new Error(
-          `Rule "${rule.name}" has an unresolved reference; resolve grammar modules before generating a native parser`,
-        );
-      }
-      if (expr.type === "ActionExpression") {
-        throw new Error(
-          "Inline actions contain TypeScript/JavaScript. Use a target-language transform or a native parser's transform callback instead.",
-        );
-      }
-    });
-  }
-
-  const nodes: PortableNode[] = [];
+function compileRule(
+  rule: RuleDefinition,
+  names: ReadonlySet<string>,
+  nodes: PortableNode[],
+): PortableGrammar["rules"][number] {
   function emit(expr: Expression): number {
     const node: PortableNode = {
       kind: expr.type,
@@ -85,13 +50,19 @@ export function portableGrammar(grammar: GrammarDefinition): PortableGrammar {
         node.text = expr.value;
         break;
       case "CharacterClass":
-        node.ranges = expr.ranges.map((range) => [
-          range.start.codePointAt(0)!,
-          (range.end ?? range.start).codePointAt(0)!,
-        ]);
+        node.ranges = expr.ranges.map(({ start, end }) => {
+          const { lo, hi } = compileCharRange(start, end);
+          return [lo, hi];
+        });
         node.flag = expr.negated;
         break;
       case "Identifier":
+      case "QualifiedIdentifier":
+        if (expr.type === "QualifiedIdentifier" || !names.has(expr.name)) {
+          throw new Error(
+            `Rule "${rule.name}" has an unresolved reference; resolve grammar modules before generating a native parser`,
+          );
+        }
         node.text = expr.name;
         break;
       case "LabeledExpression":
@@ -99,13 +70,12 @@ export function portableGrammar(grammar: GrammarDefinition): PortableGrammar {
         node.children = [emit(expr.expression)];
         break;
       case "Sequence": {
+        const { hasLabels, valueCount } = analyzeSequenceValues(expr);
         node.children = expr.elements.map(emit);
-        node.flag = collectTopLevelLabels(expr).length > 0;
+        node.flag = hasLabels;
         // Sequence(cut, x) and @skip's boundary wrappers preserve x's
         // scalar value; an actual multi-element sequence returns a tuple.
-        node.min = expr.elements.filter(
-          (element) => element.type !== "Cut" && element.type !== "Skip",
-        ).length;
+        node.min = valueCount;
         break;
       }
       case "Choice":
@@ -113,17 +83,21 @@ export function portableGrammar(grammar: GrammarDefinition): PortableGrammar {
         break;
       case "Star":
       case "Plus":
-      case "Quantified":
         node.children = [emit(expr.expression)];
-        node.min =
-          expr.type === "Plus" ? 1 : expr.type === "Quantified" ? expr.min : 0;
-        node.max =
-          expr.type === "Quantified" &&
-          expr.max !== undefined &&
-          expr.max !== Infinity
-            ? expr.max
-            : -1;
+        node.min = expr.type === "Plus" ? 1 : 0;
         break;
+      case "Quantified": {
+        const error = quantifiedRangeError(expr.min, expr.max);
+        if (error)
+          throw new Error(
+            `Invalid quantified repetition in rule "${rule.name}": ${error}`,
+          );
+        node.children = [emit(expr.expression)];
+        node.min = expr.min;
+        node.max =
+          expr.max === undefined || expr.max === Infinity ? -1 : expr.max;
+        break;
+      }
       case "Group":
       case "Optional":
       case "PositiveLookahead":
@@ -139,27 +113,30 @@ export function portableGrammar(grammar: GrammarDefinition): PortableGrammar {
       case "AnyChar":
         break;
       case "ActionExpression":
-      case "QualifiedIdentifier":
-        throw new Error(`Unsupported portable expression: ${expr.type}`);
+        throw new Error(
+          "Inline actions contain TypeScript/JavaScript. Use a target-language transform or a native parser's transform callback instead.",
+        );
     }
     nodes.push(node);
     return nodes.length - 1;
   }
+  const annotation = findMemoizeAnnotation(rule);
+  const capacity = annotation ? memoizeCapacity(annotation) : Infinity;
+  return {
+    name: rule.name,
+    node: emit(rule.pattern),
+    memoize: annotation !== undefined && capacity !== 0,
+    memoLimit: capacity === Infinity ? -1 : capacity,
+  };
+}
+
+export function portableGrammar(source: GrammarDefinition): PortableGrammar {
+  const { grammar } = prepareGrammarForGeneration(source);
   const start = resolveStartRule(grammar);
   if (start === null)
     throw new Error("Cannot generate a parser from an empty grammar");
-  return {
-    nodes,
-    rules: normalized.rules.map((rule) => {
-      const annotation = findMemoizeAnnotation(rule);
-      const capacity = annotation ? memoizeCapacity(annotation) : Infinity;
-      return {
-        name: rule.name,
-        node: emit(rule.pattern),
-        memoize: annotation !== undefined && capacity !== 0,
-        memoLimit: capacity === Infinity ? -1 : capacity,
-      };
-    }),
-    start: start.rule.name,
-  };
+  const names = new Set(grammar.rules.map((rule) => rule.name));
+  const nodes: PortableNode[] = [];
+  const rules = grammar.rules.map((rule) => compileRule(rule, names, nodes));
+  return { nodes, rules, start: start.rule.name };
 }

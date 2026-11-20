@@ -65,6 +65,14 @@ describe("S-expression Parser", () => {
   });
 
   describe("Quote sugar", () => {
+    it("gives each quoted form its own symbol", () => {
+      const [first, second] = parseSExprs("'a 'b");
+      if (!Array.isArray(first) || !Array.isArray(second))
+        throw new Error("Expected quoted lists");
+      expect(first[0]).toEqual(sym("quote"));
+      expect(first[0]).not.toBe(second[0]);
+    });
+
     it("desugars 'x to (quote x)", () => {
       expect(parseSExpr("'x")).toEqual([sym("quote"), sym("x")]);
       expect(parseSExpr("'(a b)")).toEqual([

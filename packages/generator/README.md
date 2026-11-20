@@ -114,6 +114,7 @@ Configuration options for code generation:
 interface CodeGenOptions {
   language: "typescript";
   namePrefix?: string;
+  header?: string;
   includeImports?: boolean;
   includeTypes?: boolean;
   optimize?: boolean;

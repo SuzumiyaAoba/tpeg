@@ -270,18 +270,19 @@ export const FAIL: ParseFailure = createFailureSingleton(false);
 export const FAIL_FATAL: ParseFailure = createFailureSingleton(true);
 
 /**
- * Checks whether `result` is a `fatal` (cut/commit-marked) failure.
+ * Checks whether a committed failure or resource abort prevents backtracking.
  * Identity comparisons against the two singletons run FIRST, so this never
  * triggers `error`'s lazy getter on the hot path -- only a non-singleton
  * failure (from a hand-written parser, or one of this module's own
  * "internal invariant violation" `ParseError`s that deliberately stay
  * concrete -- see `./combinators.ts`'s `Parser at index ... is undefined`)
- * falls through to reading `.error.fatal` directly.
+ * needs to read its control flags.
  */
 export const isFatalFailure = (result: ParseFailure): boolean => {
   if (result === FAIL_FATAL) return true;
   if (result === FAIL) return false;
-  return result.error.fatal === true;
+  const error = result.error;
+  return error.fatal === true || error.abort === true;
 };
 
 /** Resets the farthest-failure watermark unconditionally. Called by

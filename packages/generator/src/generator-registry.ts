@@ -82,10 +82,6 @@ export function createGeneratorRegistry(): CodeGeneratorRegistry {
       }).generateGrammar(grammar);
       return {
         ...generated,
-        code:
-          options.header === undefined
-            ? generated.code
-            : `${options.header}\n${generated.code}`,
         language: "typescript",
         extension: options.includeTypes === false ? ".js" : ".ts",
       };

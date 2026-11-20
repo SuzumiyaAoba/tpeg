@@ -470,12 +470,8 @@ describe("construction-time validation (malformed specs)", () => {
   });
 
   it("throws for a range whose bound is more than one code point", () => {
-    expect(() => charClass(["a", "bc"])).toThrow(
-      /must be exactly one character/,
-    );
-    expect(() => charClass(["ab", "c"])).toThrow(
-      /must be exactly one character/,
-    );
+    expect(() => charClass(["a", "bc"])).toThrow(/not exactly one character/);
+    expect(() => charClass(["ab", "c"])).toThrow(/not exactly one character/);
   });
 
   it("does NOT throw for a single astral character (one code point, two UTF-16 code units)", () => {

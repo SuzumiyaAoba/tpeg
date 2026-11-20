@@ -1,6 +1,6 @@
 import { parse } from "@suzumiyaaoba/tpeg-core";
 import { start } from "./generated/sexpr.generated";
-import type { SExp } from "./sexpr";
+import { onlyForm, type SExp } from "./forms";
 
 /**
  * S-expression parser -- `.tpeg` grammar twin.
@@ -30,16 +30,5 @@ export const parseSExprsTpeg = (input: string): SExp[] => {
  * Parse exactly one S-expression via the generated parser -- the
  * `.tpeg` twin of `parseSExpr`.
  */
-export const parseSExprTpeg = (input: string): SExp => {
-  const [form, ...rest] = parseSExprsTpeg(input);
-
-  if (form === undefined || rest.length > 0) {
-    throw new Error(
-      `Expected exactly one S-expression, found ${
-        form === undefined ? 0 : rest.length + 1
-      }`,
-    );
-  }
-
-  return form;
-};
+export const parseSExprTpeg = (input: string): SExp =>
+  onlyForm(parseSExprsTpeg(input));

@@ -795,6 +795,38 @@ describe("findUnreachableAlternatives: committed (fatal-only) earlier alternativ
 });
 
 describe("findUnreachableAlternatives: alternatives that stay reachable", () => {
+  it("includes committed failures from the grammar's automatic skip rule", () => {
+    const grammar = grammarFromSource(
+      '@skip: ws\n@noskip\nstart = (token / "x"?) / " "\ntoken = "a"\nws = " " ~ "y"',
+    );
+    expect(findUnreachableAlternatives(grammar)).toEqual([]);
+    expect(() => validateGrammar(grammar)).not.toThrow();
+  });
+
+  it("only considers transforms in the selected set for each target", () => {
+    const grammar = grammarFromSource(
+      'start = maybe / "fallback"\nmaybe = "x"?',
+    );
+    const fn = createTransformFunction(
+      "maybe",
+      [],
+      createTransformReturnType("Result", "string"),
+      'return { success: false, error: "absent" };',
+    );
+    grammar.transforms = [
+      createTransformDefinition(createTransformSet("First", "typescript", [])),
+      createTransformDefinition(
+        createTransformSet("Second", "typescript", [fn]),
+      ),
+    ];
+    expect(findUnreachableAlternatives(grammar)).toMatchObject([
+      { ruleName: "start", deadAlternatives: [2] },
+    ]);
+    grammar.transforms.push(
+      createTransformDefinition(createTransformSet("Third", "python", [fn])),
+    );
+    expect(findUnreachableAlternatives(grammar)).toEqual([]);
+  });
   it("does NOT flag ordinary failable alternatives", () => {
     const grammar = grammarFromSource('start = "a" / "b"');
     expect(findUnreachableAlternatives(grammar)).toEqual([]);

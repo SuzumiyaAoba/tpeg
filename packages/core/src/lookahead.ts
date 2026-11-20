@@ -3,7 +3,6 @@ import {
   FAIL,
   FAIL_FATAL,
   fail,
-  isFatalFailure,
   restoreFailureWatermark,
   snapshotFailureWatermark,
 } from "./failure";
@@ -153,11 +152,11 @@ export const andPredicate =
       // c` would let a cut inside the lookahead wrongly suppress `c` on
       // an input where `a` matches but `b` doesn't.
       if (result === FAIL_FATAL) return FAIL;
-      if (isFatalFailure(result)) {
-        // `abort` (resource-limit -- see `ParseError.abort` in types.ts)
-        // is not a cut scoped to this probe: re-raise it unchanged.
-        if (result.error.abort === true) return result;
-        const error = cloneParseError(result.error);
+      if (result === FAIL) return result;
+      const childError = result.error;
+      if (childError.abort === true) return result;
+      if (childError.fatal === true) {
+        const error = cloneParseError(childError);
         error.fatal = false;
         return { success: false, error };
       }

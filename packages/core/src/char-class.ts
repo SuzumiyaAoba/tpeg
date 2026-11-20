@@ -25,64 +25,40 @@ const classToString = (charOrRange: CharClassSpec): string => {
   return `${escapeControlCharsForDisplay(charOrRange[0])}-${escapeControlCharsForDisplay(charOrRange[1])}`;
 };
 
-/** A single character is just the degenerate range `[cp, cp]` -- folding
- * both spec shapes into one uniform `{start, end}` pair removes a branch
- * from the hot per-character match loop below and lets a single char
- * participate in the same code-point range check a `["a","z"]` pair
- * does, with no separate string-equality path to keep in sync with it. */
-interface CompiledSpec {
-  readonly start: number;
-  readonly end: number;
+/** Inclusive Unicode code-point bounds for one character-class member. */
+export interface CodePointInterval {
+  readonly lo: number;
+  readonly hi: number;
 }
 
-/**
- * Pre-compiles character class specifications into code-point ranges for
- * high performance.
- *
- * Validates each spec eagerly, at `charClass`/`negatedCharClass`/
- * `charClassRun` construction time -- matching `quantified`'s own
- * construction-time validation of an invalid `min`/`max`
- * (`./repetition.ts`) for the same reason: a malformed spec is a grammar-
- * authoring mistake, not a parse-time condition, and reporting it eagerly
- * beats the two silent-wrong-answer failure modes it would otherwise have:
- * a single-character spec string with more than one code point (e.g.
- * `charClass("ab")` meant as a 2-character alternation, not a class) would
- * silently match only its first code point -- `compileSpecs` only ever
- * reads `spec.codePointAt(0)`; and a backwards range (e.g. `["z", "a"]`,
- * `start` after `end`) would silently compile to a class that matches
- * nothing (`matchesSpecsSlow`'s `charCode >= start && charCode <= end` is
- * vacuously false for every code point when `start > end`), with no
- * diagnostic anywhere pointing at the typo. `packages/parser/src/
- * character-class.ts`'s grammar-level `charRange` parser already rejects
- * a backwards range the same way, as a fatal parse error, for grammar
- * TEXT written as `[z-a]` -- this closes the same gap for a hand-written
- * caller of this runtime API directly.
- */
-const compileSpecs = (charOrRanges: readonly CharClassSpec[]): CompiledSpec[] =>
-  charOrRanges.map((spec) => {
-    if (typeof spec === "string") {
-      const code = getSingleCodePoint(spec);
-      if (code === undefined) {
-        throw new Error(
-          `Invalid character class spec: "${spec}" is not exactly one character (a multi-character string would silently match only its first character) -- pass a ["start", "end"] range if a sequence of characters was intended`,
-        );
-      }
-      return { start: code, end: code };
-    }
-    const [rangeStart, rangeEnd] = spec;
-    const startCode = getSingleCodePoint(rangeStart);
-    const endCode = getSingleCodePoint(rangeEnd);
-    if (startCode === undefined || endCode === undefined) {
-      throw new Error(
-        `Invalid character class range: ["${rangeStart}", "${rangeEnd}"] -- both bounds of a range must be exactly one character`,
-      );
-    }
-    if (startCode > endCode) {
-      throw new Error(
-        `Invalid character class range: ["${rangeStart}", "${rangeEnd}"] -- start (U+${startCode.toString(16).toUpperCase()}) is greater than end (U+${endCode.toString(16).toUpperCase()})`,
-      );
-    }
-    return { start: startCode, end: endCode };
+/** Decode a literal member or range once, before matching or generating code. */
+export function compileCharRange(
+  start: string,
+  end?: string,
+): CodePointInterval {
+  const lo = getSingleCodePoint(start);
+  const hi = end === undefined ? lo : getSingleCodePoint(end);
+  if (lo === undefined || hi === undefined) {
+    const bound = lo === undefined ? start : end;
+    throw new Error(
+      `Invalid character class range bound: ${JSON.stringify(bound)} is not exactly one character`,
+    );
+  }
+  if (lo > hi) {
+    throw new Error(
+      `Invalid character class range: [${JSON.stringify(start)}, ${JSON.stringify(end)}] -- start (U+${lo.toString(16).toUpperCase()}) is greater than end (U+${hi.toString(16).toUpperCase()})`,
+    );
+  }
+  return { lo, hi };
+}
+
+const compileSpecs = (specs: readonly CharClassSpec[]): CodePointInterval[] =>
+  specs.map((spec) => {
+    if (typeof spec === "string") return compileCharRange(spec);
+    const [start, end] = spec;
+    if (end === undefined)
+      throw new TypeError("Invalid character class range: missing end bound");
+    return compileCharRange(start, end);
   });
 
 /**
@@ -95,33 +71,22 @@ const compileSpecs = (charOrRanges: readonly CharClassSpec[]): CompiledSpec[] =>
  */
 const matchesSpecsSlow = (
   charCode: number,
-  compiledSpecs: readonly CompiledSpec[],
+  compiledSpecs: readonly CodePointInterval[],
 ): boolean => {
   for (let i = 0; i < compiledSpecs.length; i++) {
-    const spec = compiledSpecs[i] as CompiledSpec;
-    if (charCode >= spec.start && charCode <= spec.end) return true;
+    const spec = compiledSpecs[i] as CodePointInterval;
+    if (charCode >= spec.lo && charCode <= spec.hi) return true;
   }
   return false;
 };
 
-/**
- * Builds a 128-entry ASCII membership table from `compiledSpecs`, once at
- * `charClass`/`negatedCharClass`/`charClassRun` construction time:
- * `table[code] === 1` iff code point `code` (0-127) matches some spec.
- * Every ASCII input character then costs one array lookup instead of a
- * scan over `compiledSpecs`; only a non-ASCII code point falls through to
- * `matchesSpecsSlow`. Built here (in `tpeg-core`, where `charClass`
- * itself lives) rather than reusing `packages/parser/src/
- * performance-utils.ts`'s `createCharClassLookup` -- that function is
- * unreachable dead code in `tpeg-parser`, and CLAUDE.md's dependency
- * graph has no core -> parser edge to reuse it across anyway.
- */
+/** Build the ASCII fast path once. TypedArray.fill clips each range at 128. */
 const buildAsciiTable = (
-  compiledSpecs: readonly CompiledSpec[],
+  intervals: readonly CodePointInterval[],
 ): Uint8Array => {
   const table = new Uint8Array(128);
-  for (let code = 0; code < 128; code++) {
-    table[code] = matchesSpecsSlow(code, compiledSpecs) ? 1 : 0;
+  for (const { lo, hi } of intervals) {
+    if (lo < table.length) table.fill(1, lo, hi + 1);
   }
   return table;
 };
@@ -142,7 +107,7 @@ const buildAsciiTable = (
  */
 const makeCharClassParser =
   (
-    compiledSpecs: readonly CompiledSpec[],
+    compiledSpecs: readonly CodePointInterval[],
     asciiTable: Uint8Array,
     negated: boolean,
     expectation: Expectation,

@@ -60,6 +60,28 @@ test("can leave a delimiter for its caller, advancing over Unicode code points",
   });
 });
 
+test("uses the same synchronizer position for validation and consumption", () => {
+  let reads = 0;
+  const parser = recover(literal("x"), {
+    synchronize: (_input, pos) => ({
+      success: true,
+      val: null,
+      current: pos,
+      get next() {
+        return ++reads;
+      },
+    }),
+    consumeSynchronizer: true,
+    fallback: ({ skipped }) => skipped,
+  });
+  expect(parse(parser)(";")).toMatchObject({
+    success: true,
+    val: ";",
+    next: 1,
+  });
+  expect(reads).toBe(1);
+});
+
 test("preserves cut and abort failures and honors the search limit", () => {
   let called = false;
   const options = {

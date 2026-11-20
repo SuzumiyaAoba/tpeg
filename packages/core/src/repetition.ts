@@ -219,6 +219,24 @@ export const oneOrMore = <T>(
  */
 export const plus = oneOrMore;
 
+/** Return a diagnostic for invalid PEG repetition bounds. Omitted max and Infinity are unbounded. */
+export function quantifiedRangeError(
+  min: number,
+  max?: number,
+): string | undefined {
+  if (!Number.isSafeInteger(min) || min < 0) {
+    return `Invalid quantified range: minimum (${safeStringForDisplay(min)}) must be a non-negative safe integer`;
+  }
+  if (
+    max !== undefined &&
+    max !== Infinity &&
+    (!Number.isSafeInteger(max) || max < min)
+  ) {
+    return `Invalid quantified range: maximum (${safeStringForDisplay(max)}) must be a safe integer not less than minimum (${min}), or Infinity`;
+  }
+  return undefined;
+}
+
 /**
  * Parser for quantified repetition (exactly n times, n to m times, or n or more times).
  *
@@ -239,27 +257,8 @@ export const quantified = <T>(
   max?: number,
   parserName = "quantified",
 ): Parser<T[]> => {
-  // Validate input parameters early. `min` must be a safe, non-negative
-  // integer: `Infinity` (e.g. a quantifier bound that overflowed
-  // `parseInt`) would make the required `i < min` loop below genuinely
-  // unbounded -- on a nullable `parser` that is an infinite loop, not a
-  // long one. `max` may be `Infinity` (the documented explicit spelling
-  // of unbounded, handled by `limit` below) but no other non-integer.
-  if (!Number.isSafeInteger(min) || min < 0) {
-    throw new Error(
-      `Invalid quantified range: minimum (${safeStringForDisplay(min)}) must be a non-negative safe integer`,
-    );
-  }
-
-  if (
-    max !== undefined &&
-    max !== Number.POSITIVE_INFINITY &&
-    (!Number.isSafeInteger(max) || max < min)
-  ) {
-    throw new Error(
-      `Invalid quantified range: maximum (${safeStringForDisplay(max)}) must be a safe integer not less than minimum (${min}), or Infinity`,
-    );
-  }
+  const error = quantifiedRangeError(min, max);
+  if (error) throw new Error(error);
 
   const limit = max ?? Infinity;
   return (input, pos) => {

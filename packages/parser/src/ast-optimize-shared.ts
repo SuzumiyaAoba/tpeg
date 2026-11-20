@@ -9,7 +9,12 @@ import {
   getSingleCodePoint,
   someExpression,
 } from "@suzumiyaaoba/tpeg-core";
-import type { Expression, GrammarDefinition, RuleDefinition } from "./types";
+import type {
+  Choice,
+  Expression,
+  GrammarDefinition,
+  RuleDefinition,
+} from "./types";
 
 /** Whether literal(value) agrees with a one-code-point character class.
  * A lone lead surrogate may match the first half of an astral input,
@@ -164,7 +169,7 @@ export const computeFatalReachability = (
  */
 export const canFailFatally = (
   expr: Expression,
-  fatalReachability: ReadonlyMap<string, boolean>,
+  fatalReachability?: ReadonlyMap<string, boolean>,
 ): boolean =>
   someExpression(
     expr,
@@ -172,8 +177,16 @@ export const canFailFatally = (
       node.type === "Cut" ||
       node.type === "QualifiedIdentifier" ||
       (node.type === "Identifier" &&
-        (fatalReachability.get(node.name) ?? true)),
+        (fatalReachability?.get(node.name) ?? true)),
   );
+
+/** A choice absorbs committed failures, even when it has just one branch. */
+export function inlineChoiceAlternative(expr: Choice): Expression | undefined {
+  const [only] = expr.alternatives;
+  return expr.alternatives.length === 1 && only && !canFailFatally(only)
+    ? only
+    : undefined;
+}
 
 /** Does `expr` contain an `ActionExpression` anywhere in its subtree? */
 const containsAction = (expr: Expression): boolean =>

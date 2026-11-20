@@ -86,10 +86,10 @@ export const identifier = <T extends string>(value: T): Identifier<T> => ({
  * ```
  */
 export const sequence = <T extends readonly ExprNode[]>(
-  ...exprs: T
+  ...exprs: [...T]
 ): Sequence<T> => ({
   type: "sequence",
-  children: [...exprs],
+  children: exprs,
 });
 
 /**
@@ -109,10 +109,10 @@ export const sequence = <T extends readonly ExprNode[]>(
  * ```
  */
 export const choice = <T extends readonly ExprNode[]>(
-  ...exprs: T
+  ...exprs: [...T]
 ): Choice<T> => ({
   type: "choice",
-  children: [...exprs],
+  children: exprs,
 });
 
 /**
@@ -216,10 +216,10 @@ export const range = <F extends string, T extends string>(
  * ```
  */
 export const charClass = <T extends readonly CharClassElement[]>(
-  ...elements: T
+  ...elements: [...T]
 ): CharClass<T> => ({
   type: "charClass",
-  children: [...elements],
+  children: elements,
 });
 
 /**
@@ -355,8 +355,8 @@ export const definition = <I extends string, E extends ExprNode>(
  * ```
  */
 export const grammar = <T extends readonly Definition[]>(
-  ...definitions: T
+  ...definitions: [...T]
 ): Grammar<T> => ({
   type: "grammar",
-  children: [...definitions],
+  children: definitions,
 });

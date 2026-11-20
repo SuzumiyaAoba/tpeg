@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import {
   generateNativeParser,
-  transpileGeneratedParser,
+  generateJavaScriptParser,
   isNativeLanguage,
 } from "@suzumiyaaoba/tpeg-generator";
 import {
@@ -13,6 +13,7 @@ import {
   generateTypeScriptParser,
   insertAutomaticCuts,
   promoteGlobalCuts,
+  stripFileBom,
 } from "@suzumiyaaoba/tpeg-parser";
 import type { CliOptions } from "./options";
 
@@ -42,9 +43,9 @@ export const generateParser = (
   const header =
     options.headerPath === undefined
       ? undefined
-      : readFileSync(options.headerPath, "utf8").replace(/^\uFEFF/, "");
+      : stripFileBom(readFileSync(options.headerPath, "utf8"));
   const sharedOptions = {
-    includeTypes: options.language === "javascript" || options.types,
+    ...(header !== undefined ? { header } : {}),
     ...(options.namePrefix !== undefined
       ? { namePrefix: options.namePrefix }
       : {}),
@@ -53,26 +54,29 @@ export const generateParser = (
   // Leave its default scope intact unless subtree fusion was requested.
   if (isNativeLanguage(options.language)) {
     return generateNativeParser(grammar, options.language, {
-      ...(options.namePrefix !== undefined
-        ? { namePrefix: options.namePrefix }
-        : {}),
+      ...sharedOptions,
       ...(options.packageName !== undefined
         ? { packageName: options.packageName }
         : {}),
-      ...(header !== undefined ? { header } : {}),
     });
   }
-  const generated = options.optimize
-    ? generateOptimizedTypeScriptParser(grammar, {
-        ...sharedOptions,
-        ...(options.regexFusion ? { enableRegexFusion: true } : {}),
-        ...(options.regexFusionSubtree
-          ? { regexFusionScope: "subtree" as const }
-          : {}),
-      })
-    : generateTypeScriptParser(grammar, sharedOptions);
-  if (header !== undefined) generated.code = `${header}\n${generated.code}`;
+  const tsOptions = { ...sharedOptions, includeTypes: options.types };
+  const optimizedOptions = {
+    ...tsOptions,
+    ...(options.regexFusion ? { enableRegexFusion: true } : {}),
+    ...(options.regexFusionSubtree
+      ? { regexFusionScope: "subtree" as const }
+      : {}),
+  };
   if (options.language === "javascript")
-    generated.code = transpileGeneratedParser(generated.code);
-  return generated;
+    return generateJavaScriptParser(grammar, {
+      ...optimizedOptions,
+      optimize: options.optimize,
+    });
+  const generated = options.optimize
+    ? generateOptimizedTypeScriptParser(grammar, optimizedOptions)
+    : generateTypeScriptParser(grammar, tsOptions);
+  return header === undefined
+    ? generated
+    : { ...generated, code: `${header}\n${generated.code}` };
 };

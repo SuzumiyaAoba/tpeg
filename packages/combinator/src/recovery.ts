@@ -1,4 +1,6 @@
 import {
+  FAIL,
+  FAIL_FATAL,
   cloneParseError,
   createFailure,
   getCharAt,
@@ -96,18 +98,22 @@ export function recover<T, R>(
         merge(failed);
         throw cause;
       }
-      if (!boundary.success && boundary.error.abort) {
-        const error = cloneParseError(boundary.error);
-        merge(snapshotFailureWatermark());
-        return { success: false, error };
+      if (!boundary.success && boundary !== FAIL && boundary !== FAIL_FATAL) {
+        const probeError = boundary.error;
+        if (probeError.abort) {
+          const error = cloneParseError(probeError);
+          merge(snapshotFailureWatermark());
+          return { success: false, error };
+        }
       }
       // A cut inside the synchronizer is local to that speculative probe.
       restoreFailureWatermark(failed);
       if (boundary.success) {
+        const boundaryEnd = boundary.next;
         if (
-          !isValidOffset(boundary.next) ||
-          boundary.next > input.length ||
-          boundary.next < cursor
+          !isValidOffset(boundaryEnd) ||
+          boundaryEnd > input.length ||
+          boundaryEnd < cursor
         ) {
           merge(failed);
           return createFailure(
@@ -116,7 +122,7 @@ export function recover<T, R>(
             { fatal: true, abort: true },
           );
         }
-        const next = options.consumeSynchronizer ? boundary.next : cursor;
+        const next = options.consumeSynchronizer ? boundaryEnd : cursor;
         if (next > pos) {
           const context = {
             error,

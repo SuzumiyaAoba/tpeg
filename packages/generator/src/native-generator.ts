@@ -1,6 +1,9 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { GrammarDefinition } from "@suzumiyaaoba/tpeg-core";
+import {
+  selectTransformSets,
+  type GrammarDefinition,
+} from "@suzumiyaaoba/tpeg-core";
 import { Eta } from "eta";
 import {
   portableGrammar,
@@ -94,10 +97,7 @@ function transformSource(
   grammar: GrammarDefinition,
   language: NativeLanguage,
 ): string {
-  const functions =
-    grammar.transforms?.find(
-      (definition) => definition.transformSet.targetLanguage === language,
-    )?.transformSet.functions ?? [];
+  const functions = selectTransformSets(grammar).get(language)?.functions ?? [];
   const declarations: string[] = [];
   const bindings: string[] = [];
   for (const [index, fn] of functions.entries()) {

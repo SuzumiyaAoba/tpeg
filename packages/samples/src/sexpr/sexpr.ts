@@ -30,24 +30,8 @@ import {
  * symbol of the same text.
  */
 
-/**
- * An atom: a symbol, a string literal, or a number.
- */
-export type SAtom =
-  | { readonly type: "symbol"; readonly name: string }
-  | { readonly type: "string"; readonly value: string }
-  | { readonly type: "number"; readonly value: number };
-
-/**
- * An S-expression: either an atom or a list of S-expressions.
- */
-export type SExp = SAtom | readonly SExp[];
-
-// Convenience constructors, exported for consumers building S-expressions
-// programmatically (e.g. an evaluator feeding parse output back in).
-export const sym = (name: string): SAtom => ({ type: "symbol", name });
-export const str = (value: string): SAtom => ({ type: "string", value });
-export const num = (value: number): SAtom => ({ type: "number", value });
+import { num, onlyForm, str, sym, type SAtom, type SExp } from "./forms";
+export { num, str, sym, type SAtom, type SExp } from "./forms";
 
 // End of input.
 const EOF = not(any);
@@ -102,8 +86,6 @@ const numberAtom: Parser<SAtom> = map(
 // \uXXXX, and escaped quotes.
 const stringAtom: Parser<SAtom> = map(quotedString, (value) => str(value));
 
-const QUOTE = sym("quote");
-
 /**
  * Build the top-level parser. Constructed inside a function (rather than
  * as module constants) because `recursive` is stateful -- a fresh pair of
@@ -129,7 +111,7 @@ const buildParser = (): Parser<SExp[]> => {
   // `'x` desugars to `(quote x)` at parse time -- a classic macro-expand
   // performed by the grammar itself.
   const quoted: Parser<SExp[]> = map(seq(literal("'"), sexp), ([, expr]) => [
-    QUOTE,
+    sym("quote"),
     expr,
   ]);
 
@@ -170,19 +152,7 @@ export const parseSExprs = (input: string): SExp[] => {
  * @returns The parsed form
  * @throws Error when there is not exactly one form
  */
-export const parseSExpr = (input: string): SExp => {
-  const [form, ...rest] = parseSExprs(input);
-
-  if (form === undefined || rest.length > 0) {
-    throw new Error(
-      `Expected exactly one S-expression, found ${
-        form === undefined ? 0 : rest.length + 1
-      }`,
-    );
-  }
-
-  return form;
-};
+export const parseSExpr = (input: string): SExp => onlyForm(parseSExprs(input));
 
 // `Array.isArray` alone can't narrow `readonly SExp[]` out of the union
 // (a readonly array is not assignable to `any[]`), so spell the guard out.

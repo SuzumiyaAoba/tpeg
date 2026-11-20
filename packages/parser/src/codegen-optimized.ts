@@ -36,6 +36,7 @@ import {
   findMemoizeAnnotation,
   generateCharacterClassCode,
   generateChoiceCode,
+  inlineChoiceAlternative,
   generateIdentifierCode,
   generateLabeledExpressionCode,
   generateQualifiedIdentifierCode,
@@ -676,7 +677,7 @@ export class OptimizedTPEGCodeGenerator {
    * generator's own decisions: fusion roots are handled by `handled`
    * (emitting `regexFusedMap` and never recursing -- see the comment
    * inside it for why that check comes first at EVERY level), a
-   * single-alternative `Choice` is returned bare by
+   * single-alternative `Choice` that cannot commit is returned bare by
    * `generateOptimizedChoice` so it adds no combinator, and a
    * multi-alternative one emits `predictiveChoice` exactly when
    * `tryGeneratePredictiveChoice`'s eligibility test passes
@@ -698,14 +699,7 @@ export class OptimizedTPEGCodeGenerator {
         enableCharClassRun: this.options.enableCharClassRun,
         commitAfterAnyCut: false,
         choiceCombinatorFor: (choice) =>
-          // `generateChoiceCode` emits ONLY a single-alternative Choice
-          // bare; an EMPTY one still emits `choice()` (the always-failing
-          // parser -- `combinators.ts`'s zero-argument case), so `choice`
-          // must be imported for it. `<= 1` here previously grouped the
-          // empty case with the bare-passthrough case and skipped the
-          // import, leaving a `choice()` call with no `choice` binding in
-          // the generated module.
-          choice.alternatives.length === 1
+          inlineChoiceAlternative(choice)
             ? null
             : this.options.enablePredictiveDispatch &&
                 this.firstSetAnalysis !== null &&
@@ -1007,6 +1001,7 @@ export class OptimizedTPEGCodeGenerator {
     expr: Choice,
     analysis: GrammarFirstSetAnalysis,
   ): readonly (CharSet | null)[] | null {
+    if (expr.alternatives.length < 2) return null;
     // An alternative that could reach a `Cut` without having consumed any
     // input must never be skipped by a static "next character"/literal-
     // prefix guess -- see `canCommitWithoutConsuming`'s doc comment
@@ -1014,11 +1009,10 @@ export class OptimizedTPEGCodeGenerator {
     // a `fatal` failure ends up aborting the choice in favor of. Such an
     // alternative's filter is forced to `null`, exactly as if its FIRST
     // set were unresolvable.
-    const unsafeToSkip = expr.alternatives.map((alt) =>
-      canCommitWithoutConsuming(alt, analysis),
-    );
-    const filters = expr.alternatives.map((alt, i) =>
-      unsafeToSkip[i] ? null : predictiveFilterForExpression(alt, analysis),
+    const filters = expr.alternatives.map((alt) =>
+      canCommitWithoutConsuming(alt, analysis)
+        ? null
+        : predictiveFilterForExpression(alt, analysis),
     );
     return filters.some((f) => f !== null) ? filters : null;
   }
@@ -1034,9 +1028,6 @@ export class OptimizedTPEGCodeGenerator {
     expr: Choice,
     analysis: GrammarFirstSetAnalysis,
   ): string | null {
-    const unsafeToSkip = expr.alternatives.map((alt) =>
-      canCommitWithoutConsuming(alt, analysis),
-    );
     const filters = this.predictiveChoiceFilters(expr, analysis);
     if (!filters) {
       return null;
@@ -1049,7 +1040,7 @@ export class OptimizedTPEGCodeGenerator {
     // feature existed (2-element tuples), which is what the JSON
     // regression guard in `codegen-optimized.spec.ts` checks.
     const literalPrefixes = expr.alternatives.map((alt, i) =>
-      unsafeToSkip[i] ? null : literalPrefixForExpression(alt),
+      filters[i] ? literalPrefixForExpression(alt) : null,
     );
     const anyLiteralPrefix = literalPrefixes.some((p) => p !== null);
 

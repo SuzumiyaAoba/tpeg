@@ -5,6 +5,8 @@
  * This is a basic implementation supporting core TPEG features.
  */
 
+import { inlineChoiceAlternative } from "./ast-optimize-shared";
+export { inlineChoiceAlternative } from "./ast-optimize-shared";
 import {
   resolveStartRule,
   validateGeneratedIdentifiers,
@@ -59,37 +61,17 @@ import {
 } from "./codegen-helpers";
 export * from "./codegen-helpers";
 
-/**
- * Shared `Choice` emission skeleton used by the optimized and Eta
- * generators (this class's own `generateChoice` deliberately always
- * emits `choice(...)`, even for one alternative, so it does not use
- * this helper):
- *
- * - zero alternatives emits `choice()`;
- * - one alternative emits the alternative's code bare -- wrapping a
- *   single branch in `choice(...)` would be a no-op call;
- * - two or more emit `choice(alt1, alt2, ...)` unless `multiOverride`
- *   supplies different code (the optimized generator's
- *   predictive-dispatch attempt, which must run only after the
- *   zero/one-alternative shortcuts -- same order it used inline).
- */
+/** Shared choice emission for the optimized and Eta generators. */
 export const generateChoiceCode = (
   expr: Choice,
   generateAlternative: (alternative: Expression) => string,
   multiOverride?: (expr: Choice) => string | undefined,
 ): string => {
-  if (expr.alternatives.length === 0) {
-    return "choice()";
-  }
-  if (expr.alternatives.length === 1) {
-    const alternative = expr.alternatives[0];
-    if (alternative) {
-      return generateAlternative(alternative);
-    }
-  }
-  const override = multiOverride?.(expr);
-  if (override !== undefined) {
-    return override;
+  const inline = inlineChoiceAlternative(expr);
+  if (inline) return generateAlternative(inline);
+  if (expr.alternatives.length >= 2) {
+    const override = multiOverride?.(expr);
+    if (override !== undefined) return override;
   }
   return `choice(${expr.alternatives.map(generateAlternative).join(", ")})`;
 };

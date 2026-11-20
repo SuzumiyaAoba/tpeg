@@ -890,9 +890,11 @@ export class TypeIntegrationEngine {
       // PascalCase form still isn't an identifier (`"123abc"` ->
       // `ParseResult<123abcResult>`) is rejected outright -- the same
       // check `generateTypeDefinitions` applies to its own output.
-      const methodName = TS_IDENTIFIER_FULL.test(rule.name)
-        ? rule.name
-        : JSON.stringify(rule.name);
+      // An unquoted new(...) declares a construct signature on the interface.
+      const methodName =
+        rule.name !== "new" && TS_IDENTIFIER_FULL.test(rule.name)
+          ? rule.name
+          : JSON.stringify(rule.name);
       if (!TS_IDENTIFIER_FULL.test(resultType)) {
         throw new Error(
           `Rule name "${rule.name}" generates the type name "${resultType}", which is not a valid TypeScript identifier -- the emitted \`ParseResult<${resultType}>\` reference would fail to parse.`,

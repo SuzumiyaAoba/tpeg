@@ -64,6 +64,7 @@ describe("generated type name collisions", () => {
               [],
               [
                 createRuleDefinition("parse", literal("a")),
+                createRuleDefinition("new", literal("n")),
                 createRuleDefinition(
                   "items",
                   createStar(createIdentifier("parse")),
@@ -76,6 +77,7 @@ import type { ParseResult as CoreResult } from "@suzumiyaaoba/tpeg-core";
 type Same<A, B> = [A] extends [B] ? [B] extends [A] ? true : false : false;
 type Assert<T extends true> = T;
 export type ParseCheck = Assert<Same<ReturnType<GParser["parse"]>, CoreResult<"a">>>;
+export type NewCheck = Assert<Same<ReturnType<GParser["new"]>, CoreResult<"n">>>;
 export type ItemsCheck = Assert<Same<ReturnType<GParser["items"]>, CoreResult<"a"[]>>>;`;
             const file = `case-${cases.length}`;
             writeFileSync(join(dir, `${file}.ts`), source);

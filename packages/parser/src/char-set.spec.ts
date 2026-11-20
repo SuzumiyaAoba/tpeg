@@ -176,6 +176,20 @@ describe("charRangesToSet: CharRange[] -> CharSet with bound validation", () => 
     assertNormalized(charRangesToSet([range("0", "9"), range("a", "z")]));
   });
 
+  it("merges unordered, touching and overlapping ranges without reordering the source", () => {
+    const ranges = Object.freeze([
+      range("😀"),
+      range("c", "g"),
+      range("a", "c"),
+      range("h"),
+      range("c"),
+    ]);
+    expect(toCharRanges(charRangesToSet(ranges))).toEqual([
+      { start: "a", end: "h" },
+      { start: "😀" },
+    ]);
+  });
+
   it.each([
     ["a multi-code-point start", [range("ab", "z")]],
     ["a multi-code-point end", [range("a", "yz")]],

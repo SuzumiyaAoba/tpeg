@@ -148,6 +148,33 @@ describe("surrogate boundaries in AST rewrites", () => {
 });
 
 describe("leftFactorChoices", () => {
+  it.each([
+    ['"a" "b" / "a" "x"? / "a"', "ax", 2],
+    ['"a" ~ / "a" "x"', "ax", 1],
+    ['"a" "x" / "a" ~', "ab", 1],
+    ['"a" ~ "x" / "a" "b"', "ax", 2],
+  ] as const)(
+    "keeps a valid choice when factoring %s would introduce an invalid suffix",
+    async (body, input, next) => {
+      const parsed = grammarDefinition(`grammar G { start = ${body} }`, ORIGIN);
+      if (!parsed.success) throw new Error(parsed.error.message);
+      const start = await compileRuleFor(
+        applyAstOptimizations(parsed.val),
+        "start",
+      );
+      expect(start(input, 0)).toMatchObject({ success: true, next });
+    },
+  );
+
+  it("keeps an implicit skip cut inside its original choice", async () => {
+    const parsed = grammarDefinition(
+      'grammar G { @skip: ws\n@noskip\nstart = token / "x " \ntoken = "x" "a" / "x" "b"\nws = " " ~ "y" }',
+      ORIGIN,
+    );
+    if (!parsed.success) throw new Error(parsed.error.message);
+    const start = await compileRuleFor(leftFactorChoices(parsed.val), "start");
+    expect(start("x ", 0)).toMatchObject({ success: true, val: "x ", next: 2 });
+  });
   it("factors a Choice whose alternatives share an Identifier prefix", () => {
     const parsed = grammarDefinition(UNFACTORED_ARITHMETIC_GRAMMAR, ORIGIN);
     expect(parsed.success).toBe(true);
@@ -887,6 +914,20 @@ async function compileRuleForTest(
 }
 
 describe("mergeCharacterClasses", () => {
+  it("preserves a singleton choice that absorbs a committed failure", async () => {
+    const a = createStringLiteral("a", '"');
+    const inner = createChoice([
+      createSequence([a, createCut(), createStringLiteral("b", '"')]),
+    ]);
+    const grammar = createGrammarDefinition(
+      "G",
+      [],
+      [createRuleDefinition("start", createChoice([inner, a]))],
+    );
+    const start = await compileRuleFor(mergeCharacterClasses(grammar), "start");
+    expect(start("a", 0)).toMatchObject({ success: true, val: "a", next: 1 });
+  });
+
   it("merges two adjacent non-negated CharacterClass alternatives into one", () => {
     const grammar = createGrammarDefinition(
       "Test",

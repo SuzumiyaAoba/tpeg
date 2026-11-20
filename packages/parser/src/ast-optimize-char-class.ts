@@ -17,7 +17,10 @@
  */
 
 import { mapChildExpressions } from "@suzumiyaaoba/tpeg-core";
-import { isCharacterClassLiteral } from "./ast-optimize-shared";
+import {
+  inlineChoiceAlternative,
+  isCharacterClassLiteral,
+} from "./ast-optimize-shared";
 import type { CharacterClass, Expression, GrammarDefinition } from "./types";
 import { createCharacterClass, createChoice, createSequence } from "./types";
 
@@ -74,12 +77,12 @@ const mergeCharacterClassesInExpression = (expr: Expression): Expression => {
         expr.elements.map(mergeCharacterClassesInExpression),
       );
     case "Choice": {
-      const mergedAlternatives = mergeAdjacentCharacterClasses(
-        expr.alternatives.map(mergeCharacterClassesInExpression),
+      const merged = createChoice(
+        mergeAdjacentCharacterClasses(
+          expr.alternatives.map(mergeCharacterClassesInExpression),
+        ),
       );
-      return mergedAlternatives.length === 1
-        ? (mergedAlternatives[0] as Expression)
-        : createChoice(mergedAlternatives);
+      return inlineChoiceAlternative(merged) ?? merged;
     }
     default:
       // Unary wrappers ({...expr, expression: rewritten}) and leaf

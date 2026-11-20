@@ -659,9 +659,10 @@ describe("AST Type Safety Tests", () => {
       const exprs = [literal("a"), literal("b")] as const;
       const seq = sequence(...exprs);
 
-      expect(seq.children).toHaveLength(2);
-      expect((seq.children[0] as Literal).value).toBe("a");
-      expect((seq.children[1] as Literal).value).toBe("b");
+      expectTypeOf(seq.children).toEqualTypeOf<[Literal<"a">, Literal<"b">]>();
+      expect(seq.children).toEqual(exprs);
+      seq.children.pop();
+      expect(exprs).toHaveLength(2);
     });
 
     it("should handle nested structures correctly", () => {

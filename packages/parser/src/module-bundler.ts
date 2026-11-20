@@ -2,6 +2,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import {
   mapChildExpressions,
+  selectTransformSets,
   type Expression,
   type GrammarDefinition,
   type ModularGrammarDefinition,
@@ -12,7 +13,10 @@ import {
   type TransformSet,
 } from "@suzumiyaaoba/tpeg-core";
 import { parseGrammarFile } from "./grammar-file";
-import { validateGrammar } from "./grammar-validation";
+import {
+  validateGrammar,
+  validateGrammarDeclarations,
+} from "./grammar-validation";
 import { CircularDependencyError } from "./module-resolver";
 import { NamespaceManager } from "./namespace-manager";
 import { moduleNameFromPath } from "./path-utils";
@@ -176,7 +180,9 @@ export function bundleGrammarModules(
       type: "GrammarDefinition",
       rules: [...rules.values()].map((source) => source.rule),
     };
-    validateGrammar(plain);
+    // Inherited transforms and qualified references are resolved in the final
+    // grammar. Control flow can only be checked with those bindings in place.
+    validateGrammarDeclarations(plain);
     const desugared = applySkipDesugar(plain);
     // Whitespace policy belongs to the module that defines a rule. An
     // inherited rule retains its original policy; an override uses its own.
@@ -184,25 +190,15 @@ export function bundleGrammarModules(
       if (own.has(rule.name))
         rules.set(rule.name, { ...own.get(rule.name)!, rule });
     }
-    const selected = new Map<
-      TransformSet["targetLanguage"],
-      Map<string, TransformFunction>
-    >();
-    for (const definition of grammar.transforms ?? []) {
-      const target = definition.transformSet.targetLanguage;
-      if (!selected.has(target))
-        selected.set(
-          target,
-          new Map(definition.transformSet.functions.map((fn) => [fn.name, fn])),
-        );
-    }
-    for (const [ruleName, source] of rules) {
-      const transforms = new Map(source.transforms);
-      for (const [language, functions] of selected) {
-        const fn = functions.get(ruleName);
-        if (fn) transforms.set(language, fn);
+    for (const [language, set] of selectTransformSets(grammar)) {
+      for (const fn of set.functions) {
+        const source = rules.get(fn.name)!;
+        // A child may override a transform on an inherited rule without
+        // changing the parser or transform bindings stored in its parent.
+        const transforms = new Map(source.transforms);
+        transforms.set(language, fn);
+        rules.set(fn.name, { ...source, transforms });
       }
-      rules.set(ruleName, { ...source, transforms });
     }
     const result = {
       rules,

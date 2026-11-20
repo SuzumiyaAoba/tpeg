@@ -1,7 +1,45 @@
 import { unwrapToLabeledExpression } from "./expression-traversal";
 import { isZeroRepetition } from "./grammar-guards";
-import type { Expression } from "./grammar-nodes";
+import type {
+  Expression,
+  GrammarDefinition,
+  Sequence,
+  TransformSet,
+} from "./grammar-nodes";
 import { walkExpression } from "./grammar-traversal";
+
+/** Each target uses its first transform set in declaration order. */
+export function selectTransformSets(
+  grammar: Pick<GrammarDefinition, "transforms">,
+): ReadonlyMap<string, TransformSet> {
+  const sets = new Map<string, TransformSet>();
+  for (const { transformSet } of grammar.transforms ?? []) {
+    if (!sets.has(transformSet.targetLanguage))
+      sets.set(transformSet.targetLanguage, transformSet);
+  }
+  return sets;
+}
+
+/** Direct labels form a capture object. Cuts and inserted skips contribute no values. */
+export function analyzeSequenceValues(sequence: Sequence): {
+  hasLabels: boolean;
+  valueCount: number;
+  hasSkip: boolean;
+} {
+  let hasLabels = false;
+  let hasSkip = false;
+  let valueCount = 0;
+  for (const element of sequence.elements) {
+    if (element.type === "Cut") continue;
+    if (element.type === "Skip") {
+      hasSkip = true;
+    } else {
+      valueCount++;
+      hasLabels ||= unwrapToLabeledExpression(element) !== undefined;
+    }
+  }
+  return { hasLabels, valueCount, hasSkip };
+}
 
 /** Counts expression occurrences and their maximum depth, with root depth 0. */
 export const measureExpression = (

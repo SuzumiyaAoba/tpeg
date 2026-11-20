@@ -75,13 +75,8 @@ export const tryOrderedCandidates = <T>(
     if (result === FAIL) continue;
     if (result === FAIL_FATAL) return FAIL;
     const childError = result.error;
+    if (childError.abort === true) return result;
     if (childError.fatal === true) {
-      // An `abort` failure (resource-limit hit -- see `ParseError.abort`
-      // in types.ts) is not a cut: re-raise it unchanged so it aborts
-      // the whole parse rather than just this choice.
-      if (childError.abort === true) {
-        return result;
-      }
       // Absorb the cut here (this choice's own boundary), not forwarded
       // to whatever encloses it -- see `commit`'s doc comment.
       const error = cloneParseError(childError);

@@ -49,11 +49,8 @@
  * generation the same way.
  */
 
-import {
-  childExpressions,
-  forEachExpression,
-  isZeroRepetition,
-} from "@suzumiyaaoba/tpeg-core";
+import { childExpressions, forEachExpression } from "@suzumiyaaoba/tpeg-core";
+import { analyzeFailureModes } from "./grammar-failure-modes";
 import { ERROR_MESSAGES } from "./constants";
 import {
   analyzeFirstSets,
@@ -180,291 +177,6 @@ const findCutOnlyRules = (grammar: GrammarDefinition): string[] => {
 // Unreachable ordered-choice alternatives
 // ============================================================================
 
-/**
- * The failure modes an expression can exhibit, as observed by the
- * `choice`/`captureChoice` enclosing it -- the ONLY thing that decides
- * whether a later alternative can ever run. `nonFatal` means the
- * expression can fail in a way that lets the enclosing choice backtrack
- * into its next alternative; `fatal` means it can fail in a way that
- * aborts the choice outright (`commit`'s `fatal` flag, see
- * `packages/core/src/combinators.ts`). Both can be true -- different
- * inputs can take the same expression down different failure modes.
- *
- * An alternative that has NO `nonFatal` mode either always succeeds or
- * fails only fatally; either way the choice never reaches the next
- * alternative, so everything after it is dead code -- the shape this
- * section reports.
- */
-interface FailureModes {
-  readonly nonFatal: boolean;
-  readonly fatal: boolean;
-}
-
-const NO_FAILURE: FailureModes = { nonFatal: false, fatal: false };
-const NONFATAL_FAILURE: FailureModes = { nonFatal: true, fatal: false };
-
-/**
- * The modes an `Identifier` whose name is NOT a rule of this grammar is
- * assumed to have -- an externally-supplied parser reference (the same
- * escape hatch `codegen.ts`'s `generateIdentifierCode` supports) is
- * opaque to this analysis, and an opaque parser can certainly fail in
- * the ordinary, backtrackable way. Assuming `nonFatal` can only ever
- * make this analysis report FEWER unreachable alternatives (never
- * wrongly flag reachable ones) -- the safe direction.
- */
-const EXTERNAL_RULE_MODES: FailureModes = NONFATAL_FAILURE;
-
-const unionFailureModes = (a: FailureModes, b: FailureModes): FailureModes => ({
-  nonFatal: a.nonFatal || b.nonFatal,
-  fatal: a.fatal || b.fatal,
-});
-
-/** `m` with every mode forced through a `commit(...)` boundary. */
-const committed = (m: FailureModes): FailureModes => ({
-  nonFatal: false,
-  fatal: m.nonFatal || m.fatal,
-});
-
-/**
- * `m` with its `nonFatal` mode dropped: a `Star`/`Optional`/
- * `Quantified{0,..}` turns a child's ordinary failure into "stop
- * repeating"/"no match" -- a SUCCESS -- while re-raising a `fatal` one
- * (`repetition.ts`'s doc comment), so only the child's `fatal` mode
- * survives as a failure mode of the wrapper itself.
- */
-const fatalOnly = (m: FailureModes): FailureModes => ({
-  nonFatal: false,
-  fatal: m.fatal,
-});
-
-/**
- * Computes `expr`'s possible {@link FailureModes}, bottom-up, mirroring
- * the runtime wrappers each node compiles to. `ruleModes` maps each
- * declared rule name to its own (converged) modes so `Identifier`
- * references resolve to what the referenced rule's body can actually
- * do -- `computeRuleFailureModes` builds that map by fixpoint, since
- * rules reference each other cyclically.
- *
- * - `Sequence`: a `~` element splits it into `sequence(before...,
- *   commit(after...))` (`codegen.ts`'s `generateSequence`/
- *   `forEachSequenceElement`), so failures from elements after the
- *   first `~` can only arrive `fatal`. Elements before it keep their
- *   own modes. (Every element is treated as possibly-succeeding -- this
- *   analysis does not track always-failing expressions, which can only
- *   ever make it report FEWER unreachable alternatives, never wrongly
- *   flag reachable ones.)
- * - `Choice`: can never itself fail fatally --
- *   `tryOrderedCandidates` (`packages/core/src/combinators.ts`) stops
- *   trying alternatives at the first `fatal` failure but ABSORBS the
- *   flag, reporting an ordinary failure to whatever encloses the
- *   choice (a `~` cut is scoped to the choice whose alternative
- *   contains it -- `commit`'s doc comment). A non-fatal failure is
- *   therefore possible when every alternative can fail non-fatally
- *   (all fail, so the choice fails) OR when some alternative can fail
- *   fatally (its absorbed failure IS the choice's own non-fatal
- *   failure). Only an alternative that cannot fail at all makes the
- *   choice infallible.
- * - `Star`/`Optional`/`Quantified{0,..}`: see `fatalOnly` above.
- * - `Plus`/`Quantified{1..,..}`: the first iteration's failure arrives
- *   with its own mode; later iterations behave like `Star` -- which
- *   adds nothing the first iteration couldn't already produce, so the
- *   child's modes pass through unchanged.
- * - `PositiveLookahead` (`&e`): absorbs `fatal` at its own boundary and
- *   re-emits an ordinary failure (`andPredicate`'s doc comment,
- *   `lookahead.ts`), so any child failure at all means a non-fatal one.
- * - `NegativeLookahead` (`!e`): inverts -- a child failure is a success,
- *   a child success its own ordinary failure -- so it can only ever
- *   fail non-fatally.
- * - `Group`/`LabeledExpression`/`ActionExpression`/`Span` are
- *   transparent: they transform success values and pass failures --
- *   `fatal` flag included (`transform.ts`'s `map`, `capture.ts`) --
- *   through untouched. An action's code runs only on success, so it
- *   adds no failure mode of its own.
- *
- * Every case is MONOTONE in `ruleModes` -- a rule's modes only ever
- * grow during the fixpoint, so each derived mode grows too -- which is
- * what makes the least fixpoint `computeRuleFailureModes` computes
- * sound (see `computeNullableRules` in `first-sets.ts` for the same
- * argument over nullability).
- */
-const expressionFailureModes = (
-  expr: Expression,
-  ruleModes: ReadonlyMap<string, FailureModes>,
-): FailureModes => {
-  switch (expr.type) {
-    case "StringLiteral":
-      return expr.value === "" ? NO_FAILURE : NONFATAL_FAILURE;
-    case "CharacterClass":
-    case "AnyChar":
-    case "QualifiedIdentifier":
-    case "WordBoundary":
-    case "NegativeLookahead":
-      return NONFATAL_FAILURE;
-    case "Identifier":
-      return ruleModes.get(expr.name) ?? EXTERNAL_RULE_MODES;
-    case "Cut":
-      return NO_FAILURE;
-    case "Skip":
-      // Emitted as `ignore(optional(<skipRuleRef>))` (`codegen.ts`'s
-      // `Skip` case): the skip rule's ordinary failure becomes
-      // "matched nothing" -- a SUCCESS -- while `optional` re-raises a
-      // `fatal` one (`repetition.ts`). Exactly `fatalOnly` of the
-      // referenced rule's modes, the same wrapper semantics as
-      // `Optional` below -- NOT `NO_FAILURE`: a skip rule that can fail
-      // fatally (it contains a `~` that escapes its own top level)
-      // makes this node fatal-capable too.
-      return fatalOnly(expressionFailureModes(expr.expression, ruleModes));
-    case "PositiveLookahead": {
-      const inner = expressionFailureModes(expr.expression, ruleModes);
-      return inner.nonFatal || inner.fatal ? NONFATAL_FAILURE : NO_FAILURE;
-    }
-    case "Optional":
-    case "Star":
-      return fatalOnly(expressionFailureModes(expr.expression, ruleModes));
-    case "Plus":
-      return expressionFailureModes(expr.expression, ruleModes);
-    case "Quantified":
-      if (isZeroRepetition(expr)) return NO_FAILURE;
-      return expr.min === 0
-        ? fatalOnly(expressionFailureModes(expr.expression, ruleModes))
-        : expressionFailureModes(expr.expression, ruleModes);
-    case "Group":
-    case "LabeledExpression":
-    case "ActionExpression":
-    case "Span":
-      return expressionFailureModes(expr.expression, ruleModes);
-    case "Sequence": {
-      let modes = NO_FAILURE;
-      let pastCut = false;
-      for (const el of expr.elements) {
-        if (el.type === "Cut") {
-          pastCut = true;
-          continue;
-        }
-        const elModes = expressionFailureModes(el, ruleModes);
-        modes = unionFailureModes(
-          modes,
-          pastCut ? committed(elModes) : elModes,
-        );
-      }
-      return modes;
-    }
-    case "Choice": {
-      const altModes = expr.alternatives.map((alt) =>
-        expressionFailureModes(alt, ruleModes),
-      );
-      // Only alternatives up to and including the FIRST one that cannot
-      // fail non-fatally can ever run -- everything after it is dead code
-      // (`findUnreachableAlternatives` reports exactly that boundary). The
-      // choice is infallible only when a reachable alternative is
-      // infallible AND no reachable alternative can fail `fatal`: a
-      // `fatal` failure is absorbed at this choice's own boundary
-      // (`tryOrderedCandidates`) into an ordinary one, but it still IS a
-      // failure -- on that input control never reaches the infallible
-      // alternative at all. Checking `altModes.some(...)` unconditionally
-      // missed both halves of that: it counted an infallible alternative
-      // sitting AFTER a fatal-only boundary (dead code that can never
-      // run), and it ignored a fatal-capable alternative sitting BEFORE
-      // an infallible boundary -- e.g. `("a" ~ "b") / "c"?`, which CAN
-      // fail (on "ax" the committed "b" failure is absorbed and the
-      // choice fails ordinarily) but was reported `NO_FAILURE`, letting
-      // an enclosing `Choice` like `(("a" ~ "b") / "c"?) / "d"` wrongly
-      // flag the still-reachable "d" as dead code.
-      const boundary = altModes.findIndex((m) => !m.nonFatal);
-      const reachable =
-        boundary === -1 ? altModes : altModes.slice(0, boundary + 1);
-      const anyFatal = reachable.some((m) => m.fatal);
-      const anyInfallible = reachable.some((m) => !m.nonFatal && !m.fatal);
-      if (anyInfallible && !anyFatal) return NO_FAILURE;
-      return {
-        // A `fatal` alternative's failure is ABSORBED at this choice's
-        // own boundary (`tryOrderedCandidates`) and re-emitted as an
-        // ordinary one, so it counts toward `nonFatal`, not `fatal` --
-        // a `Choice` node can never produce a cut-fatal failure for
-        // whatever encloses it.
-        nonFatal: reachable.every((m) => m.nonFatal) || anyFatal,
-        fatal: false,
-      };
-    }
-    default: {
-      const exhaustiveCheck: never = expr;
-      throw new Error(
-        `Unhandled expression type: ${(exhaustiveCheck as { type: string }).type}`,
-      );
-    }
-  }
-};
-
-/**
- * Least fixpoint of `expressionFailureModes` over every rule in
- * `grammar` -- the same worklist-driven iteration
- * `computeNullableRules` (`first-sets.ts`) uses for nullability, over
- * the same `name -> dependents` reverse edges (rebuilt here since that
- * module keeps its copy private). Each rule's two mode bits only ever
- * move `false -> true` and a rule is re-evaluated only when a rule it
- * references actually changed, so the loop terminates in O(rules +
- * edges) evaluations rather than one full pass per propagation step.
- *
- * Two rules sharing a name still share one map entry; storing the UNION
- * of what each duplicate's body yields keeps the entry monotone (an
- * overwrite could oscillate `true -> false -> true` forever) and is the
- * conservative direction anyway -- `validateGrammar` rejects duplicates
- * before this ever runs from codegen.
- */
-const computeRuleFailureModes = (
-  grammar: GrammarDefinition,
-): ReadonlyMap<string, FailureModes> => {
-  const modes = new Map<string, FailureModes>(
-    grammar.rules.map((r) => [r.name, NO_FAILURE]),
-  );
-  const dependents = new Map<string, number[]>();
-  for (let i = 0; i < grammar.rules.length; i++) {
-    const refs = new Set<string>();
-    forEachExpression(
-      (grammar.rules[i] as (typeof grammar.rules)[number]).pattern,
-      (node) => {
-        if (node.type === "Identifier") refs.add(node.name);
-      },
-    );
-    for (const name of refs) {
-      const list = dependents.get(name);
-      if (list) {
-        list.push(i);
-      } else {
-        dependents.set(name, [i]);
-      }
-    }
-  }
-
-  const queue: number[] = grammar.rules.map((_, i) => i);
-  const inQueue = new Set<number>(queue);
-  let head = 0;
-  while (head < queue.length) {
-    const i = queue[head++] as number;
-    inQueue.delete(i);
-    const rule = grammar.rules[i] as (typeof grammar.rules)[number];
-    const prev = modes.get(rule.name) as FailureModes;
-    const next = unionFailureModes(
-      prev,
-      expressionFailureModes(rule.pattern, modes),
-    );
-    if (
-      next === prev ||
-      (next.nonFatal === prev.nonFatal && next.fatal === prev.fatal)
-    ) {
-      continue;
-    }
-    modes.set(rule.name, next);
-    for (const dependent of dependents.get(rule.name) ?? []) {
-      if (!inQueue.has(dependent)) {
-        inQueue.add(dependent);
-        queue.push(dependent);
-      }
-    }
-  }
-  return modes;
-};
-
 /** One `Choice` node with alternatives that can never be reached. */
 export interface UnreachableAlternativesIssue {
   /** The rule whose pattern contains the offending `Choice`. */
@@ -487,7 +199,7 @@ export interface UnreachableAlternativesIssue {
 /**
  * Finds `Choice` nodes -- anywhere in any rule's pattern, nested
  * included -- whose later alternatives can never run because an earlier
- * one cannot fail non-fatally (see {@link expressionFailureModes}).
+ * one cannot fail non-fatally (see {@link analyzeFailureModes}).
  *
  * In a PEG, alternatives are tried strictly in order and the first
  * success wins. An earlier alternative that always succeeds
@@ -504,36 +216,36 @@ export interface UnreachableAlternativesIssue {
  */
 export const findUnreachableAlternatives = (
   grammar: GrammarDefinition,
-): UnreachableAlternativesIssue[] => {
-  const ruleModes = computeRuleFailureModes(grammar);
+): UnreachableAlternativesIssue[] =>
+  unreachableAfterDesugaring(applySkipDesugar(grammar));
+
+function unreachableAfterDesugaring(
+  grammar: GrammarDefinition,
+): UnreachableAlternativesIssue[] {
+  const failureModes = analyzeFailureModes(grammar);
   const issues: UnreachableAlternativesIssue[] = [];
   for (const rule of grammar.rules) {
     forEachExpression(rule.pattern, (node) => {
       if (node.type !== "Choice") return;
-      const causeIndex = node.alternatives.findIndex(
-        (alt) => !expressionFailureModes(alt, ruleModes).nonFatal,
-      );
-      const causeAlt = node.alternatives[causeIndex];
-      if (
-        causeIndex === -1 ||
-        causeIndex === node.alternatives.length - 1 ||
-        causeAlt === undefined
-      ) {
-        return;
+      for (const [i, alternative] of node.alternatives.entries()) {
+        if (i + 1 === node.alternatives.length) break;
+        const cause = failureModes(alternative);
+        if (cause.nonFatal) continue;
+        issues.push({
+          ruleName: rule.name,
+          deadAlternatives: Array.from(
+            { length: node.alternatives.length - i - 1 },
+            (_, j) => i + j + 2,
+          ),
+          causeAlternative: i + 1,
+          causeKind: cause.fatal ? "committed" : "infallible",
+        });
+        break;
       }
-      const cause = expressionFailureModes(causeAlt, ruleModes);
-      issues.push({
-        ruleName: rule.name,
-        deadAlternatives: node.alternatives
-          .map((_alt, i) => i + 1)
-          .slice(causeIndex + 1),
-        causeAlternative: causeIndex + 1,
-        causeKind: cause.nonFatal || cause.fatal ? "committed" : "infallible",
-      });
     });
   }
   return issues;
-};
+}
 
 // ============================================================================
 // Transform-function name checks
@@ -955,13 +667,10 @@ export function memoizeCapacity(annotation: GrammarAnnotation): number {
   return capacity;
 }
 
-/**
- * Check the source grammar's rules, control flow, annotations and transforms.
- * Check names first so later analyses can resolve each local rule uniquely.
- * A bare identifier may refer to an externally supplied parser.
- * @throws {Error} on the first category of structural error found.
- */
-export const validateGrammar = (grammar: GrammarDefinition): void => {
+/** Validate names, annotations, transforms and cut placement before rewriting the source. */
+export const validateGrammarDeclarations = (
+  grammar: GrammarDefinition,
+): void => {
   const duplicates = findDuplicateRuleNames(grammar);
   if (duplicates.length > 0) {
     throw new Error(
@@ -985,34 +694,10 @@ export const validateGrammar = (grammar: GrammarDefinition): void => {
     if (annotation) memoizeCapacity(annotation);
   }
 
-  const leftRecursive = findLeftRecursiveRules(grammar);
-  if (leftRecursive.length > 0) {
-    throw new Error(
-      `Left-recursive rule(s): ${leftRecursive.join(", ")} -- a PEG parser cannot recognize left recursion at runtime; it re-invokes the same rule at the same position without consuming any input first, until the call stack overflows. Rewrite using repetition instead of left-recursive self-reference (e.g. "expr = expr op term / term" becomes "expr = term (op term)*").`,
-    );
-  }
-
   const cutOnly = findCutOnlyRules(grammar);
   if (cutOnly.length > 0) {
     throw new Error(
       `${ERROR_MESSAGES.CUT_ONLY_PATTERN} (rule(s): ${cutOnly.join(", ")}) -- \`~\` only has meaning as one of several elements of a sequence (e.g. "a" ~ "b"); a rule, group, choice alternative, or repetition/lookahead body made up of nothing but \`~\` doesn't match anything.`,
-    );
-  }
-
-  const unreachable = findUnreachableAlternatives(grammar);
-  if (unreachable.length > 0) {
-    const details = unreachable
-      .map(
-        (issue) =>
-          `rule "${issue.ruleName}": alternative(s) ${issue.deadAlternatives.join(", ")} unreachable because alternative ${issue.causeAlternative} ${
-            issue.causeKind === "infallible"
-              ? "always succeeds"
-              : "commits via `~` before it can produce an ordinary failure"
-          }`,
-      )
-      .join("; ");
-    throw new Error(
-      `Unreachable ordered-choice alternative(s): ${details} -- PEG alternatives are tried in order, so an earlier alternative that cannot fail non-fatally makes every later one dead code. Reorder the alternatives, make the earlier one able to fail, or remove the dead ones.`,
     );
   }
 
@@ -1051,10 +736,42 @@ export const validateGrammar = (grammar: GrammarDefinition): void => {
   // that rule's pattern.
   assertNoInertFlagAnnotations(grammar);
 
-  // Transform-function checks run last: they don't interact with any of
-  // the rule-level analyses above (a transform binds to a rule by name --
-  // see TransformNameIssue's doc comment).
   assertValidTransformFunctionNames(grammar);
+};
+
+function validatedGrammar(source: GrammarDefinition): GrammarDefinition {
+  validateGrammarDeclarations(source);
+  const grammar = applySkipDesugar(source);
+  const leftRecursive = findLeftRecursiveRules(grammar);
+  if (leftRecursive.length > 0) {
+    throw new Error(
+      `Left-recursive rule(s): ${leftRecursive.join(", ")} -- a PEG parser cannot recognize left recursion at runtime; it re-invokes the same rule at the same position without consuming any input first, until the call stack overflows. Rewrite using repetition instead of left-recursive self-reference (e.g. "expr = expr op term / term" becomes "expr = term (op term)*").`,
+    );
+  }
+
+  const unreachable = unreachableAfterDesugaring(grammar);
+  if (unreachable.length > 0) {
+    const details = unreachable
+      .map(
+        (issue) =>
+          `rule "${issue.ruleName}": alternative(s) ${issue.deadAlternatives.join(", ")} unreachable because alternative ${issue.causeAlternative} ${
+            issue.causeKind === "infallible"
+              ? "always succeeds"
+              : "commits via `~` before it can produce an ordinary failure"
+          }`,
+      )
+      .join("; ");
+    throw new Error(
+      `Unreachable ordered-choice alternative(s): ${details} -- PEG alternatives are tried in order, so an earlier alternative that cannot fail non-fatally makes every later one dead code. Reorder the alternatives, make the earlier one able to fail, or remove the dead ones.`,
+    );
+  }
+
+  return grammar;
+}
+
+/** Validate the grammar with the same control flow that will run in the parser. */
+export const validateGrammar = (source: GrammarDefinition): void => {
+  validatedGrammar(source);
 };
 
 /** Validate the source, expand @skip, and analyze the grammar that generators emit. */
@@ -1062,8 +779,7 @@ export function prepareGrammarForGeneration(source: GrammarDefinition): {
   grammar: GrammarDefinition;
   firstSets: GrammarFirstSetAnalysis;
 } {
-  validateGrammar(source);
-  const grammar = applySkipDesugar(source);
+  const grammar = validatedGrammar(source);
   const firstSets = analyzeFirstSets(grammar);
   assertNoNullableRepetition(grammar, firstSets);
   return { grammar, firstSets };

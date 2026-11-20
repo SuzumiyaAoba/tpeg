@@ -171,6 +171,22 @@ test("inherited transforms survive a child transform set for another rule", () =
   });
 });
 
+test("checks reachability using transforms inherited from a parent grammar", () => {
+  write(
+    "base.tpeg",
+    'grammar Base { maybe = "x"? }\ntransforms T@typescript { maybe(v: any) -> Result<any> { return { success: false, error: "absent" }; } }',
+  );
+  const entry = write(
+    "main.tpeg",
+    'import "base.tpeg" as b\ngrammar Main extends b.Base { start = maybe / "fallback" }',
+  );
+  expect(core.parse(compile(entry)["start"]!)("fallback")).toMatchObject({
+    success: true,
+    val: "fallback",
+    next: 8,
+  });
+});
+
 test("transform overrides survive multiple inheritance levels", () => {
   write(
     "base.tpeg",

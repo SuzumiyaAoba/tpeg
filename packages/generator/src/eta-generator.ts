@@ -5,9 +5,9 @@
  * with complete type safety and predictable output.
  */
 
-import { join } from "node:path";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { someExpression } from "@suzumiyaaoba/tpeg-core";
 import {
   buildExternalIdentifierWarnings,
   buildQualifiedIdentifierWarnings,
@@ -19,6 +19,7 @@ import {
   generateSequenceCode,
   generateCharacterClassCode,
   generateChoiceCode,
+  inlineChoiceAlternative,
   generateIdentifierCode,
   generateLabeledExpressionCode,
   generateQualifiedIdentifierCode,
@@ -34,6 +35,7 @@ import {
   wrapWithTransform,
 } from "@suzumiyaaoba/tpeg-parser";
 import { Eta } from "eta";
+import { transpileGeneratedParser } from "./javascript-generator";
 import {
   analyzeGrammarPerformance,
   globalPerformanceMonitor,
@@ -58,12 +60,16 @@ import type {
   StringLiteral,
 } from "./types";
 
-/**
- * Eta-based TPEG code generator
- */
+const defaultTemplatesDir = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../templates",
+);
+
+/** Eta-based TPEG code generator. */
 export class EtaTPEGCodeGenerator {
   private eta: Eta;
-  private options: Required<CodeGenOptions>;
+  private options: Required<Omit<CodeGenOptions, "header">> &
+    Pick<CodeGenOptions, "header">;
   private ruleNames: Set<string> = new Set();
   /** Rule name -> declaration index, used to detect forward/self/mutual
    * references -- mirrors `packages/parser/src/codegen.ts`'s
@@ -74,13 +80,9 @@ export class EtaTPEGCodeGenerator {
   private currentRuleIndex = -1;
 
   constructor(options: CodeGenOptions = { language: "typescript" }) {
-    // Get the directory of the current module
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = dirname(__filename);
-    const defaultTemplatesDir = join(__dirname, "../templates");
-
     this.options = {
       language: options.language,
+      ...(options.header === undefined ? {} : { header: options.header }),
       namePrefix: options.namePrefix ?? "",
       includeImports: options.includeImports ?? true,
       includeTypes: options.includeTypes ?? true,
@@ -306,7 +308,25 @@ export class EtaTPEGCodeGenerator {
       const templateName = this.options.optimize
         ? "optimized/parser-file"
         : "base/parser-file";
-      const code = await this.eta.renderAsync(templateName, templateData);
+      const rendered = await this.eta.renderAsync(templateName, templateData);
+      const { header, includeTypes, templatesDir } = this.options;
+      const source = header === undefined ? rendered : `${header}\n${rendered}`;
+      // Built-in untyped templates already produce JavaScript. Authored code
+      // can still contain TypeScript in a header, action, transform or template.
+      const needsTranspilation =
+        !includeTypes &&
+        (header !== undefined ||
+          templatesDir !== defaultTemplatesDir ||
+          transformsByRuleName.size > 0 ||
+          desugared.rules.some((rule) =>
+            someExpression(
+              rule.pattern,
+              (node) => node.type === "ActionExpression",
+            ),
+          ));
+      const code = needsTranspilation
+        ? transpileGeneratedParser(source)
+        : source;
 
       const generationTime = finishMeasurement();
 
@@ -472,7 +492,7 @@ export class EtaTPEGCodeGenerator {
    * Delegates to the shared `collectUsedCombinators` in
    * `packages/parser/src/codegen.ts` (re-exported by `tpeg-parser`) with
    * this generator's own decisions: `generateChoice` returns a
-   * single-alternative `Choice` bare (no `choice` import), `generateSequence`
+   * single-alternative `Choice` bare when it cannot commit, `generateSequence`
    * wraps every element after ANY `Cut` in `commit(...)` (this generator
    * never emits `commitAtTopLevel`, so `commitAfterAnyCut` is `true`),
    * and this generator has no `charClassRun` path.
@@ -488,7 +508,7 @@ export class EtaTPEGCodeGenerator {
       enableCharClassRun: false,
       commitAfterAnyCut: true,
       choiceCombinatorFor: (choice) =>
-        choice.alternatives.length === 1 ? null : "choice",
+        inlineChoiceAlternative(choice) ? null : "choice",
     });
   }
 

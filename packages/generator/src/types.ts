@@ -111,6 +111,8 @@ export interface CodeGenOptions {
   language: "typescript";
   /** Generated parser name prefix */
   namePrefix?: string;
+  /** Source included before the generated module and its optional JavaScript conversion. */
+  header?: string;
   /** Include runtime imports */
   includeImports?: boolean;
   /** Generate with type annotations */

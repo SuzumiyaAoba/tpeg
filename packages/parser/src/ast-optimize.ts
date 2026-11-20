@@ -99,7 +99,7 @@
  * ## Alternative shapes handled
  *
  * Only a `Choice` where the shared prefix is one of `StringLiteral`,
- * `CharacterClass`, `AnyChar`, `Identifier`, or `QualifiedIdentifier` is
+ * `CharacterClass`, `AnyChar`, or a rule `Identifier` that cannot commit is
  * factored -- these are the terminal/reference node types that cannot
  * themselves embed an `ActionExpression`, so checking the prefix's own
  * type is enough without a subtree walk. `Sequence`/`Choice`/`Group`/

@@ -74,6 +74,7 @@ import {
 } from "./differential-fuzz";
 import { analyzeFirstSets } from "./first-sets";
 import { grammarDefinition } from "./grammar";
+import { prepareGrammarForGeneration } from "./grammar-validation";
 import {
   ReferenceInterpreterLimitError,
   referenceRecognize,
@@ -303,19 +304,25 @@ describe("codegen differential fuzzing (base generator vs. every optimization va
           continue;
         }
 
-        let base: Parser<unknown>;
-        let oracle: ((input: string) => string) | null;
-        const variantParsers: [VariantSpec, Parser<unknown>][] = [];
         try {
-          base = compileStart(
-            generateTypeScriptParser(parsed.val, {
-              includeImports: false,
-              includeTypes: false,
-            }).code,
-            core,
-            combinator,
-          );
-          for (const variant of VARIANTS) {
+          prepareGrammarForGeneration(parsed.val);
+        } catch {
+          // Random input can describe a left-recursive or nullable repetition.
+          skippedCount++;
+          continue;
+        }
+
+        const base = compileStart(
+          generateTypeScriptParser(parsed.val, {
+            includeImports: false,
+            includeTypes: false,
+          }).code,
+          core,
+          combinator,
+        );
+        const variantParsers: [VariantSpec, Parser<unknown>][] = [];
+        for (const variant of VARIANTS) {
+          try {
             const code = variant.build(parsed.val);
             if (
               variant.name.startsWith("optimized + regex fusion") &&
@@ -333,34 +340,17 @@ describe("codegen differential fuzzing (base generator vs. every optimization va
               variant,
               compileStart(code, core, combinator),
             ]);
+          } catch (cause) {
+            throw new Error(
+              `${variant.name} failed to generate or load for seed ${SEED}:\n${source}`,
+              { cause },
+            );
           }
-          // Built once per grammar, tried against every input below -- a
-          // grammar the oracle can't handle at all (an unsupported node, or
-          // no `start` rule) is a construction-time concern handled by the
-          // same try/catch as the codegen variants above; a PER-INPUT limit
-          // (recursion depth, zero-width repetition -- expected for a
-          // pathological random input against a recursive grammar) is
-          // handled per-input below instead, so one bad input doesn't skip
-          // the oracle for every other input against the same grammar.
-          oracle = referenceRecognize(parsed.val);
-        } catch {
-          // A construction-time rejection (e.g. `assertNoNullableRepetition`
-          // firing on a randomly-generated nullable repetition) or a
-          // generated-module evaluation compile error -- not a differential-fuzzing
-          // concern, since the base generator would have hit the same
-          // rejection for the same grammar.
-          skippedCount++;
-          continue;
         }
-
+        const oracle = referenceRecognize(parsed.val);
         testedCount++;
         for (const input of ALL_TEST_INPUTS) {
-          let baseResult: ReturnType<Parser<unknown>>;
-          try {
-            baseResult = base(input, 0);
-          } catch {
-            continue;
-          }
+          const baseResult = base(input, 0);
           const baseKeySuccessOnly = keySuccessOnly(baseResult);
           if (baseKeySuccessOnly === "FATAL") fatalKeyCount++;
 

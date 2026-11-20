@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { captureChoice } from "./capture";
 import { choice, commit } from "./combinators";
 import { andPredicate } from "./lookahead";
+import { optional, zeroOrMore } from "./repetition";
 import type { ParseError, Parser } from "./types";
 
 class Diagnostic extends Error implements ParseError {
@@ -29,6 +30,37 @@ class Diagnostic extends Error implements ParseError {
 }
 
 describe("diagnostic fields when changing cut flags", () => {
+  it("propagates a resource abort through choices, lookahead and repetition", () => {
+    const error = { message: "limit", pos: 0, abort: true };
+    const failure: Parser<string> = () => ({ success: false, error });
+    const fallback: Parser<string> = () => {
+      throw new Error("unexpected fallback");
+    };
+    for (const parser of [
+      choice(failure, fallback),
+      captureChoice(failure, fallback),
+      optional(failure),
+      zeroOrMore(failure),
+      andPredicate(failure),
+    ]) {
+      expect(parser("", 0)).toEqual({ success: false, error });
+    }
+  });
+
+  it("absorbs a positive lookahead cut using the first diagnostic it reads", () => {
+    let reads = 0;
+    const failure: Parser<string> = () => ({
+      success: false,
+      get error() {
+        return { message: "cut", pos: reads++, fatal: true };
+      },
+    });
+    expect(andPredicate(failure)("a", 0)).toMatchObject({
+      success: false,
+      error: { pos: 0, fatal: false },
+    });
+    expect(reads).toBe(1);
+  });
   it("commit snapshots a concrete failure's error getter only once", () => {
     let reads = 0;
     const failure: Parser<string> = () => ({

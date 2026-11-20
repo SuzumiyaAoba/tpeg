@@ -1,4 +1,7 @@
-import { getSingleCodePoint } from "@suzumiyaaoba/tpeg-core";
+import {
+  compileCharRange,
+  type CodePointInterval,
+} from "@suzumiyaaoba/tpeg-core";
 import type { CharRange } from "./types";
 
 /**
@@ -11,25 +14,15 @@ import type { CharRange } from "./types";
  * representation is closed under union but has no `complement` or
  * `difference`, which is exactly why a negated character class (`[^"]`)
  * or a negative lookahead's subtraction (`!a b`) had nowhere to go but
- * `unknown`. Working over code points (not UTF-16 code units) also means
- * a surrogate-pair (astral) character is just another interval endpoint
- * here -- no special-casing, no bail-out. Lowering to UTF-16 code units
- * only happens at the one place that actually needs code units: the
- * runtime `FirstCharFilter` boundary (see
- * `packages/core/src/combinators.ts`), because `predictiveChoice`
- * compares against `input[pos.offset]`, a single UTF-16 code unit.
+ * `unknown`. Both FIRST analysis and the runtime `FirstCharFilter` use
+ * code points, so an astral character is a single interval endpoint.
  *
  * Every exported set-algebra function takes and returns already-normalized
  * `CharSet`s (sorted, merged) and preserves that invariant -- never
  * construct a `CharSet` by hand outside `fromChar`/`fromCodePointRange`.
  */
 
-/** An inclusive code-point interval. `lo <= hi` always holds for a
- * normalized entry. */
-export interface CodePointInterval {
-  readonly lo: number;
-  readonly hi: number;
-}
+export type { CodePointInterval } from "@suzumiyaaoba/tpeg-core";
 
 /** A normalized `CharSet`: sorted ascending by `lo`, no two entries
  * overlap or touch (adjacent entries are always merged), no entry has
@@ -46,16 +39,10 @@ export const EMPTY_SET: CharSet = [];
 /** The universal set: every code point in `[0, MAX_CODE_POINT]`. */
 export const ALL_CHARS: CharSet = [{ lo: 0, hi: MAX_CODE_POINT }];
 
-/**
- * Sorts and coalesces an arbitrary (possibly unsorted, possibly
- * overlapping) list of intervals into normalized form. Internal --
- * exported functions below only ever hand this already-normalized input
- * from `fromChar`/`fromCodePointRange`/other normalized `CharSet`s, so
- * callers of this module never need to call it directly.
- */
-const normalize = (intervals: readonly CodePointInterval[]): CharSet => {
+/** Sort and coalesce a freshly allocated list of intervals. */
+const normalize = (intervals: CodePointInterval[]): CharSet => {
   if (intervals.length === 0) return EMPTY_SET;
-  const sorted = [...intervals].sort((a, b) => a.lo - b.lo);
+  const sorted = intervals.sort((a, b) => a.lo - b.lo);
   const result: CodePointInterval[] = [];
   let current = sorted[0] as CodePointInterval;
   for (let i = 1; i < sorted.length; i++) {
@@ -92,53 +79,9 @@ export const fromCodePointRange = (start: string, end: string): CharSet => {
   return [{ lo, hi }];
 };
 
-/** A `CharSet` for a `CharacterClass`'s whole `ranges` list, validating
- * each bound exactly like `compileSpecs`
- * (`packages/core/src/char-class.ts`) and `charClassBracketExpr`
- * (`./regex-fusion.ts`) do: every bound must be exactly one code point,
- * and a range's start must not exceed its end.
- *
- * `.tpeg` source can never produce an invalid range -- the grammar parser
- * rejects `[z-a]` outright -- so this can only fire on a hand-built AST.
- * Using bare `fromChar`/`fromCodePointRange` on such bounds instead would
- * silently truncate to the first code point (`"ab"` -> `'a'`) or to the
- * empty set (`"z"-"a"`), misreporting a FIRST set / character set for a
- * grammar whose generated code throws at construction anyway. Throwing
- * here surfaces the same error earlier, at analysis time, instead of
- * letting an unsound set flow into an optimization decision.
- *
- * @throws {Error} describing the offending bound. */
-export const charRangesToSet = (ranges: readonly CharRange[]): CharSet => {
-  let raw: CharSet = EMPTY_SET;
-  for (const r of ranges) {
-    const lo = codePointOfSingleCharBound(r.start);
-    if (r.end === undefined) {
-      raw = union(raw, [{ lo, hi: lo }]);
-      continue;
-    }
-    const hi = codePointOfSingleCharBound(r.end);
-    if (lo > hi) {
-      throw new Error(
-        `Invalid character class range: ["${r.start}", "${r.end}"] -- start (U+${lo.toString(16).toUpperCase()}) is greater than end (U+${hi.toString(16).toUpperCase()})`,
-      );
-    }
-    raw = union(raw, [{ lo, hi }]);
-  }
-  return raw;
-};
-
-/** Code point of a bound that must hold exactly one character; throws
- * otherwise. An astral character is one code point across two UTF-16 code
- * units, so length is compared against the code point's own unit width. */
-const codePointOfSingleCharBound = (bound: string): number => {
-  const cp = getSingleCodePoint(bound);
-  if (cp === undefined) {
-    throw new Error(
-      `Invalid character class range bound: "${bound}" is not exactly one character`,
-    );
-  }
-  return cp;
-};
+/** Validate every class member and normalize the complete set in one pass after sorting. */
+export const charRangesToSet = (ranges: readonly CharRange[]): CharSet =>
+  normalize(ranges.map(({ start, end }) => compileCharRange(start, end)));
 
 /** `true` iff the set matches no code point. */
 export const isEmpty = (a: CharSet): boolean => a.length === 0;

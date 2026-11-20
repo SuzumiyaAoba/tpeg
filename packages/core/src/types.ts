@@ -185,7 +185,7 @@ export interface ParseError {
    */
   fatal?: boolean;
   /**
-   * Set together with `fatal` for failures that must abort the ENTIRE
+   * Marks failures that must abort the ENTIRE
    * parse rather than only the enclosing `choice` -- resource-limit hits
    * (`./limits.ts`'s `guardedParserCall`, e.g. the recursion-depth
    * limit), and unambiguous-rejection checks that must not degrade to a
