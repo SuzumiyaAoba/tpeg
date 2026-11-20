@@ -247,7 +247,7 @@ export const negatedCharClass = (
 /**
  * `zeroOrMore(charClass(...specs))` (`min = 0`) or `oneOrMore(charClass(...specs))`
  * (`min = 1`), collapsed into a single scan: one `ParseSuccess`, one
- * exact-size result array, no per-character closure call and no
+ * result array, no per-character closure call and no
  * per-character `ParseSuccess` the way `zeroOrMore`/`oneOrMore` driving
  * `charClass`/`negatedCharClass` one character at a time would produce.
  *
@@ -308,59 +308,23 @@ export const charClassRun = (
     if (!isValidOffset(pos) || pos > input.length) {
       return fail(input, pos, expectation);
     }
-    if (pos >= input.length) {
-      if (min === 1) return fail(input, pos, expectation);
-      return { success: true, val: [], current: pos, next: pos };
-    }
-
-    // Pass 1: scan to find the run's end offset and code-point count.
-    // Touches no heap at all -- pure index arithmetic over `input`, one
-    // `charCodeAt`/`codePointAt` per code point, no intermediate string.
+    const results: string[] = [];
     let offset = pos;
-    let count = 0;
     while (offset < input.length) {
       const code = input.charCodeAt(offset);
       if (code < 128) {
-        if ((asciiTable[code] === 1) !== negated) {
-          offset += 1;
-          count += 1;
-          continue;
-        }
-        break;
+        if ((asciiTable[code] === 1) === negated) break;
+        results.push(ASCII_CHARS[code] as string);
+        offset++;
+      } else {
+        const cp = input.codePointAt(offset) as number;
+        if (matchesSpecsSlow(cp, compiledSpecs) === negated) break;
+        const end = offset + (cp > 0xffff ? 2 : 1);
+        results.push(input.slice(offset, end));
+        offset = end;
       }
-      const cp = input.codePointAt(offset) as number;
-      if (matchesSpecsSlow(cp, compiledSpecs) !== negated) {
-        offset += cp > 0xffff ? 2 : 1;
-        count += 1;
-        continue;
-      }
-      break;
     }
-
-    if (count === 0) {
-      if (min === 1) return fail(input, pos, expectation);
-      return { success: true, val: [], current: pos, next: pos };
-    }
-
-    // Pass 2: fill an exact-size array by re-walking the same span --
-    // cheaper than push()-ing into a growing array one element at a
-    // time, and the span was already proven valid by pass 1 so this
-    // walk cannot itself fail or diverge from it.
-    const results = new Array<string>(count);
-    let p = pos;
-    for (let i = 0; i < count; i++) {
-      const code = input.charCodeAt(p);
-      if (code < 128) {
-        results[i] = ASCII_CHARS[code] as string;
-        p += 1;
-        continue;
-      }
-      const cp = input.codePointAt(p) as number;
-      const len = cp > 0xffff ? 2 : 1;
-      results[i] = input.slice(p, p + len);
-      p += len;
-    }
-
-    return { success: true, val: results, current: pos, next: p };
+    if (offset === pos && min === 1) return fail(input, pos, expectation);
+    return { success: true, val: results, current: pos, next: offset };
   };
 };

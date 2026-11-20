@@ -8,10 +8,9 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { offsetToPos } from "@suzumiyaaoba/tpeg-core";
 import {
   characterClass,
-  grammarDefinition,
+  parseGrammarFile,
   identifier,
   stringLiteral,
   tpegExpression,
@@ -37,8 +36,7 @@ const parseInputs = (content: string): string[] => {
   return content
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("#") && !line.startsWith("//"))
-    .filter((line) => !line.startsWith("## "));
+    .filter((line) => line && !line.startsWith("#") && !line.startsWith("//"));
 };
 
 // Helper function to demonstrate grammar parsing
@@ -52,11 +50,10 @@ const demoGrammarFile = (filename: string) => {
   console.log(grammarContent);
   console.log();
 
-  const pos = initialPos;
-  const result = grammarDefinition(grammarContent, pos);
+  const result = parseGrammarFile(filename, grammarContent);
 
   if (result.success) {
-    const grammar = result.val;
+    const [grammar] = result.val.grammars;
     console.log(`✅ Successfully parsed grammar: ${grammar.name}`);
     console.log(`   📊 Annotations: ${grammar.annotations.length}`);
     console.log(`   📋 Rules: ${grammar.rules.length}`);
@@ -78,11 +75,8 @@ const demoGrammarFile = (filename: string) => {
     }
   } else {
     console.log("❌ Failed to parse grammar");
-    console.log(`   Error: ${result.error?.message || "Parse failed"}`);
-    if (result.error?.pos !== undefined) {
-      const { line, column } = offsetToPos(grammarContent, result.error.pos);
-      console.log(`   Position: line ${line}, column ${column + 1}`);
-    }
+    console.log(`   Error: ${result.error.message}`);
+    console.log(`   Position: line ${result.line}, column ${result.column}`);
   }
 
   console.log();

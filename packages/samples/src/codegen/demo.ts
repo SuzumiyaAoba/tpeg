@@ -1,20 +1,18 @@
 #!/usr/bin/env bun
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   type GrammarDefinition,
   type Parser,
-  offsetToPos,
   parse,
 } from "@suzumiyaaoba/tpeg-core";
 import {
   generateOptimizedTypeScriptParser,
   generateTypeScriptParser,
-  skipTrailingWhitespaceAndComments,
-  tpegModuleFile,
 } from "@suzumiyaaoba/tpeg-parser";
+import { loadGrammar } from "../tpeg-utils";
 
 /**
  * Code Generation Demo: .tpeg grammar -> TypeScript parser -> run it
@@ -39,46 +37,6 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GRAMMAR_PATH = join(HERE, "calc.tpeg");
 const GENERATED_DIR = join(HERE, "generated");
-
-/**
- * Reads a `.tpeg` file and returns its grammar AST.
- *
- * `tpegModuleFile` (not `tpegFile`) is what the CLI parses with -- it also
- * accepts leading `import "..."` statements. `parse()` only requires a
- * prefix match, so the trailing-content check mirrors the CLI's: anything
- * left over after the grammar/transforms blocks is reported as an error
- * at its line/column rather than silently dropped.
- */
-const loadGrammar = (path: string): GrammarDefinition => {
-  const source = readFileSync(path, "utf8");
-  const result = parse(tpegModuleFile)(source);
-  const fullyConsumed =
-    result.success &&
-    skipTrailingWhitespaceAndComments(source, result.next) === source.length;
-
-  if (!result.success || !fullyConsumed) {
-    const offset = result.success ? result.next : result.error.pos;
-    const { line, column } = offsetToPos(source, offset);
-    const message = result.success
-      ? `unexpected content after line ${line}, column ${column + 1}`
-      : `line ${line}, column ${column + 1}: ${result.error.message}`;
-    throw new Error(`failed to parse ${path}: ${message}`);
-  }
-
-  // `tpegModuleFile` returns a ModularGrammarDefinition carrying
-  // module-only fields (imports/exports) the generators don't consume --
-  // hand them the plain GrammarDefinition, exactly like the CLI does.
-  const mod = result.val;
-  return {
-    type: "GrammarDefinition",
-    name: mod.grammar.name,
-    annotations: mod.grammar.annotations,
-    rules: mod.grammar.rules,
-    ...(mod.grammar.transforms !== undefined
-      ? { transforms: mod.grammar.transforms }
-      : {}),
-  };
-};
 
 /**
  * Generates both parser variants and writes them under `generated/`.

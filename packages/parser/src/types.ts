@@ -1,24 +1,14 @@
-/**
- * TPEG Grammar Parser Types
- *
- * Type definitions for TPEG basic syntax elements based on docs/peg-grammar.md specification.
- * Re-exports shared types from @suzumiyaaoba/tpeg-core and adds parser-specific types.
- */
-
-// Import and re-export all shared grammar types from core
+/** Grammar AST definitions are shared with core. Token and lexer types are parser-specific. */
+import { createStringLiteral as coreStringLiteral } from "@suzumiyaaoba/tpeg-core";
 import type {
-  ActionExpression,
   AnyChar,
-  CharRange,
   CharacterClass,
   Choice,
-  Cut,
   Expression,
   GrammarAnnotation,
   GrammarDefinition,
   Group,
   Identifier,
-  LabeledExpression,
   NegativeLookahead,
   Optional,
   Plus,
@@ -27,10 +17,14 @@ import type {
   Quantified,
   RuleDefinition,
   Sequence,
-  Skip,
   Span,
   Star,
   StringLiteral,
+  TransformDefinition,
+  TransformFunction,
+  TransformParameter,
+  TransformReturnType,
+  TransformSet,
   WordBoundary,
 } from "@suzumiyaaoba/tpeg-core";
 
@@ -60,56 +54,43 @@ export type {
   GrammarAnnotation,
   RuleDefinition,
   GrammarDefinition,
-};
+  TransformDefinition,
+  TransformFunction,
+  TransformParameter,
+  TransformReturnType,
+  TransformSet,
+} from "@suzumiyaaoba/tpeg-core";
 
-// ============================================================================
-// Transform AST Types
-// ============================================================================
+export {
+  createCharacterClass,
+  createCharRange,
+  createIdentifier,
+  createQualifiedIdentifier,
+  createAnyChar,
+  createSequence,
+  createChoice,
+  createGroup,
+  createStar,
+  createPlus,
+  createOptional,
+  createQuantified,
+  createPositiveLookahead,
+  createNegativeLookahead,
+  createCut,
+  createSpan,
+  createWordBoundary,
+  createLabeledExpression,
+  createActionExpression,
+  createGrammarAnnotation,
+  createRuleDefinition,
+  createGrammarDefinition,
+} from "@suzumiyaaoba/tpeg-core";
 
-/**
- * Represents a transform function parameter
- */
-export interface TransformParameter {
-  name: string;
-  type: string;
-  optional?: boolean;
-}
-
-/**
- * Represents a transform function return type
- */
-export interface TransformReturnType {
-  type: string;
-  generic?: string;
-}
-
-/**
- * Represents a transform function definition
- */
-export interface TransformFunction {
-  name: string;
-  parameters: TransformParameter[];
-  returnType: TransformReturnType;
-  body: string;
-  documentation?: string[];
-}
-
-/**
- * Represents a transform set declaration
- */
-export interface TransformSet {
-  name: string;
-  targetLanguage: string;
-  functions: TransformFunction[];
-}
-
-/**
- * Represents a complete transform definition
- */
-export interface TransformDefinition {
-  type: "TransformDefinition";
-  transformSet: TransformSet;
-}
+/** Parser callers may omit the quote to use a double-quoted literal. */
+export const createStringLiteral = (
+  value: string,
+  quote: '"' | "'" = '"',
+): StringLiteral => coreStringLiteral(value, quote);
 
 // ============================================================================
 // Parser-specific derived types
@@ -168,312 +149,6 @@ export interface TokenizeError {
   line: number;
   column: number;
 }
-
-// ============================================================================
-// AST Node Factory Functions
-// ============================================================================
-
-/**
- * Factory functions for creating AST nodes with proper typing and validation.
- * These functions provide a consistent API for node creation and eliminate
- * the need for manual type assertions throughout the codebase.
- */
-
-/**
- * Create a StringLiteral AST node
- * @param value The string content (without quotes)
- * @param quote The quote character used (defaults to double quote)
- * @returns StringLiteral node
- */
-export const createStringLiteral = (
-  value: string,
-  quote: '"' | "'" = '"',
-): StringLiteral => ({
-  type: "StringLiteral",
-  value,
-  quote,
-});
-
-/**
- * Create a CharacterClass AST node
- * @param ranges Array of character ranges
- * @param negated Whether the character class is negated (e.g., [^a-z])
- * @returns CharacterClass node
- */
-export const createCharacterClass = (
-  ranges: CharRange[],
-  negated = false,
-): CharacterClass => ({
-  type: "CharacterClass",
-  ranges,
-  negated,
-});
-
-/**
- * Create a CharRange for use in character classes
- * @param start Start character
- * @param end End character (optional for single characters)
- * @returns CharRange object
- */
-export const createCharRange = (start: string, end?: string): CharRange =>
-  end !== undefined ? { start, end } : { start };
-
-/**
- * Create an Identifier AST node
- * @param name The identifier name
- * @returns Identifier node
- */
-export const createIdentifier = (name: string): Identifier => ({
-  type: "Identifier",
-  name,
-});
-
-/**
- * Create a QualifiedIdentifier AST node (a cross-module rule reference, e.g. `math.expr`)
- * @param module The module alias the rule is imported under
- * @param name The rule name within that module
- * @returns QualifiedIdentifier node
- */
-export const createQualifiedIdentifier = (
-  module: string,
-  name: string,
-): QualifiedIdentifier => ({
-  type: "QualifiedIdentifier",
-  module,
-  name,
-});
-
-/**
- * Create an AnyChar AST node
- * @returns AnyChar node
- */
-export const createAnyChar = (): AnyChar => ({
-  type: "AnyChar",
-});
-
-/**
- * Create a Sequence AST node
- * @param elements Array of expressions in sequence
- * @returns Sequence node
- */
-export const createSequence = (elements: Expression[]): Sequence => ({
-  type: "Sequence",
-  elements,
-});
-
-/**
- * Create a Choice AST node
- * @param alternatives Array of alternative expressions
- * @returns Choice node
- */
-export const createChoice = (alternatives: Expression[]): Choice => ({
-  type: "Choice",
-  alternatives,
-});
-
-/**
- * Create a Group AST node
- * @param expression The expression to group
- * @returns Group node
- */
-export const createGroup = (expression: Expression): Group => ({
-  type: "Group",
-  expression,
-});
-
-/**
- * Create a Star AST node (zero or more repetition)
- * @param expression The expression to repeat
- * @returns Star node
- */
-export const createStar = (expression: Expression): Star => ({
-  type: "Star",
-  expression,
-});
-
-/**
- * Create a Plus AST node (one or more repetition)
- * @param expression The expression to repeat
- * @returns Plus node
- */
-export const createPlus = (expression: Expression): Plus => ({
-  type: "Plus",
-  expression,
-});
-
-/**
- * Create an Optional AST node (zero or one occurrence)
- * @param expression The expression to make optional
- * @returns Optional node
- */
-export const createOptional = (expression: Expression): Optional => ({
-  type: "Optional",
-  expression,
-});
-
-/**
- * Create a Quantified AST node (specific repetition count/range)
- * @param expression The expression to quantify
- * @param min Minimum repetitions
- * @param max Maximum repetitions (undefined for unlimited)
- * @returns Quantified node
- */
-export const createQuantified = (
-  expression: Expression,
-  min: number,
-  max?: number,
-): Quantified =>
-  max !== undefined
-    ? {
-        type: "Quantified",
-        expression,
-        min,
-        max,
-      }
-    : {
-        type: "Quantified",
-        expression,
-        min,
-      };
-
-/**
- * Create a PositiveLookahead AST node
- * @param expression The expression to check
- * @returns PositiveLookahead node
- */
-export const createPositiveLookahead = (
-  expression: Expression,
-): PositiveLookahead => ({
-  type: "PositiveLookahead",
-  expression,
-});
-
-/**
- * Create a NegativeLookahead AST node
- * @param expression The expression to check against
- * @returns NegativeLookahead node
- */
-export const createNegativeLookahead = (
-  expression: Expression,
-): NegativeLookahead => ({
-  type: "NegativeLookahead",
-  expression,
-});
-
-/**
- * Create a Cut AST node (the `~` cut/commit marker)
- * @returns Cut node
- */
-export const createCut = (): Cut => ({
-  type: "Cut",
-});
-
-/**
- * Create a Span AST node (the `@expr` source-text extraction operator)
- * @param expression The expression whose consumed source text becomes the value
- * @returns Span node
- */
-export const createSpan = (expression: Expression): Span => ({
-  type: "Span",
-  expression,
-});
-
-/**
- * Create a WordBoundary AST node (the `\b` / `\B` zero-width assertion)
- * @param negated `true` for `\B` (assert no boundary), `false` for `\b`
- * @returns WordBoundary node
- */
-export const createWordBoundary = (negated = false): WordBoundary => ({
-  type: "WordBoundary",
-  negated,
-});
-
-/**
- * Create a LabeledExpression AST node
- * @param label The label name
- * @param expression The expression to label
- * @returns LabeledExpression node
- */
-export const createLabeledExpression = (
-  label: string,
-  expression: Expression,
-): LabeledExpression => ({
-  type: "LabeledExpression",
-  label,
-  expression,
-});
-
-/**
- * Create an ActionExpression AST node
- * @param expression The expression that must match before the action runs
- * @param code Raw source text of the action's code block, minus the braces
- * @returns ActionExpression node
- */
-export const createActionExpression = (
-  expression: Expression,
-  code: string,
-): ActionExpression => ({
-  type: "ActionExpression",
-  expression,
-  code,
-});
-
-/**
- * Create a GrammarAnnotation AST node
- * @param key The annotation key (e.g., "version")
- * @param value The annotation value (e.g., "1.0")
- * @returns GrammarAnnotation node
- */
-export const createGrammarAnnotation = (
-  key: string,
-  value: string,
-): GrammarAnnotation => ({
-  type: "GrammarAnnotation",
-  key,
-  value,
-});
-
-/**
- * Create a RuleDefinition AST node
- * @param name The rule name
- * @param pattern The rule pattern
- * @param documentation Optional documentation lines
- * @param annotations Optional rule-scoped annotations (e.g. `@memoize`)
- * @returns RuleDefinition node
- */
-export const createRuleDefinition = (
-  name: string,
-  pattern: Expression,
-  documentation?: string[],
-  annotations?: GrammarAnnotation[],
-): RuleDefinition => ({
-  type: "RuleDefinition",
-  name,
-  pattern,
-  ...(documentation ? { documentation } : {}),
-  ...(annotations ? { annotations } : {}),
-});
-
-/**
- * Create a GrammarDefinition AST node
- * @param name The grammar name
- * @param annotations Grammar annotations
- * @param rules Grammar rules
- * @param transforms Grammar transforms
- * @returns GrammarDefinition node
- */
-export const createGrammarDefinition = (
-  name: string,
-  annotations: GrammarAnnotation[] = [],
-  rules: RuleDefinition[] = [],
-  transforms: TransformDefinition[] = [],
-): GrammarDefinition => ({
-  type: "GrammarDefinition",
-  name,
-  annotations,
-  rules,
-  transforms,
-});
 
 // ============================================================================
 // Transform Factory Functions

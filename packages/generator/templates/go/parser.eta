@@ -129,10 +129,10 @@ func (s *parseSession) node(index, pos, depth int) Result {
     case "StringLiteral":
         for offset, unit := range n.literal {
             if pos + offset >= len(s.input) || s.input[pos + offset] != unit {
-                return s.failure(pos + offset, strconv.Quote(string(utf16.Decode(n.literal))), false, false)
+                return s.failure(pos + offset, strconv.Quote(n.text), false, false)
             }
         }
-        return success(string(utf16.Decode(n.literal)), pos, pos + len(n.literal))
+        return success(n.text, pos, pos + len(n.literal))
     case "AnyChar", "CharacterClass":
         if pos >= len(s.input) { return s.failure(pos, "character", false, false) }
         char, end := s.char(pos)

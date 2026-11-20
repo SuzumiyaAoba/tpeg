@@ -219,6 +219,7 @@ describe("Performance Tests", () => {
 
   describe("Memory usage tests", () => {
     it("should not leak memory during repeated operations", () => {
+      globalThis.gc?.();
       const initialMemory = process.memoryUsage().heapUsed;
 
       // Perform many operations
@@ -233,10 +234,7 @@ describe("Performance Tests", () => {
         }
       }
 
-      // Force garbage collection if available
-      if (global.gc) {
-        global.gc();
-      }
+      globalThis.gc?.();
 
       const finalMemory = process.memoryUsage().heapUsed;
       const memoryIncrease = finalMemory - initialMemory;

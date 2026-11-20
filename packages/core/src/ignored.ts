@@ -32,6 +32,50 @@ import type { Parser } from "./types";
  */
 export const IGNORED: unique symbol = Symbol("tpeg.ignored");
 
+/** Values returned by a sequence before applying its ignore policy. */
+export type ParserValues<P extends Parser<unknown>[]> = {
+  [K in keyof P]: P[K] extends Parser<infer T> ? T : never;
+};
+
+/** Slots a single child can contribute. An opaque value may also be IGNORED. */
+type VisibleSlot<Value> = unknown extends Value
+  ? [] | [Value]
+  : [Value] extends [typeof IGNORED]
+    ? []
+    : typeof IGNORED extends Value
+      ? [] | [Exclude<Value, typeof IGNORED>]
+      : [Value];
+
+type DropIgnored<
+  Values extends unknown[],
+  Prefix extends unknown[] = [],
+  Ambiguous extends unknown[] = [],
+> = Values extends [infer Head, ...infer Tail]
+  ? 0 | 1 extends VisibleSlot<Head>["length"]
+    ? // Each ambiguous child doubles the possible shapes. Keep a typed
+      // array suffix once an exact union would exceed 64 variants.
+      Ambiguous["length"] extends 6
+      ? [...Prefix, ...Exclude<Values[number], typeof IGNORED>[]]
+      : DropIgnored<Tail, [...Prefix, ...VisibleSlot<Head>], [...Ambiguous, 0]>
+    : DropIgnored<Tail, [...Prefix, ...VisibleSlot<Head>], Ambiguous>
+  : Values extends []
+    ? Prefix
+    : [...Prefix, ...Exclude<Values[number], typeof IGNORED>[]];
+
+type VisibleValues<Values extends unknown[]> =
+  typeof IGNORED extends Values[number]
+    ? // Long generated rules can exceed TypeScript's recursion limit for
+      // tuple filtering. Still describe every possible visible element.
+      "512" extends keyof Values
+      ? Exclude<Values[number], typeof IGNORED>[]
+      : DropIgnored<Values>
+    : Values;
+
+/** Visible result slots of a sequence. Fixed tuples without ignored values pass through directly. */
+export type SequenceValues<P extends Parser<unknown>[]> = VisibleValues<
+  ParserValues<P>
+>;
+
 /**
  * Wraps a parser so its successful match is recorded as "consumed, but
  * valueless": the result's `val` becomes the `IGNORED` sentinel, which

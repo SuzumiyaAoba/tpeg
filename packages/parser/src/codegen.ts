@@ -41,7 +41,7 @@ import {
   wrapWithMemoize,
   wrapWithTransform,
   grammarHasGlobalCut,
-  forEachSequenceElement,
+  generateSequenceCode,
   sequenceHasCutFollowedByElement,
   collectUsedCombinators,
   isRuleReferencedAnywhere,
@@ -545,87 +545,11 @@ export class TPEGCodeGenerator {
     expr: Sequence,
     isStartRuleTopLevel = false,
   ): string {
-    // A `~` cut marker (see the `Cut` node in grammar-types.ts) is dropped
-    // entirely rather than emitted as a sequence()/captureSequence()
-    // argument - it consumes no input and contributes no value of its own.
-    // Every element *after* it is instead individually wrapped in
-    // `commit(...)` (tpeg-core's combinators.ts): once everything before
-    // the cut has matched, a failure in any of them must not let the
-    // enclosing `choice(...)` fall back to a sibling alternative. Wrapping
-    // each element individually (rather than nesting the tail in its own
-    // sub-sequence) keeps the generated tuple/capture-merge shape
-    // identical to the cut-free case - only failure behavior changes.
-    //
-    // `isStartRuleTopLevel` is `true` only when `expr` IS the grammar's
-    // start rule's own top-level pattern (set once, in `generateRule`,
-    // and never forwarded to any recursive call below -- see
-    // `generateExpression`) AND `rules[0]` is never referenced by name
-    // from anywhere else in the grammar (see
-    // `isRuleReferencedAnywhere`'s doc comment for why that second
-    // condition is load-bearing, not just belt-and-suspenders) -- a cut
-    // here is provably at backtrack depth 0 (see `commitAtTopLevel`'s doc
-    // comment in `packages/combinator/src/logic.ts` for why that's the
-    // condition that matters), so `commitAtTopLevel(...)` is emitted
-    // instead of the
-    // ordinary `commit(...)`, letting `memoize` discard now-unreachable
-    // cache entries as the parse commits past them. A `Cut` marked
-    // `global: true` by `promoteGlobalCuts` (`ast-optimize.ts`)
-    // gets the same treatment regardless of `isStartRuleTopLevel` -- that
-    // function only sets the flag where the broader promotion argument
-    // holds (see its module doc comment).
-    //
-    // Per the Capture Structure Reference Table (docs/peg-grammar.md),
-    // dropping `~` must leave the sequence's capture exactly as if `~`
-    // weren't there at all. If exactly one non-Cut element remains, "as if
-    // `~` weren't there" means a single bare pattern -- which captures as
-    // that element's own value, not a 1-tuple. So a single remaining part
-    // (with no label on this sequence) is returned bare rather than passed
-    // through `sequence(...)`, mirroring `codegen-optimized.ts`'s
-    // `generateOptimizedSequence`, which already does this. The `!hasLabel`
-    // guard matters: a labeled sole survivor (e.g. `~x:"v"`) must still go
-    // through `captureSequence` below, or its still-CAPTURE_TAG-tagged
-    // value would leak out bare instead of merged.
-    const hasLabel = collectTopLevelLabels(expr).length > 0;
-    // Elements that contribute a VALUE to this sequence's result:
-    // everything but `~` cuts and `applySkipDesugar`-inserted `Skip`
-    // markers (whose `ignore(optional(...))` emission the
-    // `IGNORED`-sentinel filter drops before the tuple is built).
-    const valueElementCount = expr.elements.filter(
-      (el) => el.type !== "Cut" && el.type !== "Skip",
-    ).length;
-    const parts: string[] = [];
-    forEachSequenceElement(expr.elements, (el, committed, cutIsGlobal) => {
-      const code = this.generateExpression(el);
-      parts.push(
-        !committed
-          ? code
-          : isStartRuleTopLevel || cutIsGlobal
-            ? `commitAtTopLevel(${code})`
-            : `commit(${code})`,
-      );
-    });
-    if (parts.length === 0) {
-      return "sequence()";
-    }
-    if (valueElementCount === 1 && !hasLabel) {
-      // Exactly one value-contributing element: this sequence's own
-      // value must be that element's value, not a 1-tuple. With no
-      // `Skip` siblings that's the bare emission (the `parts.length`
-      // fast path); WITH them, the surrounding `sequence(...)` must
-      // still run -- its `ignore(optional(...))` boundary skips consume
-      // input -- but the `IGNORED` filter leaves a 1-tuple behind, so
-      // `map` unwraps it back to the element's own value.
-      if (parts.length === 1) {
-        const [only] = parts;
-        if (only) return only;
-      }
-      return `map(sequence(${parts.join(", ")}), ([v]) => v)`;
-    }
-    const elements = parts.join(", ");
-    // A sequence with labeled elements needs its per-element captured
-    // objects merged into one - `sequence()` returns a positional tuple
-    // instead, which would leave labels unreachable by name.
-    return hasLabel ? `captureSequence(${elements})` : `sequence(${elements})`;
+    return generateSequenceCode(
+      expr,
+      (element) => this.generateExpression(element),
+      isStartRuleTopLevel ? "topLevel" : "promoted",
+    );
   }
 
   private generateChoice(expr: Choice): string {

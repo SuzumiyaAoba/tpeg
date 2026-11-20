@@ -296,25 +296,16 @@ export class TypeInferenceError extends Error {
   }
 }
 
-/**
- * Rotates `cycle` so it starts at its lexicographically smallest element,
- * giving the same canonical key to every rotation of the same cycle (e.g.
- * `["expr","term","factor"]`, `["term","factor","expr"]`, and
- * `["factor","expr","term"]` all normalize to the same key) -- used to
- * de-duplicate a single circular dependency that `inferGrammarTypes`
- * would otherwise discover once per rule participating in it, since it
- * infers each rule's type starting from a fresh `ruleStack`. `" -> "`
- * joins the rotated names since a TPEG identifier is always
- * `[a-zA-Z_][a-zA-Z0-9_]*` (`packages/parser/src/identifier.ts`) and can
- * never contain a space, so this can't collide across different cycles.
- */
+/** Canonical rotation with unambiguous boundaries, including for hand-built rule names. */
 const normalizeCycleKey = (cycle: readonly string[]): string => {
-  if (cycle.length === 0) return "";
   let minIndex = 0;
   for (let i = 1; i < cycle.length; i++) {
     if ((cycle[i] as string) < (cycle[minIndex] as string)) minIndex = i;
   }
-  return [...cycle.slice(minIndex), ...cycle.slice(0, minIndex)].join(" -> ");
+  return JSON.stringify([
+    ...cycle.slice(minIndex),
+    ...cycle.slice(0, minIndex),
+  ]);
 };
 
 /**
@@ -508,68 +499,21 @@ export class TypeInferenceEngine {
     result: GrammarTypeInference,
     seenCycles: Set<string>,
   ): void {
-    if (error instanceof TypeInferenceError) {
-      // Handle circular dependencies
-      if (
-        this.options.detectCircularDependencies &&
-        error.message.includes("Circular dependency")
-      ) {
-        // `error.cycle` was captured at THROW time (see
-        // `TypeInferenceError`'s own doc comment) -- `ruleStack` itself
-        // can no longer be read back here for this, now that
-        // `inferIdentifierType`'s `push`/`pop` is properly `finally`-
-        // guarded and has already unwound to just this rule's name by
-        // the time the exception reaches this `catch`. Falls back to
-        // this rule's own name only in the [in-practice unreachable]
-        // case of a `TypeInferenceError` thrown some other way with a
-        // message that happens to contain "Circular dependency".
-        const cycle = error.cycle ?? [rule.name];
-        const key = normalizeCycleKey(cycle);
-        if (!seenCycles.has(key)) {
-          seenCycles.add(key);
-          result.circularDependencies.push([...cycle]);
-          result.warnings.push(error.message);
-        }
-
-        // Use a placeholder type for circular dependencies
-        result.ruleTypes.set(
-          rule.name,
-          circularDependencyPlaceholder(
-            rule.name,
-            this.options.generateDocumentation,
-          ),
-        );
-      } else {
-        result.warnings.push(error.message);
-        // For other errors, use a more specific error type
-        result.ruleTypes.set(rule.name, {
-          typeString: "unknown",
-          nullable: true,
-          isArray: false,
-          baseType: "unknown",
-          imports: [],
-          documentation: this.options.generateDocumentation
-            ? `Type inference failed: ${error.message}`
-            : undefined,
-        });
-      }
-      return;
-    }
-    if (
-      error instanceof Error &&
-      error.message.includes("Circular dependency")
-    ) {
-      // Same de-duplication as above, for the [equally unreachable in
-      // practice] case of a plain `Error` rather than a
-      // `TypeInferenceError` -- no `.cycle` to key on here, so this
-      // falls back to the rule's own name.
-      const key = normalizeCycleKey([rule.name]);
+    if (!(error instanceof Error)) throw error;
+    const inferenceError = error instanceof TypeInferenceError;
+    const cycle = inferenceError ? error.cycle : undefined;
+    // Plain errors from custom ASTs historically use the message alone.
+    const isCycle =
+      (cycle !== undefined || error.message.includes("Circular dependency")) &&
+      (!inferenceError || this.options.detectCircularDependencies);
+    if (isCycle) {
+      const names = cycle ?? [rule.name];
+      const key = normalizeCycleKey(names);
       if (!seenCycles.has(key)) {
         seenCycles.add(key);
-        result.circularDependencies.push([rule.name]);
+        result.circularDependencies.push([...names]);
         result.warnings.push(error.message);
       }
-      // Use a placeholder type for circular dependencies
       result.ruleTypes.set(
         rule.name,
         circularDependencyPlaceholder(
@@ -579,7 +523,18 @@ export class TypeInferenceEngine {
       );
       return;
     }
-    throw error;
+    if (!inferenceError) throw error;
+    result.warnings.push(error.message);
+    result.ruleTypes.set(rule.name, {
+      typeString: "unknown",
+      nullable: true,
+      isArray: false,
+      baseType: "unknown",
+      imports: [],
+      documentation: this.options.generateDocumentation
+        ? `Type inference failed: ${error.message}`
+        : undefined,
+    });
   }
 
   /**
@@ -991,30 +946,12 @@ export class TypeInferenceEngine {
   private inferIdentifierType(expression: Identifier): InferredType {
     const ruleName = expression.name;
 
-    // Check for circular dependency
-    if (
-      this.options.detectCircularDependencies &&
-      this.context.ruleStack.includes(ruleName)
-    ) {
-      // `cycle` (the array attached to the error, and later stored in
-      // `GrammarTypeInference.circularDependencies`) deliberately does NOT
-      // repeat `ruleName` at the end -- it lists each participating rule
-      // exactly once, matching the pre-existing `[...ruleStack]` shape
-      // this replaces. The MESSAGE below repeats it once more for
-      // readability (`"a -> b -> a"` reads as a cycle; `"a -> b"` alone
-      // doesn't make the closure obvious), but that's a display-only
-      // concern separate from the stored array's shape.
-      //
-      // Only rules from `ruleName`'s FIRST occurrence on the stack onward
-      // actually form the cycle: the stack is the full DFS path from
-      // whichever rule `inferGrammarTypes` started at, so a rule that
-      // merely REFERENCES a circular one (`a -> b`, `b -> b`) used to be
-      // recorded as part of the cycle itself (`[a, b]` for the true cycle
-      // `[b]`) -- and re-reported under every prefix reaching it.
-      const cycleStart = this.context.ruleStack.indexOf(ruleName);
-      const cycle = this.context.ruleStack.slice(
-        cycleStart === -1 ? 0 : cycleStart,
-      );
+    const cycleStart = this.options.detectCircularDependencies
+      ? this.context.ruleStack.indexOf(ruleName)
+      : -1;
+    if (cycleStart >= 0) {
+      // A leading rule that merely reaches the cycle is not part of it.
+      const cycle = this.context.ruleStack.slice(cycleStart);
       throw new TypeInferenceError(
         `Circular dependency detected: ${cycle.join(" -> ")} -> ${ruleName}`,
         expression,

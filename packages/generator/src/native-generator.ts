@@ -2,9 +2,22 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GrammarDefinition } from "@suzumiyaaoba/tpeg-core";
 import { Eta } from "eta";
-import { portableGrammar, type PortableNode } from "./portable-grammar";
+import {
+  portableGrammar,
+  type PortableGrammar,
+  type PortableNode,
+} from "./portable-grammar";
 
-export type NativeLanguage = "python" | "go" | "rust";
+export const nativeExtensions = {
+  python: ".py",
+  go: ".go",
+  rust: ".rs",
+} as const;
+export type NativeLanguage = keyof typeof nativeExtensions;
+
+export const isNativeLanguage = (
+  language: string,
+): language is NativeLanguage => Object.hasOwn(nativeExtensions, language);
 
 export interface NativeCodeGenOptions {
   namePrefix?: string;
@@ -23,6 +36,10 @@ export interface NativeGeneratedCode {
 }
 
 const quote = JSON.stringify;
+/** Go permits a BOM in a string value when it is escaped in the source. */
+export const goStringLiteral = (value: string): string =>
+  quote(value).replaceAll("\uFEFF", "\\uFEFF");
+
 const units = (value: string): string =>
   Array.from({ length: value.length }, (_, index) =>
     value.charCodeAt(index),
@@ -38,19 +55,40 @@ export function rustStringLiteral(value: string): string {
       if (char === "\r") return "\\r";
       if (char === "\t") return "\\t";
       const cp = char.codePointAt(0)!;
-      return cp < 32 || cp === 127 ? `\\u{${cp.toString(16)}}` : char;
+      // Rust requires directional controls in literals to be escaped.
+      return cp < 32 || cp === 127 || /\p{Cf}/u.test(char)
+        ? `\\u{${cp.toString(16)}}`
+        : char;
     }).join("") +
     '"'
   );
 }
 
 function goNode(node: PortableNode): string {
-  return `{kind: ${quote(node.kind)}, children: []int{${node.children.join(", ")}}, text: ${quote(node.kind === "StringLiteral" ? "" : node.text)}, literal: []uint16{${units(node.text)}}, ranges: [][2]rune{${node.ranges.map(([low, high]) => `{${low}, ${high}}`).join(", ")}}, min: ${node.min}, max: ${node.max}, flag: ${node.flag}}`;
+  return `{kind: ${goStringLiteral(node.kind)}, children: []int{${node.children.join(", ")}}, text: ${goStringLiteral(node.text)}, literal: []uint16{${node.kind === "StringLiteral" ? units(node.text) : ""}}, ranges: [][2]rune{${node.ranges.map(([low, high]) => `{${low}, ${high}}`).join(", ")}}, min: ${node.min}, max: ${node.max}, flag: ${node.flag}}`;
 }
 
 function rustNode(node: PortableNode): string {
-  return `Node { kind: ${rustStringLiteral(node.kind)}, children: &[${node.children.join(", ")}], text: ${rustStringLiteral(node.kind === "StringLiteral" ? "" : node.text)}, literal: &[${units(node.text)}], ranges: &[${node.ranges.map(([low, high]) => `(${low}, ${high})`).join(", ")}], min: ${node.min}, max: ${node.max}, flag: ${node.flag} }`;
+  return `Node { kind: ${rustStringLiteral(node.kind)}, children: &[${node.children.join(", ")}], text: ${rustStringLiteral(node.text)}, literal: &[${node.kind === "StringLiteral" ? units(node.text) : ""}], ranges: &[${node.ranges.map(([low, high]) => `(${low}, ${high})`).join(", ")}], min: ${node.min}, max: ${node.max}, flag: ${node.flag} }`;
 }
+
+const reservedParameters = {
+  python: new Set(
+    "__debug__ False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield".split(
+      " ",
+    ),
+  ),
+  go: new Set(
+    "break default func interface select case defer go map struct chan else goto package switch const fallthrough if range type continue for import return var".split(
+      " ",
+    ),
+  ),
+  rust: new Set(
+    "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while abstract become box do final macro override priv typeof unsized virtual yield try".split(
+      " ",
+    ),
+  ),
+};
 
 function transformSource(
   grammar: GrammarDefinition,
@@ -66,13 +104,7 @@ function transformSource(
     const parameter = fn.parameters[0]?.name ?? "_captures";
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(parameter))
       throw new Error(`Invalid ${language} transform parameter: ${parameter}`);
-    const keywords =
-      language === "python"
-        ? "False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield"
-        : language === "go"
-          ? "break default func interface select case defer go map struct chan else goto package switch const fallthrough if range type continue for import return var"
-          : "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while abstract become box do final macro override priv typeof unsized virtual yield try";
-    if (keywords.split(" ").includes(parameter))
+    if (reservedParameters[language].has(parameter))
       throw new Error(`Reserved ${language} transform parameter: ${parameter}`);
     const name = `_tpeg_transform_${index}`;
     if (language === "python") {
@@ -84,12 +116,14 @@ function transformSource(
       declarations.push(
         `func ${name}(${parameter} any) TransformResult {\n${fn.body}\n}`,
       );
-      bindings.push(`${quote(fn.name)}: ${name}`);
+      bindings.push(`${goStringLiteral(fn.name)}: ${name}`);
     } else {
       declarations.push(
         `fn ${name}(${parameter}: Value) -> Result<Value, String> {\n${fn.body}\n}`,
       );
-      bindings.push(`${quote(fn.name)} => Some(${name} as Transform)`);
+      bindings.push(
+        `${rustStringLiteral(fn.name)} => Some(${name} as Transform)`,
+      );
     }
   }
   if (language === "python")
@@ -97,6 +131,28 @@ function transformSource(
   if (language === "go")
     return `${declarations.join("\n\n")}\n\nvar defaultTransforms = map[string]Transform{${bindings.join(", ")}}`;
   return `${declarations.join("\n\n")}\n\nfn default_transform(name: &str) -> Option<Transform> { match name { ${bindings.map((binding) => `${binding},`).join(" ")} _ => None } }`;
+}
+
+function grammarTemplateData(
+  grammar: PortableGrammar,
+  language: NativeLanguage,
+) {
+  if (language === "python") return { grammarLiteral: quote(quote(grammar)) };
+
+  const go = language === "go";
+  const nodes = grammar.nodes.map(go ? goNode : rustNode);
+  const rules = grammar.rules.map(({ name, node, memoize, memoLimit }) =>
+    go
+      ? `${goStringLiteral(name)}: {node: ${node}, memoize: ${memoize}, limit: ${memoLimit}}`
+      : `${rustStringLiteral(name)} => Some((${node}, ${memoize}, ${memoLimit}))`,
+  );
+  return {
+    nodes: nodes.join(",\n"),
+    rules: rules.join(",\n"),
+    start: go
+      ? goStringLiteral(grammar.start)
+      : rustStringLiteral(grammar.start),
+  };
 }
 
 /** Generate a dependency-free native parser, using the target's Eta template. */
@@ -123,9 +179,8 @@ export function generateNativeParser(
   if (
     language === "go" &&
     (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(packageName) ||
-      "_ break default func interface select case defer go map struct chan else goto package switch const fallthrough if range type continue for import return var"
-        .split(" ")
-        .includes(packageName))
+      packageName === "_" ||
+      reservedParameters.go.has(packageName))
   )
     throw new Error("packageName must be a Go package identifier");
   const parseName = prefix + (language === "go" ? "Parse" : "parse");
@@ -137,24 +192,13 @@ export function generateNativeParser(
     header: options.header ?? "",
     packageName,
     parseName,
-    grammarLiteral: quote(quote(portable)),
-    nodes: portable.nodes
-      .map(language === "go" ? goNode : rustNode)
-      .join(",\n"),
-    rules: portable.rules
-      .map((rule) =>
-        language === "go"
-          ? `${quote(rule.name)}: {node: ${rule.node}, memoize: ${rule.memoize}, limit: ${rule.memoLimit}}`
-          : `${quote(rule.name)} => Some((${rule.node}, ${rule.memoize}, ${rule.memoLimit}))`,
-      )
-      .join(",\n"),
-    start: quote(portable.start),
+    ...grammarTemplateData(portable, language),
     transforms: transformSource(grammar, language),
   });
   return {
     code,
     language,
-    extension: { python: ".py", go: ".go", rust: ".rs" }[language],
+    extension: nativeExtensions[language],
     exports: [parseName],
     warnings: [],
   };

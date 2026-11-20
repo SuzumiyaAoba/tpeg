@@ -7,6 +7,7 @@
 
 // Export types
 export * from "./types";
+export { parseGrammarFile, toGrammarDefinition } from "./grammar-file";
 
 // Export individual parsers
 export { stringLiteral } from "./string-literal";
@@ -65,6 +66,7 @@ export {
   generateQuantifiedCode,
   generateLabeledExpressionCode,
   generateChoiceCode,
+  generateSequenceCode,
   collectTopLevelLabels,
   collectRequiredTopLevelLabels,
   filterReferencedLabels,

@@ -1,3 +1,4 @@
+import { safeStringForDisplay } from "./escape";
 import { withParseSession } from "./parse-session";
 import {
   PARSER_LIMITS,
@@ -253,6 +254,22 @@ const PARSE_ERROR_FIELDS = [
   "fatal",
   "abort",
 ] as const;
+
+/** A child may match an empty span, but its end must stay within [start, input.length]. */
+export function invalidNextPosition(
+  input: string,
+  start: number,
+  next: number,
+  parserName: string,
+): ParseFailure | undefined {
+  if (isValidOffset(next) && next >= start && next <= input.length)
+    return undefined;
+  return createFailure(
+    `Invalid next position in ${parserName}: ${safeStringForDisplay(next)}`,
+    start,
+    { parserName, fatal: true },
+  );
+}
 
 /**
  * Shallow-copy an error's enumerable metadata and every standard diagnostic

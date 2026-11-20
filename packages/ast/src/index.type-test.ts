@@ -47,8 +47,7 @@ import type {
 
 // Type-level test suite
 // Uses TestSuite type to perform compile-time type checking
-// @ts-ignore
-type TypeLevelTests = TestSuite<
+export type TypeLevelTests = TestSuite<
   [
     // Basic literal type tests
     Expect<Equal<ReturnType<typeof literal<"hello">>, Literal<"hello">>>,
@@ -484,7 +483,3 @@ type TypeLevelTests = TestSuite<
     >,
   ]
 >;
-
-// Execute type-level tests (only evaluated at compile time)
-// Export as type is sufficient
-export type { TypeLevelTests };

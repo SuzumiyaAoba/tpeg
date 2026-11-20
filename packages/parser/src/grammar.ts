@@ -36,6 +36,7 @@ import {
   advanceJsSlash,
   advanceJsToken,
   createJsExprTracker,
+  findBlockCommentEnd,
   skipBlockComment,
   skipLineComment,
   skipStringLiteral,
@@ -71,6 +72,7 @@ import {
   optionalWhitespace,
   optionalWhitespaceOrComment,
   requiredWhitespaceOrComment,
+  skipGrammarTrivia,
 } from "./whitespace-utils";
 
 const IDENTIFIER_START_CHAR = /[a-zA-Z_]/;
@@ -82,47 +84,11 @@ const isSpaceOrTab = (char: string | undefined): boolean =>
 const isLineBreakOrSpaceOrTab = (char: string | undefined): boolean =>
   isSpaceOrTab(char) || char === "\n" || char === "\r";
 
-/**
- * Scans forward from `start` through any run of whitespace and/or
- * comments (reusing `skipLineComment`/`skipBlockComment` -- the same
- * comment-skipping rules `grammarRuleExpression`'s own boundary scan
- * uses below), returning the position of the first character that is
- * neither. Used to check that `expression()` consumed the ENTIRE slice
- * `grammarRuleExpression` cut out for it, not just a leading prefix --
- * see that function's own doc comment for why a naive `result.next ===
- * ruleContent.length` check would wrongly reject a rule followed only by
- * a trailing comment (a legitimate, currently-working shape).
- *
- * Exported (in addition to its internal use here) so a caller of
- * `tpegFile`/`grammarDefinition` -- namely `packages/cli/src/cli.ts` --
- * can check that a parse consumed an ENTIRE source file the same way,
- * without re-requiring exact end-of-input (which would wrongly reject a
- * file with trailing whitespace or a trailing comment after the last
- * `transforms` block).
- */
+/** Return the first non-trivia offset after a grammar fragment. */
 export const skipTrailingWhitespaceAndComments = (
   text: string,
   start: number,
-): number => {
-  let i = start;
-  while (i < text.length) {
-    const char = text[i];
-    if (isLineBreakOrSpaceOrTab(char)) {
-      i++;
-      continue;
-    }
-    if (char === "/" && text[i + 1] === "/") {
-      i = skipLineComment(text, i);
-      continue;
-    }
-    if (char === "/" && text[i + 1] === "*") {
-      i = skipBlockComment(text, i);
-      continue;
-    }
-    break;
-  }
-  return i;
-};
+): number => skipGrammarTrivia(text, start);
 
 /**
  * Skips a TPEG character class body starting at `pos` (which points at
@@ -199,56 +165,7 @@ const isRuleBoundaryAt = (input: string, checkPos: number): boolean => {
     return true;
   }
 
-  // Everything `optionalWhitespaceOrComment` accepts -- whitespace
-  // INCLUDING line breaks, `//` line comments, and `/* */` block
-  // comments -- because that is exactly the separator `ruleDefinition`
-  // puts between a rule's name and its "=".
-  let afterIdent = identEnd;
-  while (afterIdent < input.length) {
-    if (isLineBreakOrSpaceOrTab(input[afterIdent])) {
-      afterIdent++;
-      continue;
-    }
-    if (input[afterIdent] === "/" && input[afterIdent + 1] === "/") {
-      afterIdent = skipLineComment(input, afterIdent);
-      continue;
-    }
-    if (input[afterIdent] === "/" && input[afterIdent + 1] === "*") {
-      afterIdent = skipBlockComment(input, afterIdent);
-      continue;
-    }
-    break;
-  }
-
-  return afterIdent < input.length && input[afterIdent] === "=";
-};
-
-/**
- * Skips whitespace and comments (the same set `isRuleBoundaryAt`'s own
- * inner loop skips) starting at `pos`, returning the first non-trivia
- * offset. Used by {@link isAnnotationStartAt} to look past the trivia an
- * annotation may contain (e.g. a comment between `@key` and its `:`) or
- * that separates a flag annotation from the rule it precedes
- * (`@noskip` then a newline then `rule = ...`).
- */
-const skipTrivia = (input: string, pos: number): number => {
-  let i = pos;
-  while (i < input.length) {
-    if (isLineBreakOrSpaceOrTab(input[i])) {
-      i++;
-      continue;
-    }
-    if (input[i] === "/" && input[i + 1] === "/") {
-      i = skipLineComment(input, i);
-      continue;
-    }
-    if (input[i] === "/" && input[i + 1] === "*") {
-      i = skipBlockComment(input, i);
-      continue;
-    }
-    break;
-  }
-  return i;
+  return input[skipGrammarTrivia(input, identEnd)] === "=";
 };
 
 /**
@@ -290,7 +207,7 @@ const isAnnotationStartAt = (input: string, pos: number): boolean => {
   while (i < input.length && IDENTIFIER_CONT_CHAR.test(input[i] ?? "")) {
     i++;
   }
-  i = skipTrivia(input, i);
+  i = skipGrammarTrivia(input, i);
 
   const next = input[i];
   if (next === ":" || next === "@") {
@@ -569,12 +486,9 @@ const grammarRuleExpression: Parser<Expression> = (
     // outer grammarItem loop to reinterpret as something else entirely
     // (a block-level annotation), rather than surfacing as the parse
     // error it actually is. Trailing whitespace/comments are explicitly
-    // allowed here (see `skipTrailingWhitespaceAndComments`) so this
+    // allowed here (see `skipGrammarTrivia`) so this
     // doesn't regress the legitimate "rule followed by a comment" shape.
-    const trailingEnd = skipTrailingWhitespaceAndComments(
-      ruleContent,
-      result.next,
-    );
+    const trailingEnd = skipGrammarTrivia(ruleContent, result.next);
     if (trailingEnd !== ruleContent.length) {
       const unexpected = ruleContent.slice(trailingEnd, trailingEnd + 20);
       // Record into the watermark too (see above): the plain failure
@@ -665,23 +579,7 @@ export const documentationComment: Parser<string> = map(
   ([_, content]) => content.join("").trim(),
 );
 
-/**
- * Parse a `/* ... *\/` block comment, returning its trimmed inner content.
- * Unlike `singleLineComment`/`documentationComment` (which the surrounding
- * `zeroOrMore(nonNewlineChar)` bounds at the input's own structure), a
- * block comment's extent depends on finding a matching `*\/` -- reuses
- * `skipBlockComment` (`./brace-scanner.ts`, the same rule the rule-
- * boundary scanner below and `composition.ts`'s expression-level
- * whitespace both use) for that scan rather than a second,
- * potentially-diverging one.
- *
- * An unterminated block comment (no closing `*\/` before EOF) is not
- * rejected as an error here: `skipBlockComment` already treats "ran off
- * the end of input" as "the comment extends to EOF", matching how a real
- * editor/highlighter would show it, and this parser's caller
- * (`grammarItem`) has no more useful diagnostic to offer for it than
- * "this comment consumed the rest of the file" would already convey.
- */
+/** Parse a delimited block comment and return its trimmed contents. */
 const blockComment: Parser<string> = (input: string, pos: number) => {
   if (input[pos] !== "/" || input[pos + 1] !== "*") {
     return createFailure('Expected "/*"', pos, {
@@ -689,13 +587,16 @@ const blockComment: Parser<string> = (input: string, pos: number) => {
       parserName: "blockComment",
     });
   }
-  const next = skipBlockComment(input, pos);
+  const next = findBlockCommentEnd(input, pos);
+  if (next === -1) {
+    return createFailure("Unterminated block comment", input.length, {
+      expected: "*/",
+      parserName: "blockComment",
+    });
+  }
   return {
     success: true,
-    val: input
-      .slice(pos + 2, next)
-      .replace(/\*\/$/, "")
-      .trim(),
+    val: input.slice(pos + 2, next - 2).trim(),
     current: pos,
     next,
   };

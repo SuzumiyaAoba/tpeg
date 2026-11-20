@@ -5,6 +5,7 @@
  */
 
 import { beforeEach, describe, expect, it } from "vite-plus/test";
+import { PARSER_LIMITS } from "@suzumiyaaoba/tpeg-core";
 import {
   CircularDependencyError,
   type FileSystemInterface,
@@ -527,6 +528,17 @@ this is not a transforms block`,
 
       expect(resolved.resolved).toBe(true);
       expect(resolved.content.grammars).toHaveLength(1);
+    });
+
+    it("preserves a parser resource error even when the file starts with an import", async () => {
+      mockFs.addFile(
+        "/test/large.tpeg",
+        'import "dep.tpeg" as dep\n' +
+          " ".repeat(PARSER_LIMITS.MAX_INPUT_LENGTH),
+      );
+      await expect(resolver.resolveModule("large.tpeg")).rejects.toThrow(
+        /Input length .* exceeds the maximum/,
+      );
     });
 
     it("should still fall back to imports-only when the grammar half cannot be parsed", async () => {

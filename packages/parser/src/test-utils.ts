@@ -28,3 +28,10 @@ export const testParse = <T>(
   parser: Parser<T>,
   input: string,
 ): ParseResult<T> => parse(parser)(input);
+
+/** Sample the live heap after collection when the benchmark runtime exposes GC. */
+export function retainedHeapBytes(): number | null {
+  if (!globalThis.gc) return null;
+  globalThis.gc();
+  return process.memoryUsage().heapUsed;
+}

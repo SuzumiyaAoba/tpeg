@@ -16,7 +16,7 @@ import {
   collectTransformFunctions,
   collectUsedCombinators,
   filterReferencedLabels,
-  forEachSequenceElement,
+  generateSequenceCode,
   generateCharacterClassCode,
   generateChoiceCode,
   generateIdentifierCode,
@@ -27,7 +27,6 @@ import {
   findMemoizeAnnotation,
   applySkipDesugar,
   resolveStartRule,
-  sequenceCombinatorFor,
   validateGeneratedIdentifiers,
   wrapWithAction,
   wrapWithMemoize,
@@ -631,59 +630,9 @@ export class EtaTPEGCodeGenerator {
   }
 
   private generateSequence(expr: Sequence): string {
-    // A `~` cut marker is dropped from the emitted arguments entirely --
-    // it consumes no input and contributes no value of its own -- and
-    // every element *after* it is individually wrapped in `commit(...)`,
-    // via the same `forEachSequenceElement` state machine `codegen.ts`'s
-    // `generateSequence` uses (see that function's doc comment for the
-    // full rationale, including why wrapping each element individually
-    // rather than nesting the tail in a sub-sequence keeps the emitted
-    // tuple shape unchanged, and why the single-remaining-part shortcut
-    // below must be checked AFTER dropping the cut -- not on the
-    // original element count, which would wrongly wrap a degenerate
-    // `~ "a"` / `"a" ~` in `sequence(...)`, turning its value from `"a"`
-    // into `["a"]`). Unlike `codegen.ts` this generator never emits
-    // `commitAtTopLevel`, so `cutIsGlobal` is ignored: EVERY committed
-    // element gets the ordinary `commit(...)` wrapper, which is also
-    // what this generator's `collectUsedCombinators` ctx
-    // (`commitAfterAnyCut: true`) mirrors.
-    const parts: string[] = [];
-    forEachSequenceElement(expr.elements, (el, committed) => {
-      const code = this.generateExpressionCode(el);
-      parts.push(committed ? `commit(${code})` : code);
-    });
-    if (parts.length === 0) {
-      return "sequence()";
-    }
-    // `sequenceCombinatorFor` returns `null` exactly when the sequence
-    // is emitted BARE (one surviving non-`Cut` element, no label) --
-    // the same shared predicate `codegen.ts` and `codegen-optimized.ts`
-    // use. A labeled sole survivor still goes through `captureSequence`
-    // below, or its CAPTURE_TAG-tagged value would leak out bare instead
-    // of merged.
-    const combinator = sequenceCombinatorFor(expr);
-    if (combinator === null && parts.length === 1) {
-      const [only] = parts;
-      if (only) return only;
-    }
-    // Exactly one value-contributing element plus `Skip` siblings:
-    // `sequence(...)` must still run -- its `ignore(optional(...))`
-    // boundary skips consume input -- but the `IGNORED` filter leaves a
-    // 1-tuple behind, so `map` unwraps it back to the element's own
-    // value (mirrors `codegen.ts`/`codegen-optimized.ts`'s identical
-    // shape; a multi-element or labeled sequence never reaches this).
-    const valueElementCount = expr.elements.filter(
-      (el) => el.type !== "Cut" && el.type !== "Skip",
-    ).length;
-    if (valueElementCount === 1 && combinator === "sequence") {
-      return `map(sequence(${parts.join(", ")}), ([v]) => v)`;
-    }
-    // A sequence with labeled elements needs its per-element captured
-    // objects merged into one named-field object -- plain `sequence()`
-    // returns a positional tuple instead (each label's value left nested
-    // inside it, still `capture()`-tagged), which would leave every label
-    // unreachable by name. Mirrors `codegen.ts`'s identical check.
-    return `${combinator ?? "sequence"}(${parts.join(", ")})`;
+    return generateSequenceCode(expr, (element) =>
+      this.generateExpressionCode(element),
+    );
   }
 
   private generateChoice(expr: Choice): string {

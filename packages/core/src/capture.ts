@@ -7,9 +7,14 @@
  */
 
 import { tryOrderedCandidates } from "./combinators";
-import { IGNORED } from "./ignored";
+import { IGNORED, type SequenceValues } from "./ignored";
 import type { Parser } from "./types";
-import { createFailure, isFailure, isValidOffset } from "./utils";
+import {
+  createFailure,
+  invalidNextPosition,
+  isFailure,
+  isValidOffset,
+} from "./utils";
 
 /**
  * Captured value type represents a structured object with labeled fields
@@ -166,9 +171,7 @@ export const mergeCaptures = (captures: unknown[]): CapturedValue => {
  */
 export const captureSequence = <P extends Parser<unknown>[]>(
   ...parsers: P
-): Parser<
-  CapturedValue | { [K in keyof P]: P[K] extends Parser<infer T> ? T : never }
-> => {
+): Parser<CapturedValue | SequenceValues<P>> => {
   return (input: string, pos: number) => {
     // Same out-of-contract-`pos` guard `sequence` applies
     // (`./combinators.ts`): an invalid offset must fail here rather than
@@ -210,6 +213,13 @@ export const captureSequence = <P extends Parser<unknown>[]>(
       // (see `IGNORED`'s doc comment); skipping the push also keeps them
       // out of the `hasCaptures` check and the merge below.
       const next = result.next;
+      const invalid = invalidNextPosition(
+        input,
+        currentPos,
+        next,
+        "captureSequence",
+      );
+      if (invalid) return invalid;
       const value = result.val;
       if (value !== IGNORED) {
         results.push(value);
@@ -239,9 +249,7 @@ export const captureSequence = <P extends Parser<unknown>[]>(
     // Otherwise, return as a regular sequence tuple
     return {
       success: true as const,
-      val: results as {
-        [K in keyof P]: P[K] extends Parser<infer T> ? T : never;
-      },
+      val: results as SequenceValues<P>,
       current: pos,
       next: currentPos,
     };

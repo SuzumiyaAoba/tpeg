@@ -142,9 +142,9 @@ impl Session {
         match n.kind {
             "StringLiteral" => {
                 for (offset, unit) in n.literal.iter().enumerate() {
-                    if self.input.get(pos + offset) != Some(unit) { return self.failure(pos + offset, &json_string(&String::from_utf16_lossy(n.literal)), false, false); }
+                    if self.input.get(pos + offset) != Some(unit) { return self.failure(pos + offset, &json_string(n.text), false, false); }
                 }
-                return success(Value::String(String::from_utf16_lossy(n.literal)), pos, pos + n.literal.len());
+                return success(Value::String(n.text.into()), pos, pos + n.literal.len());
             }
             "AnyChar" | "CharacterClass" => {
                 if pos >= self.input.len() { return self.failure(pos, "character", false, false); }

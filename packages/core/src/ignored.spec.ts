@@ -5,13 +5,14 @@
  * the enclosing `sequence`/`captureSequence` result.
  */
 
-import { beforeEach, describe, expect, it } from "vite-plus/test";
+import { beforeEach, describe, expect, expectTypeOf, it } from "vite-plus/test";
 import { literal } from "./basic";
 import { capture, captureSequence } from "./capture";
-import { choice, sequence } from "./combinators";
+import { choice, sequence, tuple } from "./combinators";
 import { resetFailureWatermark } from "./failure";
-import { IGNORED, ignore } from "./ignored";
+import { IGNORED, ignore, type SequenceValues } from "./ignored";
 import { optional } from "./repetition";
+import type { Parser } from "./types";
 
 // See `combinators.spec.ts`'s identical `beforeEach` -- the
 // farthest-failure watermark (`./failure.ts`) is module-global, keyed by
@@ -54,6 +55,45 @@ describe("ignore", () => {
 });
 
 describe("IGNORED filtering in sequence/captureSequence", () => {
+  it("types the visible sequence slots and preserves fixed slots in tuple", () => {
+    const ignored = ignore(literal(","));
+    const maybeIgnored = choice(ignored, literal("x"));
+    expectTypeOf(sequence(ignored, literal("a"))).toEqualTypeOf<
+      Parser<["a"]>
+    >();
+    expectTypeOf(sequence(maybeIgnored, literal("a"))).toEqualTypeOf<
+      Parser<["a"] | ["x", "a"]>
+    >();
+    const fixed = tuple(ignored, literal("a"));
+    expectTypeOf(fixed).toEqualTypeOf<Parser<[typeof IGNORED, "a"]>>();
+    expect(fixed(",a", 0)).toMatchObject({
+      success: true,
+      val: [IGNORED, "a"],
+      next: 2,
+    });
+  });
+
+  it("can type long sequences and retain the visible element types", () => {
+    type EightCopies<T extends unknown[]> = [
+      ...T,
+      ...T,
+      ...T,
+      ...T,
+      ...T,
+      ...T,
+      ...T,
+      ...T,
+    ];
+    type SixtyFour<T> = EightCopies<EightCopies<[T]>>;
+    type Visible = Parser<"x">;
+    type Ignored = Parser<typeof IGNORED>;
+    type Medium = [...SixtyFour<Visible>, Ignored];
+    expectTypeOf<SequenceValues<Medium>>().toEqualTypeOf<SixtyFour<"x">>();
+    type Chunk = EightCopies<SixtyFour<Visible>>;
+    type Long = [...Chunk, ...Chunk, Ignored];
+    expectTypeOf<SequenceValues<Long>[number]>().toEqualTypeOf<"x">();
+  });
+
   it("sequence drops ignored values from the result tuple but keeps their consumption", () => {
     const parser = sequence(
       ignore(optional(literal(" "))),

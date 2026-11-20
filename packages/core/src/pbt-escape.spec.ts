@@ -22,6 +22,7 @@
  * the domain `escapeStringLiteral` must cover.
  */
 
+import { createContext, Script } from "node:vm";
 import { describe, expect, it } from "vite-plus/test";
 import fc from "fast-check";
 import { escapeStringLiteral } from "./escape";
@@ -54,8 +55,9 @@ const isWellFormedUtf16 = (s: string): boolean => {
 
 // Re-parse the escaped text the way generated-code consumers do: embed it
 // verbatim inside a double-quoted string literal and evaluate it.
+const literalContext = createContext({});
 const evaluateEscapedLiteral = (escaped: string): unknown =>
-  new Function(`"use strict"; return "${escaped}"`)();
+  new Script(`"use strict"; "${escaped}"`).runInContext(literalContext);
 
 describe("escapeStringLiteral (fast-check)", () => {
   it("re-evaluates to the identical string for arbitrary UTF-16 input", () => {

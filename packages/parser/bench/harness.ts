@@ -41,6 +41,7 @@ import { analyzeFirstSets } from "../src/first-sets";
 import { grammarDefinition } from "../src/grammar";
 import { evaluateGeneratedModule } from "../src/generated-runtime";
 import { MIN_FUSION_WEIGHT } from "../src/regex-fusion";
+import { retainedHeapBytes } from "../src/test-utils";
 
 const ORIGIN_POS = 0;
 
@@ -436,19 +437,9 @@ export interface ParseThroughputResult {
    */
   collapsedInvocationsPerParse: number;
   /**
-   * `heapUsed` immediately after the timed loop, minus `heapUsed`
-   * immediately before it (one `globalThis.gc()` call precedes the
-   * "before" reading, if `--expose-gc` is set).
-   *
-   * This is NOT total allocation volume -- nothing prevents GC from
-   * running *during* the timed loop, so it only measures what's still
-   * reachable at the end. A negative value means GC reclaimed more than
-   * was allocated in-window (i.e. it ran mid-loop) and should be read as
-   * noise, not "freed memory." A large positive value is a lower bound on
-   * retained memory (e.g. cached parse results still referenced by a
-   * `memoize` table), not a measurement of GC pressure. Cross-check any
-   * conclusion drawn from this field against `leafInvocationsPerParse`
-   * and `opsPerSec`, which are exact.
+   * Change in live heap bytes after warmup. Both samples follow garbage
+   * collection outside the timed loop. Includes VM bookkeeping and any
+   * retained parse results. Unavailable without an exposed collector.
    */
   heapDeltaBytes: number | null;
   /**
@@ -507,11 +498,7 @@ export function runParseThroughput(
     parser(warmupInput, ORIGIN_POS);
   }
 
-  const canForceGc = typeof globalThis.gc === "function";
-  if (canForceGc) {
-    globalThis.gc?.();
-  }
-  const heapBefore = canForceGc ? process.memoryUsage().heapUsed : null;
+  const heapBefore = retainedHeapBytes();
 
   leafInvocations.count = 0;
   collapsedInvocations.count = 0;
@@ -527,7 +514,7 @@ export function runParseThroughput(
   const leafInvocationsPerParse = leafInvocations.count / iterations;
   const collapsedInvocationsPerParse = collapsedInvocations.count / iterations;
 
-  const heapAfter = canForceGc ? process.memoryUsage().heapUsed : null;
+  const heapAfter = retainedHeapBytes();
   const heapDeltaBytes =
     heapBefore !== null && heapAfter !== null ? heapAfter - heapBefore : null;
 
@@ -552,7 +539,7 @@ export function formatResult(r: ParseThroughputResult): string {
   const heap =
     r.heapDeltaBytes === null
       ? "n/a (run with --expose-gc for heap delta)"
-      : `${(r.heapDeltaBytes / 1024).toFixed(1)} KB retained / ${r.iterations} parses${r.heapDeltaBytes < 0 ? " (negative = GC ran mid-loop; treat as noise, not freed memory)" : ""}`;
+      : `${(r.heapDeltaBytes / 1024).toFixed(1)} KB heap change after GC / ${r.iterations} parses`;
   const lines = [
     `${r.name}`,
     `  input length:        ${r.inputLength}`,

@@ -153,48 +153,39 @@ const collectActionLabels = (
   expr: Expression,
   requiredOnly: boolean,
 ): string[] => {
-  let unwrapped = expr;
-  if (unwrapped.type === "Group") {
-    const groups = new Set<Expression>();
-    while (unwrapped.type === "Group") {
-      if (groups.has(unwrapped)) {
-        throw new TypeError(
-          "Cyclic expression AST encountered while unwrapping groups",
-        );
-      }
-      groups.add(unwrapped);
-      unwrapped = unwrapped.expression;
+  let visible: Set<string> | undefined;
+  walkExpression(expr, (node) => {
+    // Choices combine associatively. Visit each alternative through any
+    // intervening groups, preserving the first occurrence order of labels.
+    if (
+      node.type === "Group" ||
+      (node.type === "Choice" && node.alternatives.length > 0)
+    ) {
+      return true;
     }
-  }
-  if (unwrapped.type === "Sequence") {
-    // Repeated direct labels merge into one own field, with the last value
-    // winning. Declare each visible name once, including grouped labels.
-    return [
-      ...new Set(
-        unwrapped.elements
-          .map(labelOf)
-          .filter((label): label is string => label !== undefined),
-      ),
-    ];
-  }
-  if (unwrapped.type === "Choice") {
-    const seen = new Set<string>();
-    for (let index = 0; index < unwrapped.alternatives.length; index++) {
-      const alt = unwrapped.alternatives[index]!;
-      const labels = collectActionLabels(alt, requiredOnly);
-      if (!requiredOnly || index === 0) {
-        for (const label of labels) seen.add(label);
-      } else {
-        const required = new Set(labels);
-        for (const label of seen) {
-          if (!required.has(label)) seen.delete(label);
-        }
-      }
+    const labels = new Set<string>();
+    if (node.type === "Sequence") {
+      node.elements.forEach((element) => {
+        const label = labelOf(element);
+        if (label !== undefined) labels.add(label);
+      });
+    } else if (node.type === "LabeledExpression") {
+      labels.add(node.label);
     }
-    return [...seen];
-  }
-  const single = labelOf(unwrapped);
-  return single !== undefined ? [single] : [];
+
+    if (!visible) visible = labels;
+    else if (requiredOnly) {
+      for (const label of visible) {
+        if (!labels.has(label)) visible.delete(label);
+      }
+    } else {
+      for (const label of labels) visible.add(label);
+    }
+    // A sequence exposes its direct labels only. Repetitions, actions
+    // and other expressions are boundaries for bare action variables.
+    return false;
+  });
+  return [...(visible ?? [])];
 };
 
 /** Names visible to an action, including labels absent on some alternatives. */

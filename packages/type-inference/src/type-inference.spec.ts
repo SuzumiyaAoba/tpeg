@@ -340,6 +340,22 @@ describe("TypeInferenceEngine", () => {
       expect(result.ruleTypes.get("number")?.typeString).toBe("string[]");
     });
 
+    it("keeps distinct cycles when a hand-built rule name contains the diagnostic separator", () => {
+      const grammar = createGrammarDefinition(
+        "G",
+        [],
+        [
+          createRuleDefinition("a", createIdentifier("b")),
+          createRuleDefinition("b", createIdentifier("a")),
+          createRuleDefinition("a -> b", createIdentifier("a -> b")),
+        ],
+      );
+      expect(engine.inferGrammarTypes(grammar).circularDependencies).toEqual([
+        ["a", "b"],
+        ["a -> b"],
+      ]);
+    });
+
     it("should detect circular dependencies", () => {
       const grammar: GrammarDefinition = createGrammarDefinition(
         "TestGrammar",

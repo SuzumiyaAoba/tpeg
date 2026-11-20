@@ -1,13 +1,9 @@
 import { readFileSync } from "node:fs";
-import {
-  type GrammarDefinition,
-  offsetToPos,
-  parse,
-} from "@suzumiyaaoba/tpeg-core";
+import type { GrammarDefinition } from "@suzumiyaaoba/tpeg-core";
 import {
   generateTypeScriptParser,
-  skipTrailingWhitespaceAndComments,
-  tpegModuleFile,
+  parseGrammarFile,
+  toGrammarDefinition,
 } from "@suzumiyaaoba/tpeg-parser";
 
 /**
@@ -22,44 +18,15 @@ import {
  * committed generated file is still what the current generator emits.
  */
 
-/**
- * Reads a `.tpeg` file and returns its grammar AST.
- *
- * `tpegModuleFile` (not `tpegFile`) is what the CLI parses with -- it
- * also accepts leading `import "..."` statements. `parse()` only
- * requires a prefix match, so the trailing-content check mirrors the
- * CLI's: anything left over after the grammar/transforms blocks is
- * reported as an error at its line/column rather than silently dropped.
- */
+/** Read a sample grammar using the same complete-file parser as the CLI. */
 export const loadGrammar = (path: string): GrammarDefinition => {
-  const source = readFileSync(path, "utf8");
-  const result = parse(tpegModuleFile)(source);
-  const fullyConsumed =
-    result.success &&
-    skipTrailingWhitespaceAndComments(source, result.next) === source.length;
-
-  if (!result.success || !fullyConsumed) {
-    const offset = result.success ? result.next : result.error.pos;
-    const { line, column } = offsetToPos(source, offset);
-    const message = result.success
-      ? `unexpected content after line ${line}, column ${column + 1}`
-      : `line ${line}, column ${column + 1}: ${result.error.message}`;
-    throw new Error(`failed to parse ${path}: ${message}`);
+  const result = parseGrammarFile(path, readFileSync(path, "utf8"));
+  if (!result.success) {
+    throw new Error(
+      `failed to parse ${path} at line ${result.line}, column ${result.column}: ${result.error.message}`,
+    );
   }
-
-  // `tpegModuleFile` returns a ModularGrammarDefinition carrying
-  // module-only fields (imports/exports) the generators don't consume --
-  // hand them the plain GrammarDefinition, exactly like the CLI does.
-  const mod = result.val;
-  return {
-    type: "GrammarDefinition",
-    name: mod.grammar.name,
-    annotations: mod.grammar.annotations,
-    rules: mod.grammar.rules,
-    ...(mod.grammar.transforms !== undefined
-      ? { transforms: mod.grammar.transforms }
-      : {}),
-  };
+  return toGrammarDefinition(result.val.grammars[0]);
 };
 
 /**

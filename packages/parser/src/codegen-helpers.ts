@@ -1,4 +1,3 @@
-import { collectTopLevelLabels } from "@suzumiyaaoba/tpeg-core";
 export {
   collectTopLevelLabels,
   collectRequiredTopLevelLabels,
@@ -7,6 +6,7 @@ import {
   childExpressions,
   escapeStringLiteral,
   someExpression,
+  unwrapToLabeledExpression,
 } from "@suzumiyaaoba/tpeg-core";
 import { codeContainsIdentifier } from "./brace-scanner";
 import {
@@ -288,37 +288,64 @@ export const sequenceHasCutFollowedByElement = (
   return found;
 };
 
-/**
- * Returns the combinator a `Sequence` is emitted through --
- * `"captureSequence"` when it has top-level labels, `"sequence"`
- * otherwise -- or `null` when `generateSequence`/
- * `generateOptimizedSequence` return it BARE (exactly one surviving
- * non-`Cut` element and no label, per the Capture Structure Reference
- * Table -- see `generateSequence`'s doc comment). Shared by both
- * generators' `collectUsedCombinators` so the import decision and the
- * codegen decision can never disagree: adding `sequence` unconditionally
- * left it unused whenever a rule's pattern reduced to the bare shape
- * (e.g. `~ "a"`), an actual `noUnusedLocals` error in generated code.
- */
+/** The same sequence shape determines the emitted call and its required imports. */
+function sequenceShape(expr: Sequence): {
+  combinator: "sequence" | "captureSequence" | null;
+  unwrapSingleValue: boolean;
+} {
+  let valueCount = 0;
+  let hasSkip = false;
+  for (const element of expr.elements) {
+    if (element.type === "Cut") continue;
+    if (element.type === "Skip") {
+      hasSkip = true;
+    } else if (unwrapToLabeledExpression(element)) {
+      return { combinator: "captureSequence", unwrapSingleValue: false };
+    } else {
+      valueCount++;
+    }
+  }
+  // A skip consumes input and contributes no value. A sole visible value
+  // stays scalar even when a surrounding sequence must run the skips.
+  return {
+    combinator: valueCount === 1 && !hasSkip ? null : "sequence",
+    unwrapSingleValue: valueCount === 1 && hasSkip,
+  };
+}
+
+/** Returns the outer sequence combinator, or null for a bare child. */
 export const sequenceCombinatorFor = (
   expr: Sequence,
-): "sequence" | "captureSequence" | null => {
-  const hasLabel = collectTopLevelLabels(expr).length > 0;
-  const nonCutElements = expr.elements.filter((el) => el.type !== "Cut");
-  const valueElementCount = nonCutElements.filter(
-    (el) => el.type !== "Skip",
-  ).length;
-  // Bare emission only when the single surviving element IS a
-  // value-contributing one -- a lone value element plus `Skip` siblings
-  // still goes through `sequence(...)` (under a `map` unwrap, see
-  // `generateSequence`), and a lone `Skip` goes through it too, since a
-  // bare `ignore(optional(...))` would leak the `IGNORED` sentinel as
-  // the sequence's own value.
-  if (nonCutElements.length === 1 && valueElementCount === 1 && !hasLabel) {
-    return null;
-  }
-  return hasLabel ? "captureSequence" : "sequence";
-};
+): "sequence" | "captureSequence" | null => sequenceShape(expr).combinator;
+
+type CutMode = "local" | "promoted" | "topLevel";
+
+const commitForCut = (mode: CutMode, global: boolean) =>
+  mode === "topLevel" || (mode === "promoted" && global)
+    ? "commitAtTopLevel"
+    : "commit";
+
+/**
+ * Emit the children of a sequence in source order. Each cut commits its
+ * following children individually so their captures keep their positions.
+ * Promoted cuts and cuts at an unreferenced start rule's top level may
+ * discard unreachable memo entries. Eta uses local commits throughout.
+ */
+export function generateSequenceCode(
+  expr: Sequence,
+  generateElement: (element: Expression) => string,
+  cutMode: CutMode = "local",
+): string {
+  const { combinator, unwrapSingleValue } = sequenceShape(expr);
+  const parts: string[] = [];
+  forEachSequenceElement(expr.elements, (element, committed, global) => {
+    const code = generateElement(element);
+    parts.push(committed ? `${commitForCut(cutMode, global)}(${code})` : code);
+  });
+  if (combinator === null) return parts[0]!;
+  const call = `${combinator}(${parts.join(", ")})`;
+  return unwrapSingleValue ? `map(${call}, ([v]) => v)` : call;
+}
 
 /**
  * `true` iff `generateSequence`/`generateOptimizedSequence` emit an
@@ -334,9 +361,10 @@ export const sequenceNeedsOrdinaryCommit = (
   expr: Sequence,
   isStartRuleTopLevel: boolean,
 ): boolean => {
+  const mode = isStartRuleTopLevel ? "topLevel" : "promoted";
   let needs = false;
   forEachSequenceElement(expr.elements, (_el, committed, cutIsGlobal) => {
-    if (committed && !isStartRuleTopLevel && !cutIsGlobal) {
+    if (committed && commitForCut(mode, cutIsGlobal) === "commit") {
       needs = true;
       return true;
     }
@@ -483,26 +511,9 @@ export const collectUsedCombinators = (
       break;
     }
     case "Sequence": {
-      const sequenceCombinator = sequenceCombinatorFor(expr);
-      if (sequenceCombinator !== null) {
-        combinators.add(sequenceCombinator);
-      }
-      // Mirrors `generateSequence`/`generateOptimizedSequence`'s
-      // single-value-element unwrap: exactly one value-contributing
-      // element plus `Skip` siblings emits
-      // `map(sequence(...), ([v]) => v)`, so `map` must be imported
-      // (multi-element and labeled sequences never reach that shape).
-      const nonCutElements = expr.elements.filter((el) => el.type !== "Cut");
-      const valueElementCount = nonCutElements.filter(
-        (el) => el.type !== "Skip",
-      ).length;
-      if (
-        valueElementCount === 1 &&
-        nonCutElements.length > 1 &&
-        collectTopLevelLabels(expr).length === 0
-      ) {
-        combinators.add("map");
-      }
+      const { combinator, unwrapSingleValue } = sequenceShape(expr);
+      if (combinator) combinators.add(combinator);
+      if (unwrapSingleValue) combinators.add("map");
       const needsCommit = ctx.commitAfterAnyCut
         ? sequenceHasCutFollowedByElement(expr.elements)
         : sequenceNeedsOrdinaryCommit(expr, isStartRuleTopLevel);

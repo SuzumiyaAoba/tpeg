@@ -307,7 +307,8 @@ if (result.success) {
 
 ### Combinators
 
-- `sequence(...parsers)` - Parse parsers in order
+- `sequence(...parsers)` - Run parsers in order and return the values left after `ignore()` filtering
+- `tuple(...parsers)` - Keep one value per parser in order, including the `IGNORED` sentinel produced by `ignore()`
 - `choice(...parsers)` - Parse first successful alternative
 - `zeroOrMore(parser)` - Parse zero or more repetitions
 - `oneOrMore(parser)` - Parse one or more repetitions
@@ -315,7 +316,9 @@ if (result.success) {
 - `quantified(parser, min, max?)` - Parse specific number of repetitions
 - `map(parser, fn)` - Transform a parser's successful value
 
-`map` and `mapResult` preserve the child's consumed positions before invoking the mapper, including when it calls a parser that reuses its result object. `sequence` and `captureSequence` read each child's value once and retain its next position before reading that value. On rejection, `filter` reports the value it tested and the starting position captured before reading that value or running the predicate.
+`sequence(ignore(literal(",")), literal("x"))` returns `["x"]` on `",x"`. TypeScript infers the visible tuple for ordinary sequences. For very long sequences with ignored children, or many children that may be ignored, it uses an array of the possible values for the whole result or its remaining slots.
+
+`map` and `mapResult` preserve the child's consumed positions before invoking the mapper, including when it calls a parser that reuses its result object. `sequence`, `tuple`, and `captureSequence` read each child's value once and retain its next position before reading that value. On rejection, `filter` reports the value it tested and the starting position captured before reading that value or running the predicate.
 
 ### Capture System
 

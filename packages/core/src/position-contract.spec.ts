@@ -15,6 +15,7 @@ import {
   predictiveChoice,
   reject,
   sequence,
+  tuple,
   withDefault,
 } from "./combinators";
 import { FAIL, fail, resetFailureWatermark } from "./failure";
@@ -180,6 +181,27 @@ describe("position contract: non-numeric parser positions", () => {
 });
 
 describe("position contract: repetition loops cannot hang on a bad next", () => {
+  it.each([sequence, captureSequence, tuple])(
+    "checks child offsets before invoking the next sequence element",
+    (combine) => {
+      for (const next of [0, 1.5, Number.NaN, 9]) {
+        const broken: Parser<string> = () => ({
+          success: true,
+          val: "x",
+          current: 1,
+          next,
+        });
+        const unreachable: Parser<never> = () => {
+          throw new Error("invalid offset forwarded");
+        };
+        expect(combine(broken, unreachable)("abc", 1)).toMatchObject({
+          success: false,
+          error: { pos: 1, fatal: true },
+        });
+      }
+    },
+  );
+
   // A child whose `next` never advances used to slip past the
   // `result.next === currentPos` guard whenever `next` was `NaN`
   // (`NaN === NaN` is false) -- `zeroOrMore(literal("a"))(input, NaN)`

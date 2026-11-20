@@ -23,8 +23,8 @@ import type {
   ModuleFile,
   QualifiedIdentifier,
 } from "@suzumiyaaoba/tpeg-core";
-import { offsetToPos, parse } from "@suzumiyaaoba/tpeg-core";
-import { skipTrailingWhitespaceAndComments, tpegModuleFile } from "./grammar";
+import { parseGrammarFile, stripFileBom } from "./grammar-file";
+import { skipGrammarTrivia } from "./whitespace-utils";
 import { importStatement } from "./module";
 import { moduleNameFromPath } from "./path-utils";
 
@@ -340,80 +340,30 @@ export class ModuleResolver {
         );
       }
 
-      // Read file content, stripping a leading UTF-8 BOM: it's a
-      // file-encoding artifact, not grammar content -- without this, a
-      // BOM'd module file fails at position 0 with an invisible `found:`
-      // character. Done here (not in FileSystemInterface.readFile, which
-      // stays a faithful raw read) so custom file-system implementations
-      // get the same treatment.
-      const rawContent = await context.fileSystem.readFile(filePath);
-      const content =
-        rawContent.charCodeAt(0) === 0xfeff ? rawContent.slice(1) : rawContent;
+      const content = await context.fileSystem.readFile(filePath);
+      const result = parseGrammarFile(filePath, content);
+      if (result.success) return result.val;
 
-      // Parse imports + the grammar block together, so the resolved module's
-      // rules and @export declarations are actually available (e.g. to
-      // NamespaceManager.registerModule). Grammar syntax not yet supported by
-      // modularGrammarDefinition (extends, unquoted annotation values,
-      // qualified identifiers in rule bodies) falls back to imports-only, so
-      // dependency resolution still works even when the grammar half can't
-      // be parsed.
-      const fullParse = parse(tpegModuleFile)(content);
-      // `parse()` only requires `tpegModuleFile` to match a PREFIX of the
-      // file (see `packages/core/src/utils.ts`'s `parse`), so content after
-      // the grammar block's closing "}" -- a misplaced `transforms` block, a
-      // typo'd second `grammar` block, arbitrary garbage -- would otherwise
-      // be silently dropped, leaving the module "loaded" with a truncated
-      // grammar. Require full consumption exactly the way the CLI does for
-      // `tpegFile` (`packages/cli/src/cli.ts`): only trailing whitespace and
-      // comments may remain.
-      const trailingEnd = fullParse.success
-        ? skipTrailingWhitespaceAndComments(content, fullParse.next)
-        : content.length;
-      if (fullParse.success && trailingEnd !== content.length) {
-        const { line, column } = offsetToPos(content, trailingEnd);
+      const location = `line ${result.line}, column ${result.column}`;
+      if (result.kind === "trailing") {
+        const { expected } = result.error;
+        const hint = Array.isArray(expected) ? expected.join(" or ") : expected;
         throw new ModuleResolutionError(
-          `Failed to parse module file "${filePath}": unexpected content at line ${line}, column ${column + 1} (the import/grammar block(s) before this point parsed successfully, but did not consume the rest of the file)`,
+          `Failed to parse module file "${filePath}": unexpected content at ${location}${hint ? ` (expected ${hint})` : ""}`,
           filePath,
         );
       }
-      let moduleFile: ModuleFile;
-      if (fullParse.success) {
-        moduleFile = {
-          type: "ModuleFile",
-          filePath,
-          imports: fullParse.val.imports,
-          grammars: [fullParse.val.grammar],
-          // NamespaceManager and VersionManager both read moduleInfo off
-          // the ModuleFile, not off the grammar block, so it has to be
-          // lifted here for @version to actually reach them.
-          ...(fullParse.val.grammar.moduleInfo
-            ? { moduleInfo: fullParse.val.grammar.moduleInfo }
-            : {}),
-        };
-      } else {
-        const imports = this.parseImports(content);
-        if (imports.length === 0) {
-          // The imports-only fallback exists to keep dependency resolution
-          // working when the grammar half uses syntax
-          // `modularGrammarDefinition` doesn't support yet -- but a file
-          // with no imports at all has nothing to resolve, so surface the
-          // real syntax error instead of producing an empty module that
-          // masks it.
-          const { line, column } = offsetToPos(content, fullParse.error.pos);
-          throw new ModuleResolutionError(
-            `Failed to parse module file "${filePath}" at line ${line}, column ${column + 1}: ${fullParse.error.message}`,
-            filePath,
-          );
-        }
-        moduleFile = {
-          type: "ModuleFile",
-          filePath,
-          imports,
-          grammars: [],
-        };
+      // Dependencies can still be resolved from the imports of an unsupported
+      // grammar. Never apply this fallback to an otherwise valid, truncated file.
+      if (!result.error.abort) {
+        const imports = this.parseImports(stripFileBom(content));
+        if (imports.length > 0)
+          return { type: "ModuleFile", filePath, imports, grammars: [] };
       }
-
-      return moduleFile;
+      throw new ModuleResolutionError(
+        `Failed to parse module file "${filePath}" at ${location}: ${result.error.message}`,
+        filePath,
+      );
     } catch (error) {
       if (error instanceof ModuleResolutionError) {
         throw error;
@@ -433,7 +383,7 @@ export class ModuleResolver {
     moduleFile: ModuleFile,
     context: ModuleResolutionContext,
   ): string[] {
-    const dependencies: string[] = [];
+    const dependencies = new Set<string>();
     const importingDirectory = dirname(moduleFile.filePath);
 
     for (const importStmt of moduleFile.imports) {
@@ -444,12 +394,10 @@ export class ModuleResolver {
       );
       // The same file imported twice (e.g. under two aliases) is still
       // one dependency.
-      if (!dependencies.includes(dependency)) {
-        dependencies.push(dependency);
-      }
+      dependencies.add(dependency);
     }
 
-    return dependencies;
+    return [...dependencies];
   }
 
   /**
@@ -472,7 +420,7 @@ export class ModuleResolver {
     const imports: ImportStatement[] = [];
     let pos = 0;
     while (pos < content.length) {
-      const start = skipTrailingWhitespaceAndComments(content, pos);
+      const start = skipGrammarTrivia(content, pos);
       const result = importStatement(content, start);
       if (!result.success) break;
       imports.push(result.val);

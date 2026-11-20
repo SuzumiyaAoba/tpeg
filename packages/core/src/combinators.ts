@@ -6,7 +6,7 @@ import {
   walkDispatchTrie,
 } from "./dispatch-trie";
 import type { Expectation } from "./failure";
-import { IGNORED } from "./ignored";
+import { IGNORED, type ParserValues, type SequenceValues } from "./ignored";
 import { guardedParserCall } from "./limits";
 import {
   FAIL,
@@ -21,6 +21,7 @@ import {
   cloneParseError,
   createFailure,
   isFailure,
+  invalidNextPosition,
   isValidOffset,
 } from "./utils";
 
@@ -136,15 +137,53 @@ export const tryOrderedCandidates = <T>(
   return FAIL;
 };
 
+function parseSequence(
+  parsers: Parser<unknown>[],
+  keepIgnored: boolean,
+): Parser<unknown[]> {
+  const parserName = keepIgnored ? "tuple" : "sequence";
+  return (input, pos) => {
+    if (!isValidOffset(pos) || pos > input.length) {
+      return createFailure("Expected a valid position", pos, { parserName });
+    }
+    const values: unknown[] = [];
+    let current = pos;
+    for (let index = 0; index < parsers.length; index++) {
+      const parser = parsers[index];
+      if (!parser) {
+        return createFailure(`Parser at index ${index} is undefined`, pos, {
+          parserName,
+        });
+      }
+      const result = parser(input, current);
+      if (!result.success) return result;
+      // Snapshot the end before reading a value getter or invoking the next parser.
+      const next = result.next;
+      const invalid = invalidNextPosition(input, current, next, parserName);
+      if (invalid) return invalid;
+      const value = result.val;
+      if (keepIgnored || value !== IGNORED) values.push(value);
+      current = next;
+    }
+    return { success: true, val: values, current: pos, next: current };
+  };
+}
+
+/** Match all children in order, retaining one result slot per parser, including ignore(). */
+export const tuple = <P extends Parser<unknown>[]>(
+  ...parsers: P
+): Parser<ParserValues<P>> =>
+  parseSequence(parsers, true) as Parser<ParserValues<P>>;
+
 /**
  * Parser that parses a sequence of parsers in order.
  *
- * Executes each parser in the given sequence and returns an array of all results.
+ * Executes each parser in order and returns the values of its non-ignored children.
  * If any parser fails, the entire sequence fails at that position.
  *
  * @template P Array of parsers
  * @param parsers Array of parsers to run in sequence
- * @returns Parser that succeeds if all parsers succeed in sequence, returning a tuple of all results
+ * @returns Parser that succeeds if all parsers succeed in sequence, returning a tuple of visible results
  *
  * @example
  * ```typescript
@@ -163,80 +202,8 @@ export const tryOrderedCandidates = <T>(
  */
 export const sequence = <P extends Parser<unknown>[]>(
   ...parsers: P
-): Parser<{ [K in keyof P]: P[K] extends Parser<infer T> ? T : never }> => {
-  const sequenceParser = (input: string, pos: number) => {
-    // Same out-of-contract-`pos` guard every leaf parser already applies
-    // (`isValidOffset`, `./utils.ts`): an invalid offset must fail here
-    // rather than fall into the zero-element branch below (or have a
-    // first child's failure relayed as if it were this sequence's own
-    // reason). `pos === input.length` stays legal.
-    if (!isValidOffset(pos) || pos > input.length) {
-      return createFailure("Expected a valid position", pos, {
-        parserName: "sequence",
-      });
-    }
-
-    if (parsers.length === 0) {
-      return {
-        success: true,
-        val: [] as {
-          [K in keyof P]: P[K] extends Parser<infer T> ? T : never;
-        },
-        current: pos,
-        next: pos,
-      } as const;
-    }
-
-    const result: unknown[] = [];
-    let currentPos = pos;
-
-    for (let i = 0; i < parsers.length; i++) {
-      const parser = parsers[i];
-      if (!parser) {
-        return createFailure(`Parser at index ${i} is undefined`, pos, {
-          parserName: "sequence",
-        });
-      }
-      const parserResult = parser(input, currentPos);
-
-      if (isFailure(parserResult)) {
-        // Relay the child's failure UNCHANGED rather than re-wrapping it
-        // with an enriched message/context: virtually every rule body is
-        // a `sequence`, so re-wrapping here would read (and thus
-        // materialize) the `error` getter on almost every leaf failure in
-        // the grammar -- the single biggest hazard to the lazy-diagnostics
-        // watermark's whole point (see `./failure.ts`'s doc comment). The
-        // failed element's
-        // own `fail()` call already recorded its position/expectation in
-        // the shared watermark; there is nothing this wrapper adds besides
-        // an "in sequence" context label, which the watermark doesn't
-        // carry per-frame anyway.
-        return parserResult;
-      }
-
-      // `ignore(...)` results consume input but contribute no value --
-      // the `IGNORED` sentinel (`./ignored.ts`) is filtered here so an
-      // ignored element takes no slot in the result tuple.
-      const next = parserResult.next;
-      const value = parserResult.val;
-      if (value !== IGNORED) {
-        result.push(value);
-      }
-      currentPos = next;
-    }
-
-    return {
-      success: true as const,
-      val: result as {
-        [K in keyof P]: P[K] extends Parser<infer T> ? T : never;
-      },
-      current: pos,
-      next: currentPos,
-    };
-  };
-
-  return sequenceParser;
-};
+): Parser<SequenceValues<P>> =>
+  parseSequence(parsers, false) as Parser<SequenceValues<P>>;
 
 /**
  * Alias for {@link sequence}.
@@ -245,7 +212,7 @@ export const sequence = <P extends Parser<unknown>[]>(
  *
  * @template P Array of parsers
  * @param parsers Array of parsers to run in sequence
- * @returns Parser that succeeds if all parsers succeed in sequence, returning a tuple of all results
+ * @returns Parser that succeeds if all parsers succeed in sequence, returning a tuple of visible results
  * @see sequence
  *
  * @example
@@ -577,7 +544,7 @@ export const predictiveChoice = <T extends unknown[]>(
   // non-null narrows further via `walkDispatchTrie` for a bucket with
   // multiple alternatives sharing a longer literal prefix (e.g.
   // `if`/`import`/`interface`/`instanceof` all starting with `i`).
-  const asciiTable: DispatchTrieNode<T[number]>[] = new Array(ASCII_TABLE_SIZE);
+  const asciiTable: DispatchTrieNode<T[number]>[] = [];
   const dedupedByKey = new Map<string, DispatchTrieNode<T[number]>>();
   for (let code = 0; code < ASCII_TABLE_SIZE; code++) {
     let key = "";
@@ -618,11 +585,11 @@ export const predictiveChoice = <T extends unknown[]>(
     }
     const shared = dedupedByKey.get(key);
     if (shared) {
-      asciiTable[code] = shared;
+      asciiTable.push(shared);
     } else {
       const node = buildDispatchTrie(entries);
       dedupedByKey.set(key, node);
-      asciiTable[code] = node;
+      asciiTable.push(node);
     }
   }
 

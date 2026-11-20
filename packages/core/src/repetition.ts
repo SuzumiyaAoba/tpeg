@@ -1,7 +1,12 @@
-import { isFatalFailure } from "./failure";
 import { safeStringForDisplay } from "./escape";
+import { isFatalFailure } from "./failure";
 import type { NonEmptyArray, Parser } from "./types";
-import { createFailure, isValidOffset, offsetToPos } from "./utils";
+import {
+  createFailure,
+  invalidNextPosition,
+  isValidOffset,
+  offsetToPos,
+} from "./utils";
 
 /**
  * Creates a standardized infinite loop error for repetition parsers.
@@ -63,20 +68,6 @@ const createInfiniteLoopError = (
   );
 };
 
-/** A successful child must return an integer offset within the input
- * that does not go backwards. Keep the failure positioned at the valid
- * call site rather than adopting the child's malformed offset. */
-const createInvalidNextPositionError = (
-  position: number,
-  parserName: string,
-  next: number,
-) =>
-  createFailure(
-    `Invalid next position in ${parserName}: ${safeStringForDisplay(next)}`,
-    position,
-    { parserName, fatal: true },
-  );
-
 /**
  * Parser for optional content (zero or one occurrence).
  *
@@ -102,9 +93,8 @@ export const optional =
 
     if (result.success) {
       const next = result.next;
-      if (!isValidOffset(next) || next < pos || next > input.length) {
-        return createInvalidNextPositionError(pos, "optional", next);
-      }
+      const invalid = invalidNextPosition(input, pos, next, "optional");
+      if (invalid) return invalid;
       return {
         success: true,
         val: result.val,
@@ -181,9 +171,8 @@ export const zeroOrMore =
       // Validate before comparing: malformed values must not be coerced
       // into positions or throw during the progress check.
       const next = result.next;
-      if (!isValidOffset(next) || next < currentPos || next > input.length) {
-        return createInvalidNextPositionError(currentPos, parserName, next);
-      }
+      const invalid = invalidNextPosition(input, currentPos, next, parserName);
+      if (invalid) return invalid;
       if (next === currentPos) {
         return createInfiniteLoopError(input, currentPos, parserName);
       }
@@ -263,9 +252,8 @@ export const oneOrMore =
       }
 
       const next = result.next;
-      if (!isValidOffset(next) || next < currentPos || next > input.length) {
-        return createInvalidNextPositionError(currentPos, parserName, next);
-      }
+      const invalid = invalidNextPosition(input, currentPos, next, parserName);
+      if (invalid) return invalid;
       if (next === currentPos) {
         return createInfiniteLoopError(
           input,
@@ -374,9 +362,8 @@ export const quantified = <T>(
       }
 
       const next = result.next;
-      if (!isValidOffset(next) || next < currentPos || next > input.length) {
-        return createInvalidNextPositionError(currentPos, parserName, next);
-      }
+      const invalid = invalidNextPosition(input, currentPos, next, parserName);
+      if (invalid) return invalid;
       results.push(result.val);
       currentPos = next;
       count++;
@@ -397,9 +384,8 @@ export const quantified = <T>(
       }
 
       const next = result.next;
-      if (!isValidOffset(next) || next < currentPos || next > input.length) {
-        return createInvalidNextPositionError(currentPos, parserName, next);
-      }
+      const invalid = invalidNextPosition(input, currentPos, next, parserName);
+      if (invalid) return invalid;
       // Finite repetitions permit zero-width matches. Both an omitted
       // max and explicit Infinity require progress to avoid divergence.
       if (!Number.isFinite(limit) && next === currentPos) {

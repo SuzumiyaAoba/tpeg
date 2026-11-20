@@ -3,6 +3,8 @@ import { EtaTPEGCodeGenerator } from "./eta-generator";
 import { generateJavaScriptParser } from "./javascript-generator";
 import {
   generateNativeParser,
+  nativeExtensions,
+  type NativeLanguage,
   type NativeCodeGenOptions,
 } from "./native-generator";
 import type { CodeGenOptions } from "./types";
@@ -95,10 +97,10 @@ export function createGeneratorRegistry(): CodeGeneratorRegistry {
     generate: (grammar, options) =>
       generateJavaScriptParser(grammar, { ...options, language: "typescript" }),
   });
-  for (const language of ["python", "go", "rust"] as const) {
+  for (const language of Object.keys(nativeExtensions) as NativeLanguage[]) {
     registry.register({
       language,
-      extension: { python: ".py", go: ".go", rust: ".rs" }[language],
+      extension: nativeExtensions[language],
       generate: (grammar, options) =>
         generateNativeParser(grammar, language, options),
     });

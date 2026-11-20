@@ -18,6 +18,7 @@ import {
 import { describe, expect, test } from "vite-plus/test";
 import {
   generateNativeParser,
+  goStringLiteral,
   rustStringLiteral as rustString,
   type NativeLanguage,
 } from "./native-generator";
@@ -43,6 +44,10 @@ const fixtures = [
   {
     source: 'grammar G { start = "😀" tail:[^😀]* !. }',
     inputs: ["😀abc", "😀𐐀\n", "😀😀", "a", ""],
+  },
+  {
+    source: 'grammar G { start = "\\uFEFF" / "\\u202E" / "\\u2069" }',
+    inputs: ["\uFEFF", "\u202E", "\u2069", "x"],
   },
   {
     source: 'grammar G { start = \\b "foo" \\b / "a" \\B "b" }',
@@ -142,7 +147,7 @@ function execute(
       directory,
     );
   } else if (language === "go") {
-    const source = `${code}\nfunc main() { for _, input := range []string{${inputs.map((input) => JSON.stringify(input)).join(",")}} { data, err := json.Marshal(Parse(input)); if err != nil { panic(err) }; fmt.Println(string(data)) } }\n`;
+    const source = `${code}\nfunc main() { for _, input := range []string{${inputs.map(goStringLiteral).join(",")}} { data, err := json.Marshal(Parse(input)); if err != nil { panic(err) }; fmt.Println(string(data)) } }\n`;
     writeFileSync(join(directory, "parser.go"), source);
     stdout = command(commands.go, ["run", "parser.go"], directory, {
       ...process.env,
@@ -600,6 +605,16 @@ third"""
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
+  });
+
+  test("rejects Python's reserved __debug__ transform parameter before emitting code", () => {
+    const parsed = core.parse(tpegFile)(
+      'grammar G { r = "x" }\ntransforms T@python { r(__debug__: string) -> Result<string> { return {"success": True, "value": __debug__} } }',
+    );
+    if (!parsed.success) throw new Error(parsed.error.message);
+    expect(() => generateNativeParser(parsed.val, "python")).toThrow(
+      /Reserved python transform parameter: __debug__/,
+    );
   });
 
   test("native generation rejects unresolved modules, TypeScript actions and invalid grammars", () => {

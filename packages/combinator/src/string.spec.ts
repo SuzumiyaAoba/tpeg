@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
-import { parse } from "@suzumiyaaoba/tpeg-core";
-import { literal } from "@suzumiyaaoba/tpeg-core";
-import { commit, sequence } from "@suzumiyaaoba/tpeg-core";
-import type { Parser } from "@suzumiyaaoba/tpeg-core";
+import {
+  commit,
+  ignore,
+  literal,
+  parse,
+  type Parser,
+  sequence,
+} from "@suzumiyaaoba/tpeg-core";
 import {
   anyQuotedString,
   between,
@@ -12,6 +16,22 @@ import {
 } from "./string";
 
 describe("string combinators", () => {
+  it("extracts content when either delimiter is ignored", () => {
+    const open = literal("(");
+    const close = literal(")");
+    for (const parser of [
+      between(ignore(open), close),
+      between(open, ignore(close)),
+      between(ignore(open), ignore(close)),
+    ]) {
+      expect(parser("(ab)", 0)).toMatchObject({
+        success: true,
+        val: "ab",
+        next: 4,
+      });
+    }
+  });
+
   describe("takeUntil", () => {
     it("should consume characters until condition", () => {
       const parser = takeUntil(literal(";"));

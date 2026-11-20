@@ -4,16 +4,11 @@
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
-import {
-  type GrammarDefinition,
-  offsetToPos,
-  parse,
-} from "@suzumiyaaoba/tpeg-core";
+import { isNativeLanguage } from "@suzumiyaaoba/tpeg-generator";
 import {
   bundleGrammarFile,
-  generateTypeScriptParser,
-  skipTrailingWhitespaceAndComments,
-  tpegModuleFile,
+  parseGrammarFile,
+  toGrammarDefinition,
 } from "@suzumiyaaoba/tpeg-parser";
 
 import { generateParser, prepareGrammar } from "./generation";
@@ -107,17 +102,17 @@ export function run(argv: string[]): number {
   // content, so there's no reason to make a user wait through a read and
   // a parse (potentially of a large file) just to be told the flags
   // don't go together.
+  const nativeTarget = isNativeLanguage(options.language);
   if (
-    !["typescript", "javascript", "python", "go", "rust"].includes(
-      options.language,
-    )
+    !nativeTarget &&
+    options.language !== "typescript" &&
+    options.language !== "javascript"
   ) {
     process.stderr.write(
       `error: unsupported target language "${sanitizeForTerminal(options.language)}"\n`,
     );
     return 1;
   }
-  const nativeTarget = ["python", "go", "rust"].includes(options.language);
   if (
     nativeTarget &&
     (options.optimize || options.regexFusion || !options.types)
@@ -147,44 +142,16 @@ export function run(argv: string[]): number {
     );
     return 1;
   }
-  // A UTF-8 BOM is a file-encoding artifact, not grammar content -- strip
-  // it the way tsc/node strip BOMs from source files. Without this, a
-  // BOM'd .tpeg file (the default from some Windows editors) fails at
-  // position 0 with an invisible `found:` character.
-  if (source.charCodeAt(0) === 0xfeff) {
-    source = source.slice(1);
-  }
-
-  // `tpegModuleFile` (not `tpegFile`) so a `.tpeg` file whose top-level
-  // `import "..."` statements the module system documents is accepted
-  // here too (#112) -- tpegFile's grammar-only entry rejected them.
-  const parseResult = parse(tpegModuleFile)(source);
-  // `parse()` only requires `tpegModuleFile` to match a PREFIX of `source`, not
-  // the whole file (see `packages/core/src/utils.ts`'s `parse`) -- so a
-  // syntactically valid grammar followed by garbage (a typo'd second
-  // `grammar` block, a misspelled `transforms` keyword that silently
-  // stops matching as a transform block) would otherwise be accepted
-  // with the trailing content silently discarded and no diagnostic at
-  // all. `skipTrailingWhitespaceAndComments` (the same helper the
-  // grammar parser's own rule-boundary scan uses) allows trailing
-  // whitespace and comments after the last rule/transform, exactly like
-  // one would expect at the end of a normal source file, without
-  // requiring literal end-of-input immediately after the last token.
-  const trailingEnd = parseResult.success
-    ? skipTrailingWhitespaceAndComments(source, parseResult.next)
-    : 0;
-  if (!parseResult.success || trailingEnd !== source.length) {
-    const pos = parseResult.success ? trailingEnd : parseResult.error.pos;
-    const { line, column } = offsetToPos(source, pos);
-    if (parseResult.success) {
-      process.stderr.write(
-        `error: failed to parse "${sanitizeForTerminal(inputPath)}": unexpected content at line ${line}, column ${column + 1} (the grammar/transforms block(s) before this point parsed successfully, but did not consume the rest of the file)\n`,
-      );
-      return 1;
-    }
-    const { message, expected, found } = parseResult.error;
+  const parsed = parseGrammarFile(inputPath, source);
+  if (!parsed.success) {
+    const { line, column } = parsed;
+    const { message, expected, found } = parsed.error;
+    const detail =
+      parsed.kind === "trailing"
+        ? " (the parser did not consume the rest of the file)"
+        : "";
     process.stderr.write(
-      `error: failed to parse "${sanitizeForTerminal(inputPath)}" at line ${line}, column ${column + 1}: ${sanitizeForTerminal(message)}\n`,
+      `error: failed to parse "${sanitizeForTerminal(inputPath)}" at line ${line}, column ${column}: ${sanitizeForTerminal(message)}${detail}\n`,
     );
     if (expected) {
       const expectedList = Array.isArray(expected)
@@ -200,89 +167,24 @@ export function run(argv: string[]): number {
     return 1;
   }
 
-  // `tpegModuleFile` returns the module's `imports` alongside the
-  // grammar. Imports are syntactically accepted but the generated parser
-  // is a single module -- references to imported rules still resolve
-  // through the external-binding escape hatch, which
-  // `buildQualifiedIdentifierWarnings` (wired into both generators)
-  // reports as warnings below. Surface the same limitation here so it
-  // isn't silent when a file actually declares imports.
-  if (parseResult.val.imports.length > 0 && !options.bundle && !nativeTarget) {
-    const list = parseResult.val.imports
+  const file = parsed.val;
+  const bundle = options.bundle || nativeTarget;
+  if (file.imports.length > 0 && !bundle) {
+    const list = file.imports
       .map((stmt) => `"${sanitizeForTerminal(stmt.modulePath)}"`)
       .join(", ");
     process.stderr.write(
-      `note: this file declares ${parseResult.val.imports.length} import(s) (${list}); ` +
+      `note: this file declares ${file.imports.length} import(s) (${list}); ` +
         `the generated parser does not resolve them -- imported rules must be supplied by the caller\n`,
     );
   }
 
-  // `ModularGrammarDefinition` carries the module-only fields (imports,
-  // exports, moduleInfo) the optimizers/generators don't consume -- pass
-  // them the plain `GrammarDefinition` they expect.
-  let parsedGrammar: GrammarDefinition = {
-    type: "GrammarDefinition",
-    name: parseResult.val.grammar.name,
-    annotations: parseResult.val.grammar.annotations,
-    rules: parseResult.val.grammar.rules,
-    ...(parseResult.val.grammar.transforms !== undefined
-      ? { transforms: parseResult.val.grammar.transforms }
-      : {}),
-  };
-  if (options.bundle || nativeTarget) {
-    try {
-      parsedGrammar = bundleGrammarFile(inputPath);
-    } catch (error) {
-      process.stderr.write(
-        `error: ${sanitizeForTerminal((error as Error).message)}\n`,
-      );
-      return 1;
-    }
-  }
-
-  // `applyAstOptimizations` (left-factoring, character-class merging,
-  // negative-lookahead degeneration -- see packages/parser/src/ast-optimize.ts)
-  // and `insertAutomaticCuts` both run ahead of code generation,
-  // independently of which generator is chosen below: they rewrite the
-  // grammar's AST, not the emitted code. `insertAutomaticCuts` runs AFTER
-  // `applyAstOptimizations` deliberately -- left-factoring can turn a
-  // choice's alternatives into disjoint-prefixed sequences that only then
-  // become cut candidates, so running cuts second finds a superset of the
-  // cut sites running them first would.
-  //
-  // Regex fusion (`--regex-fusion`/`--regex-fusion-subtree`) has no step
-  // here at all -- it isn't an AST rewrite, it's entirely internal to
-  // `generateOptimizedTypeScriptParser` (`packages/parser/src/regex-
-  // fusion.ts`'s `planFusion`, consulted while walking the FINAL grammar
-  // below). It necessarily runs last relative to every rewrite in this
-  // function: fusing before `applyAstOptimizations`/`insertAutomaticCuts`
-  // ran would fuse a `Choice` alternative into one opaque leaf before
-  // left-factoring could restructure it or `insertAutomaticCuts` could
-  // find a cut site inside it -- see `packages/parser/src/codegen-
-  // optimized.ts`'s `generateOptimizedExpression` for where the fusion
-  // check actually happens (after these AST passes have already produced
-  // `grammar` below, at codegen time, not before it).
-  const grammar = prepareGrammar(parsedGrammar, options);
-
-  // Both generators call `validateGrammar` (`packages/parser/src/
-  // grammar-validation.ts`) before producing any code, rejecting a
-  // duplicate rule name or a left-recursive rule (direct, indirect, or
-  // "hidden" behind a nullable prefix -- e.g. `expr = expr "+" term /
-  // term`) with a thrown `Error`. Without input this small either grammar
-  // defect would otherwise compile successfully and only fail once
-  // actually PARSED against input, with a bare `RangeError: Maximum call
-  // stack size exceeded` (left recursion) or a silent infinite hang
-  // (duplicate rule name, inside `analyzeFirstSets`'s FIRST-set fixpoint)
-  // pointing nowhere near the actual mistake. Caught here and reported
-  // the same way every other grammar-authoring mistake in this file is:
-  // a clean `error:` line on stderr and a non-zero exit, no output
-  // written.
-  let generated: Pick<
-    ReturnType<typeof generateTypeScriptParser>,
-    "code" | "exports" | "warnings"
-  >;
+  let generated: ReturnType<typeof generateParser>;
   try {
-    generated = generateParser(grammar, options);
+    const grammar = bundle
+      ? bundleGrammarFile(file)
+      : toGrammarDefinition(file.grammars[0]);
+    generated = generateParser(prepareGrammar(grammar, options), options);
   } catch (error) {
     process.stderr.write(
       `error: ${sanitizeForTerminal((error as Error).message)}\n`,

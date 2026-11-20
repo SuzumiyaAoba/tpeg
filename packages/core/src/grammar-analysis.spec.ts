@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   collectRuleReferences,
+  collectRequiredTopLevelLabels,
   collectTopLevelLabels,
   findRecursiveRuleNames,
   measureExpression,
@@ -86,5 +87,16 @@ describe("shared grammar analysis", () => {
     ]);
     expect(collectTopLevelLabels(expression)).toEqual(["first", "second"]);
     expect(collectTopLevelLabels(value)).toEqual([]);
+  });
+
+  it("computes required and possible labels through deeply nested choices", () => {
+    const leaf = createLabeledExpression("x", createIdentifier("value"));
+    let choice = createChoice([leaf]);
+    for (let i = 0; i < 15_000; i++)
+      choice = createChoice([createGroup(choice)]);
+    expect(collectRequiredTopLevelLabels(choice)).toEqual(["x"]);
+    const withEmpty = createChoice([choice, createChoice([])]);
+    expect(collectTopLevelLabels(withEmpty)).toEqual(["x"]);
+    expect(collectRequiredTopLevelLabels(withEmpty)).toEqual([]);
   });
 });

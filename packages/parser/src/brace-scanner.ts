@@ -610,14 +610,20 @@ export const scanRegexLiteral = (input: string, start: number): number => {
   return -1;
 };
 
+/** Offset after the closing delimiter, or -1 for an unfinished comment. */
+export const findBlockCommentEnd = (input: string, start: number): number => {
+  const close = input.indexOf("*/", start + 2);
+  return close === -1 ? -1 : close + 2;
+};
+
 /** Advances past a `/* ... *\/` block comment starting at `start`. See {@link skipStringLiteral}. */
 export const skipBlockComment = (
   input: string,
   start: number,
   tracker?: JsExprTracker,
 ): number => {
-  const endIndex = input.indexOf("*/", start + 2);
-  const end = endIndex === -1 ? input.length : endIndex + 2;
+  const close = findBlockCommentEnd(input, start);
+  const end = close === -1 ? input.length : close;
   if (tracker && /[\r\n\u2028\u2029]/.test(input.slice(start + 2, end))) {
     tracker.noteLineBreak();
   }

@@ -5,6 +5,8 @@ import {
   choice,
   commit,
   guardedParserCall,
+  ignore,
+  IGNORED,
   literal,
   map,
   optional,
@@ -14,6 +16,34 @@ import {
 import { commaSeparated, commaSeparated1, sepBy, sepBy1 } from "./list";
 
 describe("list combinators", () => {
+  it.each([sepBy, sepBy1])(
+    "keeps item positions with an ignored separator",
+    (list) => {
+      const comma = ignore(literal(","));
+      expect(list(literal("a"), comma)("a,a", 0)).toMatchObject({
+        success: true,
+        val: ["a", "a"],
+        next: 3,
+      });
+      expect(list(ignore(literal("a")), comma)("a,a", 0)).toMatchObject({
+        success: true,
+        val: [IGNORED, IGNORED],
+        next: 3,
+      });
+    },
+  );
+
+  it("preserves an ignored item through token and comma-separated parsing", () => {
+    const item = ignore(literal("x"));
+    for (const list of [commaSeparated, commaSeparated1]) {
+      expect(list(item)(" x, x ", 0)).toMatchObject({
+        success: true,
+        val: [IGNORED, IGNORED],
+        next: 6,
+      });
+    }
+  });
+
   it.each(["sepBy", "sepBy1", "commaSeparated", "commaSeparated1"])(
     "%s advances past each item before invoking its value getter",
     (kind) => {

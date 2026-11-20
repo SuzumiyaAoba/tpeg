@@ -2,8 +2,6 @@ import { readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import {
   mapChildExpressions,
-  offsetToPos,
-  parse,
   type Expression,
   type GrammarDefinition,
   type ModularGrammarDefinition,
@@ -13,7 +11,7 @@ import {
   type TransformFunction,
   type TransformSet,
 } from "@suzumiyaaoba/tpeg-core";
-import { skipTrailingWhitespaceAndComments, tpegModuleFile } from "./grammar";
+import { parseGrammarFile } from "./grammar-file";
 import { validateGrammar } from "./grammar-validation";
 import { CircularDependencyError } from "./module-resolver";
 import { NamespaceManager } from "./namespace-manager";
@@ -326,33 +324,35 @@ export function bundleGrammarModules(
   return grammar;
 }
 
-/** Read the complete local import graph and produce a standalone grammar. */
-export function bundleGrammarFile(entryPath: string): GrammarDefinition {
+function readModuleFile(path: string): ModuleFile {
+  const result = parseGrammarFile(path, readFileSync(path, "utf8"));
+  if (!result.success) {
+    throw new Error(
+      `${path}:${result.line}:${result.column}: ${result.error.message}`,
+    );
+  }
+  return result.val;
+}
+
+/**
+ * Link a local import graph into a standalone grammar. A caller that has
+ * parsed the entry already can pass the file and reuse that same snapshot.
+ */
+export function bundleGrammarFile(
+  entryFile: string | ModuleFile,
+): GrammarDefinition {
   const modules = new Map<string, ModuleFile>();
   const active = new Set<string>();
-  function read(path: string): ModuleFile {
-    let source = readFileSync(path, "utf8");
-    if (source.charCodeAt(0) === 0xfeff) source = source.slice(1);
-    const result = parse(tpegModuleFile)(source);
-    const end = result.success
-      ? skipTrailingWhitespaceAndComments(source, result.next)
-      : result.error.pos;
-    if (!result.success || end !== source.length) {
-      const { line, column } = offsetToPos(source, end);
-      throw new Error(
-        `${path}:${line}:${column + 1}: ${result.success ? "Unexpected trailing content" : result.error.message}`,
-      );
-    }
-    const grammar = result.val.grammar;
-    const imports = result.val.imports.map((statement) => ({
+  function resolveImports(path: string, file: ModuleFile): ModuleFile {
+    const imports = file.imports.map((statement) => ({
       ...statement,
       alias: statement.alias ?? moduleNameFromPath(statement.modulePath),
       modulePath: realpathSync(resolve(dirname(path), statement.modulePath)),
     }));
-    const requires = grammar.moduleInfo?.requires;
-    const moduleInfo = grammar.moduleInfo
+    const requires = file.moduleInfo?.requires;
+    const moduleInfo = file.moduleInfo
       ? {
-          ...grammar.moduleInfo,
+          ...file.moduleInfo,
           ...(requires
             ? {
                 requires: Object.fromEntries(
@@ -371,22 +371,26 @@ export function bundleGrammarFile(entryPath: string): GrammarDefinition {
         }
       : undefined;
     return {
-      type: "ModuleFile",
+      ...file,
       filePath: path,
-      grammars: [grammar],
       imports,
       ...(moduleInfo ? { moduleInfo } : {}),
     };
   }
-  const entry = realpathSync(entryPath);
+  const entry = realpathSync(
+    typeof entryFile === "string" ? entryFile : entryFile.filePath,
+  );
   const stack: { path: string; module: ModuleFile; next: number }[] = [];
-  const push = (path: string) => {
-    const module = read(path);
+  const push = (path: string, file: ModuleFile) => {
+    const module = resolveImports(path, file);
     modules.set(path, module);
     active.add(path);
     stack.push({ path, module, next: 0 });
   };
-  push(entry);
+  push(
+    entry,
+    typeof entryFile === "string" ? readModuleFile(entry) : entryFile,
+  );
   while (stack.length) {
     const frame = stack.at(-1)!;
     const dependency = frame.module.imports[frame.next++];
@@ -401,7 +405,7 @@ export function bundleGrammarFile(entryPath: string): GrammarDefinition {
         ...stack.map((item) => item.path),
         path,
       ]);
-    if (!modules.has(path)) push(path);
+    if (!modules.has(path)) push(path, readModuleFile(path));
   }
   return bundleGrammarModules(modules.get(entry)!, [...modules.values()]);
 }

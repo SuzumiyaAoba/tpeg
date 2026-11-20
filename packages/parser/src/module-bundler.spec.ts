@@ -13,6 +13,7 @@ import { afterEach, beforeEach, expect, test } from "vite-plus/test";
 import { generateTypeScriptParser } from "./codegen";
 import { compileStart } from "./differential-fuzz";
 import { bundleGrammarFile } from "./module-bundler";
+import { parseGrammarFile } from "./grammar-file";
 
 let directory: string;
 beforeEach(() => {
@@ -224,6 +225,22 @@ test.each([
     expect(() => bundleGrammarFile(entry)).toThrow();
   },
 );
+
+test("bundles the parsed entry snapshot and reads its imports from disk", () => {
+  const entry = write("main.tpeg", "the file on disk has changed");
+  write("words.tpeg", 'grammar Words { word = "hello" }');
+  const parsed = parseGrammarFile(
+    entry,
+    'import "words.tpeg" as w\ngrammar Main { start = w.word }',
+  );
+  if (!parsed.success) throw new Error(parsed.error.message);
+  const bundled = bundleGrammarFile(parsed.val);
+  expect(bundled.rules[0]?.name).toBe("start");
+  expect(bundled.rules[1]?.pattern).toMatchObject({
+    type: "StringLiteral",
+    value: "hello",
+  });
+});
 
 test("rejects circular imports and trailing garbage with the source location", () => {
   const entry = write(

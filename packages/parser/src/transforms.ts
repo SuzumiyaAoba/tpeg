@@ -49,6 +49,7 @@ import {
 import {
   optionalWhitespaceOrComment,
   requiredWhitespaceOrComment,
+  skipGrammarTrivia,
 } from "./whitespace-utils";
 
 // ============================================================================
@@ -180,35 +181,6 @@ interface ParsedTypeExpression {
 const TYPE_IDENT_START = /[a-zA-Z_]/;
 const TYPE_IDENT_CONT = /[a-zA-Z0-9_]/;
 
-const isTypeWhitespace = (char: string | undefined): boolean =>
-  char === " " || char === "\t" || char === "\n" || char === "\r";
-
-/**
- * Skips whitespace AND comments between type-expression tokens, matching
- * `scanObjectType`'s existing comment skipping inside `{...}` types (and
- * `optionalWhitespaceOrComment`'s rule everywhere else a signature
- * separator can appear) -- `Map<K, /* c *\/ V>` is a comment between two
- * syntactic elements, same as anywhere else.
- */
-const skipTypeWhitespace = (input: string, pos: number): number => {
-  let i = pos;
-  for (;;) {
-    if (isTypeWhitespace(input[i])) {
-      i++;
-      continue;
-    }
-    if (input[i] === "/" && input[i + 1] === "/") {
-      i = skipLineComment(input, i);
-      continue;
-    }
-    if (input[i] === "/" && input[i + 1] === "*") {
-      i = skipBlockComment(input, i);
-      continue;
-    }
-    return i;
-  }
-};
-
 /**
  * Scan a `{...}` object-literal type starting at `pos` (which must be `{`),
  * skipping string literals and comments so a `}` inside e.g. a literal
@@ -279,13 +251,13 @@ const parseNamedType = (
   pos: number,
   depth: number,
 ): TypeMatch | null => {
-  const nameStart = skipTypeWhitespace(input, pos);
+  const nameStart = skipGrammarTrivia(input, pos);
   if (!TYPE_IDENT_START.test(input[nameStart] ?? "")) return null;
   let i = nameStart + 1;
   while (TYPE_IDENT_CONT.test(input[i] ?? "")) i++;
   const name = input.slice(nameStart, i);
 
-  const open = skipTypeWhitespace(input, i);
+  const open = skipGrammarTrivia(input, i);
   if (input[open] !== "<") return { end: i, named: { name } };
 
   const argsStart = open + 1;
@@ -293,7 +265,7 @@ const parseNamedType = (
   if (!argEnd) return null;
   let j = argEnd.end;
   for (;;) {
-    j = skipTypeWhitespace(input, j);
+    j = skipGrammarTrivia(input, j);
     if (input[j] === ">") {
       return {
         end: j + 1,
@@ -316,7 +288,7 @@ const parseTypePrimary = (
   pos: number,
   depth: number,
 ): TypeMatch | null => {
-  const start = skipTypeWhitespace(input, pos);
+  const start = skipGrammarTrivia(input, pos);
   const ch = input[start];
   if (ch === "{") {
     const end = scanObjectType(input, start);
@@ -325,7 +297,7 @@ const parseTypePrimary = (
   if (ch === "(") {
     const inner = parseUnionType(input, start + 1, depth + 1);
     if (!inner) return null;
-    const close = skipTypeWhitespace(input, inner.end);
+    const close = skipGrammarTrivia(input, inner.end);
     return input[close] === ")" ? { end: close + 1 } : null;
   }
   return parseNamedType(input, pos, depth);
@@ -347,9 +319,9 @@ const parsePostfixType = (
   let end = primary.end;
   let named = primary.named;
   for (;;) {
-    const i = skipTypeWhitespace(input, end);
+    const i = skipGrammarTrivia(input, end);
     if (input[i] !== "[") break;
-    const close = skipTypeWhitespace(input, i + 1);
+    const close = skipGrammarTrivia(input, i + 1);
     if (input[close] !== "]") break;
     end = close + 1;
     named = undefined;
@@ -374,7 +346,7 @@ const parseUnionType = (
   let end = first.end;
   let named = first.named;
   for (;;) {
-    const i = skipTypeWhitespace(input, end);
+    const i = skipGrammarTrivia(input, end);
     if (input[i] !== "|" && input[i] !== "&") break;
     const member = parsePostfixType(input, i + 1, depth);
     if (!member) break;
@@ -403,7 +375,7 @@ const typeExpression: Parser<ParsedTypeExpression> = (
       parserName: "typeExpression",
     });
   }
-  const text = input.slice(skipTypeWhitespace(input, pos), match.end);
+  const text = input.slice(skipGrammarTrivia(input, pos), match.end);
   return {
     success: true,
     val: match.named ? { text, head: match.named } : { text },
@@ -542,13 +514,6 @@ const functionBody: LanguageParser<string> = (
 // Transform Function Parser
 // ============================================================================
 
-const TRANSFORM_WS_CHARS: ReadonlySet<string> = new Set([
-  " ",
-  "\t",
-  "\n",
-  "\r",
-]);
-
 /**
  * Skips a whitespace/comment run exactly like `optionalWhitespaceOrComment`,
  * but returns the contents of every `///` documentation comment encountered
@@ -569,29 +534,8 @@ const docCollectingSeparator: Parser<string[]> = (input, pos) => {
   }
 
   const docs: string[] = [];
-  let i = pos;
-  while (i < input.length) {
-    if (TRANSFORM_WS_CHARS.has(input[i] as string)) {
-      i++;
-      continue;
-    }
-    if (input[i] === "/" && input[i + 1] === "/" && input[i + 2] === "/") {
-      const end = skipLineComment(input, i);
-      docs.push(input.slice(i + 3, end).trim());
-      i = end;
-      continue;
-    }
-    if (input[i] === "/" && input[i + 1] === "/") {
-      i = skipLineComment(input, i);
-      continue;
-    }
-    if (input[i] === "/" && input[i + 1] === "*") {
-      i = skipBlockComment(input, i);
-      continue;
-    }
-    break;
-  }
-  return { success: true, val: docs, current: pos, next: i };
+  const next = skipGrammarTrivia(input, pos, docs);
+  return { success: true, val: docs, current: pos, next };
 };
 
 /**

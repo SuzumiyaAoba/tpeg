@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import {
   generateNativeParser,
   transpileGeneratedParser,
-  type NativeLanguage,
+  isNativeLanguage,
 } from "@suzumiyaaoba/tpeg-generator";
 import {
   type GeneratedCode,
@@ -51,8 +51,8 @@ export const generateParser = (
   };
   // Regex fusion happens inside code generation, after every AST rewrite.
   // Leave its default scope intact unless subtree fusion was requested.
-  if (["python", "go", "rust"].includes(options.language)) {
-    return generateNativeParser(grammar, options.language as NativeLanguage, {
+  if (isNativeLanguage(options.language)) {
+    return generateNativeParser(grammar, options.language, {
       ...(options.namePrefix !== undefined
         ? { namePrefix: options.namePrefix }
         : {}),

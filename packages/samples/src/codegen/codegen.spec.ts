@@ -1,17 +1,14 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  type GrammarDefinition,
-  type Parser,
-  parse,
-} from "@suzumiyaaoba/tpeg-core";
+import { type Parser, parse } from "@suzumiyaaoba/tpeg-core";
 import {
   generateOptimizedTypeScriptParser,
   generateTypeScriptParser,
   skipTrailingWhitespaceAndComments,
   tpegModuleFile,
 } from "@suzumiyaaoba/tpeg-parser";
+import { loadGrammar } from "../tpeg-utils";
 import { describe, expect, it } from "vite-plus/test";
 import {
   expression,
@@ -26,26 +23,6 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const GRAMMAR_PATH = join(HERE, "calc.tpeg");
 const GENERATED_PATH = join(HERE, "generated", "calc.generated.ts");
 const OPTIMIZED_PATH = join(HERE, "generated", "calc.optimized.generated.ts");
-
-const loadGrammar = (): GrammarDefinition => {
-  const source = readFileSync(GRAMMAR_PATH, "utf8");
-  const result = parse(tpegModuleFile)(source);
-
-  if (!result.success) {
-    throw new Error(`calc.tpeg failed to parse: ${result.error.message}`);
-  }
-
-  const mod = result.val;
-  return {
-    type: "GrammarDefinition",
-    name: mod.grammar.name,
-    annotations: mod.grammar.annotations,
-    rules: mod.grammar.rules,
-    ...(mod.grammar.transforms !== undefined
-      ? { transforms: mod.grammar.transforms }
-      : {}),
-  };
-};
 
 const asSource = (code: string): string =>
   code.endsWith("\n") ? code : `${code}\n`;
@@ -65,7 +42,7 @@ describe("codegen sample", () => {
     });
 
     it("resolves @start to the top rule", () => {
-      const grammar = loadGrammar();
+      const grammar = loadGrammar(GRAMMAR_PATH);
       const start = grammar.annotations.find((a) => a.key === "start");
 
       expect(grammar.name).toBe("Calculator");
@@ -75,7 +52,7 @@ describe("codegen sample", () => {
 
   describe("generation", () => {
     it("produces every rule plus the start alias", () => {
-      const grammar = loadGrammar();
+      const grammar = loadGrammar(GRAMMAR_PATH);
       const generated = generateTypeScriptParser(grammar, {});
 
       expect(generated.warnings).toEqual([]);
@@ -97,7 +74,7 @@ describe("codegen sample", () => {
       // The generated/*.ts files are checked in so they are inspectable
       // and statically importable. If this test fails, codegen output
       // changed -- re-run the demo to refresh them.
-      const grammar = loadGrammar();
+      const grammar = loadGrammar(GRAMMAR_PATH);
 
       expect(readFileSync(GENERATED_PATH, "utf8")).toBe(
         asSource(generateTypeScriptParser(grammar, {}).code),

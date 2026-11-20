@@ -14,6 +14,7 @@ import {
   notPredicate,
   restoreFailureWatermark,
   seq,
+  tuple,
   snapshotFailureWatermark,
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
@@ -151,12 +152,10 @@ export const between = <O, C>(
   parserName?: string,
 ): Parser<string> => {
   const base = map(
-    seq(open, takeUntil(close), close),
+    tuple(open, takeUntil(close), close),
     ([_, content]) => content,
   );
-  const parser = named(base, parserName);
-
-  return (input: string, pos: number) => parser(input, pos);
+  return named(base, parserName);
 };
 
 /**

@@ -80,6 +80,7 @@ describe("Edge Cases and Stress Tests", () => {
 
   describe("Memory Leak Prevention", () => {
     it("should not leak memory during repeated parsing operations (heap-growth threshold gated by TPEG_STRICT_PERF)", () => {
+      globalThis.gc?.();
       const initialMemory = process.memoryUsage().heapUsed;
 
       // Perform many parsing operations
@@ -92,10 +93,7 @@ describe("Edge Cases and Stress Tests", () => {
         expect(result.success).toBe(true);
       }
 
-      // Force garbage collection if available
-      if (global.gc) {
-        global.gc();
-      }
+      globalThis.gc?.();
 
       const finalMemory = process.memoryUsage().heapUsed;
       const memoryIncrease = finalMemory - initialMemory;

@@ -24,18 +24,14 @@ import type { Parser } from "@suzumiyaaoba/tpeg-core";
 import {
   choice,
   createFailure,
-  isValidOffset,
   literal,
   map,
   notPredicate,
   seq,
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
-import {
-  scanBalancedBraces,
-  skipBlockComment,
-  skipLineComment,
-} from "./brace-scanner";
+import { scanBalancedBraces } from "./brace-scanner";
+import { optionalWhitespaceOrComment as whitespace } from "./whitespace-utils";
 import { characterClass } from "./character-class";
 import { identifier } from "./identifier";
 import { withOptionalLabel } from "./label";
@@ -58,62 +54,6 @@ import type {
   Group,
   Sequence,
 } from "./types";
-
-/**
- * Parses whitespace AND comments (`//`, `///`, `/* ... *\/`), returning
- * nothing. Used for optional whitespace in composition operators -- so a
- * comment can sit between a sequence's elements, before/after a `/`
- * choice separator, or inside a group, not just at a rule's own
- * boundaries (which `grammar.ts`'s rule-boundary scanner already handles
- * separately). Hand-written (not built from `charClass`/`zeroOrMore`)
- * because a single "next char" decision here has three outcomes --
- * ordinary whitespace, the start of a comment, or neither -- more
- * naturally expressed as one scan than as three composed combinators.
- *
- * A lone `/` (not immediately followed by another `/` or `*`) is
- * deliberately left unconsumed: it's the choice operator (see
- * `choiceExpression` below, `seq(whitespace, literal("/"), ...)`), and
- * this function must never swallow it as a would-be comment start. Only
- * an ACTUAL `//`/`/*` prefix is treated as a comment.
- *
- * Always succeeds, possibly consuming nothing (e.g. immediately at a
- * non-whitespace, non-comment character) -- the same zero-width-safe
- * contract the previous `zeroOrMore(charClass(...))` implementation had.
- * Reuses `skipLineComment`/`skipBlockComment` (`./brace-scanner.ts`) --
- * the same comment-skipping rules `grammar.ts`'s rule-boundary scanner
- * already uses -- rather than a second, potentially-diverging
- * implementation.
- */
-const whitespace: Parser<void> = (input, pos) => {
-  // An out-of-contract `pos` (`isValidOffset`, `@suzumiyaaoba/tpeg-core`)
-  // must fail rather than echo itself back in a bogus success -- see the
-  // identical guard on `optionalWhitespaceOrComment`
-  // (`./whitespace-utils.ts`), which this scanner mirrors.
-  if (!isValidOffset(pos) || pos > input.length) {
-    return createFailure("Expected a valid position", pos, {
-      parserName: "whitespace",
-    });
-  }
-
-  let i = pos;
-  while (i < input.length) {
-    const char = input[i];
-    if (char === " " || char === "\t" || char === "\n" || char === "\r") {
-      i++;
-      continue;
-    }
-    if (char === "/" && input[i + 1] === "/") {
-      i = skipLineComment(input, i);
-      continue;
-    }
-    if (char === "/" && input[i + 1] === "*") {
-      i = skipBlockComment(input, i);
-      continue;
-    }
-    break;
-  }
-  return { success: true, val: undefined, current: pos, next: i };
-};
 
 /**
  * Parses any basic syntax element (string literal, character class,

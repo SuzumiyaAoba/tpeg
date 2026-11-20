@@ -50,13 +50,17 @@ def _text(data):
     return data.decode("utf-16-le", errors="surrogatepass")
 
 
+_RULES = {rule["name"]: rule for rule in _GRAMMAR["rules"]}
+_LITERALS = {i: _units(node["text"]) for i, node in enumerate(_GRAMMAR["nodes"])
+             if node["kind"] == "StringLiteral"}
+
+
 class _Session:
     def __init__(self, text, transforms, max_depth):
         self.data = _units(text)
         self.length = len(self.data) // 2
         self.transforms = transforms
         self.max_depth = max_depth
-        self.rules = {rule["name"]: rule for rule in _GRAMMAR["rules"]}
         self.memo = {}
         self.memo_order = {}
 
@@ -85,7 +89,7 @@ class _Session:
         return (False, error)
 
     def rule(self, name, pos, depth):
-        rule = self.rules.get(name)
+        rule = _RULES.get(name)
         if rule is None:
             return self.fail(pos, "rule " + name, True, True)
         key = (name, pos)
@@ -120,7 +124,7 @@ class _Session:
         node = _GRAMMAR["nodes"][index]
         kind, children = node["kind"], node["children"]
         if kind == "StringLiteral":
-            literal = _units(node["text"])
+            literal = _LITERALS[index]
             end = pos + len(literal) // 2
             if self.data[pos * 2:end * 2] == literal:
                 return self.ok(node["text"], pos, end)

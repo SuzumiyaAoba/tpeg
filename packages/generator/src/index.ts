@@ -11,7 +11,7 @@ export {
   generateEtaTypeScriptParser,
 } from "./eta-generator";
 
-export { generateNativeParser } from "./native-generator";
+export { generateNativeParser, isNativeLanguage } from "./native-generator";
 export {
   generateJavaScriptParser,
   transpileGeneratedParser,

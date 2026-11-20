@@ -246,8 +246,11 @@ MIT
 ## 文法モジュールの結合
 
 `bundleGrammarFile(path)` はローカルの `.tpeg` と推移的な import を読み、生成器に
-渡せる単一の `GrammarDefinition` を返します。解析済みの `ModuleFile` を使う場合は
-`bundleGrammarModules(entry, dependencies)` を使います。export・選択 import・別名・
+渡せる単一の `GrammarDefinition` を返します。`parseGrammarFile(path, source)` は
+文字列からファイル全体を解析します。先頭の BOM、import、transforms に対応し、
+エラー位置の行と列を 1 始まりで返します。ローカルファイルの場合、成功時の `result.val` を
+`bundleGrammarFile` に渡すと、その解析結果を使い、依存ファイルをディスクから読みます。
+依存先も解析済みの場合は `bundleGrammarModules(entry, dependencies)` を使います。export・選択 import・別名・
 バージョン制約・`@requires` を検証し、ファイル読み込みでは循環 import も拒否します。
 異なるディレクトリに同名ファイルがあっても別々のモジュールとして扱います。
 

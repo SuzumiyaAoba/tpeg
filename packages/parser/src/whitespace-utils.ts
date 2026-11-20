@@ -17,7 +17,7 @@ import {
   star as zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
 
-import { skipBlockComment, skipLineComment } from "./brace-scanner";
+import { findBlockCommentEnd, skipLineComment } from "./brace-scanner";
 import { WHITESPACE_CHARS } from "./constants";
 
 /**
@@ -42,80 +42,54 @@ export const optionalWhitespace: Parser<string> = map(
   (ws) => ws ?? "",
 );
 
-/**
- * Like {@link optionalWhitespace}, but also skips `//`/`///` line comments
- * and `/* ... *\/` block comments -- for the specific grammar-HEADER
- * positions (`grammarBlock` in `./grammar.ts`: between the grammar
- * keyword/name/extends/includes clauses and the opening `{`) that need
- * comment tolerance there too, without changing `optionalWhitespace`
- * itself (63 other call sites across this package rely on its existing,
- * comment-free behavior). Comments BETWEEN grammar items (rules,
- * annotations, transforms) don't need this: `grammarItem`
- * (`./grammar.ts`) already accepts a comment as a standalone item in its
- * own right, interleaved by `grammarBlockWhitespace` below exactly like
- * any other item.
- *
- * Returns void rather than the consumed text (unlike `optionalWhitespace`):
- * every call site this exists for already discards the value.
- */
+/** Return the first offset after consecutive grammar whitespace and complete comments. */
+export function skipGrammarTrivia(
+  input: string,
+  start: number,
+  documentation?: string[],
+): number {
+  let pos = start;
+  while (pos < input.length) {
+    const char = input[pos];
+    if (char === " " || char === "\t" || char === "\r" || char === "\n") {
+      pos++;
+    } else if (char === "/" && input[pos + 1] === "/") {
+      const end = skipLineComment(input, pos);
+      if (documentation && input[pos + 2] === "/") {
+        documentation.push(input.slice(pos + 3, end).trim());
+      }
+      pos = end;
+    } else if (char === "/" && input[pos + 1] === "*") {
+      const end = findBlockCommentEnd(input, pos);
+      if (end === -1) break;
+      pos = end;
+    } else {
+      break;
+    }
+  }
+  return pos;
+}
+
+/** Consume grammar trivia between syntactic elements. */
 export const optionalWhitespaceOrComment: Parser<void> = (input, pos) => {
-  // An out-of-contract `pos` (`isValidOffset`, `@suzumiyaaoba/tpeg-core`)
-  // must fail rather than echo itself back in a bogus success:
-  // `i < input.length` is vacuously false for `NaN` and vacuously true
-  // for a negative `pos`, either way returning `{ current: pos, next:
-  // pos }` as if a real scan had run -- and `requiredWhitespaceOrComment`
-  // below keys its "did anything get consumed" check on `result.next ===
-  // pos`, which `NaN === NaN` makes FALSE, so an unguarded `NaN` would
-  // have been misread as a consumed separator. A `pos` past the end of
-  // input is out of contract too: `pos === input.length` is a legitimate
-  // empty scan at EOF, anything further is not.
   if (!isValidOffset(pos) || pos > input.length) {
     return createFailure("Expected a valid position", pos, {
       parserName: "optionalWhitespaceOrComment",
     });
   }
-
-  let i = pos;
-  while (i < input.length) {
-    const char = input[i] as (typeof WHITESPACE_CHARS)[number] | undefined;
-    if (
-      char !== undefined &&
-      (WHITESPACE_CHARS as readonly string[]).includes(char)
-    ) {
-      i++;
-      continue;
-    }
-    if (input[i] === "/" && input[i + 1] === "/") {
-      i = skipLineComment(input, i);
-      continue;
-    }
-    if (input[i] === "/" && input[i + 1] === "*") {
-      i = skipBlockComment(input, i);
-      continue;
-    }
-    break;
-  }
-  return { success: true, val: undefined, current: pos, next: i };
+  return {
+    success: true,
+    val: undefined,
+    current: pos,
+    next: skipGrammarTrivia(input, pos),
+  };
 };
 
-/**
- * Like {@link optionalWhitespaceOrComment}, but requires consuming at
- * least one character (whitespace or comment) -- for the one grammar-
- * header position (`grammar.ts`'s `dottedGrammarDefinitionHeader`,
- * between the "grammar" keyword and the grammar's own name) that is a
- * MANDATORY separator: unlike every other header position (already
- * comment-tolerant via `optionalWhitespaceOrComment` above, since those
- * are all optional separators bracketed by punctuation), a bare
- * `optionalWhitespaceOrComment` here would let "grammarG {" (no
- * separator at all) parse, silently merging the keyword and the name.
- */
+/** Require a separator between a keyword and the following name. */
 export const requiredWhitespaceOrComment: Parser<void> = (input, pos) => {
-  // `optionalWhitespaceOrComment` always succeeds (see its own doc
-  // comment), so `result.next` is always defined here -- narrowed
-  // explicitly since its return type is the general `ParseResult<void>`
-  // union.
   const result = optionalWhitespaceOrComment(input, pos);
-  if (!result.success || result.next === pos) {
+  if (!result.success) return result;
+  if (result.next === pos) {
     return createFailure("Expected whitespace or a comment", pos, {
       expected: [" ", "\t", "\n", "//", "/*"],
       found: input[pos] ?? "end of input",

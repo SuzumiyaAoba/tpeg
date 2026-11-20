@@ -11,6 +11,7 @@ import {
   oneOrMore,
   optional,
   seq,
+  tuple,
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
 import { labeled, named } from "./error";
@@ -75,7 +76,7 @@ const skipWhitespace: Parser<undefined> = (input, pos) => {
  */
 export const token = <T>(parser: Parser<T>, parserName?: string): Parser<T> => {
   const tokenParser = map(
-    seq(skipWhitespace, parser, skipWhitespace),
+    tuple(skipWhitespace, parser, skipWhitespace),
     ([, value]) => value,
   );
   return named(tokenParser, parserName);

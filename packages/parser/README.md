@@ -249,6 +249,10 @@ MIT
 
 `bundleGrammarFile(path)` reads a local `.tpeg` file and its transitive imports
 and returns one `GrammarDefinition` for any code generator.
+`parseGrammarFile(path, source)` parses a complete file from memory, including
+imports, transforms, and an optional leading BOM. It reports errors with
+one-based line and column numbers. For a local entry file, pass its successful
+`result.val` to `bundleGrammarFile` to use that snapshot and read its imports from disk.
 `bundleGrammarModules(entry, dependencies)` performs the same linking on
 already-parsed `ModuleFile` values. The linker enforces exports, selective
 imports, aliases, import version constraints, `@requires`, and circular-import

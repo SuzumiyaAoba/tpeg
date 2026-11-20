@@ -224,16 +224,13 @@ export class TypeIntegrationEngine {
     // Perform type inference
     const typeInference = this.typeInferenceEngine.inferGrammarTypes(grammar);
 
-    // Create typed rules
+    const circularRules = new Set(typeInference.circularDependencies.flat());
     const typedRules = grammar.rules.map((rule) =>
-      this.createTypedRule(rule, typeInference),
+      this.createTypedRule(rule, typeInference, circularRules),
     );
 
     // Generate type definitions
-    const typeDefinitions = this.generateTypeDefinitions(
-      typeInference,
-      typedRules,
-    );
+    const typeDefinitions = this.generateTypeDefinitions(typedRules);
 
     // Collect all required imports
     const imports = this.collectImports(typeInference);
@@ -254,11 +251,11 @@ export class TypeIntegrationEngine {
   private createTypedRule(
     rule: RuleDefinition,
     typeInference: GrammarTypeInference,
+    circularRules: ReadonlySet<string>,
   ): TypedRuleDefinition {
-    const inferredType = typeInference.ruleTypes.get(rule.name);
-
-    // If no type information found, create a default type
-    const defaultType: InferredType = {
+    const inferredType: InferredType = typeInference.ruleTypes.get(
+      rule.name,
+    ) ?? {
       typeString: "unknown",
       nullable: true,
       isArray: false,
@@ -269,20 +266,13 @@ export class TypeIntegrationEngine {
         : undefined,
     };
 
-    const finalInferredType = inferredType || defaultType;
-
-    // Check for circular dependencies
-    const hasCircularDependency = typeInference.circularDependencies.some(
-      (cycle) => cycle.includes(rule.name),
-    );
-
     // Analyze dependencies
     const dependencies = [...collectRuleReferences(rule.pattern)];
 
     return {
       ...rule,
-      inferredType: finalInferredType,
-      hasCircularDependency,
+      inferredType,
+      hasCircularDependency: circularRules.has(rule.name),
       dependencies,
     };
   }
@@ -290,10 +280,7 @@ export class TypeIntegrationEngine {
   /**
    * Generate TypeScript type definitions for the grammar
    */
-  private generateTypeDefinitions(
-    _typeInference: GrammarTypeInference,
-    typedRules: TypedRuleDefinition[],
-  ): string {
+  private generateTypeDefinitions(typedRules: TypedRuleDefinition[]): string {
     const typeDefinitions: string[] = [];
     const namespaceSegments = this.validateTypeNamespace(
       this.options.generateTypeGuards && typedRules.length > 0,
@@ -761,7 +748,7 @@ export class TypeIntegrationEngine {
     const imports = new Set<string>();
 
     // Add imports from each rule type
-    for (const inferredType of Array.from(typeInference.ruleTypes.values())) {
+    for (const inferredType of typeInference.ruleTypes.values()) {
       for (const imp of inferredType.imports) {
         imports.add(imp);
       }

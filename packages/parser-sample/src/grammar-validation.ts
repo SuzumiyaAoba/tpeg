@@ -2,156 +2,99 @@
 /**
  * Grammar Validation Script
  *
- * Tests all sample grammars to ensure they parse correctly
- * and validates the generated parsers work with sample data.
+ * Parse each sample grammar and generate its TypeScript parser.
  */
 
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
   generateTypeScriptParser,
-  grammarDefinition,
-  skipTrailingWhitespaceAndComments,
+  parseGrammarFile,
+  toGrammarDefinition,
 } from "@suzumiyaaoba/tpeg-parser";
-import { initialPos } from "./pos";
 
 const EXAMPLES_DIR = join(import.meta.dir, "../examples");
 
-interface ValidationResult {
-  grammar: string;
-  success: boolean;
-  error?: string;
-  rules: number;
-  annotations: number;
+type ValidationResult =
+  | { grammar: string; success: true; rules: number; annotations: number }
+  | { grammar: string; success: false; error: string };
+
+function failure(grammar: string, description: string, cause: unknown) {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return {
+    grammar,
+    success: false as const,
+    error: `${description}: ${message}`,
+  };
 }
 
-/**
- * Load and parse all .tpeg grammar files
- */
-async function validateGrammars(): Promise<ValidationResult[]> {
-  const results: ValidationResult[] = [];
-
+function validateSource(
+  file: string,
+  path: string,
+  text: string,
+): ValidationResult {
+  const parsed = parseGrammarFile(path, text);
+  if (!parsed.success) {
+    return failure(
+      file,
+      `Parse failed at line ${parsed.line}, column ${parsed.column}`,
+      parsed.error.message,
+    );
+  }
+  const grammar = toGrammarDefinition(parsed.val.grammars[0]);
   try {
-    const files = await readdir(EXAMPLES_DIR);
-    const grammarFiles = files.filter((f) => f.endsWith(".tpeg"));
-
-    console.log(`🔍 Found ${grammarFiles.length} grammar files to validate\n`);
-
-    for (const file of grammarFiles) {
-      console.log(`📋 Validating: ${file}`);
-
-      try {
-        const grammarPath = join(EXAMPLES_DIR, file);
-        const grammarText = await readFile(grammarPath, "utf-8");
-
-        // Parse the grammar
-        const pos = initialPos;
-        const parseResult = grammarDefinition(grammarText, pos);
-
-        if (!parseResult.success) {
-          results.push({
-            grammar: file,
-            success: false,
-            error: parseResult.error?.message || "Unknown parse error",
-            rules: 0,
-            annotations: 0,
-          });
-          console.log(`   ❌ Parse failed: ${parseResult.error?.message}`);
-          continue;
-        }
-
-        // `grammarDefinition` alone only requires a valid PREFIX -- a
-        // file whose grammar block is followed by trailing garbage
-        // previously reported success while silently dropping everything
-        // after it (#88). Trailing whitespace/comments are still legal
-        // (same rule `cli.ts` applies), so skip them before the EOF
-        // check rather than requiring `next === length` outright.
-        const contentEnd = skipTrailingWhitespaceAndComments(
-          grammarText,
-          parseResult.next,
-        );
-        if (contentEnd !== grammarText.length) {
-          const preview = grammarText
-            .slice(contentEnd, contentEnd + 40)
-            .replace(/\n/g, "\\n");
-          const error = `Unexpected trailing content after grammar block at offset ${contentEnd}: "${preview}${contentEnd + 40 < grammarText.length ? "..." : ""}"`;
-          results.push({
-            grammar: file,
-            success: false,
-            error,
-            rules: 0,
-            annotations: 0,
-          });
-          console.log(`   ❌ ${error}`);
-          continue;
-        }
-
-        const grammar = parseResult.val;
-
-        // Test code generation
-        try {
-          const generated = generateTypeScriptParser(grammar, {
-            namePrefix: `${grammar.name.toLowerCase()}_`,
-            includeImports: true,
-            includeTypes: true,
-          });
-
-          results.push({
-            grammar: file,
-            success: true,
-            rules: grammar.rules.length,
-            annotations: grammar.annotations.length,
-          });
-
-          console.log("   ✅ Parsed successfully");
-          console.log(`      📊 Grammar: ${grammar.name}`);
-          console.log(`      📊 Rules: ${grammar.rules.length}`);
-          console.log(`      📊 Annotations: ${grammar.annotations.length}`);
-          console.log(
-            `      📦 Generated: ${generated.exports.length} exports`,
-          );
-        } catch (codegenError) {
-          results.push({
-            grammar: file,
-            success: false,
-            error: `Code generation failed: ${codegenError instanceof Error ? codegenError.message : String(codegenError)}`,
-            rules: grammar.rules.length,
-            annotations: grammar.annotations.length,
-          });
-          console.log(
-            `   ❌ Code generation failed: ${codegenError instanceof Error ? codegenError.message : String(codegenError)}`,
-          );
-        }
-      } catch (fileError) {
-        results.push({
-          grammar: file,
-          success: false,
-          error: `File error: ${fileError instanceof Error ? fileError.message : String(fileError)}`,
-          rules: 0,
-          annotations: 0,
-        });
-        console.log(
-          `   ❌ File error: ${fileError instanceof Error ? fileError.message : String(fileError)}`,
-        );
-      }
-
-      console.log(); // Empty line between files
-    }
-  } catch (dirError) {
-    const message = `Failed to read examples directory: ${dirError instanceof Error ? dirError.message : String(dirError)}`;
-    console.error(`❌ ${message}`);
-    // Record the infrastructure failure as a failed result so `main`'s
-    // exit code reflects it -- previously this logged to stderr but still
-    // exited 0 with "0/0 grammars successful", silently passing.
-    results.push({
-      grammar: EXAMPLES_DIR,
-      success: false,
-      error: message,
-      rules: 0,
-      annotations: 0,
+    const generated = generateTypeScriptParser(grammar, {
+      namePrefix: `${grammar.name.toLowerCase()}_`,
+      includeImports: true,
+      includeTypes: true,
     });
+    console.log("   ✅ Parsed successfully");
+    console.log(`      📊 Grammar: ${grammar.name}`);
+    console.log(`      📊 Rules: ${grammar.rules.length}`);
+    console.log(`      📊 Annotations: ${grammar.annotations.length}`);
+    console.log(`      📦 Generated: ${generated.exports.length} exports`);
+    return {
+      grammar: file,
+      success: true,
+      rules: grammar.rules.length,
+      annotations: grammar.annotations.length,
+    };
+  } catch (error) {
+    return failure(file, "Code generation failed", error);
+  }
+}
+
+async function validateGrammars(): Promise<ValidationResult[]> {
+  let files: string[];
+  try {
+    files = (await readdir(EXAMPLES_DIR))
+      .filter((name) => name.endsWith(".tpeg"))
+      .sort();
+  } catch (error) {
+    const result = failure(
+      EXAMPLES_DIR,
+      "Failed to read examples directory",
+      error,
+    );
+    console.error(`❌ ${result.error}`);
+    return [result];
   }
 
+  console.log(`🔍 Found ${files.length} grammar files to validate\n`);
+  const results: ValidationResult[] = [];
+  for (const file of files) {
+    console.log(`📋 Validating: ${file}`);
+    const path = join(EXAMPLES_DIR, file);
+    let result: ValidationResult;
+    try {
+      result = validateSource(file, path, await readFile(path, "utf8"));
+    } catch (error) {
+      result = failure(file, "File error", error);
+    }
+    if (!result.success) console.log(`   ❌ ${result.error}`);
+    results.push(result);
+    console.log();
+  }
   return results;
 }
 
@@ -206,20 +149,16 @@ function generateSummary(results: ValidationResult[]): void {
  */
 async function main(): Promise<void> {
   console.log("🧪 TPEG Grammar Validation Suite");
-  console.log(`=${"=".repeat(50)}\n`);
+  console.log("=".repeat(51) + "\n");
 
   const results = await validateGrammars();
   generateSummary(results);
 
-  // Exit with error code if any grammars failed
-  const failedCount = results.filter((r) => !r.success).length;
-  if (failedCount > 0) {
-    process.exit(1);
-  }
+  if (results.some((result) => !result.success)) process.exitCode = 1;
 }
 
 // Run the validation
 main().catch((error) => {
   console.error("❌ Validation script failed:", error);
-  process.exit(1);
+  process.exitCode = 1;
 });

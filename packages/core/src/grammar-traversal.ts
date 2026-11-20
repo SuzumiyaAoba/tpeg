@@ -14,15 +14,27 @@ export const walkExpression = (
   expression: Expression,
   visit: (expression: Expression, depth: number) => unknown,
 ): void => {
-  const stack = [{ expression, depth: 0 }];
+  const ancestors = new Set<Expression>();
+  const stack: { node: Expression; leaving?: boolean }[] = [
+    { node: expression },
+  ];
   while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current) break;
-    if (visit(current.expression, current.depth) === false) continue;
-    const children = expressionChildren(current.expression);
+    const { node, leaving } = stack.pop()!;
+    if (leaving) {
+      ancestors.delete(node);
+      continue;
+    }
+    if (ancestors.has(node)) {
+      throw new TypeError("Cyclic expression AST encountered during traversal");
+    }
+    if (visit(node, ancestors.size) === false) continue;
+    const children = expressionChildren(node);
+    if (children.length === 0) continue;
+    ancestors.add(node);
+    stack.push({ node, leaving: true });
     for (let i = children.length - 1; i >= 0; i--) {
       const child = children[i];
-      if (child) stack.push({ expression: child, depth: current.depth + 1 });
+      if (child) stack.push({ node: child });
     }
   }
 };

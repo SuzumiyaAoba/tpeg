@@ -126,4 +126,16 @@ describe("grammar expression traversal", () => {
     expect(maxDepth).toBe(20_000);
     expect(someExpression(expression, (node) => node === child)).toBe(true);
   });
+
+  it("rejects a back-edge but allows a visitor to prune its parent", () => {
+    const cycle = createGroup(child);
+    cycle.expression = cycle;
+    let visits = 0;
+    expect(() =>
+      walkExpression(cycle, () => {
+        if (++visits > 2) throw new Error("revisited cycle");
+      }),
+    ).toThrow(/Cyclic expression AST/);
+    expect(() => walkExpression(cycle, () => false)).not.toThrow();
+  });
 });

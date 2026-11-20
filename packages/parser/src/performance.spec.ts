@@ -11,6 +11,7 @@
 
 import { describe, expect, it } from "vite-plus/test";
 import { generateTypeScriptParser, grammarDefinition } from "./index";
+import { retainedHeapBytes } from "./test-utils";
 import type { Expression } from "./types";
 import {
   createCharRange,
@@ -91,28 +92,18 @@ function benchmark(
   };
 }
 
-/**
- * Memory usage measurement utility
- */
-function measureMemory(operation: () => void): {
-  before: number;
-  after: number;
-  delta: number;
-} {
-  // Force garbage collection if available
-  if (global.gc) {
-    global.gc();
-  }
-
-  const before = process.memoryUsage().heapUsed;
+function checkRetainedHeap(limit: number, operation: () => void): void {
+  const before = retainedHeapBytes();
   operation();
-  const after = process.memoryUsage().heapUsed;
-
-  return {
-    before,
-    after,
-    delta: after - before,
-  };
+  const after = retainedHeapBytes();
+  if (before === null || after === null) {
+    if (STRICT_PERF)
+      throw new Error("Strict heap measurements require --expose-gc");
+    return;
+  }
+  const growth = after - before;
+  console.log(`Retained heap growth: ${(growth / 1024).toFixed(2)} KB`);
+  if (STRICT_PERF) expect(growth).toBeLessThan(limit);
 }
 
 describe("TPEG Parser Performance Benchmarks", () => {
@@ -283,47 +274,32 @@ describe("TPEG Parser Performance Benchmarks", () => {
   });
 
   describe("Memory Usage Optimization", () => {
-    it("should parse grammars with minimal memory overhead", () => {
+    it("retains less than 1 MiB after 100 grammar parses", () => {
       const grammar = `grammar MemoryTest {
         @version: "1.0"
         simple = "test"
       }`;
 
-      const memoryUsage = measureMemory(() => {
+      checkRetainedHeap(1024 * 1024, () => {
         for (let i = 0; i < 100; i++) {
-          const pos = 0;
-          const result = grammarDefinition(grammar, pos);
+          const result = grammarDefinition(grammar, 0);
           if (!result.success) throw new Error("Parse failed");
         }
       });
-
-      console.log(
-        `Memory usage for 100 grammar parses: ${(memoryUsage.delta / 1024).toFixed(2)} KB`,
-      );
-      if (STRICT_PERF) {
-        expect(memoryUsage.delta).toBeLessThan(1024 * 1024); // Should use less than 1MB for 100 parses
-      }
     });
 
-    it("should generate code with minimal memory allocation", () => {
+    it("retains less than 2 MiB after 100 code generations", () => {
       const grammar = createGrammarDefinition(
         "MemoryGrammar",
         [],
         [createRuleDefinition("test", createStringLiteral("hello"))],
       );
 
-      const memoryUsage = measureMemory(() => {
+      checkRetainedHeap(2 * 1024 * 1024, () => {
         for (let i = 0; i < 100; i++) {
           generateTypeScriptParser(grammar);
         }
       });
-
-      console.log(
-        `Memory usage for 100 code generations: ${(memoryUsage.delta / 1024).toFixed(2)} KB`,
-      );
-      if (STRICT_PERF) {
-        expect(memoryUsage.delta).toBeLessThan(2 * 1024 * 1024); // Should use less than 2MB for 100 generations
-      }
     });
   });
 

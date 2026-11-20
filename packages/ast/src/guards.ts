@@ -1,25 +1,4 @@
-import type {
-  AndPredicate,
-  AnyChar,
-  Char,
-  CharClass,
-  CharClassElement,
-  Choice,
-  Definition,
-  ExprNode,
-  Grammar,
-  Group,
-  Identifier,
-  Literal,
-  MapNode,
-  NotPredicate,
-  OneOrMore,
-  Optional,
-  PegAstNode,
-  Range,
-  Sequence,
-  ZeroOrMore,
-} from "./nodes";
+import type { PegAstNode } from "./nodes";
 
 /**
  * Builds a type guard for a specific AST node `type` tag. Every `isX`
@@ -28,8 +7,8 @@ import type {
  * than hand-duplicated across all of them.
  */
 const createTypeGuard =
-  <T extends PegAstNode>(type: T["type"]) =>
-  (node: PegAstNode): node is T =>
+  <Tag extends PegAstNode["type"]>(type: Tag) =>
+  (node: PegAstNode): node is Extract<PegAstNode, { type: Tag }> =>
     node.type === type;
 
 /**
@@ -46,7 +25,7 @@ const createTypeGuard =
  * }
  * ```
  */
-export const isLiteral = createTypeGuard<Literal<string>>("literal");
+export const isLiteral = createTypeGuard("literal");
 
 /**
  * Type guard function to check if a node is an Identifier.
@@ -62,7 +41,7 @@ export const isLiteral = createTypeGuard<Literal<string>>("literal");
  * }
  * ```
  */
-export const isIdentifier = createTypeGuard<Identifier<string>>("identifier");
+export const isIdentifier = createTypeGuard("identifier");
 
 /**
  * Type guard function to check if a node is a Sequence.
@@ -84,8 +63,7 @@ export const isIdentifier = createTypeGuard<Identifier<string>>("identifier");
  * }
  * ```
  */
-export const isSequence =
-  createTypeGuard<Sequence<readonly ExprNode[]>>("sequence");
+export const isSequence = createTypeGuard("sequence");
 
 /**
  * Type guard function to check if a node is a Choice.
@@ -107,7 +85,7 @@ export const isSequence =
  * }
  * ```
  */
-export const isChoice = createTypeGuard<Choice<readonly ExprNode[]>>("choice");
+export const isChoice = createTypeGuard("choice");
 
 /**
  * Type guard function to check if a node is an Optional.
@@ -126,7 +104,7 @@ export const isChoice = createTypeGuard<Choice<readonly ExprNode[]>>("choice");
  * }
  * ```
  */
-export const isOptional = createTypeGuard<Optional<ExprNode>>("optional");
+export const isOptional = createTypeGuard("optional");
 
 /**
  * Type guard function to check if a node is a MapNode.
@@ -146,7 +124,7 @@ export const isOptional = createTypeGuard<Optional<ExprNode>>("optional");
  * }
  * ```
  */
-export const isMap = createTypeGuard<MapNode<ExprNode, unknown>>("map");
+export const isMap = createTypeGuard("map");
 
 /**
  * Type guard function to check if a node is a CharClass.
@@ -168,8 +146,7 @@ export const isMap = createTypeGuard<MapNode<ExprNode, unknown>>("map");
  * }
  * ```
  */
-export const isCharClass =
-  createTypeGuard<CharClass<readonly CharClassElement[]>>("charClass");
+export const isCharClass = createTypeGuard("charClass");
 
 /**
  * Type guard function to check if a node is an AnyChar.
@@ -185,7 +162,7 @@ export const isCharClass =
  * }
  * ```
  */
-export const isAnyChar = createTypeGuard<AnyChar>("anyChar");
+export const isAnyChar = createTypeGuard("anyChar");
 
 /**
  * Type guard function to check if a node is an AndPredicate.
@@ -204,8 +181,7 @@ export const isAnyChar = createTypeGuard<AnyChar>("anyChar");
  * }
  * ```
  */
-export const isAndPredicate =
-  createTypeGuard<AndPredicate<ExprNode>>("andPredicate");
+export const isAndPredicate = createTypeGuard("andPredicate");
 
 /**
  * Type guard function to check if a node is a NotPredicate.
@@ -224,8 +200,7 @@ export const isAndPredicate =
  * }
  * ```
  */
-export const isNotPredicate =
-  createTypeGuard<NotPredicate<ExprNode>>("notPredicate");
+export const isNotPredicate = createTypeGuard("notPredicate");
 
 /**
  * Type guard function to check if a node is a ZeroOrMore.
@@ -244,7 +219,7 @@ export const isNotPredicate =
  * }
  * ```
  */
-export const isZeroOrMore = createTypeGuard<ZeroOrMore<ExprNode>>("zeroOrMore");
+export const isZeroOrMore = createTypeGuard("zeroOrMore");
 
 /**
  * Type guard function to check if a node is a OneOrMore.
@@ -263,7 +238,7 @@ export const isZeroOrMore = createTypeGuard<ZeroOrMore<ExprNode>>("zeroOrMore");
  * }
  * ```
  */
-export const isOneOrMore = createTypeGuard<OneOrMore<ExprNode>>("oneOrMore");
+export const isOneOrMore = createTypeGuard("oneOrMore");
 
 /**
  * Type guard function to check if a node is a Group.
@@ -282,7 +257,7 @@ export const isOneOrMore = createTypeGuard<OneOrMore<ExprNode>>("oneOrMore");
  * }
  * ```
  */
-export const isGroup = createTypeGuard<Group<ExprNode>>("group");
+export const isGroup = createTypeGuard("group");
 
 /**
  * Type guard function to check if a node is a Char.
@@ -298,7 +273,7 @@ export const isGroup = createTypeGuard<Group<ExprNode>>("group");
  * }
  * ```
  */
-export const isChar = createTypeGuard<Char<string>>("char");
+export const isChar = createTypeGuard("char");
 
 /**
  * Type guard function to check if a node is a Range.
@@ -314,7 +289,7 @@ export const isChar = createTypeGuard<Char<string>>("char");
  * }
  * ```
  */
-export const isRange = createTypeGuard<Range<string, string>>("range");
+export const isRange = createTypeGuard("range");
 
 /**
  * Type guard function to check if a node is a Definition.
@@ -336,8 +311,7 @@ export const isRange = createTypeGuard<Range<string, string>>("range");
  * }
  * ```
  */
-export const isDefinition =
-  createTypeGuard<Definition<Identifier<string>, ExprNode>>("definition");
+export const isDefinition = createTypeGuard("definition");
 
 /**
  * Type guard function to check if a node is a Grammar.
@@ -362,7 +336,4 @@ export const isDefinition =
  * }
  * ```
  */
-export const isGrammar =
-  createTypeGuard<Grammar<readonly Definition<Identifier<string>, ExprNode>[]>>(
-    "grammar",
-  );
+export const isGrammar = createTypeGuard("grammar");

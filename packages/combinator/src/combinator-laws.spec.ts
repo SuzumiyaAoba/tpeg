@@ -27,6 +27,7 @@ import {
   notPredicate,
   optional,
   seq,
+  tuple,
   zeroOrMore,
 } from "@suzumiyaaoba/tpeg-core";
 import { sepBy, sepBy1 } from "./list";
@@ -190,7 +191,7 @@ describe("combinator laws: takeUntil / between", () => {
 });
 
 describe("combinator laws: sepBy / sepBy1", () => {
-  it("sepBy1(value, sep) === map(seq(value, zeroOrMore(seq(sep, value))), ([h, t]) => [h, ...t.map(...)])", () => {
+  it("sepBy1(value, sep) === map(tuple(value, zeroOrMore(tuple(sep, value))), ([h, t]) => [h, ...t.map(...)])", () => {
     for (let seed = 1; seed <= SEEDS; seed++) {
       const rngA = makeRng(seed);
       const rngB = makeRng(seed);
@@ -200,7 +201,7 @@ describe("combinator laws: sepBy / sepBy1", () => {
       const sep2 = genParser(rngB, 1);
       const a = sepBy1(value1, sep1);
       const reference = map(
-        seq(value2, zeroOrMore(map(seq(sep2, value2), ([, v]) => v))),
+        tuple(value2, zeroOrMore(map(tuple(sep2, value2), ([, v]) => v))),
         ([head, tail]) => [head, ...tail],
       );
       for (const input of INPUTS) {
